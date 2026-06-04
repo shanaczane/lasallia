@@ -1,26 +1,123 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;1,9..144,300&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+
+  /* ─── COLORS ─────────────────────────────────────────── */
+
+  /* Green — DLSL brand primary */
+  --color-green-50:  #F3F9F5;
+  --color-green-100: #E8F3ED;
+  --color-green-200: #A3CBB4;
+  --color-green-300: #52A672;
+  --color-green-600: #00874A;
+  --color-green-700: #006F3C;
+  --color-green-800: #004B28;
+  --color-green-900: #003D20;
+
+  /* Gold — DLSL brand accent */
+  --color-gold-100: #F7EFD9;
+  --color-gold-500: #C8A951;
+  --color-gold-600: #B8923D;
+
+  /* Ink — neutral text/border/surface */
+  --color-ink-50:  #F6F7F2;
+  --color-ink-100: #ECEEE7;
+  --color-ink-200: #DDDFD7;
+  --color-ink-300: #B8BBB1;
+  --color-ink-400: #8E9189;
+  --color-ink-500: #6B6E63;
+  --color-ink-700: #3A3D34;
+  --color-ink-900: #14150F;
+
+  /* Surface */
+  --color-paper: #FAFAF5;
+
+  /* Status */
+  --color-success:     #16A34A;
+  --color-success-bg:  #DCFCE7;
+  --color-warn:        #C2730A;
+  --color-warn-bg:     #FEF3C7;
+  --color-danger:      #B91C1C;
+  --color-danger-bg:   #FEE2E2;
+  --color-danger-dark: #991B1B;
+  --color-info:        #1D4ED8;
+  --color-info-bg:     #DBEAFE;
+
+  /* Availability pills */
+  --color-borrowed:    #0369A1;
+  --color-borrowed-bg: #E0F2FE;
+  --color-missing:     #6D28D9;
+  --color-missing-bg:  #EDE9FE;
+
+  /* ─── TYPOGRAPHY ─────────────────────────────────────── */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body:    'Manrope', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+
+  --text-2xs:     0.625rem;
+  --text-xs:      0.6875rem;
+  --text-sm:      0.75rem;
+  --text-sm-body: 0.8125rem;
+  --text-body:    0.875rem;
+  --text-base:    0.9375rem;
+  --text-lg:      1.0625rem;
+  --text-xl:      1.125rem;
+  --text-2xl:     1.375rem;
+  --text-3xl:     1.75rem;
+  --text-4xl:     2rem;
+  --text-5xl:     2.375rem;
+  --text-6xl:     2.75rem;
+  --text-7xl:     4rem;
+
+  /* ─── BORDER RADIUS ──────────────────────────────────── */
+  --radius-sm:   6px;
+  --radius:      10px;
+  --radius-lg:   16px;
+  --radius-pill: 999px;
+
+  /* ─── SHADOWS ────────────────────────────────────────── */
+  --shadow-sm:          0 1px 2px rgba(20, 21, 15, 0.04);
+  --shadow:             0 4px 16px -4px rgba(20, 21, 15, 0.08), 0 1px 2px rgba(20, 21, 15, 0.04);
+  --shadow-lg:          0 12px 40px -8px rgba(20, 21, 15, 0.16);
+  --shadow-focus-green: 0 0 0 3px #E8F3ED;
+  --shadow-focus-danger:0 0 0 3px #FEE2E2;
+
+  /* ─── LETTER SPACING ─────────────────────────────────── */
+  --tracking-micro:   0.02em;
+  --tracking-eyebrow: 0.05em;
+  --tracking-label:   0.06em;
+  --tracking-meta:    0.08em;
+  --tracking-caps:    0.10em;
+  --tracking-author:  0.12em;
+  --tracking-section: 0.14em;
+
+  /* ─── SPACING ────────────────────────────────────────── */
+  --spacing-nav:  64px;
+  --spacing-side: 248px;
+  --spacing-18:   4.5rem;
+  --spacing-22:   5.5rem;
+  --spacing-26:   6.5rem;
+
+  /* ─── STRUCTURAL ─────────────────────────────────────── */
+  --height-nav:      64px;
+  --height-qr-frame: 200px;
+  --width-side:      248px;
+  --width-qr-frame:  200px;
+  --max-w-content:   1400px;
+  --max-w-form:      380px;
+  --max-w-stepper:   700px;
+  --min-h-chat:      500px;
+
+  /* ─── Z-INDEX ────────────────────────────────────────── */
+  --z-fab:   50;
+  --z-nav:   100;
+  --z-modal: 200;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* Base styles */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-paper);
+  color: var(--color-ink-900);
+  font-family: var(--font-body);
 }
