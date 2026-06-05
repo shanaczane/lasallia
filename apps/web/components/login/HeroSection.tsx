@@ -1,3 +1,5 @@
+"use client";
+
 export default function HeroSection() {
   const stats = [
     { label: 'Books Available', value: '12,543', icon: '📚' },
