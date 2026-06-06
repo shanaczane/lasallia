@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 type UserRole = 'guest' | 'student' | 'librarian';
 
 export default function LoginSection() {
+  const router = useRouter();
   const [selectedRole, setSelectedRole] = useState<UserRole>('student');
   const [formData, setFormData] = useState({
     email: '',
@@ -33,7 +35,7 @@ export default function LoginSection() {
 
     // Guest just proceeds — no credentials needed
     if (selectedRole === 'guest') {
-      alert('Continuing as Guest. You can browse the catalog.');
+      router.push('/guest/dashboard');
       return;
     }
 
@@ -58,8 +60,7 @@ export default function LoginSection() {
       return;
     }
 
-    console.log('Login attempted:', { ...formData, role: selectedRole });
-    alert(`Login validation passed!\nEmail: ${formData.email}\nRole: ${selectedRole}`);
+    router.push(selectedRole === 'student' ? '/student/dashboard' : '/librarian/dashboard');
   };
 
   const isGuest = selectedRole === 'guest';
