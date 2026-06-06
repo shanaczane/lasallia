@@ -43,6 +43,8 @@ refactor: extract chatbot logic into service (sprint 2.2.1)
 ---
 
 ## Folder Structure
+
+```
 lasallia/
 ├── apps/
 │   ├── web/          # Next.js frontend
@@ -50,8 +52,9 @@ lasallia/
 ├── packages/
 │   └── types/        # Shared TypeScript types split by domain
 └── docs/
-├── setup/        # Local setup and env docs
-└── architecture/ # System design docs
+    ├── setup/        # Local setup and env docs
+    └── architecture/ # System design docs
+```
 
 ---
 
