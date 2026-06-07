@@ -155,7 +155,7 @@ export function StudentLayout({
         className="min-h-screen"
         style={{ paddingTop: "var(--height-nav)", paddingLeft: "var(--width-side)" }}
       >
-        <div className="p-6">{children}</div>
+        <div className="w-full">{children}</div>
       </main>
     </div>
   )
