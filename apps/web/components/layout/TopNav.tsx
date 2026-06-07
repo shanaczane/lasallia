@@ -2,7 +2,6 @@
 "use client"
 
 import { Bell } from "lucide-react"
-import { useRouter } from "next/navigation"
 
 type TopNavProps = {
   userName?: string
@@ -15,7 +14,9 @@ export function TopNav({
   userInitials = "U",
   notificationCount = 0,
 }: TopNavProps) {
-  const router = useRouter()
+  function handleLogout() {
+    window.location.replace('/loginView')
+  }
 
   return (
     <header
@@ -83,7 +84,9 @@ export function TopNav({
 
         {/* Logout */}
         <button
-          onClick={() => router.push('/loginView')}
+          type="button"
+          onClick={handleLogout}
+          title="Log out"
           className="flex items-center justify-center w-8 h-8 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-900 transition-colors"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
