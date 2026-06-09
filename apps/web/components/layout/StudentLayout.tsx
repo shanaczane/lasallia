@@ -160,7 +160,7 @@ export function StudentLayout({
       {/* Mobile overlay */}
       {menuOpen && (
         <div
-          className="fixed inset-0 z-[150] md:hidden"
+          className="fixed inset-0 z-150 md:hidden"
           onClick={() => setMenuOpen(false)}
           style={{ background: "rgba(0,0,0,0.4)" }}
         />
@@ -169,7 +169,7 @@ export function StudentLayout({
       {/* Mobile drawer */}
       <aside
         className={cn(
-          "fixed left-0 top-0 bottom-0 z-[160] flex flex-col bg-white border-r border-ink-200 overflow-y-auto transition-transform duration-300 md:hidden",
+          "fixed left-0 top-0 bottom-0 z-160 flex flex-col bg-white border-r border-ink-200 overflow-y-auto transition-transform duration-300 md:hidden",
           menuOpen ? "translate-x-0" : "-translate-x-full"
         )}
         style={{ width: "var(--width-side)" }}
@@ -193,7 +193,7 @@ export function StudentLayout({
 
       {/* Page content */}
       <main
-        className="min-h-screen md:pl-[var(--width-side)]"
+        className="min-h-screen md:pl-(--width-side)"
         style={{ paddingTop: "var(--height-nav)" }}
       >
         <div className="md:pl-0 pl-0 w-full">{children}</div>
