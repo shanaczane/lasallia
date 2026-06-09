@@ -1,18 +1,20 @@
 // apps/web/components/layout/TopNav.tsx
 "use client"
 
-import { Bell } from "lucide-react"
+import { Bell, Menu } from "lucide-react"
 
 type TopNavProps = {
   userName?: string
   userInitials?: string
   notificationCount?: number
+  onMenuClick?: () => void
 }
 
 export function TopNav({
   userName = "User",
   userInitials = "U",
   notificationCount = 0,
+  onMenuClick,
 }: TopNavProps) {
   function handleLogout() {
     window.location.replace('/loginView')
@@ -23,31 +25,41 @@ export function TopNav({
       className="fixed top-0 left-0 right-0 flex items-center justify-between px-5 bg-white border-b border-ink-200 z-(--z-nav)"
       style={{ height: "var(--height-nav)" }}
     >
-      {/* Logo */}
-      <div className="flex items-center gap-2.5">
-        <div
-          className="flex items-center justify-center rounded-sm bg-green-700 text-white font-bold"
-          style={{ width: 32, height: 32, fontFamily: "var(--font-display)", fontSize: "1rem" }}
+      {/* Left: hamburger (mobile only) + logo */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onMenuClick}
+          className="flex md:hidden items-center justify-center w-8 h-8 rounded-sm text-ink-500 hover:bg-ink-100 hover:text-ink-900 transition-colors"
+          aria-label="Open menu"
         >
-          L
-        </div>
-        <div className="leading-tight">
-          <p
-            className="text-ink-900 font-semibold"
-            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+          <Menu size={18} />
+        </button>
+
+        <div className="flex items-center gap-2.5">
+          <div
+            className="flex items-center justify-center rounded-sm bg-green-700 text-white font-bold"
+            style={{ width: 32, height: 32, fontFamily: "var(--font-display)", fontSize: "1rem" }}
           >
-            Smart Library
-          </p>
-          <p
-            className="text-ink-400 uppercase"
-            style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-2xs)",
-              letterSpacing: "var(--tracking-eyebrow)",
-            }}
-          >
-            De La Salle Lipa · LRC
-          </p>
+            L
+          </div>
+          <div className="leading-tight">
+            <p
+              className="text-ink-900 font-semibold"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            >
+              Smart Library
+            </p>
+            <p
+              className="text-ink-400 uppercase hidden sm:block"
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "var(--text-2xs)",
+                letterSpacing: "var(--tracking-eyebrow)",
+              }}
+            >
+              De La Salle Lipa · LRC
+            </p>
+          </div>
         </div>
       </div>
 
@@ -75,7 +87,7 @@ export function TopNav({
             {userInitials}
           </div>
           <span
-            className="text-ink-700 font-medium"
+            className="text-ink-700 font-medium hidden sm:block"
             style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
           >
             {userName}

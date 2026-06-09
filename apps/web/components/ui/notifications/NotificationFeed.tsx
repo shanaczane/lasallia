@@ -85,7 +85,7 @@ export function NotificationFeed({
     <div className="flex flex-col w-full min-h-screen bg-paper">
 
       {/* Page header */}
-      <div className="flex items-start justify-between px-8 pt-6 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 px-4 sm:px-8 pt-6 pb-4">
         <div>
           <h1
             className="text-ink-900 font-semibold leading-tight"
@@ -113,7 +113,7 @@ export function NotificationFeed({
       </div>
 
       {/* Tab filters */}
-      <div className="flex border-b border-ink-200 px-8">
+      <div className="flex border-b border-ink-200 px-4 sm:px-8 overflow-x-auto">
         {TABS.map((tab) => {
           const isActive = activeTab === tab.key
           const count = tabCounts[tab.key]
@@ -147,7 +147,7 @@ export function NotificationFeed({
       </div>
 
       {/* Notification groups */}
-      <div className="flex-1 px-8 py-4">
+      <div className="flex-1 px-4 sm:px-8 py-4">
         {groups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-ink-400">
             <Bell size={28} className="mb-2 opacity-30" />
