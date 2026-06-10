@@ -70,7 +70,7 @@ export function NotificationItemCard({
   return (
     <div
       className={cn(
-        "flex items-start gap-3 px-5 py-4 transition-colors cursor-pointer hover:bg-ink-50",
+        "flex items-start gap-3 px-4 sm:px-5 py-4 transition-colors cursor-pointer hover:bg-ink-50",
         !notification.is_read && "hover:bg-green-50/60",
         !isLast && "border-b border-ink-100"
       )}

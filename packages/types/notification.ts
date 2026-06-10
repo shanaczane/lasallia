@@ -1,4 +1,11 @@
-export type NotificationType = 'due_reminder' | 'overdue' | 'reservation_confirmed' | 'reservation_cancelled' | 'return_confirmed'
+// packages/types/notification.ts
+
+export type NotificationType =
+  | 'due_reminder'
+  | 'overdue'
+  | 'reservation_confirmed'
+  | 'reservation_cancelled'
+  | 'return_confirmed'
 
 export type Notification = {
   id: string
@@ -8,4 +15,6 @@ export type Notification = {
   message: string
   is_read: boolean
   created_at: string
+  /** Optional — links the notification to a related screen */
+  link?: string
 }
