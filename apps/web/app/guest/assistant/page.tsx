@@ -1,16 +1,31 @@
-// apps/web/app/guest/assistant/page.tsx
-export default function LibraryAssistantPage() {
+"use client"
+
+import { useState } from "react"
+import ChatSidebar from "@/components/chat/shared/ChatSidebar"
+import ChatWindow from "@/components/chat/shared/ChatWindow"
+import GuestQuickReplies from "@/components/chat/guest/GuestQuickReplies"
+
+export default function GuestAssistantPage() {
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
   return (
-    <div className="p-6">
-      <h1
-        className="text-ink-900 font-semibold"
-        style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-3xl)" }}
-      >
-        Library Assistant
-      </h1>
-      <p className="text-ink-400 mt-1" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}>
-        This page is under construction.
-      </p>
+    <div
+      className="flex overflow-hidden"
+      style={{ height: "calc(100vh - var(--height-nav))" }}
+    >
+      <ChatSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <ChatWindow
+        onMenuClick={() => setSidebarOpen((v) => !v)}
+        quickRepliesSlot={(onSelect) => <GuestQuickReplies onSelect={onSelect} />}
+      />
     </div>
   )
 }

@@ -83,6 +83,7 @@ export default function LoginSection() {
             {/* Guest Card */}
             <button
               type="button"
+              suppressHydrationWarning
               onClick={() => handleRoleChange('guest')}
               className={`group relative overflow-hidden rounded-xl border-2 p-4 text-left transition-all duration-200 ${
                 selectedRole === 'guest'
@@ -117,6 +118,7 @@ export default function LoginSection() {
             {/* Student / Faculty Card */}
             <button
               type="button"
+              suppressHydrationWarning
               onClick={() => handleRoleChange('student')}
               className={`group relative overflow-hidden rounded-xl border-2 p-4 text-left transition-all duration-200 ${
                 selectedRole === 'student'
@@ -153,6 +155,7 @@ export default function LoginSection() {
             {/* Librarian Card */}
             <button
               type="button"
+              suppressHydrationWarning
               onClick={() => handleRoleChange('librarian')}
               className={`group relative overflow-hidden rounded-xl border-2 p-4 text-left transition-all duration-200 ${
                 selectedRole === 'librarian'
@@ -212,6 +215,7 @@ export default function LoginSection() {
                     </svg>
                   </div>
                   <input
+                    suppressHydrationWarning
                     id="email"
                     name="email"
                     type="email"
@@ -254,6 +258,7 @@ export default function LoginSection() {
                     </svg>
                   </div>
                   <input
+                    suppressHydrationWarning
                     id="password"
                     name="password"
                     type="password"
@@ -298,7 +303,7 @@ export default function LoginSection() {
                   Remember me
                 </label>
               </div>
-              <button type="button" className="text-sm font-medium text-emerald-700 hover:text-emerald-600 transition-colors">
+              <button type="button" suppressHydrationWarning className="text-sm font-medium text-emerald-700 hover:text-emerald-600 transition-colors">
                 Forgot password?
               </button>
             </div>
@@ -306,6 +311,7 @@ export default function LoginSection() {
 
           {/* Submit Button */}
           <button
+            suppressHydrationWarning
             type="submit"
             className={`w-full rounded-lg py-3 px-4 font-semibold text-white shadow-lg transition-all duration-200 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] ${
               selectedRole === 'guest'
@@ -332,11 +338,11 @@ export default function LoginSection() {
             </div>
           </div>
           <div className="flex justify-center space-x-6 text-sm">
-            <button type="button" className="text-gray-600 hover:text-gray-900 transition-colors">
+            <button type="button" suppressHydrationWarning className="text-gray-600 hover:text-gray-900 transition-colors">
               Contact Support
             </button>
             <span className="text-gray-300">|</span>
-            <button type="button" className="text-gray-600 hover:text-gray-900 transition-colors">
+            <button type="button" suppressHydrationWarning className="text-gray-600 hover:text-gray-900 transition-colors">
               System Status
             </button>
           </div>
