@@ -194,7 +194,7 @@ export default function LoginSection() {
         {/* Guest notice */}
         {isGuest && (
           <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-            👋 As a guest, you can browse the catalog without signing in. No credentials required.
+           As a guest, you can browse the catalog without signing in. No credentials required.
           </div>
         )}
 
@@ -203,10 +203,10 @@ export default function LoginSection() {
           {/* Email + Password — hidden for guest */}
           {!isGuest && (
             <div className="space-y-4">
-              {/* DLSL Email Input */}
+              {/* De La Salle Lipa Email Input */}
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                  DLSL Email Address
+                  De La Salle Lipa Email Address
                 </label>
                 <div className="relative mt-1">
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -242,7 +242,7 @@ export default function LoginSection() {
                   </p>
                 )}
                 <p className="mt-1 text-xs text-gray-500">
-                  💚 Must be a valid <span className="font-medium">@dlsl.edu.ph</span> email address
+                  
                 </p>
               </div>
 
