@@ -134,12 +134,20 @@ export default function HeroSection() {
               </span>
             </h1>
             <p className="border-l-4 border-yellow-200 pl-4 py-1 text-base italic text-emerald-50 sm:py-2 sm:text-lg lg:text-xl">
-              "Crescit Gratia Virtuteque" — He grew in grace and virtue
-            </p>
-            <p className="text-base text-emerald-100 sm:text-xl lg:text-2xl">
-              Your AI-Powered Library System for De La Salle Lipa
+              An Institution which has a pure heart in Teaching Minds, Touching Hearts, and Transforming Lives.
             </p>
           </div>
+        </div>
+
+        {/* What is Lasallia */}
+        <div className="rounded-2xl bg-white/[0.07] border border-white/15 p-4 space-y-2">
+          <p className="text-sm text-emerald-100/90 leading-relaxed">
+            <span className="text-yellow-200 font-medium">Lasallia</span> is the AI-powered smart library system of De La Salle Lipa's Learning Resource Center. It replaces the old static catalog with a{' '}
+            <span className="text-yellow-200 font-medium">live, intelligent platform</span> so you can search, reserve, and discover books from any device, anytime.
+          </p>
+          <p className="text-sm text-emerald-100/90 leading-relaxed">
+            Built with <span className="text-yellow-200 font-medium">natural language AI</span>, it understands what you're looking for, suggests books tailored to your course and reading history, and answers your library questions 24/7 even when the LRC is closed.
+          </p>
         </div>
 
         {/* Who Can Access */}
@@ -192,6 +200,12 @@ export default function HeroSection() {
           </div>
         </div>
 
+        {/* Features */}
+        <div className="space-y-3">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-emerald-200 sm:text-sm">
+            What Lasallia Offers
+          </h3>
+
         {/* Features — desktop */}
         <div className="hidden flex-wrap gap-4 text-sm sm:flex sm:gap-6">
           {features.map((feature) => (
@@ -212,6 +226,7 @@ export default function HeroSection() {
               <span className="text-emerald-100">{feature.label}</span>
             </div>
           ))}
+        </div>
         </div>
 
       </div>
