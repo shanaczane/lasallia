@@ -67,7 +67,7 @@ export default function HeroSection() {
   ];
 
   return (
-    <div className="relative flex h-full flex-1 items-center justify-center overflow-hidden bg-gradient-to-br from-emerald-700 via-green-800 to-emerald-900 px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
+    <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-linear-to-br from-emerald-700 via-green-800 to-emerald-900 px-4 py-8 sm:px-6 sm:py-6 md:py-3 lg:px-8">
       {/* Background pattern */}
       <div className="absolute inset-0 opacity-10">
         <div
@@ -93,14 +93,14 @@ export default function HeroSection() {
             </div>
             <div className="flex flex-col">
               <span className="text-base font-bold tracking-tight sm:text-xl">Learning Resource Center</span>
-              <span className="text-[10px] font-medium text-emerald-300 tracking-wider uppercase sm:text-xs">De La Salle Lipa</span>
+              <span className="text-2xs font-medium text-emerald-300 tracking-wider uppercase sm:text-xs">De La Salle Lipa</span>
             </div>
           </div>
 
           <div className="space-y-1.5 sm:space-y-2">
             <h1 className="text-2xl font-bold leading-tight sm:text-3xl lg:text-4xl">
               Welcome to
-              <span className="block bg-gradient-to-r from-yellow-200 via-amber-100 to-yellow-200 bg-clip-text text-transparent">
+              <span className="block bg-linear-to-r from-yellow-200 via-amber-100 to-yellow-200 bg-clip-text text-transparent">
                 Lasallia
               </span>
             </h1>
@@ -119,7 +119,7 @@ export default function HeroSection() {
 
         {/* Live Stats */}
         <div className="space-y-1.5 sm:space-y-2">
-          <h3 className="text-[10px] font-semibold uppercase tracking-widest text-emerald-200 sm:text-xs">
+          <h3 className="text-2xs font-semibold uppercase tracking-widest text-emerald-200 sm:text-xs">
             Live Statistics
           </h3>
           <div className="grid grid-cols-3 gap-2 sm:gap-3">
@@ -132,7 +132,7 @@ export default function HeroSection() {
                   {stat.icon}
                 </div>
                 <div className="relative space-y-0">
-                  <p className="text-[10px] font-medium text-emerald-100 sm:text-xs">{stat.label}</p>
+                  <p className="text-2xs font-medium text-emerald-100 sm:text-xs">{stat.label}</p>
                   <p className="text-base font-bold text-white sm:text-xl lg:text-2xl">{stat.value}</p>
                 </div>
               </div>
@@ -142,7 +142,7 @@ export default function HeroSection() {
 
         {/* Features — compact grid, icon + label only */}
         <div className="space-y-1.5 sm:space-y-2">
-          <h3 className="text-[10px] font-semibold uppercase tracking-widest text-emerald-200 sm:text-xs">
+          <h3 className="text-2xs font-semibold uppercase tracking-widest text-emerald-200 sm:text-xs">
             What Lasallia Offers
           </h3>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2">
@@ -152,7 +152,7 @@ export default function HeroSection() {
                 className="flex items-center space-x-1.5 rounded-lg border border-white/8 bg-white/5 px-2 py-1.5"
               >
                 {feature.icon}
-                <span className="text-[10px] font-medium text-emerald-100 sm:text-xs">{feature.label}</span>
+                <span className="text-2xs font-medium text-emerald-100 sm:text-xs">{feature.label}</span>
               </div>
             ))}
           </div>

@@ -63,7 +63,7 @@ export default function LoginSection() {
   return (
     /* Outer container: background image + dark overlay, locked to parent height */
     <div
-      className="relative flex h-full flex-1 items-center justify-center overflow-hidden px-4 py-3 sm:px-6 sm:py-4 lg:px-8"
+      className="relative flex flex-1 items-center justify-center px-4 py-8 sm:px-6 sm:py-6 md:overflow-hidden md:py-3 lg:px-8"
       style={{
         backgroundImage: `url('/DeLaSalleLip_LRC Banner.png')`,
         backgroundSize: 'cover',
