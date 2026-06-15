@@ -56,6 +56,7 @@ export default function LoginSection() {
 
     router.push(selectedRole === 'student' ? '/student/dashboard' : '/librarian/dashboard');
   };
+  const [showPassword, setShowPassword] = useState(false);
 
   const isGuest = selectedRole === 'guest';
 
@@ -250,7 +251,7 @@ export default function LoginSection() {
                   )}
                 </div>
 
-                {/* Password */}
+               {/* Password */}
                 <div>
                   <label htmlFor="password" className="block text-xs font-medium text-gray-700 sm:text-sm">
                     Password
@@ -265,7 +266,7 @@ export default function LoginSection() {
                       suppressHydrationWarning
                       id="password"
                       name="password"
-                      type="password"
+                      type={showPassword ? 'text' : 'password'}
                       placeholder="Enter your password"
                       value={formData.password}
                       onChange={(e) => {
@@ -274,13 +275,35 @@ export default function LoginSection() {
                       }}
                       className={`block w-full rounded-lg border ${
                         errors.password ? 'border-red-500' : 'border-gray-300'
-                      } py-2 pl-9 pr-3 text-sm text-gray-900 placeholder-gray-400 focus:border-emerald-600 focus:outline-none focus:ring-2 sm:py-2.5 sm:pl-10 ${
-                        errors.password ? 'focus:ring-red-500/20' : 'focus:ring-emerald-600/20'
-                      } transition-all`}
+                      } py-2 pl-9 pr-11 text-sm text-gray-900 placeholder-gray-400 focus:border-emerald-600 focus:outline-none focus:ring-2 sm:py-2.5 sm:pl-10 sm:pr-12 transition-all`}
                       required
                       minLength={6}
                     />
+
+                    {/* Password Toggle Button (Eye Icon) */}
+                    <button
+                      type="button"
+                      suppressHydrationWarning
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 focus:outline-none transition-colors"
+                    >
+                      {showPassword ? (
+                        // Open Eye
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5 16.477 5 20.268 7.943 21.542 12 20.268 16.057 16.477 19 12 19 7.523 19 3.732 16.057 2.458 12z" />
+                        </svg>
+                      ) : (
+                        // Closed Eye with Slash
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908l3.42 3.42M3 3l18 18" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5 16.477 5 20.268 7.943 21.542 12" />
+                        </svg>
+                      )}
+                    </button>
                   </div>
+
                   {errors.password && (
                     <p className="mt-1 text-xs text-red-600 flex items-center">
                       <svg className="h-3.5 w-3.5 mr-1 shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -351,7 +374,6 @@ export default function LoginSection() {
               </button>
             </div>
           </div>
-
         </div>
       </div>
     </div>
