@@ -6,7 +6,7 @@ export default function HeroSection() {
       label: 'Books Available',
       value: '12,543',
       icon: (
-        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
         </svg>
       ),
@@ -15,7 +15,7 @@ export default function HeroSection() {
       label: 'Active Members',
       value: '2,891',
       icon: (
-        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
       ),
@@ -24,38 +24,8 @@ export default function HeroSection() {
       label: 'Daily Checkouts',
       value: '347',
       icon: (
-        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-        </svg>
-      ),
-    },
-  ];
-
-  const roles = [
-    {
-      title: 'Guest',
-      description: 'Browse the catalog freely — no account needed.',
-      icon: (
-        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-        </svg>
-      ),
-    },
-    {
-      title: 'Student / Faculty',
-      description: 'Log in with your @dlsl.edu.ph email to borrow books.',
-      icon: (
-        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
-        </svg>
-      ),
-    },
-    {
-      title: 'Librarian',
-      description: 'Log in with your @dlsl.edu.ph email to manage the library.',
-      icon: (
-        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
       ),
     },
@@ -65,15 +35,15 @@ export default function HeroSection() {
     {
       label: '24/7 Digital Access',
       icon: (
-        <svg className="h-5 w-5 shrink-0 text-yellow-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="h-4 w-4 shrink-0 text-yellow-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       ),
     },
     {
-      label: 'AI-Powered Recommendations',
+      label: 'AI Recommendations',
       icon: (
-        <svg className="h-5 w-5 shrink-0 text-yellow-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="h-4 w-4 shrink-0 text-yellow-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
         </svg>
       ),
@@ -81,15 +51,15 @@ export default function HeroSection() {
     {
       label: 'Real-time Catalog',
       icon: (
-        <svg className="h-5 w-5 shrink-0 text-yellow-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="h-4 w-4 shrink-0 text-yellow-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
       ),
     },
     {
-      label: '@dlsl.edu.ph Login Required',
+      label: 'DLSL-Only Access',
       icon: (
-        <svg className="h-5 w-5 shrink-0 text-yellow-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="h-4 w-4 shrink-0 text-yellow-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
         </svg>
       ),
@@ -97,8 +67,8 @@ export default function HeroSection() {
   ];
 
   return (
-    <div className="relative flex flex-1 items-center justify-center bg-gradient-to-br from-emerald-700 via-green-800 to-emerald-900 p-6 sm:p-8 lg:p-12">
-      {/* Background Pattern */}
+    <div className="relative flex h-full flex-1 items-center justify-center overflow-hidden bg-gradient-to-br from-emerald-700 via-green-800 to-emerald-900 px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
+      {/* Background pattern */}
       <div className="absolute inset-0 opacity-10">
         <div
           className="absolute inset-0"
@@ -108,125 +78,84 @@ export default function HeroSection() {
         />
       </div>
 
-      {/* All content inside one correctly closed wrapper */}
-      <div className="relative z-10 w-full max-w-2xl space-y-8 text-white">
+      <div className="relative z-10 flex h-full w-full max-w-2xl flex-col justify-center gap-3 text-white sm:gap-4">
 
         {/* Logo and Headline */}
-        <div className="space-y-4 sm:space-y-6">
+        <div className="space-y-2 sm:space-y-3">
           <div className="inline-flex items-center space-x-3">
-            <img
-              src="/DeLaSalleLipa_Seal.png"
-              alt="De La Salle Lipa Logo"
-              className="h-24 w-24 object-contain sm:h-32 sm:w-32"
-              style={{ mixBlendMode: 'screen' }}
-            />
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-white bg-white sm:h-16 sm:w-16">
+              <img
+                src="/DeLaSalleLipa_Seal.png"
+                alt="De La Salle Lipa Logo"
+                className="h-20 w-20 object-contain sm:h-24 sm:w-24"
+                style={{ mixBlendMode: 'multiply' }}
+              />
+            </div>
             <div className="flex flex-col">
-              <span className="text-xl font-bold tracking-tight sm:text-2xl">Learning Resource Center</span>
-              <span className="text-xs font-medium text-emerald-100 tracking-wider">De La Salle Lipa</span>
+              <span className="text-base font-bold tracking-tight sm:text-xl">Learning Resource Center</span>
+              <span className="text-[10px] font-medium text-emerald-300 tracking-wider uppercase sm:text-xs">De La Salle Lipa</span>
             </div>
           </div>
 
-          <div className="space-y-3 sm:space-y-4">
-            <h1 className="text-4xl font-bold leading-tight sm:text-5xl lg:text-6xl">
+          <div className="space-y-1.5 sm:space-y-2">
+            <h1 className="text-2xl font-bold leading-tight sm:text-3xl lg:text-4xl">
               Welcome to
               <span className="block bg-gradient-to-r from-yellow-200 via-amber-100 to-yellow-200 bg-clip-text text-transparent">
                 Lasallia
               </span>
             </h1>
-            <p className="border-l-4 border-yellow-200 pl-4 py-1 text-base italic text-emerald-50 sm:py-2 sm:text-lg lg:text-xl">
-              An Institution which has a pure heart in Teaching Minds, Touching Hearts, and Transforming Lives.
+            <p className="border-l-2 border-yellow-200 pl-3 text-xs italic text-emerald-50 sm:text-sm lg:text-base">
+              Teaching Minds, Touching Hearts, and Transforming Lives.
             </p>
           </div>
         </div>
 
-        {/* What is Lasallia */}
-        <div className="rounded-2xl bg-white/[0.07] border border-white/15 p-4 space-y-2">
-          <p className="text-sm text-emerald-100/90 leading-relaxed">
-            <span className="text-yellow-200 font-medium">Lasallia</span> is the AI-powered smart library system of De La Salle Lipa's Learning Resource Center. It replaces the old static catalog with a{' '}
-            <span className="text-yellow-200 font-medium">live, intelligent platform</span> so you can search, reserve, and discover books from any device, anytime.
+        {/* About Lasallia */}
+        <div className="rounded-xl border border-white/10 bg-white/5 p-2.5 sm:p-3">
+          <p className="text-xs text-emerald-100 leading-snug sm:text-sm">
+            <span className="text-yellow-200 font-semibold">Lasallia</span> is the AI-powered smart library system of De La Salle Lipa's LRC — search, reserve, and discover books from any device, anytime.
           </p>
-          <p className="text-sm text-emerald-100/90 leading-relaxed">
-            Built with <span className="text-yellow-200 font-medium">natural language AI</span>, it understands what you're looking for, suggests books tailored to your course and reading history, and answers your library questions 24/7 even when the LRC is closed.
-          </p>
-        </div>
-
-        {/* Who Can Access */}
-        <div className="space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-emerald-200 sm:text-sm">
-            Who Can Access
-          </h3>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {roles.map((role, index) => (
-              <div
-                key={index}
-                className="group relative overflow-hidden rounded-2xl bg-white/10 p-4 backdrop-blur-md transition-all duration-300 hover:bg-white/20 hover:scale-105"
-              >
-                <div className="flex items-start space-x-3 sm:block sm:space-x-0 sm:space-y-2">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/20 text-white">
-                    {role.icon}
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm text-white">{role.title}</p>
-                    <p className="text-xs text-emerald-100 leading-relaxed">{role.description}</p>
-                  </div>
-                </div>
-                <div className="absolute inset-0 rounded-2xl border-2 border-white/0 transition-all duration-300 group-hover:border-white/30" />
-              </div>
-            ))}
-          </div>
         </div>
 
         {/* Live Stats */}
-        <div className="space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-emerald-200 sm:text-sm">
+        <div className="space-y-1.5 sm:space-y-2">
+          <h3 className="text-[10px] font-semibold uppercase tracking-widest text-emerald-200 sm:text-xs">
             Live Statistics
           </h3>
-          <div className="grid grid-cols-3 gap-3 sm:gap-4">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
             {stats.map((stat, index) => (
               <div
                 key={index}
-                className="group relative overflow-hidden rounded-2xl bg-white/10 p-4 backdrop-blur-md transition-all duration-300 hover:bg-white/20 hover:scale-105 sm:p-6"
+                className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-2 backdrop-blur-md transition-all duration-300 hover:bg-white/10 sm:p-3"
               >
-                <div className="absolute right-3 top-3 text-white opacity-20 transition-all duration-300 group-hover:opacity-40 sm:right-4 sm:top-4">
+                <div className="absolute right-2 top-2 text-white opacity-15 transition-all duration-300 group-hover:opacity-30">
                   {stat.icon}
                 </div>
-                <div className="relative space-y-0.5 sm:space-y-1">
-                  <p className="text-xs font-medium text-emerald-100 sm:text-sm">{stat.label}</p>
-                  <p className="text-xl font-bold sm:text-3xl">{stat.value}</p>
+                <div className="relative space-y-0">
+                  <p className="text-[10px] font-medium text-emerald-100 sm:text-xs">{stat.label}</p>
+                  <p className="text-base font-bold text-white sm:text-xl lg:text-2xl">{stat.value}</p>
                 </div>
-                <div className="absolute inset-0 rounded-2xl border-2 border-white/0 transition-all duration-300 group-hover:border-white/30" />
               </div>
             ))}
           </div>
         </div>
 
-        {/* Features */}
-        <div className="space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-emerald-200 sm:text-sm">
+        {/* Features — compact grid, icon + label only */}
+        <div className="space-y-1.5 sm:space-y-2">
+          <h3 className="text-[10px] font-semibold uppercase tracking-widest text-emerald-200 sm:text-xs">
             What Lasallia Offers
           </h3>
-
-        {/* Features — desktop */}
-        <div className="hidden flex-wrap gap-4 text-sm sm:flex sm:gap-6">
-          {features.map((feature) => (
-            <div key={feature.label} className="flex items-center space-x-2">
-              {feature.icon}
-              <span>{feature.label}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Features — mobile compact */}
-        <div className="grid grid-cols-2 gap-2 text-xs sm:hidden">
-          {features.map((feature) => (
-            <div key={feature.label} className="flex items-center space-x-1.5">
-              <svg className="h-4 w-4 shrink-0 text-yellow-300" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-              <span className="text-emerald-100">{feature.label}</span>
-            </div>
-          ))}
-        </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2">
+            {features.map((feature) => (
+              <div
+                key={feature.label}
+                className="flex items-center space-x-1.5 rounded-lg border border-white/8 bg-white/5 px-2 py-1.5"
+              >
+                {feature.icon}
+                <span className="text-[10px] font-medium text-emerald-100 sm:text-xs">{feature.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
       </div>

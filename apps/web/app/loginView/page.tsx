@@ -5,10 +5,8 @@ import LoginSection from '@/components/login/LoginSection';
 
 export default function Page() {
   return (
-    <main className="flex min-h-screen flex-col lg:flex-row">
-      <div className="flex-none lg:flex-1">
-        <HeroSection />
-      </div>
+    <main className="flex h-screen overflow-hidden">
+      <HeroSection />
       <LoginSection />
     </main>
   );
