@@ -92,7 +92,7 @@ function AvailabilityCallout({ available, total }: { available: number; total: n
       </div>
       {/* Sprint 3.1 — guest prompt only; reservation wired in Sprint 4.3 */}
       <Link
-        href="/loginView"
+        href="/login"
         className={cn(
           'inline-flex items-center gap-2 px-4 py-2 rounded-md font-semibold text-white transition-colors flex-shrink-0',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1',

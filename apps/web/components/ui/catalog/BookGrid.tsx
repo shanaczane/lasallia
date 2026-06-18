@@ -1,5 +1,6 @@
 // apps/web/components/ui/catalog/BookGrid.tsx
 // Sprint 3.1 — Responsive grid wrapper with empty/loading states
+// Sprint 4.3.4 — Pass showBookmark through to BookCard
 
 import { Book } from '@lasallia/types'
 import { BookCard } from './BookCard'
@@ -9,6 +10,7 @@ type BookGridProps = {
   books: Book[]
   isLoading?: boolean
   hrefPrefix?: string
+  showBookmark?: boolean
 }
 
 function SkeletonCard() {
@@ -25,7 +27,7 @@ function SkeletonCard() {
   )
 }
 
-export function BookGrid({ books, isLoading = false, hrefPrefix = '/guest/catalog' }: BookGridProps) {
+export function BookGrid({ books, isLoading = false, hrefPrefix = '/guest/catalog', showBookmark = false }: BookGridProps) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
@@ -65,6 +67,7 @@ export function BookGrid({ books, isLoading = false, hrefPrefix = '/guest/catalo
           key={book.id}
           book={book}
           href={`${hrefPrefix}/${book.id}`}
+          showBookmark={showBookmark}
         />
       ))}
     </div>
