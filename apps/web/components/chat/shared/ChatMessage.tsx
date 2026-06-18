@@ -73,7 +73,7 @@ export default function ChatMessage({ role, content, timestamp, book, restricted
               <p className="text-amber-700" style={{ fontFamily: "var(--font-body)", fontSize: 13 }}>
                 Log in with your @dlsl.edu.ph account to unlock this feature.
               </p>
-              <Button size="sm" className="w-full" onClick={() => (window.location.href = "/loginView")}>
+              <Button size="sm" className="w-full" onClick={() => (window.location.href = "/login")}>
                 Login to continue
               </Button>
             </div>

@@ -21,7 +21,7 @@ export function TopNav({
   onMenuClick,
 }: TopNavProps) {
   function handleLogout() {
-    window.location.replace('/loginView')
+    window.location.replace('/login')
   }
 
   return (
