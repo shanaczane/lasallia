@@ -2,6 +2,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import {
   BookOpen,
   Clock,
@@ -113,7 +114,7 @@ export default function StudentDashboard() {
           sub='"Clean Code" — Nov 21'
         />
         <StatCard
-          icon={<Bookmark size={18} className="text-[#B8923D]" />}
+          icon={<Bookmark size={18} className="text-gold-600" />}
           iconBg="bg-gold-100"
           label="Active Reservations"
           value="2"
@@ -140,13 +141,13 @@ export default function StudentDashboard() {
             >
               Currently Borrowed
             </h2>
-            <a
+            <Link
               href="/student/borrowed"
               className="text-green-700 font-medium hover:underline"
               style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
             >
               See all →
-            </a>
+            </Link>
           </div>
 
           {/* Filter pills */}
@@ -158,7 +159,7 @@ export default function StudentDashboard() {
                   key={f.key}
                   onClick={() => setFilter(f.key)}
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-(--radius-pill) border whitespace-nowrap transition-colors",
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-pill border whitespace-nowrap transition-colors",
                     isActive
                       ? "bg-green-700 border-green-700 text-white font-medium"
                       : "bg-white border-ink-200 text-ink-700 hover:bg-ink-50"
@@ -234,7 +235,7 @@ export default function StudentDashboard() {
                       </span>
 
                       <button
-                        className="sm:hidden px-3 py-1 rounded-(--radius-sm) border border-ink-200 text-ink-700 font-medium hover:bg-ink-50 transition-colors"
+                        className="sm:hidden px-3 py-1 rounded-sm border border-ink-200 text-ink-700 font-medium hover:bg-ink-50 transition-colors"
                         style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
                       >
                         Renew
@@ -242,7 +243,7 @@ export default function StudentDashboard() {
                     </div>
 
                     <button
-                      className="hidden sm:block w-20 ml-auto px-3 py-1 rounded-(--radius-sm) border border-ink-200 text-ink-700 font-medium hover:bg-ink-50 transition-colors"
+                      className="hidden sm:block w-20 ml-auto px-3 py-1 rounded-sm border border-ink-200 text-ink-700 font-medium hover:bg-ink-50 transition-colors"
                       style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
                     >
                       Renew
@@ -272,7 +273,7 @@ export default function StudentDashboard() {
                   i < RECOMMENDED_BOOKS.length - 1 && "border-b border-ink-100"
                 )}
               >
-                <div className={cn("shrink-0 rounded-(--radius-sm)", book.coverColor)} style={{ width: 40, height: 56 }} />
+                <div className={cn("shrink-0 rounded-sm", book.coverColor)} style={{ width: 40, height: 56 }} />
                 <div className="flex flex-col gap-0.5 min-w-0">
                   <p className="text-ink-900 font-semibold leading-snug" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
                     {book.title}
@@ -284,13 +285,13 @@ export default function StudentDashboard() {
               </div>
             ))}
 
-            <a
+            <Link
               href="/student/catalog"
               className="text-green-700 font-medium hover:underline"
               style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
             >
               See more →
-            </a>
+            </Link>
           </div>
         </div>
       </div>
@@ -312,8 +313,8 @@ function StatCard({
   sub: string
 }) {
   return (
-    <div className="min-w-0 sm:flex-1 sm:min-w-[200px] bg-white rounded-(--radius) border border-ink-200 p-3 sm:p-4 flex flex-col gap-2 sm:gap-3">
-      <div className={cn("flex items-center justify-center rounded-(--radius-sm) w-7 h-7 sm:w-9 sm:h-9", iconBg)}>
+    <div className="min-w-0 sm:flex-1 sm:min-w-50 bg-white rounded-(--radius) border border-ink-200 p-3 sm:p-4 flex flex-col gap-2 sm:gap-3">
+      <div className={cn("flex items-center justify-center rounded-sm w-7 h-7 sm:w-9 sm:h-9", iconBg)}>
         {icon}
       </div>
       <div>
