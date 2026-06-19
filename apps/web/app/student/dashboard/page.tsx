@@ -141,13 +141,6 @@ export default function StudentDashboard() {
             >
               Currently Borrowed
             </h2>
-            <Link
-              href="/student/borrowed"
-              className="text-green-700 font-medium hover:underline"
-              style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-            >
-              See all →
-            </Link>
           </div>
 
           {/* Filter pills */}
@@ -179,6 +172,17 @@ export default function StudentDashboard() {
                 </button>
               )
             })}
+          </div>
+
+          {/* See all — above table */}
+          <div className="flex justify-end">
+            <Link
+              href="/student/borrowed"
+              className="text-green-700 font-medium hover:underline"
+              style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+            >
+              See all →
+            </Link>
           </div>
 
           {/* Borrowed books — table on desktop, cards on mobile */}
