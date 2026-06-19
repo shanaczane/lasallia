@@ -68,11 +68,24 @@ function FilterSection({
         >
           {title}
         </span>
-        {open
-          ? <ChevronUp size={13} className="text-ink-400 flex-shrink-0" />
-          : <ChevronDown size={13} className="text-ink-400 flex-shrink-0" />}
+          <ChevronDown
+          size={13}
+          className={cn(
+            'text-ink-400 shrink-0 transition-transform duration-300',
+            open && 'rotate-180'
+          )}
+        />
       </button>
-      {open && <div className="pb-3 px-3">{children}</div>}
+      <div
+        className={cn(
+          'grid transition-all duration-300 ease-in-out',
+          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="pb-3 px-3">{children}</div>
+        </div>
+      </div>
     </div>
   )
 }
