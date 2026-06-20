@@ -20,10 +20,6 @@ export function TopNav({
   showNotifications = true,
   onMenuClick,
 }: TopNavProps) {
-  function handleLogout() {
-    window.location.replace('/login')
-  }
-
   return (
     <header
       className="fixed top-0 left-0 right-0 flex items-center justify-between px-5 bg-white border-b border-ink-200 z-(--z-nav)"
@@ -105,19 +101,6 @@ export function TopNav({
           </span>
         </div>
 
-        {/* Logout */}
-        <button
-          type="button"
-          onClick={handleLogout}
-          title="Log out"
-          className="flex items-center justify-center w-8 h-8 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-900 transition-colors"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            <polyline points="16 17 21 12 16 7" />
-            <line x1="21" y1="12" x2="9" y2="12" />
-          </svg>
-        </button>
       </div>
     </header>
   )
