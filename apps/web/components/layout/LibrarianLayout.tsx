@@ -1,8 +1,11 @@
 // apps/web/components/layout/LibrarianLayout.tsx
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useLayoutEffect } from "react"
+
+const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 import { TopNav } from "./TopNav"
+import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import {
@@ -16,6 +19,8 @@ import {
   Tag,
   Settings,
   LogOut,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 
 type NavItem = {
@@ -67,32 +72,47 @@ export function LibrarianLayout({
 }: LibrarianLayoutProps) {
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
 
-  const sidebarContent = (
+  useLayoutEffectSafe(() => {
+    if (localStorage.getItem('sidebar-collapsed') === 'true') setCollapsed(true)
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem('sidebar-collapsed', String(collapsed))
+  }, [collapsed])
+
+  const renderSidebarContent = (isCollapsed: boolean) => (
     <>
-      <nav className="flex-1 px-3 py-4 flex flex-col gap-5">
+      <nav className={cn("flex-1 py-4 flex flex-col gap-5", isCollapsed ? "px-1" : "px-3")}>
         {librarianNav.map((section) => (
           <div key={section.title}>
-            <p
-              className="px-2 mb-1 text-ink-400 uppercase font-semibold"
-              style={{
-                fontSize: "var(--text-2xs)",
-                letterSpacing: "var(--tracking-section)",
-                fontFamily: "var(--font-body)",
-              }}
-            >
-              {section.title}
-            </p>
+            {!isCollapsed && (
+              <p
+                className="px-2 mb-1 text-ink-400 uppercase font-semibold"
+                style={{
+                  fontSize: "var(--text-2xs)",
+                  letterSpacing: "var(--tracking-section)",
+                  fontFamily: "var(--font-body)",
+                }}
+              >
+                {section.title}
+              </p>
+            )}
             <ul className="flex flex-col gap-0.5">
               {section.items.map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <li key={item.href}>
-                    <a
+                    <Link
                       href={item.href}
                       onClick={() => setMenuOpen(false)}
+                      title={isCollapsed ? item.label : undefined}
                       className={cn(
-                        "w-full flex items-center gap-2.5 px-2 py-1.5 rounded-sm transition-colors",
+                        "flex items-center transition-colors rounded-sm",
+                        isCollapsed
+                          ? "justify-center p-2 mx-1"
+                          : "gap-2.5 px-2 py-1.5",
                         isActive
                           ? "bg-green-100 text-green-800 font-semibold"
                           : "text-ink-500 hover:bg-ink-50 hover:text-ink-900"
@@ -101,21 +121,25 @@ export function LibrarianLayout({
                       <span className={cn(isActive ? "text-green-700" : "text-ink-400")}>
                         {item.icon}
                       </span>
-                      <span className="flex-1" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                        {item.label}
-                      </span>
-                      {item.badge !== undefined && (
-                        <span
-                          className={cn(
-                            "flex items-center justify-center rounded-full min-w-4.5 h-4.5 px-1",
-                            isActive ? "bg-green-700 text-white" : "bg-ink-200 text-ink-500"
+                      {!isCollapsed && (
+                        <>
+                          <span className="flex-1" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                            {item.label}
+                          </span>
+                          {item.badge !== undefined && (
+                            <span
+                              className={cn(
+                                "flex items-center justify-center rounded-full min-w-4.5 h-4.5 px-1",
+                                isActive ? "bg-green-700 text-white" : "bg-ink-200 text-ink-500"
+                              )}
+                              style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
+                            >
+                              {item.badge}
+                            </span>
                           )}
-                          style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
-                        >
-                          {item.badge}
-                        </span>
+                        </>
                       )}
-                    </a>
+                    </Link>
                   </li>
                 )
               })}
@@ -125,15 +149,19 @@ export function LibrarianLayout({
       </nav>
 
       {/* Sign out */}
-      <div className="p-3 border-t border-ink-100">
+      <div className={cn("border-t border-ink-100", isCollapsed ? "p-2" : "p-3")}>
         <button
           type="button"
           onClick={() => window.location.replace('/login')}
-          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-sm text-ink-500 hover:bg-ink-50 hover:text-red-600 transition-colors"
+          title={isCollapsed ? "Sign out" : undefined}
+          className={cn(
+            "flex items-center rounded-sm text-ink-500 hover:bg-ink-50 hover:text-red-600 transition-colors",
+            isCollapsed ? "w-full justify-center p-2" : "w-full gap-2.5 px-3 py-2"
+          )}
           style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
         >
           <LogOut size={16} className="text-ink-400" />
-          Sign out
+          {!isCollapsed && "Sign out"}
         </button>
       </div>
     </>
@@ -152,10 +180,21 @@ export function LibrarianLayout({
 
       {/* Desktop sidebar */}
       <aside
-        className="hidden md:flex fixed left-0 bottom-0 flex-col bg-white border-r border-ink-200 overflow-y-auto"
-        style={{ top: "var(--height-nav)", width: "var(--width-side)" }}
+        className="hidden md:flex fixed left-0 bottom-0 flex-col bg-white border-r border-ink-200 overflow-y-auto transition-all duration-200"
+        style={{ top: "var(--height-nav)", width: collapsed ? 56 : "var(--width-side)" }}
       >
-        {sidebarContent}
+        {/* Collapse toggle */}
+        <div className={cn("shrink-0 flex border-b border-ink-100", collapsed ? "justify-center p-2" : "justify-end p-2")}>
+          <button
+            type="button"
+            onClick={() => setCollapsed(v => !v)}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="flex items-center justify-center w-7 h-7 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors"
+          >
+            {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+          </button>
+        </div>
+        {renderSidebarContent(collapsed)}
       </aside>
 
       {/* Mobile overlay */}
@@ -167,7 +206,7 @@ export function LibrarianLayout({
         />
       )}
 
-      {/* Mobile drawer */}
+      {/* Mobile drawer — always expanded */}
       <aside
         className={cn(
           "fixed left-0 top-0 bottom-0 z-160 flex flex-col bg-white border-r border-ink-200 overflow-y-auto transition-transform duration-300 md:hidden",
@@ -188,12 +227,15 @@ export function LibrarianLayout({
             </p>
           </div>
         </div>
-        {sidebarContent}
+        {renderSidebarContent(false)}
       </aside>
 
       {/* Page content */}
       <main
-        className="min-h-screen md:pl-(--width-side)"
+        className={cn(
+          "min-h-screen transition-all duration-200",
+          collapsed ? "md:pl-14" : "md:pl-(--width-side)"
+        )}
         style={{ paddingTop: "var(--height-nav)" }}
       >
         <div className="w-full">{children}</div>
