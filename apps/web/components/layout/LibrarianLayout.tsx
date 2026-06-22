@@ -7,6 +7,7 @@ const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : us
 import { TopNav } from "./TopNav"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
 import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
@@ -61,15 +62,29 @@ type LibrarianLayoutProps = {
   children: React.ReactNode
   userName?: string
   userInitials?: string
-  notificationCount?: number
+  initialUnread?: number
 }
 
-export function LibrarianLayout({
+export function LibrarianLayout({ children, userName, userInitials, initialUnread = 0 }: LibrarianLayoutProps) {
+  return (
+    <NotificationProvider initialUnread={initialUnread}>
+      <LibrarianLayoutInner userName={userName} userInitials={userInitials}>
+        {children}
+      </LibrarianLayoutInner>
+    </NotificationProvider>
+  )
+}
+
+function LibrarianLayoutInner({
   children,
   userName,
   userInitials,
-  notificationCount,
-}: LibrarianLayoutProps) {
+}: {
+  children: React.ReactNode
+  userName?: string
+  userInitials?: string
+}) {
+  const { unreadCount } = useNotifications()
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -172,7 +187,7 @@ export function LibrarianLayout({
       <TopNav
         userName={userName}
         userInitials={userInitials}
-        notificationCount={notificationCount}
+        notificationCount={unreadCount}
         notificationsHref="/librarian/notifications"
         showNotifications={true}
         onMenuClick={() => setMenuOpen(true)}

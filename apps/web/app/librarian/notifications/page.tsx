@@ -3,6 +3,7 @@
 
 import { useState } from 'react'
 import { NotificationFeed } from '@/components/ui/notifications/NotificationFeed'
+import { useNotifications } from '@/components/ui/notifications/NotificationContext'
 import type { Notification } from '@lasallia/types'
 
 const MOCK_NOTIFICATIONS: Notification[] = [
@@ -55,12 +56,16 @@ const MOCK_NOTIFICATIONS: Notification[] = [
 
 export default function LibrarianNotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS)
+  const { markRead, markAllRead } = useNotifications()
 
   function handleMarkRead(id: string) {
+    const notif = notifications.find((n) => n.id === id)
+    if (notif && !notif.is_read) markRead()
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)))
   }
 
   function handleMarkAllRead() {
+    markAllRead()
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
   }
 

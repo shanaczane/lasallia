@@ -7,6 +7,7 @@ const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : us
 import { TopNav } from "./TopNav"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
 import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
@@ -40,7 +41,7 @@ const studentNav: NavSection[] = [
       { label: "Catalog",           icon: <Search size={16} />,          href: "/student/catalog" },
       { label: "Reservations",      icon: <BookOpen size={16} />,        href: "/student/reservations", badge: 3 },
       { label: "Library Assistant", icon: <MessageSquare size={16} />,   href: "/student/assistant" },
-      { label: "Notifications",     icon: <Bell size={16} />,            href: "/student/notifications", badge: 5 },
+      { label: "Notifications",     icon: <Bell size={16} />,            href: "/student/notifications" },
     ],
   },
   {
@@ -55,15 +56,29 @@ type StudentLayoutProps = {
   children: React.ReactNode
   userName?: string
   userInitials?: string
-  notificationCount?: number
+  initialUnread?: number
 }
 
-export function StudentLayout({
+export function StudentLayout({ children, userName, userInitials, initialUnread = 0 }: StudentLayoutProps) {
+  return (
+    <NotificationProvider initialUnread={initialUnread}>
+      <StudentLayoutInner userName={userName} userInitials={userInitials}>
+        {children}
+      </StudentLayoutInner>
+    </NotificationProvider>
+  )
+}
+
+function StudentLayoutInner({
   children,
   userName,
   userInitials,
-  notificationCount,
-}: StudentLayoutProps) {
+}: {
+  children: React.ReactNode
+  userName?: string
+  userInitials?: string
+}) {
+  const { unreadCount } = useNotifications()
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -96,6 +111,7 @@ export function StudentLayout({
             <ul className="flex flex-col gap-0.5">
               {section.items.map((item) => {
                 const isActive = pathname === item.href
+                const badge = item.href === '/student/notifications' ? (unreadCount || undefined) : item.badge
                 return (
                   <li key={item.href}>
                     <Link
@@ -120,7 +136,7 @@ export function StudentLayout({
                           <span className="flex-1" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
                             {item.label}
                           </span>
-                          {item.badge !== undefined && (
+                          {badge !== undefined && (
                             <span
                               className={cn(
                                 "flex items-center justify-center rounded-full min-w-4.5 h-4.5 px-1",
@@ -128,7 +144,7 @@ export function StudentLayout({
                               )}
                               style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
                             >
-                              {item.badge}
+                              {badge}
                             </span>
                           )}
                         </>
@@ -166,7 +182,7 @@ export function StudentLayout({
       <TopNav
         userName={userName}
         userInitials={userInitials}
-        notificationCount={notificationCount}
+        notificationCount={unreadCount}
         notificationsHref="/student/notifications"
         showNotifications={true}
         onMenuClick={() => setMenuOpen(true)}
