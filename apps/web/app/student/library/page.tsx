@@ -596,7 +596,7 @@ export default function MyLibraryPage() {
         </div>
 
         {/* Tab bar */}
-        <div className="flex border-b border-ink-200">
+        <div className="flex gap-1 border-b border-ink-200">
           {TABS.map((t) => {
             const isActive = tab === t.key
             return (
@@ -604,12 +604,12 @@ export default function MyLibraryPage() {
                 key={t.key}
                 onClick={() => setTab(t.key)}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2.5 border-b-2 transition-colors -mb-px whitespace-nowrap",
+                  "flex items-center gap-1.5 px-3 py-2 border-b-2 transition-colors -mb-px whitespace-nowrap",
                   isActive
                     ? "border-green-700 text-green-700 font-semibold"
-                    : "border-transparent text-ink-500 hover:text-ink-800 hover:border-ink-300"
+                    : "border-transparent text-ink-400 hover:text-ink-700 hover:border-ink-200"
                 )}
-                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
               >
                 {t.icon}
                 {t.label}
