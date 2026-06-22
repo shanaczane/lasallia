@@ -177,7 +177,7 @@ export default function StudentDashboard() {
           {/* See all — above table */}
           <div className="flex justify-end">
             <Link
-              href="/student/borrowed"
+              href="/student/library"
               className="text-green-700 font-medium hover:underline"
               style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
             >

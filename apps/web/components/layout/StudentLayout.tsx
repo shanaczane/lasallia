@@ -1,9 +1,11 @@
 // apps/web/components/layout/StudentLayout.tsx
+// Sprint 4.5 — Updated: renamed "Borrowed Books" nav item to "My Library"
+
 "use client"
 
 import { useState, useEffect, useLayoutEffect } from "react"
 
-const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect
+const useLayoutEffectSafe = typeof window !== "undefined" ? useLayoutEffect : useEffect
 import { TopNav } from "./TopNav"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -46,7 +48,8 @@ const studentNav: NavSection[] = [
   {
     title: "My Library",
     items: [
-      { label: "Borrowed Books", icon: <Library size={16} />, href: "/student/borrowed", badge: 4 },
+      // Sprint 4.5 — single entry point for Borrowed, Saved, and History tabs
+      { label: "My Library", icon: <Library size={16} />, href: "/student/library", badge: 4 },
     ],
   },
 ]
@@ -69,11 +72,11 @@ export function StudentLayout({
   const [collapsed, setCollapsed] = useState(false)
 
   useLayoutEffectSafe(() => {
-    if (localStorage.getItem('sidebar-collapsed') === 'true') setCollapsed(true)
+    if (localStorage.getItem("sidebar-collapsed") === "true") setCollapsed(true)
   }, [])
 
   useEffect(() => {
-    localStorage.setItem('sidebar-collapsed', String(collapsed))
+    localStorage.setItem("sidebar-collapsed", String(collapsed))
   }, [collapsed])
 
   const renderSidebarContent = (isCollapsed: boolean) => (
@@ -146,7 +149,7 @@ export function StudentLayout({
       <div className={cn("border-t border-ink-100", isCollapsed ? "p-2" : "p-3")}>
         <button
           type="button"
-          onClick={() => window.location.replace('/login')}
+          onClick={() => window.location.replace("/login")}
           title={isCollapsed ? "Sign out" : undefined}
           className={cn(
             "flex items-center rounded-sm text-ink-500 hover:bg-ink-50 hover:text-red-600 transition-colors",
@@ -181,7 +184,7 @@ export function StudentLayout({
         <div className={cn("shrink-0 flex border-b border-ink-100", collapsed ? "justify-center p-2" : "justify-end p-2")}>
           <button
             type="button"
-            onClick={() => setCollapsed(v => !v)}
+            onClick={() => setCollapsed((v) => !v)}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             className="flex items-center justify-center w-7 h-7 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors"
           >
@@ -200,7 +203,7 @@ export function StudentLayout({
         />
       )}
 
-      {/* Mobile drawer — always expanded */}
+      {/* Mobile drawer */}
       <aside
         className={cn(
           "fixed left-0 top-0 bottom-0 z-160 flex flex-col bg-white border-r border-ink-200 overflow-y-auto transition-transform duration-300 md:hidden",
@@ -208,7 +211,10 @@ export function StudentLayout({
         )}
         style={{ width: "var(--width-side)" }}
       >
-        <div className="flex items-center justify-between px-4 border-b border-ink-200" style={{ height: "var(--height-nav)" }}>
+        <div
+          className="flex items-center justify-between px-4 border-b border-ink-200"
+          style={{ height: "var(--height-nav)" }}
+        >
           <div className="flex items-center gap-2.5">
             <div
               className="flex items-center justify-center rounded-sm bg-green-700 text-white font-bold"
@@ -226,13 +232,10 @@ export function StudentLayout({
 
       {/* Page content */}
       <main
-        className={cn(
-          "min-h-screen transition-all duration-200",
-          collapsed ? "md:pl-14" : "md:pl-(--width-side)"
-        )}
+        className={cn("min-h-screen transition-all duration-200", collapsed ? "md:pl-14" : "md:pl-(--width-side)")}
         style={{ paddingTop: "var(--height-nav)" }}
       >
-        <div className="md:pl-0 pl-0 w-full">{children}</div>
+        <div className="w-full">{children}</div>
       </main>
     </div>
   )
