@@ -12,6 +12,7 @@ import {
   Library, Bookmark, History,
   AlertTriangle, CheckCircle2, Clock,
   BookOpen, ChevronDown, ChevronUp, Info,
+  ChevronLeft, ChevronRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AvailabilityPill } from "@/components/ui/pills/availability-pill"
@@ -43,15 +44,14 @@ type HistoryEntry = {
 }
 
 // ─── Status configs ───────────────────────────────────────────────────────────
-// Short labels used in tight pill badges to avoid overflow
 
 const BORROW_CFG: Record<
   BorrowStatus,
   { label: string; dot: string; text: string; bg: string }
 > = {
-  active:   { label: "Active",  dot: "bg-success", text: "text-success", bg: "bg-success-bg" },
-  due_soon: { label: "Due Soon", dot: "bg-warn",   text: "text-warn",    bg: "bg-warn-bg"    },
-  overdue:  { label: "Overdue", dot: "bg-danger",  text: "text-danger",  bg: "bg-danger-bg"  },
+  active:   { label: "Active",   dot: "bg-success", text: "text-success", bg: "bg-success-bg" },
+  due_soon: { label: "Due Soon", dot: "bg-warn",    text: "text-warn",    bg: "bg-warn-bg"    },
+  overdue:  { label: "Overdue",  dot: "bg-danger",  text: "text-danger",  bg: "bg-danger-bg"  },
 }
 
 const HISTORY_CFG: Record<
@@ -63,7 +63,7 @@ const HISTORY_CFG: Record<
   lost:             { label: "Lost",          shortLabel: "Lost",     icon: <Clock size={12} />,        text: "text-danger",  bg: "bg-danger-bg"  },
 }
 
-// ─── Mock data (IDs reference MOCK_BOOKS from catalog.ts) ────────────────────
+// ─── Mock data ────────────────────────────────────────────────────────────────
 
 const BORROWED_DATA: BorrowedEntry[] = [
   { bookId: "1", borrowedDate: "Jun 8, 2026",  dueDate: "Jun 22, 2026", status: "overdue"  },
@@ -82,6 +82,139 @@ const HISTORY_DATA: HistoryEntry[] = [
   { bookId: "8", borrowedDate: "Feb 20, 2026", dueDate: "Mar 6, 2026",  returnedDate: "Mar 8, 2026",  status: "overdue_returned", fine: 20 },
 ]
 
+const PAGE_SIZE = 8
+
+// ─── Pagination hook ──────────────────────────────────────────────────────────
+
+function usePagination<T>(items: T[], resetKey?: unknown) {
+  const [page, setPage] = useState(1)
+
+  // Reset to page 1 whenever the source list or a tracked key changes
+  // (e.g. when a filter changes). We do this via a derived value so the
+  // hook stays self-contained — callers pass `resetKey` (e.g. the filter).
+  const clampedPage = Math.min(page, Math.max(1, Math.ceil(items.length / PAGE_SIZE)))
+
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
+  const start      = (clampedPage - 1) * PAGE_SIZE
+  const pageItems  = items.slice(start, start + PAGE_SIZE)
+
+  function goTo(n: number) {
+    setPage(Math.max(1, Math.min(n, totalPages)))
+  }
+
+  // Reset when resetKey changes — call outside render cycle is fine in hooks
+  // but to avoid the "update during render" warning we use a ref pattern:
+  const [lastKey, setLastKey] = useState(resetKey)
+  if (resetKey !== undefined && lastKey !== resetKey) {
+    setLastKey(resetKey)
+    setPage(1)
+  }
+
+  return { page: clampedPage, totalPages, pageItems, goTo }
+}
+
+// ─── Paginator component ──────────────────────────────────────────────────────
+
+function Paginator({
+  page,
+  totalPages,
+  goTo,
+  totalItems,
+}: {
+  page: number
+  totalPages: number
+  goTo: (n: number) => void
+  totalItems: number
+}) {
+  if (totalPages <= 1) return null
+
+  const start = (page - 1) * PAGE_SIZE + 1
+  const end   = Math.min(page * PAGE_SIZE, totalItems)
+
+  // Build page number array with ellipsis
+  function pageNumbers(): (number | "…")[] {
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1)
+    const nums: (number | "…")[] = [1]
+    if (page > 3) nums.push("…")
+    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) {
+      nums.push(i)
+    }
+    if (page < totalPages - 2) nums.push("…")
+    nums.push(totalPages)
+    return nums
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-4 flex-wrap">
+      {/* Range label */}
+      <p
+        className="text-ink-400"
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+      >
+        Showing <span className="font-medium text-ink-600">{start}–{end}</span> of{" "}
+        <span className="font-medium text-ink-600">{totalItems}</span>
+      </p>
+
+      {/* Controls */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => goTo(page - 1)}
+          disabled={page === 1}
+          aria-label="Previous page"
+          className={cn(
+            "flex items-center justify-center w-8 h-8 rounded-[8px] border transition-colors",
+            page === 1
+              ? "border-ink-100 text-ink-300 cursor-not-allowed"
+              : "border-ink-200 text-ink-600 hover:bg-ink-50 hover:border-ink-300",
+          )}
+        >
+          <ChevronLeft size={14} />
+        </button>
+
+        {pageNumbers().map((n, i) =>
+          n === "…" ? (
+            <span
+              key={`ellipsis-${i}`}
+              className="flex items-center justify-center w-8 h-8 text-ink-400"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+            >
+              …
+            </span>
+          ) : (
+            <button
+              key={n}
+              onClick={() => goTo(n as number)}
+              className={cn(
+                "flex items-center justify-center w-8 h-8 rounded-[8px] border font-medium transition-colors",
+                n === page
+                  ? "bg-green-700 border-green-700 text-white font-semibold"
+                  : "border-ink-200 text-ink-600 hover:bg-ink-50 hover:border-ink-300",
+              )}
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+            >
+              {n}
+            </button>
+          ),
+        )}
+
+        <button
+          onClick={() => goTo(page + 1)}
+          disabled={page === totalPages}
+          aria-label="Next page"
+          className={cn(
+            "flex items-center justify-center w-8 h-8 rounded-[8px] border transition-colors",
+            page === totalPages
+              ? "border-ink-100 text-ink-300 cursor-not-allowed"
+              : "border-ink-200 text-ink-600 hover:bg-ink-50 hover:border-ink-300",
+          )}
+        >
+          <ChevronRight size={14} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getBook(id: string): Book | undefined {
@@ -97,7 +230,6 @@ function MiniCover({ book }: { book: Book }) {
   )
 }
 
-// Compact pill — icon + short label only, consistent width
 function Pill({
   icon,
   label,
@@ -141,6 +273,8 @@ function BorrowedTab() {
 
   const filtered =
     filter === "all" ? entries : entries.filter((x) => x.entry.status === filter)
+
+  const { page, totalPages, pageItems, goTo } = usePagination(filtered, filter)
 
   const filterBtns: { key: BorrowFilter; label: string }[] = [
     { key: "all",      label: "All" },
@@ -236,7 +370,7 @@ function BorrowedTab() {
           <span>Status</span>
         </div>
 
-        {filtered.length === 0 ? (
+        {pageItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-14 gap-2 text-ink-300">
             <BookOpen size={28} />
             <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
@@ -244,7 +378,7 @@ function BorrowedTab() {
             </p>
           </div>
         ) : (
-          filtered.map(({ entry, book }) => {
+          pageItems.map(({ entry, book }) => {
             const s = BORROW_CFG[entry.status]
             return (
               <div
@@ -294,7 +428,6 @@ function BorrowedTab() {
                   >
                     {entry.dueDate}
                   </span>
-                  {/* Short pill — dot + label only */}
                   <Pill
                     icon={<span className={cn("w-1.5 h-1.5 rounded-full shrink-0", s.dot)} />}
                     label={s.label}
@@ -352,6 +485,14 @@ function BorrowedTab() {
         )}
       </div>
 
+      {/* Pagination */}
+      <Paginator
+        page={page}
+        totalPages={totalPages}
+        goTo={goTo}
+        totalItems={filtered.length}
+      />
+
       {/* Legend */}
       <div className="flex flex-wrap gap-x-4 gap-y-1">
         {(["active", "due_soon", "overdue"] as BorrowStatus[]).map((s) => {
@@ -382,6 +523,8 @@ function SavedTab() {
   const savedBooks = savedIds
     .map((id) => getBook(id))
     .filter(Boolean) as Book[]
+
+  const { page, totalPages, pageItems, goTo } = usePagination(savedBooks, savedBooks.length)
 
   function handleRemove(id: string) {
     setRemovingId(id)
@@ -442,7 +585,7 @@ function SavedTab() {
       </div>
 
       <div className="bg-white rounded-[10px] border border-ink-200 overflow-hidden">
-        {savedBooks.map((book) => {
+        {pageItems.map((book) => {
           const isAvailable = book.status === "available"
           const isRemoving  = removingId === book.id
 
@@ -528,6 +671,14 @@ function SavedTab() {
         })}
       </div>
 
+      {/* Pagination */}
+      <Paginator
+        page={page}
+        totalPages={totalPages}
+        goTo={goTo}
+        totalItems={savedBooks.length}
+      />
+
       <p
         className="text-ink-400"
         style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
@@ -561,6 +712,8 @@ function HistoryTab() {
 
   const filtered =
     filter === "all" ? entries : entries.filter((x) => x.entry.status === filter)
+
+  const { page, totalPages, pageItems, goTo } = usePagination(filtered, filter)
 
   const totalFines = entries.reduce((acc, x) => acc + (x.entry.fine ?? 0), 0)
 
@@ -637,7 +790,7 @@ function HistoryTab() {
           <span />
         </div>
 
-        {filtered.length === 0 ? (
+        {pageItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-14 gap-2 text-ink-300">
             <History size={28} />
             <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
@@ -645,7 +798,7 @@ function HistoryTab() {
             </p>
           </div>
         ) : (
-          filtered.map(({ entry, book }) => {
+          pageItems.map(({ entry, book }) => {
             const s      = HISTORY_CFG[entry.status]
             const rowKey = entry.bookId + entry.borrowedDate
             const isExp  = expandedId === rowKey
@@ -692,7 +845,6 @@ function HistoryTab() {
                   >
                     {entry.returnedDate ?? "—"}
                   </span>
-                  {/* Short pill — icon + shortLabel */}
                   <Pill
                     icon={s.icon}
                     label={s.shortLabel}
@@ -805,6 +957,14 @@ function HistoryTab() {
         )}
       </div>
 
+      {/* Pagination */}
+      <Paginator
+        page={page}
+        totalPages={totalPages}
+        goTo={goTo}
+        totalItems={filtered.length}
+      />
+
       <p
         className="text-ink-400"
         style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
@@ -816,7 +976,7 @@ function HistoryTab() {
   )
 }
 
-// ─── Tab bar (matches NotificationFeed exactly) ───────────────────────────────
+// ─── Tab bar ──────────────────────────────────────────────────────────────────
 
 type TabDef = {
   key: Tab
@@ -881,7 +1041,7 @@ export default function MyLibraryPage() {
         </p>
       </div>
 
-      {/* Tab bar — identical structure to NotificationFeed */}
+      {/* Tab bar */}
       <div className="border-b border-ink-200">
         <div className="flex sm:hidden w-full overflow-x-auto px-2 scrollbar-none">
           {TABS.map((t) => <TabButton key={t.key} t={t} mobile={true} />)}
