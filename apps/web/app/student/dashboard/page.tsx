@@ -88,13 +88,14 @@ export default function StudentDashboard() {
           </p>
         </div>
 
-        <button
+        <Link
+          href="/student/catalog"
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors shadow-sm self-start"
           style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
         >
           <Search size={15} />
           Find a book
-        </button>
+        </Link>
       </div>
 
       {/* Stat cards */}
