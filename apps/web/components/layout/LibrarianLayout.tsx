@@ -1,13 +1,9 @@
 // apps/web/components/layout/LibrarianLayout.tsx
 "use client"
 
-import { useState, useEffect, useLayoutEffect } from "react"
-
-const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect
+import { useState } from "react"
 import { TopNav } from "./TopNav"
-import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
 import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
@@ -19,9 +15,6 @@ import {
   Users,
   Tag,
   Settings,
-  LogOut,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react"
 
 type NavItem = {
@@ -42,8 +35,8 @@ const librarianNav: NavSection[] = [
     items: [
       { label: "Dashboard",       icon: <LayoutDashboard size={16} />, href: "/librarian/dashboard" },
       { label: "Borrow & Return", icon: <ScanLine size={16} />,        href: "/librarian/borrow-return" },
-      { label: "Renewals",        icon: <RotateCcw size={16} />,       href: "/librarian/renewals",     badge: 3 },
-      { label: "Reservations",    icon: <BookOpen size={16} />,        href: "/librarian/reservations", badge: 7 },
+      { label: "Renewals",        icon: <RotateCcw size={16} />,       href: "/librarian/renewals" },
+      { label: "Reservations",    icon: <BookOpen size={16} />,        href: "/librarian/reservations" },
       { label: "Reports",         icon: <BarChart2 size={16} />,       href: "/librarian/reports" },
     ],
   },
@@ -62,72 +55,43 @@ type LibrarianLayoutProps = {
   children: React.ReactNode
   userName?: string
   userInitials?: string
-  initialUnread?: number
+  notificationCount?: number
 }
 
-export function LibrarianLayout({ children, userName, userInitials, initialUnread = 0 }: LibrarianLayoutProps) {
-  return (
-    <NotificationProvider initialUnread={initialUnread}>
-      <LibrarianLayoutInner userName={userName} userInitials={userInitials}>
-        {children}
-      </LibrarianLayoutInner>
-    </NotificationProvider>
-  )
-}
-
-function LibrarianLayoutInner({
+export function LibrarianLayout({
   children,
   userName,
   userInitials,
-}: {
-  children: React.ReactNode
-  userName?: string
-  userInitials?: string
-}) {
-  const { unreadCount } = useNotifications()
+  notificationCount,
+}: LibrarianLayoutProps) {
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
 
-  useLayoutEffectSafe(() => {
-    if (localStorage.getItem('sidebar-collapsed') === 'true') setCollapsed(true)
-  }, [])
-
-  useEffect(() => {
-    localStorage.setItem('sidebar-collapsed', String(collapsed))
-  }, [collapsed])
-
-  const renderSidebarContent = (isCollapsed: boolean) => (
+  const sidebarContent = (
     <>
-      <nav className={cn("flex-1 py-4 flex flex-col gap-5", isCollapsed ? "px-1" : "px-3")}>
+      <nav className="flex-1 px-3 py-4 flex flex-col gap-5">
         {librarianNav.map((section) => (
           <div key={section.title}>
-            {!isCollapsed && (
-              <p
-                className="px-2 mb-1 text-ink-400 uppercase font-semibold"
-                style={{
-                  fontSize: "var(--text-2xs)",
-                  letterSpacing: "var(--tracking-section)",
-                  fontFamily: "var(--font-body)",
-                }}
-              >
-                {section.title}
-              </p>
-            )}
+            <p
+              className="px-2 mb-1 text-ink-400 uppercase font-semibold"
+              style={{
+                fontSize: "var(--text-2xs)",
+                letterSpacing: "var(--tracking-section)",
+                fontFamily: "var(--font-body)",
+              }}
+            >
+              {section.title}
+            </p>
             <ul className="flex flex-col gap-0.5">
               {section.items.map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <li key={item.href}>
-                    <Link
+                    <a
                       href={item.href}
                       onClick={() => setMenuOpen(false)}
-                      title={isCollapsed ? item.label : undefined}
                       className={cn(
-                        "flex items-center transition-colors rounded-sm",
-                        isCollapsed
-                          ? "justify-center p-2 mx-1"
-                          : "gap-2.5 px-2 py-1.5",
+                        "w-full flex items-center gap-2.5 px-2 py-1.5 rounded-sm transition-colors",
                         isActive
                           ? "bg-green-100 text-green-800 font-semibold"
                           : "text-ink-500 hover:bg-ink-50 hover:text-ink-900"
@@ -136,25 +100,21 @@ function LibrarianLayoutInner({
                       <span className={cn(isActive ? "text-green-700" : "text-ink-400")}>
                         {item.icon}
                       </span>
-                      {!isCollapsed && (
-                        <>
-                          <span className="flex-1" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                            {item.label}
-                          </span>
-                          {item.badge !== undefined && (
-                            <span
-                              className={cn(
-                                "flex items-center justify-center rounded-full min-w-4.5 h-4.5 px-1",
-                                isActive ? "bg-green-700 text-white" : "bg-ink-200 text-ink-500"
-                              )}
-                              style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
-                            >
-                              {item.badge}
-                            </span>
+                      <span className="flex-1" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                        {item.label}
+                      </span>
+                      {item.badge !== undefined && (
+                        <span
+                          className={cn(
+                            "flex items-center justify-center rounded-full min-w-4.5 h-4.5 px-1",
+                            isActive ? "bg-green-700 text-white" : "bg-ink-200 text-ink-500"
                           )}
-                        </>
+                          style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
+                        >
+                          {item.badge}
+                        </span>
                       )}
-                    </Link>
+                    </a>
                   </li>
                 )
               })}
@@ -163,21 +123,23 @@ function LibrarianLayoutInner({
         ))}
       </nav>
 
-      {/* Sign out */}
-      <div className={cn("border-t border-ink-100", isCollapsed ? "p-2" : "p-3")}>
-        <button
-          type="button"
-          onClick={() => window.location.replace('/login')}
-          title={isCollapsed ? "Sign out" : undefined}
-          className={cn(
-            "flex items-center rounded-sm text-ink-500 hover:bg-ink-50 hover:text-red-600 transition-colors",
-            isCollapsed ? "w-full justify-center p-2" : "w-full gap-2.5 px-3 py-2"
-          )}
-          style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-        >
-          <LogOut size={16} className="text-ink-400" />
-          {!isCollapsed && "Sign out"}
-        </button>
+      {/* Need help CTA */}
+      <div className="p-3">
+        <div className="rounded-(--radius) p-4 bg-green-800">
+          <p className="text-white font-semibold mb-0.5" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+            Need help?
+          </p>
+          <p className="text-green-200 mb-3" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
+            Ask Lasallia, our library assistant, anything.
+          </p>
+          <a
+            href="/librarian/assistant"
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-sm border border-green-600 text-white hover:bg-green-700 transition-colors"
+            style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
+          >
+            Chat now →
+          </a>
+        </div>
       </div>
     </>
   )
@@ -187,7 +149,7 @@ function LibrarianLayoutInner({
       <TopNav
         userName={userName}
         userInitials={userInitials}
-        notificationCount={unreadCount}
+        notificationCount={notificationCount}
         notificationsHref="/librarian/notifications"
         showNotifications={true}
         onMenuClick={() => setMenuOpen(true)}
@@ -195,21 +157,10 @@ function LibrarianLayoutInner({
 
       {/* Desktop sidebar */}
       <aside
-        className="hidden md:flex fixed left-0 bottom-0 flex-col bg-white border-r border-ink-200 overflow-y-auto transition-all duration-200"
-        style={{ top: "var(--height-nav)", width: collapsed ? 56 : "var(--width-side)" }}
+        className="hidden md:flex fixed left-0 bottom-0 flex-col bg-white border-r border-ink-200 overflow-y-auto"
+        style={{ top: "var(--height-nav)", width: "var(--width-side)" }}
       >
-        {/* Collapse toggle */}
-        <div className={cn("shrink-0 flex border-b border-ink-100", collapsed ? "justify-center p-2" : "justify-end p-2")}>
-          <button
-            type="button"
-            onClick={() => setCollapsed(v => !v)}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="flex items-center justify-center w-7 h-7 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors"
-          >
-            {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
-          </button>
-        </div>
-        {renderSidebarContent(collapsed)}
+        {sidebarContent}
       </aside>
 
       {/* Mobile overlay */}
@@ -221,7 +172,7 @@ function LibrarianLayoutInner({
         />
       )}
 
-      {/* Mobile drawer — always expanded */}
+      {/* Mobile drawer */}
       <aside
         className={cn(
           "fixed left-0 top-0 bottom-0 z-160 flex flex-col bg-white border-r border-ink-200 overflow-y-auto transition-transform duration-300 md:hidden",
@@ -242,15 +193,12 @@ function LibrarianLayoutInner({
             </p>
           </div>
         </div>
-        {renderSidebarContent(false)}
+        {sidebarContent}
       </aside>
 
       {/* Page content */}
       <main
-        className={cn(
-          "min-h-screen transition-all duration-200",
-          collapsed ? "md:pl-14" : "md:pl-(--width-side)"
-        )}
+        className="min-h-screen md:pl-(--width-side)"
         style={{ paddingTop: "var(--height-nav)" }}
       >
         <div className="w-full">{children}</div>
