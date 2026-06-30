@@ -1,8 +1,5 @@
 // apps/web/app/librarian/catalog/page.tsx
-// Sprint 5.2.1 — Librarian catalog view (user catalog + admin metadata: total copies, acquisition dates)
-// Sprint 5.2.2 — Add New Book form
-// Sprint 5.2.3 — Edit / Update Book form
-// Sprint 5.2.5 — Book deletion / archive modal
+// Fix: responsive layout, bigger cover card, stat bar wraps cleanly on mobile
 
 'use client'
 
@@ -26,14 +23,21 @@ import { DeleteBookModal } from '@/components/ui/catalog/DeleteBookModal'
 
 // ─── Sort ─────────────────────────────────────────────────────────────────────
 
-type SortOption = 'relevance' | 'title_asc' | 'title_desc' | 'year_desc' | 'year_asc' | 'copies_asc' | 'copies_desc'
+type SortOption =
+  | 'relevance'
+  | 'title_asc'
+  | 'title_desc'
+  | 'year_desc'
+  | 'year_asc'
+  | 'copies_desc'
+  | 'copies_asc'
 
 const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
-  { value: 'relevance',   label: 'Most relevant' },
-  { value: 'title_asc',  label: 'Title A–Z' },
-  { value: 'title_desc', label: 'Title Z–A' },
-  { value: 'year_desc',  label: 'Newest first' },
-  { value: 'year_asc',   label: 'Oldest first' },
+  { value: 'relevance',    label: 'Most relevant' },
+  { value: 'title_asc',   label: 'Title A–Z' },
+  { value: 'title_desc',  label: 'Title Z–A' },
+  { value: 'year_desc',   label: 'Newest first' },
+  { value: 'year_asc',    label: 'Oldest first' },
   { value: 'copies_desc', label: 'Most copies' },
   { value: 'copies_asc',  label: 'Fewest copies' },
 ]
@@ -41,13 +45,13 @@ const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
 function sortBooks(books: Book[], sort: SortOption): Book[] {
   const s = [...books]
   switch (sort) {
-    case 'title_asc':   return s.sort((a, b) => a.title.localeCompare(b.title))
-    case 'title_desc':  return s.sort((a, b) => b.title.localeCompare(a.title))
-    case 'year_desc':   return s.sort((a, b) => (b.published_year ?? 0) - (a.published_year ?? 0))
-    case 'year_asc':    return s.sort((a, b) => (a.published_year ?? 0) - (b.published_year ?? 0))
-    case 'copies_desc': return s.sort((a, b) => (b.total_copies ?? 0) - (a.total_copies ?? 0))
-    case 'copies_asc':  return s.sort((a, b) => (a.total_copies ?? 0) - (b.total_copies ?? 0))
-    default:            return s
+    case 'title_asc':    return s.sort((a, b) => a.title.localeCompare(b.title))
+    case 'title_desc':   return s.sort((a, b) => b.title.localeCompare(a.title))
+    case 'year_desc':    return s.sort((a, b) => (b.published_year ?? 0) - (a.published_year ?? 0))
+    case 'year_asc':     return s.sort((a, b) => (a.published_year ?? 0) - (b.published_year ?? 0))
+    case 'copies_desc':  return s.sort((a, b) => (b.total_copies ?? 0) - (a.total_copies ?? 0))
+    case 'copies_asc':   return s.sort((a, b) => (a.total_copies ?? 0) - (b.total_copies ?? 0))
+    default:             return s
   }
 }
 
@@ -66,9 +70,10 @@ function filterBooks(books: Book[], query: string, filters: CatalogFilters): Boo
     }
     if (filters.genre !== 'all' && book.category !== filters.genre) return false
     if (filters.availability !== 'all') {
-      const match = filters.availability === 'misplaced'
-        ? book.status === 'misplaced'
-        : book.status === filters.availability
+      const match =
+        filters.availability === 'misplaced'
+          ? book.status === 'misplaced'
+          : book.status === filters.availability
       if (!match) return false
     }
     if (filters.subject !== 'all' && book.subject !== filters.subject) return false
@@ -80,46 +85,46 @@ function filterBooks(books: Book[], query: string, filters: CatalogFilters): Boo
   })
 }
 
-// ─── Toast notification ───────────────────────────────────────────────────────
+// ─── Toast ────────────────────────────────────────────────────────────────────
 
 function Toast({ message }: { message: string }) {
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] flex items-center gap-2 px-4 py-2.5 bg-ink-900 text-white rounded-(--radius-pill) shadow-(--shadow-lg) pointer-events-none">
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] flex items-center gap-2 px-4 py-2.5 bg-ink-900 text-white rounded-full shadow-(--shadow-lg) pointer-events-none max-w-[90vw]">
       <CheckCircle2 size={15} className="text-green-400 shrink-0" />
-      <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>{message}</span>
+      <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+        {message}
+      </span>
     </div>
   )
 }
 
-// ─── Summary stats bar ────────────────────────────────────────────────────────
+// ─── Stat bar ─────────────────────────────────────────────────────────────────
 
 function CatalogStats({ books }: { books: Book[] }) {
   const total    = books.reduce((sum, b) => sum + (b.total_copies ?? 0), 0)
   const avail    = books.reduce((sum, b) => sum + (b.available_copies ?? 0), 0)
   const borrowed = total - avail
 
-  const stats = [
-    { label: 'Titles',          value: books.length.toLocaleString() },
-    { label: 'Total copies',    value: total.toLocaleString() },
-    { label: 'Available',       value: avail.toLocaleString() },
-    { label: 'Checked out',     value: borrowed.toLocaleString() },
-  ]
-
   return (
-    <div className="flex flex-wrap gap-2 mb-6">
-      {stats.map(({ label, value }) => (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
+      {[
+        { label: 'Titles',       value: books.length },
+        { label: 'Total copies', value: total },
+        { label: 'Available',    value: avail },
+        { label: 'Checked out',  value: borrowed },
+      ].map(({ label, value }) => (
         <div
           key={label}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-(--radius-sm) bg-white border border-ink-200"
+          className="flex flex-col items-start px-5 py-4 bg-white border border-ink-200 rounded-(--radius-sm)"
         >
           <span
-            className="text-ink-900 font-semibold"
-            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+            className="text-ink-900 font-bold tabular-nums leading-none"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-4xl)' }}
           >
-            {value}
+            {value.toLocaleString()}
           </span>
           <span
-            className="text-ink-400"
+            className="text-ink-400 mt-1.5"
             style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}
           >
             {label}
@@ -130,19 +135,18 @@ function CatalogStats({ books }: { books: Book[] }) {
   )
 }
 
-// ─── Filter tag ───────────────────────────────────────────────────────────────
+// ─── Active filter tag ────────────────────────────────────────────────────────
 
 function FilterTag({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-green-100 text-green-800 font-medium capitalize">
+    <span className="flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full bg-green-100 text-green-800 font-medium capitalize">
       <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}>{label}</span>
       <button
         type="button"
-        suppressHydrationWarning
         onClick={onRemove}
-        className="text-green-600 hover:text-green-900 transition-colors"
+        className="flex items-center justify-center w-4 h-4 rounded-full text-green-600 hover:text-green-900 hover:bg-green-200 transition-colors"
       >
-        <X size={11} />
+        <X size={10} />
       </button>
     </span>
   )
@@ -151,19 +155,16 @@ function FilterTag({ label, onRemove }: { label: string; onRemove: () => void })
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function LibrarianCatalogPage() {
-  // ── State ──
-  const [books, setBooks]         = useState<Book[]>(MOCK_BOOKS)
-  const [query, setQuery]         = useState('')
-  const [filters, setFilters]     = useState<CatalogFilters>(DEFAULT_FILTERS)
-  const [sort, setSort]           = useState<SortOption>('relevance')
+  const [books, setBooks]       = useState<Book[]>(MOCK_BOOKS)
+  const [query, setQuery]       = useState('')
+  const [filters, setFilters]   = useState<CatalogFilters>(DEFAULT_FILTERS)
+  const [sort, setSort]         = useState<SortOption>('relevance')
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  // Modals
-  const [addOpen, setAddOpen]         = useState(false)
-  const [editBook, setEditBook]       = useState<Book | null>(null)
-  const [deleteBook, setDeleteBook]   = useState<Book | null>(null)
+  const [addOpen,    setAddOpen]    = useState(false)
+  const [editBook,   setEditBook]   = useState<Book | null>(null)
+  const [deleteBook, setDeleteBook] = useState<Book | null>(null)
 
-  // Toast
   const [toast, setToast] = useState<string | null>(null)
 
   function showToast(msg: string) {
@@ -171,31 +172,21 @@ export default function LibrarianCatalogPage() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  // ── Derived ──
   const results = useMemo(
     () => sortBooks(filterBooks(books, query, filters), sort),
     [books, query, filters, sort]
   )
 
-  const hasActive =
-    filters.genre !== 'all' ||
-    filters.availability !== 'all' ||
-    filters.format !== 'all' ||
-    filters.floor !== 'all' ||
-    filters.subject !== 'all' ||
-    filters.call_number_start !== '' ||
-    filters.call_number_end !== ''
-
-  const activeCount = [
-    filters.genre !== 'all',
-    filters.availability !== 'all',
-    filters.format !== 'all',
-    filters.floor !== 'all',
-    filters.subject !== 'all',
-    filters.call_number_start !== '' || filters.call_number_end !== '',
-  ].filter(Boolean).length
+  const activeFilters = [
+    filters.genre        !== 'all' && { key: 'genre',        label: filters.genre,        clear: () => setFilters((f) => ({ ...f, genre: 'all' })) },
+    filters.availability !== 'all' && { key: 'availability', label: filters.availability, clear: () => setFilters((f) => ({ ...f, availability: 'all' })) },
+    filters.format       !== 'all' && { key: 'format',       label: filters.format,       clear: () => setFilters((f) => ({ ...f, format: 'all' })) },
+    filters.floor        !== 'all' && { key: 'floor',        label: filters.floor,        clear: () => setFilters((f) => ({ ...f, floor: 'all' })) },
+    filters.subject      !== 'all' && { key: 'subject',      label: filters.subject,      clear: () => setFilters((f) => ({ ...f, subject: 'all' })) },
+  ].filter(Boolean) as Array<{ key: string; label: string; clear: () => void }>
 
   // ── Handlers ──
+
   function handleAddSubmit(data: BookFormData) {
     const newBook: Book = {
       id:               `new-${Date.now()}`,
@@ -225,28 +216,30 @@ export default function LibrarianCatalogPage() {
 
   function handleEditSubmit(data: BookFormData) {
     if (!editBook) return
-    setBooks((prev) => prev.map((b) =>
-      b.id === editBook.id
-        ? {
-            ...b,
-            title:          data.title.trim(),
-            author:         data.author.trim(),
-            isbn:           data.isbn.trim() || undefined,
-            publisher:      data.publisher.trim() || undefined,
-            published_year: data.published_year ? parseInt(data.published_year, 10) : undefined,
-            call_number:    data.call_number.trim(),
-            floor:          data.floor,
-            aisle:          data.aisle.trim(),
-            shelf_location: `${data.floor} · ${data.aisle.trim()}`,
-            total_copies:   parseInt(data.total_copies, 10),
-            category:       data.category.trim() || b.category,
-            subject:        data.subject.trim() || undefined,
-            format:         data.format || undefined,
-            abstract:       data.abstract.trim() || undefined,
-            updated_at:     new Date().toISOString(),
-          }
-        : b
-    ))
+    setBooks((prev) =>
+      prev.map((b) =>
+        b.id === editBook.id
+          ? {
+              ...b,
+              title:          data.title.trim(),
+              author:         data.author.trim(),
+              isbn:           data.isbn.trim() || undefined,
+              publisher:      data.publisher.trim() || undefined,
+              published_year: data.published_year ? parseInt(data.published_year, 10) : undefined,
+              call_number:    data.call_number.trim(),
+              floor:          data.floor,
+              aisle:          data.aisle.trim(),
+              shelf_location: `${data.floor} · ${data.aisle.trim()}`,
+              total_copies:   parseInt(data.total_copies, 10),
+              category:       data.category.trim() || b.category,
+              subject:        data.subject.trim() || undefined,
+              format:         data.format || undefined,
+              abstract:       data.abstract.trim() || undefined,
+              updated_at:     new Date().toISOString(),
+            }
+          : b
+      )
+    )
     setEditBook(null)
     showToast(`"${data.title.trim()}" updated.`)
   }
@@ -262,6 +255,7 @@ export default function LibrarianCatalogPage() {
   }
 
   // ── Render ──
+
   return (
     <div className="flex" style={{ minHeight: 'calc(100vh - var(--height-nav))' }}>
 
@@ -276,11 +270,11 @@ export default function LibrarianCatalogPage() {
         onClose={() => setDrawerOpen(false)}
       />
 
-      {/* Main area */}
-      <div className="flex-1 min-w-0 px-5 sm:px-8 py-7">
+      {/* Main */}
+      <div className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6">
 
         {/* Page header */}
-        <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
           <div>
             <h1
               className="text-ink-900 leading-tight mb-0.5"
@@ -296,7 +290,6 @@ export default function LibrarianCatalogPage() {
             </p>
           </div>
 
-          {/* Add new book */}
           <button
             type="button"
             onClick={() => setAddOpen(true)}
@@ -308,12 +301,13 @@ export default function LibrarianCatalogPage() {
           </button>
         </div>
 
-        {/* Stat summary bar */}
+        {/* Stats */}
         <CatalogStats books={books} />
 
-        {/* Search + sort */}
-        <div className="flex items-center gap-2 mb-4">
-          <div className="flex-1 relative">
+        {/* Search + sort + mobile filter toggle */}
+        <div className="flex items-center gap-2 mb-3">
+          {/* Search */}
+          <div className="flex-1 relative min-w-0">
             <Search
               size={15}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none"
@@ -322,7 +316,7 @@ export default function LibrarianCatalogPage() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by title, author, ISBN, call number…"
+              placeholder="Search title, author, ISBN, call no…"
               className={cn(
                 'w-full pl-9 pr-8 py-2 rounded-sm border bg-white text-ink-900',
                 'placeholder:text-ink-300 focus:outline-none transition-colors',
@@ -333,7 +327,6 @@ export default function LibrarianCatalogPage() {
             {query && (
               <button
                 type="button"
-                suppressHydrationWarning
                 onClick={() => setQuery('')}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700 transition-colors"
               >
@@ -342,8 +335,9 @@ export default function LibrarianCatalogPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <ArrowUpDown size={13} className="text-ink-400 hidden sm:block" />
+          {/* Sort — hide label on mobile */}
+          <div className="shrink-0 hidden sm:flex items-center gap-1.5">
+            <ArrowUpDown size={13} className="text-ink-400" />
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortOption)}
@@ -369,53 +363,60 @@ export default function LibrarianCatalogPage() {
           {/* Mobile filter toggle */}
           <button
             type="button"
-            suppressHydrationWarning
             onClick={() => setDrawerOpen(true)}
             className={cn(
               'lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-sm border font-medium transition-colors shrink-0',
-              hasActive
+              activeFilters.length > 0
                 ? 'border-green-700 bg-green-50 text-green-800'
                 : 'border-ink-200 bg-white text-ink-600 hover:border-ink-300'
             )}
             style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
           >
             <SlidersHorizontal size={14} />
-            <span className="hidden sm:inline">Filters</span>
-            {activeCount > 0 && (
+            <span className="hidden xs:inline">Filters</span>
+            {activeFilters.length > 0 && (
               <span
                 className="flex items-center justify-center rounded-full bg-green-700 text-white font-bold"
                 style={{ width: 16, height: 16, fontSize: 9 }}
               >
-                {activeCount}
+                {activeFilters.length}
               </span>
             )}
           </button>
         </div>
 
+        {/* Mobile sort — shown only on mobile */}
+        <div className="flex sm:hidden items-center gap-2 mb-3">
+          <ArrowUpDown size={13} className="text-ink-400 shrink-0" />
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortOption)}
+            className="flex-1 bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2 focus:outline-none focus:border-green-700 cursor-pointer hover:border-ink-300 transition-colors appearance-none"
+            style={{
+              fontSize: 'var(--text-sm-body)',
+              fontFamily: 'var(--font-body)',
+            }}
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+
         {/* Active filter tags */}
-        {hasActive && (
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <span className="text-ink-400" style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}>
+        {activeFilters.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <span
+              className="text-ink-400"
+              style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
+            >
               Active:
             </span>
-            {filters.genre !== 'all' && (
-              <FilterTag label={filters.genre} onRemove={() => setFilters((f) => ({ ...f, genre: 'all' }))} />
-            )}
-            {filters.availability !== 'all' && (
-              <FilterTag label={filters.availability} onRemove={() => setFilters((f) => ({ ...f, availability: 'all' }))} />
-            )}
-            {filters.format !== 'all' && (
-              <FilterTag label={filters.format} onRemove={() => setFilters((f) => ({ ...f, format: 'all' }))} />
-            )}
-            {filters.floor !== 'all' && (
-              <FilterTag label={filters.floor} onRemove={() => setFilters((f) => ({ ...f, floor: 'all' }))} />
-            )}
-            {filters.subject !== 'all' && (
-              <FilterTag label={filters.subject} onRemove={() => setFilters((f) => ({ ...f, subject: 'all' }))} />
-            )}
+            {activeFilters.map(({ key, label, clear }) => (
+              <FilterTag key={key} label={label} onRemove={clear} />
+            ))}
             <button
               type="button"
-              suppressHydrationWarning
               onClick={() => setFilters(DEFAULT_FILTERS)}
               className="text-green-700 font-medium hover:text-green-900 underline underline-offset-2 transition-colors"
               style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
@@ -430,14 +431,19 @@ export default function LibrarianCatalogPage() {
           className="text-ink-500 mb-4"
           style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
         >
-          {query || hasActive ? (
+          {query || activeFilters.length > 0 ? (
             <>
               <span className="font-semibold text-ink-900">{results.length}</span>{' '}
               {results.length === 1 ? 'result' : 'results'}
-              {query && <> for &ldquo;<span className="text-ink-700">{query}</span>&rdquo;</>}
+              {query && (
+                <> for &ldquo;<span className="text-ink-700">{query}</span>&rdquo;</>
+              )}
             </>
           ) : (
-            <>Showing all <span className="font-semibold text-ink-900">{results.length}</span> titles</>
+            <>
+              Showing all{' '}
+              <span className="font-semibold text-ink-900">{results.length}</span> titles
+            </>
           )}
         </p>
 
@@ -457,7 +463,7 @@ export default function LibrarianCatalogPage() {
               className="text-ink-400 max-w-xs"
               style={{ fontSize: 'var(--text-body)', fontFamily: 'var(--font-body)' }}
             >
-              Try adjusting your search or filters, or add a new book to the catalog.
+              Try adjusting your search or filters, or add a new book.
             </p>
           </div>
         ) : (
@@ -496,7 +502,6 @@ export default function LibrarianCatalogPage() {
         onDelete={handleDelete}
       />
 
-      {/* Toast */}
       {toast && <Toast message={toast} />}
     </div>
   )

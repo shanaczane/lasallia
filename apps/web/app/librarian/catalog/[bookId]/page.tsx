@@ -1,8 +1,5 @@
 // apps/web/app/librarian/catalog/[bookId]/page.tsx
-// Sprint 5.2.1 — Librarian catalog view with admin metadata
-// Sprint 5.2.3 — Edit form trigger from detail page
-// Sprint 5.2.4 — Copy management table (per-copy status)
-// Sprint 5.2.5 — Delete / archive from detail page
+// Fix: Add Copy wired to state, responsive layout, bigger cover
 
 'use client'
 
@@ -10,7 +7,7 @@ import { use, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft, MapPin, Hash, Building2, Calendar,
-  BookOpen, Tag, Copy, Pencil, Trash2, Package,
+  BookOpen, Tag, Copy, Pencil, Trash2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MOCK_BOOKS } from '@/lib/mock/catalog'
@@ -44,9 +41,9 @@ function generateMockCopies(book: Book): BookCopy[] {
     const copyNum = i + 1
     const isCheckedOut = copyNum > avail
     return {
-      id:           `${book.id.padStart(4, '0')}-C${String(copyNum).padStart(3, '0')}`,
-      copy_number:  copyNum,
-      status:       isCheckedOut ? 'checked_out' : 'available',
+      id:            `${book.id.padStart(4, '0')}-C${String(copyNum).padStart(3, '0')}`,
+      copy_number:   copyNum,
+      status:        isCheckedOut ? 'checked_out' : 'available',
       borrower_name: isCheckedOut ? 'Juan Dela Cruz' : undefined,
       due_date:      isCheckedOut
         ? new Date(Date.now() + 5 * 86400000).toISOString()
@@ -55,20 +52,28 @@ function generateMockCopies(book: Book): BookCopy[] {
   })
 }
 
-// ─── Meta row helper ──────────────────────────────────────────────────────────
+// ─── Meta row ─────────────────────────────────────────────────────────────────
 
-function MetaRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
+function MetaRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: React.ReactNode
+}) {
   return (
     <div className="flex items-start gap-3 py-2.5 border-b border-ink-100 last:border-b-0">
       <span className="text-ink-300 mt-0.5 shrink-0">{icon}</span>
       <span
-        className="text-ink-500 shrink-0 w-32"
+        className="text-ink-500 shrink-0 w-28"
         style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
       >
         {label}
       </span>
       <span
-        className="text-ink-900 font-medium"
+        className="text-ink-900 font-medium min-w-0 break-words"
         style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
       >
         {value}
@@ -96,7 +101,11 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function LibrarianBookDetailPage({ params }: { params: Promise<{ bookId: string }> }) {
+export default function LibrarianBookDetailPage({
+  params,
+}: {
+  params: Promise<{ bookId: string }>
+}) {
   const { bookId } = use(params)
   const router = useRouter()
 
@@ -110,7 +119,7 @@ export default function LibrarianBookDetailPage({ params }: { params: Promise<{ 
 
   if (!book) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-6">
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-6 text-center">
         <p
           className="text-ink-700 font-semibold"
           style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-2xl)' }}
@@ -132,12 +141,19 @@ export default function LibrarianBookDetailPage({ params }: { params: Promise<{ 
   const coverColor = getCoverColor(book.id, book.cover_color)
   const pillStatus = book.status === 'misplaced' ? 'missing' : book.status
 
+  // ── Handlers ──
+
   function handleCopyStatusChange(copyId: string, newStatus: CopyStatus) {
-    setCopies((prev) => prev.map((c) => c.id === copyId ? { ...c, status: newStatus } : c))
+    setCopies((prev) =>
+      prev.map((c) => (c.id === copyId ? { ...c, status: newStatus } : c))
+    )
+  }
+
+  function handleAddCopy(copy: BookCopy) {
+    setCopies((prev) => [...prev, copy])
   }
 
   function handleEditSubmit(_data: BookFormData) {
-    // In production: PATCH /api/books/:id — here we just close
     setEditOpen(false)
   }
 
@@ -154,7 +170,7 @@ export default function LibrarianBookDetailPage({ params }: { params: Promise<{ 
   const underRepair = copies.filter((c) => c.status === 'under_repair').length
 
   return (
-    <div className="px-5 sm:px-8 py-7 max-w-5xl mx-auto">
+    <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-5xl mx-auto">
 
       {/* Back link */}
       <Link
@@ -167,22 +183,59 @@ export default function LibrarianBookDetailPage({ params }: { params: Promise<{ 
       </Link>
 
       {/* ── Hero ── */}
-      <div className="flex flex-col sm:flex-row gap-6 mb-8">
-        {/* Cover */}
+      <div className="flex flex-col sm:flex-row gap-5 sm:gap-7 mb-8">
+
+        {/* Cover — bigger on detail page */}
         <div
-          className="shrink-0 rounded-(--radius) overflow-hidden shadow-(--shadow)"
-          style={{ width: 120, height: 170, background: coverColor, minWidth: 120 }}
+          className="shrink-0 rounded-(--radius) overflow-hidden shadow-(--shadow) self-start relative"
+          style={{
+            width: 140,
+            height: 198,
+            background: coverColor,
+            minWidth: 140,
+          }}
         >
-          {book.cover_url && (
+          {book.cover_url ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={book.cover_url} alt={`Cover of ${book.title}`} className="w-full h-full object-cover" />
+            <img
+              src={book.cover_url}
+              alt={`Cover of ${book.title}`}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <>
+              <svg className="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <pattern id={`dp-${book.id}`} width="20" height="20" patternUnits="userSpaceOnUse">
+                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="white" strokeWidth="0.6" />
+                  </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill={`url(#dp-${book.id})`} />
+              </svg>
+              <div className="absolute inset-0 flex flex-col justify-between p-3">
+                <p
+                  className="text-white/60 uppercase font-semibold leading-tight line-clamp-2"
+                  style={{ fontSize: '0.55rem', letterSpacing: '0.08em', fontFamily: 'var(--font-body)' }}
+                >
+                  {book.author}
+                </p>
+                <p
+                  className="text-white font-semibold leading-snug line-clamp-4"
+                  style={{ fontSize: '0.75rem', fontFamily: 'var(--font-display)' }}
+                >
+                  {book.title}
+                </p>
+              </div>
+            </>
           )}
         </div>
 
         {/* Info */}
         <div className="flex-1 min-w-0">
+
+          {/* Title + actions row */}
           <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h1
                 className="text-ink-900 leading-tight"
                 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-3xl)' }}
@@ -200,35 +253,36 @@ export default function LibrarianBookDetailPage({ params }: { params: Promise<{ 
                   className="text-ink-400 mt-0.5"
                   style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
                 >
-                  {book.publisher ? `${book.publisher}, ` : ''}{book.published_year}
+                  {book.publisher ? `${book.publisher}, ` : ''}
+                  {book.published_year}
                 </p>
               )}
             </div>
 
-            {/* Action buttons */}
-            <div className="flex items-center gap-2 shrink-0">
+            {/* Edit / Remove — stack vertically on very narrow, row on sm+ */}
+            <div className="flex flex-row sm:flex-row items-center gap-2 shrink-0 mt-1">
               <button
                 type="button"
                 onClick={() => setEditOpen(true)}
-                className="flex items-center gap-2 px-3 py-2 rounded-sm border border-ink-200 text-ink-700 bg-white hover:bg-ink-50 transition-colors font-medium"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-ink-200 text-ink-700 bg-white hover:bg-ink-50 transition-colors font-medium"
                 style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
               >
                 <Pencil size={14} />
-                Edit
+                <span>Edit</span>
               </button>
               <button
                 type="button"
                 onClick={() => setDeleteOpen(true)}
-                className="flex items-center gap-2 px-3 py-2 rounded-sm border border-ink-200 text-danger bg-white hover:bg-[#FEE2E2] transition-colors font-medium"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-ink-200 text-[#B91C1C] bg-white hover:bg-[#FEE2E2] transition-colors font-medium"
                 style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
               >
                 <Trash2 size={14} />
-                Remove
+                <span>Remove</span>
               </button>
             </div>
           </div>
 
-          {/* Status + category row */}
+          {/* Status badges */}
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <AvailabilityPill status={pillStatus} />
             {book.category && (
@@ -251,19 +305,16 @@ export default function LibrarianBookDetailPage({ params }: { params: Promise<{ 
             )}
           </div>
 
-          {/* Copy summary pills — admin-only */}
-          <div className="flex flex-wrap items-center gap-3 mt-4">
+          {/* Copy summary pills */}
+          <div className="flex flex-wrap items-center gap-2 mt-3">
             {[
-              { label: 'Available',    count: available,   color: 'text-[#16A34A] bg-[#DCFCE7]' },
-              { label: 'Checked Out',  count: checkedOut,  color: 'text-[#0369A1] bg-[#E0F2FE]' },
-              { label: 'Under Repair', count: underRepair, color: 'text-[#C2730A] bg-[#FEF3C7]' },
-            ].map(({ label, count, color }) => (
+              { label: 'Available',    count: available,   cls: 'text-[#16A34A] bg-[#DCFCE7]' },
+              { label: 'Checked Out',  count: checkedOut,  cls: 'text-[#0369A1] bg-[#E0F2FE]' },
+              { label: 'Under Repair', count: underRepair, cls: 'text-[#C2730A] bg-[#FEF3C7]' },
+            ].map(({ label, count, cls }) => (
               <span
                 key={label}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1 rounded-full font-semibold',
-                  color
-                )}
+                className={cn('flex items-center gap-1.5 px-3 py-1 rounded-full font-semibold', cls)}
                 style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
               >
                 <Copy size={11} />
@@ -274,64 +325,72 @@ export default function LibrarianBookDetailPage({ params }: { params: Promise<{ 
         </div>
       </div>
 
-      {/* ── Two-column detail ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      {/* ── Two-column metadata ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
 
-        {/* Bibliographic info */}
+        {/* Bibliographic */}
         <div className="bg-white rounded-(--radius) border border-ink-200 p-5">
           <SectionHeading>Bibliographic Info</SectionHeading>
-          <div>
-            {book.isbn && (
-              <MetaRow icon={<Hash size={14} />} label="ISBN" value={
-                <span style={{ fontFamily: 'var(--font-mono)' }}>{book.isbn}</span>
-              } />
-            )}
-            {book.publisher && (
-              <MetaRow icon={<Building2 size={14} />} label="Publisher" value={book.publisher} />
-            )}
-            {book.published_year && (
-              <MetaRow icon={<Calendar size={14} />} label="Year" value={book.published_year} />
-            )}
-            {book.subject && (
-              <MetaRow icon={<Tag size={14} />} label="Subject" value={book.subject} />
-            )}
-          </div>
+          {book.isbn && (
+            <MetaRow
+              icon={<Hash size={14} />}
+              label="ISBN"
+              value={<span style={{ fontFamily: 'var(--font-mono)' }}>{book.isbn}</span>}
+            />
+          )}
+          {book.publisher && (
+            <MetaRow icon={<Building2 size={14} />} label="Publisher" value={book.publisher} />
+          )}
+          {book.published_year && (
+            <MetaRow icon={<Calendar size={14} />} label="Year" value={book.published_year} />
+          )}
+          {book.subject && (
+            <MetaRow icon={<Tag size={14} />} label="Subject" value={book.subject} />
+          )}
         </div>
 
         {/* Location & Admin */}
         <div className="bg-white rounded-(--radius) border border-ink-200 p-5">
           <SectionHeading>Location & Admin Data</SectionHeading>
-          <div>
-            <MetaRow icon={<Hash size={14} />} label="Call Number" value={
-              <span style={{ fontFamily: 'var(--font-mono)' }}>{book.call_number}</span>
-            } />
-            <MetaRow icon={<MapPin size={14} />} label="Location" value={book.shelf_location} />
-            {book.total_copies !== undefined && (
-              <MetaRow icon={<Copy size={14} />} label="Total Copies" value={
+          <MetaRow
+            icon={<Hash size={14} />}
+            label="Call Number"
+            value={<span style={{ fontFamily: 'var(--font-mono)' }}>{book.call_number}</span>}
+          />
+          <MetaRow icon={<MapPin size={14} />} label="Location" value={book.shelf_location} />
+          {book.total_copies !== undefined && (
+            <MetaRow
+              icon={<Copy size={14} />}
+              label="Copies"
+              value={
                 <span>
-                  <span className="font-bold">{book.available_copies ?? 0}</span>
+                  <span className="font-bold">{available}</span>
                   {' / '}
-                  {book.total_copies} available
+                  {copies.length} available
                 </span>
-              } />
-            )}
-            <MetaRow icon={<Calendar size={14} />} label="Acquired" value={
-              new Date(book.created_at).toLocaleDateString('en-PH', {
-                year: 'numeric', month: 'long', day: 'numeric',
-              })
-            } />
-            <MetaRow icon={<Calendar size={14} />} label="Last Updated" value={
-              new Date(book.updated_at).toLocaleDateString('en-PH', {
-                year: 'numeric', month: 'long', day: 'numeric',
-              })
-            } />
-          </div>
+              }
+            />
+          )}
+          <MetaRow
+            icon={<Calendar size={14} />}
+            label="Acquired"
+            value={new Date(book.created_at).toLocaleDateString('en-PH', {
+              year: 'numeric', month: 'long', day: 'numeric',
+            })}
+          />
+          <MetaRow
+            icon={<Calendar size={14} />}
+            label="Last Updated"
+            value={new Date(book.updated_at).toLocaleDateString('en-PH', {
+              year: 'numeric', month: 'long', day: 'numeric',
+            })}
+          />
         </div>
       </div>
 
       {/* Abstract */}
       {book.abstract && (
-        <div className="bg-white rounded-(--radius) border border-ink-200 p-5 mb-8">
+        <div className="bg-white rounded-(--radius) border border-ink-200 p-5 mb-6">
           <SectionHeading>Abstract</SectionHeading>
           <p
             className="text-ink-700 leading-relaxed"
@@ -342,31 +401,17 @@ export default function LibrarianBookDetailPage({ params }: { params: Promise<{ 
         </div>
       )}
 
-      {/* ── Copy management table (5.2.4) ── */}
+      {/* ── Copy Management (5.2.4) ── */}
       <div className="bg-white rounded-(--radius) border border-ink-200 p-5">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div>
-            <SectionHeading>Copy Management</SectionHeading>
-            <p
-              className="text-ink-500 -mt-2"
-              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
-            >
-              {copies.length} {copies.length === 1 ? 'copy' : 'copies'} registered
-            </p>
-          </div>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-ink-200 text-ink-700 bg-white hover:bg-ink-50 transition-colors font-medium shrink-0"
-            style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-          >
-            <Package size={13} />
-            Add Copy
-          </button>
+        <div className="flex items-center justify-between gap-3 mb-1">
+          <SectionHeading>Copy Management</SectionHeading>
         </div>
 
         <CopyManagementTable
           copies={copies}
+          bookId={book.id}
           onStatusChange={handleCopyStatusChange}
+          onAddCopy={handleAddCopy}
         />
       </div>
 
