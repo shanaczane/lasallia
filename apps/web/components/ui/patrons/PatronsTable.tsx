@@ -1,16 +1,19 @@
 // apps/web/components/ui/patrons/PatronsTable.tsx
 // Sprint 5.5.1 — users list table with search and filter
-// Responsive: grid table on sm+, stacked cards on mobile (matches My Library pattern)
 
 "use client"
 
 import { Users } from "lucide-react"
+import { cn } from "@/lib/utils"
 import type { UserProfile } from "@lasallia/types"
 import { RoleBadge } from "./RoleBadge"
-import { AccountStatusPill } from "./AccountStatusPill"
 import { PatronActionsMenu } from "./PatronActionsMenu"
 
-const GRID_COLS = "2.2fr 1.6fr 0.9fr 0.9fr 0.9fr 44px"
+// Shared column template for the header AND every row — keeps them pixel-aligned.
+// md: Name | Program | Role | Actions              (4 cols — Year Level hidden to save width)
+// lg: Name | Program | Year Level | Role | Actions  (5 cols)
+const ROW_GRID =
+  "grid-cols-[minmax(0,2.4fr)_minmax(0,1.2fr)_100px_44px] lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_100px_44px]"
 
 type PatronsTableProps = {
   patrons: UserProfile[]
@@ -22,11 +25,11 @@ export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTablePr
   return (
     <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
 
-      {/* Desktop header */}
+      {/* Desktop/tablet header — identical grid classes to each row below, so labels
+          always sit directly above their matching column content */}
       <div
-        className="hidden md:grid px-4 py-2.5 border-b border-ink-100 text-ink-400 font-semibold uppercase"
+        className={cn("hidden md:grid items-center px-4 py-2.5 border-b border-ink-100 text-ink-400 font-semibold uppercase gap-3", ROW_GRID)}
         style={{
-          gridTemplateColumns: GRID_COLS,
           fontSize: "var(--text-2xs)",
           letterSpacing: "var(--tracking-caps)",
           fontFamily: "var(--font-body)",
@@ -34,9 +37,8 @@ export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTablePr
       >
         <span>Name</span>
         <span>Program</span>
-        <span>Year Level</span>
+        <span className="hidden lg:block">Year Level</span>
         <span className="text-center">Role</span>
-        <span className="text-center">Status</span>
         <span />
       </div>
 
@@ -59,11 +61,8 @@ export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTablePr
           return (
             <div key={patron.id} className="border-b border-ink-100 last:border-b-0">
 
-              {/* Desktop row */}
-              <div
-                className="hidden md:grid items-center px-4 py-3 gap-3"
-                style={{ gridTemplateColumns: GRID_COLS }}
-              >
+              {/* Desktop/tablet row */}
+              <div className={cn("hidden md:grid items-center px-4 py-3 gap-3", ROW_GRID)}>
                 <button onClick={() => onView(patron)} className="flex items-center gap-3 min-w-0 group text-left">
                   <div
                     className="flex items-center justify-center rounded-full bg-green-200 text-green-800 font-semibold shrink-0"
@@ -88,15 +87,13 @@ export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTablePr
                   {patron.program ?? "—"}
                 </span>
 
-                <span className="text-ink-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                <span className="hidden lg:block text-ink-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
                   {patron.year_level ? `Year ${patron.year_level}` : "—"}
                 </span>
 
+                {/* Role — now on the other side, after Name and Program (College) */}
                 <div className="flex justify-center">
                   <RoleBadge role={patron.role} />
-                </div>
-                <div className="flex justify-center">
-                  <AccountStatusPill status={patron.status ?? "active"} />
                 </div>
 
                 <PatronActionsMenu
@@ -106,12 +103,12 @@ export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTablePr
                 />
               </div>
 
-              {/* Mobile card */}
-              <div className="flex md:hidden items-start gap-3 px-4 py-3.5">
-                <button onClick={() => onView(patron)} className="flex items-start gap-3 min-w-0 flex-1 text-left">
+              {/* Mobile card — Role badge on the right, after name/program (college) */}
+              <div className="flex md:hidden items-center gap-2.5 px-4 py-3.5">
+                <button onClick={() => onView(patron)} className="flex items-center gap-3 min-w-0 flex-1 text-left">
                   <div
                     className="flex items-center justify-center rounded-full bg-green-200 text-green-800 font-semibold shrink-0"
-                    style={{ width: 38, height: 38, fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                    style={{ width: 38, height: 38, fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
                   >
                     {initials}
                   </div>
@@ -119,16 +116,13 @@ export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTablePr
                     <p className="text-ink-900 font-semibold truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
                       {patron.full_name}
                     </p>
-                    <p className="text-ink-400 truncate mb-1.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+                    <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
                       {patron.program ?? patron.email}
                       {patron.year_level ? ` · Year ${patron.year_level}` : ""}
                     </p>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <RoleBadge role={patron.role} />
-                      <AccountStatusPill status={patron.status ?? "active"} />
-                    </div>
                   </div>
                 </button>
+                <RoleBadge role={patron.role} className="shrink-0" />
                 <PatronActionsMenu
                   patron={patron}
                   onView={() => onView(patron)}

@@ -12,7 +12,6 @@ import { MOCK_PATRONS } from "@/lib/mock/patrons"
 import {
   PatronsToolbar,
   type RoleFilter,
-  type StatusFilter,
 } from "@/components/ui/patrons/PatronsToolbar"
 import { PatronsTable } from "@/components/ui/patrons/PatronsTable"
 import { PatronProfileModal } from "@/components/ui/patrons/PatronProfileModal"
@@ -132,7 +131,6 @@ export default function PatronsPage() {
 
   const [query, setQuery] = useState("")
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all")
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
 
   const [viewing, setViewing] = useState<UserProfile | null>(null)
   const [confirmingStatus, setConfirmingStatus] = useState<UserProfile | null>(null)
@@ -146,12 +144,11 @@ export default function PatronsPage() {
         p.email.toLowerCase().includes(q) ||
         (p.program ?? "").toLowerCase().includes(q)
       const matchesRole = roleFilter === "all" || p.role === roleFilter
-      const matchesStatus = statusFilter === "all" || (p.status ?? "active") === statusFilter
-      return matchesQuery && matchesRole && matchesStatus
+      return matchesQuery && matchesRole
     })
-  }, [patrons, query, roleFilter, statusFilter])
+  }, [patrons, query, roleFilter])
 
-  const { page, totalPages, pageItems, goTo } = usePagination(filtered, `${query}|${roleFilter}|${statusFilter}`)
+  const { page, totalPages, pageItems, goTo } = usePagination(filtered, `${query}|${roleFilter}`)
 
   function handleToggleStatus(userId: string) {
     setPatrons((prev) =>
@@ -180,8 +177,6 @@ export default function PatronsPage() {
         onQueryChange={setQuery}
         roleFilter={roleFilter}
         onRoleFilterChange={setRoleFilter}
-        statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
         resultCount={filtered.length}
       />
 

@@ -1,20 +1,20 @@
 // apps/web/components/ui/patrons/PatronsToolbar.tsx
 // Sprint 5.5.1 — search + filter controls for the users list table
-// Fix: restyled to match the search/filter pattern used on the Librarian Catalog tab
-// (icon-inline search input, dropdown filters, responsive wrapping on small screens)
+// Fix: status filter removed; search + role filter now always sit beside each
+// other (flex-row) on every device — the select shrinks instead of the two
+// controls stacking, so the toolbar stays compact even on small phones. Only
+// wraps to a second line as a last resort on extremely narrow viewports.
 
 "use client"
 
 import { Search, X, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { UserRole, UserAccountStatus } from "@lasallia/types"
-import { ROLE_LABEL, STATUS_LABEL } from "@/lib/mock/patrons"
+import type { UserRole } from "@lasallia/types"
+import { ROLE_LABEL } from "@/lib/mock/patrons"
 
 export type RoleFilter = "all" | UserRole
-export type StatusFilter = "all" | UserAccountStatus
 
 const ROLE_FILTERS: RoleFilter[] = ["all", "student", "faculty", "librarian"]
-const STATUS_FILTERS: StatusFilter[] = ["all", "active", "inactive"]
 
 // Shared select chevron — matches the Sort control on the Catalog tab
 const SELECT_CHEVRON =
@@ -25,8 +25,6 @@ type PatronsToolbarProps = {
   onQueryChange: (v: string) => void
   roleFilter: RoleFilter
   onRoleFilterChange: (v: RoleFilter) => void
-  statusFilter: StatusFilter
-  onStatusFilterChange: (v: StatusFilter) => void
   resultCount: number
 }
 
@@ -35,16 +33,16 @@ export function PatronsToolbar({
   onQueryChange,
   roleFilter,
   onRoleFilterChange,
-  statusFilter,
-  onStatusFilterChange,
   resultCount,
 }: PatronsToolbarProps) {
   return (
     <div className="flex flex-col gap-3">
-      {/* Search + filters row — mirrors the Catalog tab's search/sort row */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+      {/* Search + role filter — beside each other on every device.
+          Search grows to fill space; the select has a comfortable min-width
+          and only drops to its own line on truly tiny viewports. */}
+      <div className="flex flex-row flex-wrap items-stretch gap-2">
         {/* Search */}
-        <div className="flex-1 min-w-0 relative">
+        <div className="flex-1 min-w-[160px] relative">
           <Search
             size={15}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none"
@@ -59,10 +57,7 @@ export function PatronsToolbar({
               "placeholder:text-ink-300 focus:outline-none transition-colors",
               "border-ink-200 focus:border-green-700 hover:border-ink-300"
             )}
-            style={{
-              fontSize: "var(--text-sm-body)",
-              fontFamily: "var(--font-body)",
-            }}
+            style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
           />
           {query && (
             <button
@@ -76,75 +71,43 @@ export function PatronsToolbar({
           )}
         </div>
 
-        {/* Filters */}
-        <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-          {/* Role filter */}
-          <select
-            value={roleFilter}
-            onChange={(e) => onRoleFilterChange(e.target.value as RoleFilter)}
-            aria-label="Filter by role"
-            className={cn(
-              "w-full bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2",
-              "focus:outline-none focus:border-green-700 cursor-pointer",
-              "hover:border-ink-300 transition-colors appearance-none pr-7"
-            )}
-            style={{
-              fontSize: "var(--text-sm-body)",
-              fontFamily: "var(--font-body)",
-              backgroundImage: `url("${SELECT_CHEVRON}")`,
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "right 7px center",
-            }}
-          >
-            {ROLE_FILTERS.map((r) => (
-              <option key={r} value={r}>
-                {r === "all" ? "All roles" : ROLE_LABEL[r]}
-              </option>
-            ))}
-          </select>
-
-          {/* Status filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => onStatusFilterChange(e.target.value as StatusFilter)}
-            aria-label="Filter by status"
-            className={cn(
-              "w-full bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2",
-              "focus:outline-none focus:border-green-700 cursor-pointer",
-              "hover:border-ink-300 transition-colors appearance-none pr-7"
-            )}
-            style={{
-              fontSize: "var(--text-sm-body)",
-              fontFamily: "var(--font-body)",
-              backgroundImage: `url("${SELECT_CHEVRON}")`,
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "right 7px center",
-            }}
-          >
-            {STATUS_FILTERS.map((s) => (
-              <option key={s} value={s}>
-                {s === "all" ? "All statuses" : STATUS_LABEL[s]}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Role filter */}
+        <select
+          value={roleFilter}
+          onChange={(e) => onRoleFilterChange(e.target.value as RoleFilter)}
+          aria-label="Filter by role"
+          className={cn(
+            "shrink-0 min-w-[128px] sm:min-w-[168px] bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2",
+            "focus:outline-none focus:border-green-700 cursor-pointer",
+            "hover:border-ink-300 transition-colors appearance-none pr-7"
+          )}
+          style={{
+            fontSize: "var(--text-sm-body)",
+            fontFamily: "var(--font-body)",
+            backgroundImage: `url("${SELECT_CHEVRON}")`,
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "right 7px center",
+          }}
+        >
+          {ROLE_FILTERS.map((r) => (
+            <option key={r} value={r}>
+              {r === "all" ? "All roles" : ROLE_LABEL[r]}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Result count */}
       <p
         className="flex items-center gap-1.5 text-ink-500"
-        style={{
-          fontFamily: "var(--font-body)",
-          fontSize: "var(--text-sm-body)",
-        }}
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
       >
         <Users size={13} className="text-ink-400 shrink-0" />
         <span className="font-semibold text-ink-900">{resultCount}</span>
         {resultCount === 1 ? "user found" : "users found"}
         {query && (
           <>
-            {" "}
-            for &ldquo;<span className="text-ink-700">{query}</span>&rdquo;
+            {" "}for &ldquo;<span className="text-ink-700">{query}</span>&rdquo;
           </>
         )}
       </p>
