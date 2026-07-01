@@ -122,25 +122,6 @@ export function LibrarianLayout({
           </div>
         ))}
       </nav>
-
-      {/* Need help CTA */}
-      <div className="p-3">
-        <div className="rounded-(--radius) p-4 bg-green-800">
-          <p className="text-white font-semibold mb-0.5" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-            Need help?
-          </p>
-          <p className="text-green-200 mb-3" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-            Ask Lasallia, our library assistant, anything.
-          </p>
-          <a
-            href="/librarian/assistant"
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-sm border border-green-600 text-white hover:bg-green-700 transition-colors"
-            style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
-          >
-            Chat now →
-          </a>
-        </div>
-      </div>
     </>
   )
 

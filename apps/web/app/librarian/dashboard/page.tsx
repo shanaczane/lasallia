@@ -25,9 +25,9 @@ type Transaction = {
 }
 
 const TX_CONFIG: Record<TxType, { label: string; bg: string; text: string }> = {
-  checkout: { label: "Check-out", bg: "bg-info-bg", text: "text-info" },
-  return:   { label: "Return",    bg: "bg-success-bg", text: "text-success" },
-  reserve:  { label: "Reserve",   bg: "bg-warn-bg", text: "text-warn" },
+  checkout: { label: "Checkout", bg: "bg-info-bg", text: "text-info" },
+  return:   { label: "Return",   bg: "bg-success-bg", text: "text-success" },
+  reserve:  { label: "Reserve",  bg: "bg-warn-bg", text: "text-warn" },
 }
 
 const TRANSACTIONS: Transaction[] = [
@@ -164,10 +164,9 @@ export default function LibrarianDashboard() {
                         {tx.time}
                       </span>
                       <span
-                        className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-pill ", cfg.bg)}
+                        className={cn("flex items-center px-2 py-0.5 rounded-pill", cfg.bg)}
                         style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
                       >
-                        <span className={cn("w-1.5 h-1.5 rounded-full", cfg.text.replace("text-", "bg-"))} />
                         <span className={cn("font-medium", cfg.text)}>{cfg.label}</span>
                       </span>
                     </div>
@@ -178,10 +177,9 @@ export default function LibrarianDashboard() {
                     </span>
                     <span className="hidden sm:flex w-24">
                       <span
-                        className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-pill ", cfg.bg)}
+                        className={cn("flex items-center px-2 py-0.5 rounded-pill", cfg.bg)}
                         style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
                       >
-                        <span className={cn("w-1.5 h-1.5 rounded-full", cfg.text.replace("text-", "bg-"))} />
                         <span className={cn("font-medium", cfg.text)}>{cfg.label}</span>
                       </span>
                     </span>
