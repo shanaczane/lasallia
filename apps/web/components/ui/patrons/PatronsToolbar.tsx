@@ -59,7 +59,10 @@ export function PatronsToolbar({
               "placeholder:text-ink-300 focus:outline-none transition-colors",
               "border-ink-200 focus:border-green-700 hover:border-ink-300"
             )}
-            style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+            style={{
+              fontSize: "var(--text-sm-body)",
+              fontFamily: "var(--font-body)",
+            }}
           />
           {query && (
             <button
@@ -73,68 +76,75 @@ export function PatronsToolbar({
           )}
         </div>
 
-        {/* Role filter */}
-        <select
-          value={roleFilter}
-          onChange={(e) => onRoleFilterChange(e.target.value as RoleFilter)}
-          aria-label="Filter by role"
-          className={cn(
-            "w-full sm:w-auto shrink-0 bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2",
-            "focus:outline-none focus:border-green-700 cursor-pointer",
-            "hover:border-ink-300 transition-colors appearance-none pr-7"
-          )}
-          style={{
-            fontSize: "var(--text-sm-body)",
-            fontFamily: "var(--font-body)",
-            backgroundImage: `url("${SELECT_CHEVRON}")`,
-            backgroundRepeat: "no-repeat",
-            backgroundPosition: "right 7px center",
-          }}
-        >
-          {ROLE_FILTERS.map((r) => (
-            <option key={r} value={r}>
-              {r === "all" ? "All roles" : ROLE_LABEL[r]}
-            </option>
-          ))}
-        </select>
+        {/* Filters */}
+        <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
+          {/* Role filter */}
+          <select
+            value={roleFilter}
+            onChange={(e) => onRoleFilterChange(e.target.value as RoleFilter)}
+            aria-label="Filter by role"
+            className={cn(
+              "w-full bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2",
+              "focus:outline-none focus:border-green-700 cursor-pointer",
+              "hover:border-ink-300 transition-colors appearance-none pr-7"
+            )}
+            style={{
+              fontSize: "var(--text-sm-body)",
+              fontFamily: "var(--font-body)",
+              backgroundImage: `url("${SELECT_CHEVRON}")`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 7px center",
+            }}
+          >
+            {ROLE_FILTERS.map((r) => (
+              <option key={r} value={r}>
+                {r === "all" ? "All roles" : ROLE_LABEL[r]}
+              </option>
+            ))}
+          </select>
 
-        {/* Status filter */}
-        <select
-          value={statusFilter}
-          onChange={(e) => onStatusFilterChange(e.target.value as StatusFilter)}
-          aria-label="Filter by status"
-          className={cn(
-            "w-full sm:w-auto shrink-0 bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2",
-            "focus:outline-none focus:border-green-700 cursor-pointer",
-            "hover:border-ink-300 transition-colors appearance-none pr-7"
-          )}
-          style={{
-            fontSize: "var(--text-sm-body)",
-            fontFamily: "var(--font-body)",
-            backgroundImage: `url("${SELECT_CHEVRON}")`,
-            backgroundRepeat: "no-repeat",
-            backgroundPosition: "right 7px center",
-          }}
-        >
-          {STATUS_FILTERS.map((s) => (
-            <option key={s} value={s}>
-              {s === "all" ? "All statuses" : STATUS_LABEL[s]}
-            </option>
-          ))}
-        </select>
+          {/* Status filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => onStatusFilterChange(e.target.value as StatusFilter)}
+            aria-label="Filter by status"
+            className={cn(
+              "w-full bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2",
+              "focus:outline-none focus:border-green-700 cursor-pointer",
+              "hover:border-ink-300 transition-colors appearance-none pr-7"
+            )}
+            style={{
+              fontSize: "var(--text-sm-body)",
+              fontFamily: "var(--font-body)",
+              backgroundImage: `url("${SELECT_CHEVRON}")`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 7px center",
+            }}
+          >
+            {STATUS_FILTERS.map((s) => (
+              <option key={s} value={s}>
+                {s === "all" ? "All statuses" : STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Result count */}
       <p
         className="flex items-center gap-1.5 text-ink-500"
-        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        style={{
+          fontFamily: "var(--font-body)",
+          fontSize: "var(--text-sm-body)",
+        }}
       >
         <Users size={13} className="text-ink-400 shrink-0" />
         <span className="font-semibold text-ink-900">{resultCount}</span>
         {resultCount === 1 ? "user found" : "users found"}
         {query && (
           <>
-            {" "}for &ldquo;<span className="text-ink-700">{query}</span>&rdquo;
+            {" "}
+            for &ldquo;<span className="text-ink-700">{query}</span>&rdquo;
           </>
         )}
       </p>
