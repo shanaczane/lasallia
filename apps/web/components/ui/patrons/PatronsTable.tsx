@@ -15,11 +15,10 @@ const GRID_COLS = "2.2fr 1.6fr 0.9fr 0.9fr 0.9fr 44px"
 type PatronsTableProps = {
   patrons: UserProfile[]
   onView: (patron: UserProfile) => void
-  onEditRole: (patron: UserProfile) => void
   onToggleStatus: (patron: UserProfile) => void
 }
 
-export function PatronsTable({ patrons, onView, onEditRole, onToggleStatus }: PatronsTableProps) {
+export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTableProps) {
   return (
     <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
 
@@ -36,8 +35,8 @@ export function PatronsTable({ patrons, onView, onEditRole, onToggleStatus }: Pa
         <span>Name</span>
         <span>Program</span>
         <span>Year Level</span>
-        <span>Role</span>
-        <span>Status</span>
+        <span className="text-center">Role</span>
+        <span className="text-center">Status</span>
         <span />
       </div>
 
@@ -93,13 +92,16 @@ export function PatronsTable({ patrons, onView, onEditRole, onToggleStatus }: Pa
                   {patron.year_level ? `Year ${patron.year_level}` : "—"}
                 </span>
 
-                <RoleBadge role={patron.role} />
-                <AccountStatusPill status={patron.status ?? "active"} />
+                <div className="flex justify-center">
+                  <RoleBadge role={patron.role} />
+                </div>
+                <div className="flex justify-center">
+                  <AccountStatusPill status={patron.status ?? "active"} />
+                </div>
 
                 <PatronActionsMenu
                   patron={patron}
                   onView={() => onView(patron)}
-                  onEditRole={() => onEditRole(patron)}
                   onToggleStatus={() => onToggleStatus(patron)}
                 />
               </div>
@@ -130,7 +132,6 @@ export function PatronsTable({ patrons, onView, onEditRole, onToggleStatus }: Pa
                 <PatronActionsMenu
                   patron={patron}
                   onView={() => onView(patron)}
-                  onEditRole={() => onEditRole(patron)}
                   onToggleStatus={() => onToggleStatus(patron)}
                 />
               </div>

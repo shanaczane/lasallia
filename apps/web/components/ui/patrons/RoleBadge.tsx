@@ -1,5 +1,6 @@
 // apps/web/components/ui/patrons/RoleBadge.tsx
 // Sprint 5.5.1 — role column badge
+// Fix: fixed width + centered label so pills stay compact and aligned across rows
 
 import { cn } from "@/lib/utils"
 import type { UserRole } from "@lasallia/types"
@@ -16,7 +17,7 @@ export function RoleBadge({ role, className }: { role: UserRole; className?: str
   return (
     <span
       className={cn(
-        "inline-flex items-center px-2.5 py-0.5 rounded-full font-semibold",
+        "inline-flex items-center justify-center w-[84px] px-2 py-1 rounded-full font-semibold text-center leading-none",
         CFG[role],
         className
       )}

@@ -5,7 +5,7 @@
 "use client"
 
 import { useState } from "react"
-import { X, BookOpen, Bookmark, History, Mail, GraduationCap, UserCog, UserX, UserCheck } from "lucide-react"
+import { X, BookOpen, Bookmark, History, Mail, GraduationCap, UserX, UserCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UserProfile } from "@lasallia/types"
 import { getPatronActivity } from "@/lib/mock/patrons"
@@ -17,7 +17,6 @@ type Tab = "loans" | "reservations" | "history"
 type PatronProfileModalProps = {
   patron: UserProfile
   onClose: () => void
-  onEditRole: () => void
   onToggleStatus: () => void
 }
 
@@ -39,7 +38,7 @@ const HISTORY_CFG = {
   overdue_returned: { label: "Returned Late", text: "text-warn",    bg: "bg-warn-bg" },
 }
 
-export function PatronProfileModal({ patron, onClose, onEditRole, onToggleStatus }: PatronProfileModalProps) {
+export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronProfileModalProps) {
   const [tab, setTab] = useState<Tab>("loans")
   const activity = getPatronActivity(patron.id)
   const isActive = patron.status !== "inactive"
@@ -61,14 +60,14 @@ export function PatronProfileModal({ patron, onClose, onEditRole, onToggleStatus
     <div className="fixed inset-0 z-(--z-modal) flex items-end sm:items-center justify-center sm:p-4">
       <div className="absolute inset-0 bg-ink-900/40" onClick={onClose} />
 
-      <div className="relative w-full sm:max-w-lg max-h-[92vh] sm:max-h-[85vh] bg-white rounded-t-(--radius-lg) sm:rounded-(--radius-lg) shadow-(--shadow-lg) flex flex-col overflow-hidden">
+      <div className="relative w-full sm:max-w-4xl h-[94vh] sm:h-[85vh] max-h-[900px] bg-white rounded-t-(--radius-lg) sm:rounded-(--radius-lg) shadow-(--shadow-lg) flex flex-col overflow-hidden">
 
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 p-5 border-b border-ink-100 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-start justify-between gap-3 p-4 sm:p-6 border-b border-ink-100 shrink-0">
+          <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
             <div
-              className="flex items-center justify-center rounded-full bg-green-200 text-green-800 font-semibold shrink-0"
-              style={{ width: 44, height: 44, fontFamily: "var(--font-body)", fontSize: "var(--text-lg)" }}
+              className="flex items-center justify-center rounded-full bg-green-200 text-green-800 font-semibold shrink-0 w-11 h-11 sm:w-[52px] sm:h-[52px]"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-lg)" }}
             >
               {initials}
             </div>
@@ -79,8 +78,8 @@ export function PatronProfileModal({ patron, onClose, onEditRole, onToggleStatus
               >
                 {patron.full_name}
               </h2>
-              <div className="flex items-center gap-1.5 text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-                <Mail size={12} className="shrink-0" />
+              <div className="flex items-center gap-1.5 text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                <Mail size={13} className="shrink-0" />
                 <span className="truncate">{patron.email}</span>
               </div>
             </div>
@@ -89,14 +88,14 @@ export function PatronProfileModal({ patron, onClose, onEditRole, onToggleStatus
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex items-center justify-center w-8 h-8 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors shrink-0"
+            className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors shrink-0"
           >
-            <X size={16} />
+            <X size={17} />
           </button>
         </div>
 
         {/* Meta row */}
-        <div className="flex flex-wrap items-center gap-2 px-5 py-3 border-b border-ink-100 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 sm:py-3.5 border-b border-ink-100 shrink-0">
           <RoleBadge role={patron.role} />
           <AccountStatusPill status={patron.status ?? "active"} />
           {patron.program && (
@@ -109,13 +108,13 @@ export function PatronProfileModal({ patron, onClose, onEditRole, onToggleStatus
         </div>
 
         {/* Tabs */}
-        <div className="flex px-5 border-b border-ink-100 shrink-0 overflow-x-auto">
+        <div className="flex px-4 sm:px-6 border-b border-ink-100 shrink-0 overflow-x-auto">
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-2.5 border-b-2 transition-colors whitespace-nowrap",
+                "flex items-center gap-1.5 px-2.5 sm:px-3.5 py-2.5 sm:py-3 border-b-2 transition-colors whitespace-nowrap shrink-0",
                 tab === t.key
                   ? "border-green-700 text-green-800 font-semibold"
                   : "border-transparent text-ink-400 hover:text-ink-700"
@@ -138,7 +137,7 @@ export function PatronProfileModal({ patron, onClose, onEditRole, onToggleStatus
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {tab === "loans" && (
             <ActivityList
               empty="No active loans."
@@ -177,21 +176,20 @@ export function PatronProfileModal({ patron, onClose, onEditRole, onToggleStatus
         </div>
 
         {/* Footer actions */}
-        <div className="flex items-center justify-end gap-2 p-4 border-t border-ink-100 shrink-0">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 p-4 sm:p-5 border-t border-ink-100 shrink-0">
           <button
             type="button"
-            onClick={onEditRole}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-sm border border-ink-200 text-ink-700 hover:bg-ink-50 transition-colors font-medium"
+            onClick={onClose}
+            className="px-4 py-2.5 rounded-sm text-ink-600 hover:bg-ink-100 transition-colors font-medium"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
           >
-            <UserCog size={14} />
-            Edit Role
+            Close
           </button>
           <button
             type="button"
             onClick={onToggleStatus}
             className={cn(
-              "flex items-center gap-1.5 px-3.5 py-2 rounded-sm transition-colors font-semibold",
+              "flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-sm transition-colors font-semibold",
               isActive ? "bg-danger/10 text-danger hover:bg-danger/20" : "bg-green-700 text-white hover:bg-green-800"
             )}
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
@@ -222,11 +220,11 @@ function ActivityList({
   }
 
   return (
-    <ul className="flex flex-col gap-2">
+    <ul className="flex flex-col gap-2.5">
       {items.map((item) => (
         <li
           key={item.key}
-          className="flex items-center justify-between gap-3 px-3.5 py-3 rounded-(--radius) border border-ink-100 bg-ink-50/40"
+          className="flex items-center justify-between gap-3 px-4 py-3.5 rounded-(--radius) border border-ink-100 bg-ink-50/40"
         >
           <div className="min-w-0">
             <p className="text-ink-900 font-semibold truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
