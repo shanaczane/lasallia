@@ -7,12 +7,5 @@
     "dev:api": "pnpm --filter api dev",
     "build:web": "pnpm --filter web build"
   },
-  "packageManager": "pnpm@11.5.0",
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "^11.5.0",
-      "onFail": "download"
-    }
-  }
+  "packageManager": "pnpm@11.5.0"
 }
