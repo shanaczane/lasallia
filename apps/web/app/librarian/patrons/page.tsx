@@ -7,7 +7,7 @@
 import { useMemo, useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { UserProfile, UserRole } from "@lasallia/types"
+import type { UserProfile } from "@lasallia/types"
 import { MOCK_PATRONS } from "@/lib/mock/patrons"
 import {
   PatronsToolbar,
@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/patrons/PatronsToolbar"
 import { PatronsTable } from "@/components/ui/patrons/PatronsTable"
 import { PatronProfileModal } from "@/components/ui/patrons/PatronProfileModal"
-import { EditRoleDialog } from "@/components/ui/patrons/EditRoleDialog"
 import { ConfirmStatusDialog } from "@/components/ui/patrons/ConfirmStatusDialog"
 
 const PAGE_SIZE = 8
@@ -136,7 +135,6 @@ export default function PatronsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
 
   const [viewing, setViewing] = useState<UserProfile | null>(null)
-  const [editingRole, setEditingRole] = useState<UserProfile | null>(null)
   const [confirmingStatus, setConfirmingStatus] = useState<UserProfile | null>(null)
 
   const filtered = useMemo(() => {
@@ -154,12 +152,6 @@ export default function PatronsPage() {
   }, [patrons, query, roleFilter, statusFilter])
 
   const { page, totalPages, pageItems, goTo } = usePagination(filtered, `${query}|${roleFilter}|${statusFilter}`)
-
-  function handleUpdateRole(userId: string, newRole: UserRole) {
-    setPatrons((prev) => prev.map((p) => (p.id === userId ? { ...p, role: newRole } : p)))
-    setEditingRole(null)
-    setViewing((v) => (v && v.id === userId ? { ...v, role: newRole } : v))
-  }
 
   function handleToggleStatus(userId: string) {
     setPatrons((prev) =>
@@ -196,7 +188,6 @@ export default function PatronsPage() {
       <PatronsTable
         patrons={pageItems}
         onView={setViewing}
-        onEditRole={setEditingRole}
         onToggleStatus={setConfirmingStatus}
       />
 
@@ -206,16 +197,7 @@ export default function PatronsPage() {
         <PatronProfileModal
           patron={viewing}
           onClose={() => setViewing(null)}
-          onEditRole={() => setEditingRole(viewing)}
           onToggleStatus={() => setConfirmingStatus(viewing)}
-        />
-      )}
-
-      {editingRole && (
-        <EditRoleDialog
-          patron={editingRole}
-          onClose={() => setEditingRole(null)}
-          onConfirm={handleUpdateRole}
         />
       )}
 

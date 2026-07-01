@@ -1,21 +1,21 @@
 // apps/web/components/ui/patrons/PatronActionsMenu.tsx
-// Sprint 5.5.3 — user account actions (activate/deactivate, edit role)
+// Sprint 5.5.3 — user account actions (activate/deactivate)
+// Fix: Edit role action removed per product request
 
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { MoreVertical, UserCog, UserCheck, UserX, Eye } from "lucide-react"
+import { MoreVertical, UserCheck, UserX, Eye } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UserProfile } from "@lasallia/types"
 
 type PatronActionsMenuProps = {
   patron: UserProfile
   onView: () => void
-  onEditRole: () => void
   onToggleStatus: () => void
 }
 
-export function PatronActionsMenu({ patron, onView, onEditRole, onToggleStatus }: PatronActionsMenuProps) {
+export function PatronActionsMenu({ patron, onView, onToggleStatus }: PatronActionsMenuProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -54,7 +54,6 @@ export function PatronActionsMenu({ patron, onView, onEditRole, onToggleStatus }
           role="menu"
         >
           <MenuItem icon={<Eye size={14} />} label="View profile" onClick={() => { setOpen(false); onView() }} />
-          <MenuItem icon={<UserCog size={14} />} label="Edit role" onClick={() => { setOpen(false); onEditRole() }} />
           <div className="my-1 border-t border-ink-100" />
           {isActive ? (
             <MenuItem
