@@ -15,6 +15,7 @@ import {
   Users,
   Tag,
   Settings,
+  ArrowRight,
 } from "lucide-react"
 
 type NavItem = {
@@ -69,6 +70,39 @@ export function LibrarianLayout({
 
   const sidebarContent = (
     <>
+      {/* ── Quick Scan card – Sprint 5.4.1 ─────────────── */}
+      <div className="px-3 pt-4 pb-1">
+        <a
+          href="/librarian/borrow-return"
+          onClick={() => setMenuOpen(false)}
+          className={cn(
+            "flex items-center justify-between w-full rounded p-3 transition-colors",
+            pathname === "/librarian/borrow-return" ? "bg-green-800" : "bg-green-700 hover:bg-green-800"
+          )}
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center justify-center w-7 h-7 rounded-sm bg-white/20">
+              <ScanLine size={14} className="text-white" />
+            </div>
+            <div>
+              <p
+                className="text-white font-semibold leading-tight"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+              >
+                Quick Scan
+              </p>
+              <p
+                className="text-green-200 leading-tight"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+              >
+                Borrow · Return
+              </p>
+            </div>
+          </div>
+          <ArrowRight size={14} className="text-green-300" />
+        </a>
+      </div>
+
       <nav className="flex-1 px-3 py-4 flex flex-col gap-5">
         {librarianNav.map((section) => (
           <div key={section.title}>
