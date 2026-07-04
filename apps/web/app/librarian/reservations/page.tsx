@@ -13,9 +13,6 @@ import {
 } from "lucide-react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-// Backend-ready: mirrors what your API/Supabase would return.
-// Swap MOCK_RESERVATIONS with a real fetch/query when backend is ready.
-
 export type ReservationStatus = "Pending" | "Confirmed" | "Ready" | "Cancelled"
 
 export interface StudentReservation {
@@ -30,8 +27,7 @@ export interface StudentReservation {
 }
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
-// Replace this with: const { data } = await supabase.from("reservations").select(...)
-// or:                const data = await fetch("/api/reservations").then(r => r.json())
+// Replace with: const { data } = await supabase.from("reservations").select(...)
 
 function daysAgo(n: number, h = 9, m = 0): string {
   const d = new Date()
@@ -39,6 +35,7 @@ function daysAgo(n: number, h = 9, m = 0): string {
   d.setHours(h, m, 0, 0)
   return d.toISOString()
 }
+
 function daysFromNow(n: number): string {
   const d = new Date()
   d.setDate(d.getDate() + n)
@@ -181,14 +178,13 @@ function ActionModal({ reservation, action, onConfirm, onClose }: ActionModalPro
   const isConfirm = action === "confirm"
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
         className="flex flex-col gap-4 bg-white rounded-(--radius) p-6 w-full max-w-sm shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Icon */}
         <div
           className={cn(
             "size-11 rounded-full flex items-center justify-center flex-shrink-0",
@@ -201,7 +197,6 @@ function ActionModal({ reservation, action, onConfirm, onClose }: ActionModalPro
           }
         </div>
 
-        {/* Text */}
         <div className="flex flex-col gap-1">
           <h3
             className="text-ink-900 font-semibold"
@@ -210,7 +205,7 @@ function ActionModal({ reservation, action, onConfirm, onClose }: ActionModalPro
             {isConfirm ? "Confirm Reservation" : "Reject Reservation"}
           </h3>
           <p
-            className="text-ink-400"
+            className="text-ink-500"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
           >
             {isConfirm
@@ -220,10 +215,7 @@ function ActionModal({ reservation, action, onConfirm, onClose }: ActionModalPro
           </p>
         </div>
 
-        {/* Reservation summary */}
-        <div
-          className="flex flex-col gap-1 bg-ink-50 px-3.5 py-3 rounded-(--radius) border-l-[3px] border-green-600"
-        >
+        <div className="flex flex-col gap-1 bg-ink-50 px-3.5 py-3 rounded-(--radius) border-l-[3px] border-green-600">
           <p
             className="text-ink-900 font-semibold leading-snug"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
@@ -231,14 +223,13 @@ function ActionModal({ reservation, action, onConfirm, onClose }: ActionModalPro
             {reservation.book_title}
           </p>
           <p
-            className="text-ink-400"
+            className="text-ink-600"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
           >
             {reservation.student_name} · {reservation.student_id}
           </p>
         </div>
 
-        {/* Actions */}
         <div className="flex flex-wrap gap-2">
           <button
             onClick={onClose}
@@ -340,7 +331,7 @@ function ReservationRow({ reservation: r, isLast, onAction }: ReservationRowProp
         !isLast && "border-b border-ink-100"
       )}
     >
-      {/* Status icon — same size-7 pattern as NotificationItemCard */}
+      {/* Status icon */}
       <div
         className={cn(
           "mt-0.5 flex-shrink-0 flex items-center justify-center rounded-full size-7",
@@ -353,7 +344,7 @@ function ReservationRow({ reservation: r, isLast, onAction }: ReservationRowProp
 
       {/* Body */}
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-        {/* Student name + status badge */}
+        {/* Student name + ID + status badge */}
         <div className="flex flex-wrap items-center gap-2">
           <p
             className="text-ink-900 font-semibold leading-snug"
@@ -370,7 +361,7 @@ function ReservationRow({ reservation: r, isLast, onAction }: ReservationRowProp
           <StatusBadge status={r.status} />
         </div>
 
-        {/* Book title + author */}
+        {/* Book title + author — matches notification description color */}
         <p
           className="text-ink-400 leading-relaxed"
           style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
@@ -380,26 +371,26 @@ function ReservationRow({ reservation: r, isLast, onAction }: ReservationRowProp
           {r.book_author}
         </p>
 
-        {/* Dates */}
+        {/* Dates — matches notification description color */}
         <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-0.5">
           <span
             className="text-ink-400"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
           >
-            Reserved: <span className="text-ink-600 font-medium">{formatDate(r.reserved_at)}</span>
+            Reserved: <span className="text-ink-400 font-medium">{formatDate(r.reserved_at)}</span>
             <span className="text-ink-300 mx-1">·</span>
-            <span className="text-ink-500">{formatTime(r.reserved_at)}</span>
+            <span className="text-ink-400">{formatTime(r.reserved_at)}</span>
           </span>
           <span
             className="text-ink-400"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
           >
-            Pickup by: <span className="text-ink-600 font-medium">{formatDate(r.pickup_by)}</span>
+            Pickup by: <span className="text-ink-400 font-medium">{formatDate(r.pickup_by)}</span>
           </span>
         </div>
       </div>
 
-      {/* Actions — right side, only for Pending */}
+      {/* Actions */}
       <div className="flex items-center gap-2 flex-shrink-0 pt-0.5">
         {isPending && (
           <>
@@ -436,76 +427,27 @@ function ReservationRow({ reservation: r, isLast, onAction }: ReservationRowProp
   )
 }
 
-// ─── Summary Counter Card ─────────────────────────────────────────────────────
-interface SummaryCardProps {
-  label: string
-  count: number
-  icon: React.ReactNode
-  iconBg: string
-  iconColor: string
-}
-
-function SummaryCard({ label, count, icon, iconBg, iconColor }: SummaryCardProps) {
-  return (
-    <div className="flex items-center gap-3 bg-white rounded-(--radius) border border-ink-200 px-4 py-3 flex-1 min-w-[130px]">
-      <div
-        className={cn(
-          "flex items-center justify-center rounded-full size-9 flex-shrink-0",
-          iconBg,
-          iconColor
-        )}
-      >
-        {icon}
-      </div>
-      <div className="flex flex-col min-w-0">
-        <span
-          className="text-ink-900 font-semibold leading-tight"
-          style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}
-        >
-          {count}
-        </span>
-        <span
-          className="text-ink-400 leading-tight"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
-        >
-          {label}
-        </span>
-      </div>
-    </div>
-  )
-}
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function LibrarianReservationsPage() {
-  // Backend-ready state — swap MOCK_RESERVATIONS with API data
   const [reservations, setReservations] = useState<StudentReservation[]>(MOCK_RESERVATIONS)
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<TabKey>("all")
   const [search, setSearch] = useState("")
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "pickup">("newest")
 
-  // Modal state
   const [modalTarget, setModalTarget] = useState<{
     reservation: StudentReservation
     action: "confirm" | "reject"
   } | null>(null)
 
-  // ── Summary counts — backend-ready: derive from reservations array ──────────
-  const summary = useMemo(() => ({
-    pending:   reservations.filter((r) => r.status === "Pending").length,
-    confirmed: reservations.filter((r) => r.status === "Confirmed").length,
-    ready:     reservations.filter((r) => r.status === "Ready").length,
-    cancelled: reservations.filter((r) => r.status === "Cancelled").length,
-  }), [reservations])
-
   // ── Tab counts ─────────────────────────────────────────────────────────────
   const tabCounts: Record<TabKey, number> = useMemo(() => ({
     all:       reservations.length,
-    Pending:   summary.pending,
-    Confirmed: summary.confirmed,
-    Ready:     summary.ready,
-    Cancelled: summary.cancelled,
-  }), [reservations, summary])
+    Pending:   reservations.filter((r) => r.status === "Pending").length,
+    Confirmed: reservations.filter((r) => r.status === "Confirmed").length,
+    Ready:     reservations.filter((r) => r.status === "Ready").length,
+    Cancelled: reservations.filter((r) => r.status === "Cancelled").length,
+  }), [reservations])
 
   // ── Filter + search + sort ─────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -531,7 +473,6 @@ export default function LibrarianReservationsPage() {
     })
   }, [reservations, activeTab, search, sortBy])
 
-  // ── Action handler — backend-ready: swap body with API call ────────────────
   function handleAction(reservation: StudentReservation, action: "confirm" | "reject") {
     setModalTarget({ reservation, action })
   }
@@ -539,7 +480,6 @@ export default function LibrarianReservationsPage() {
   function handleActionConfirm() {
     if (!modalTarget) return
     const { reservation, action } = modalTarget
-
     // TODO: await fetch(`/api/reservations/${reservation.id}`, { method: "PATCH", body: ... })
     setReservations((prev) =>
       prev.map((r) => {
@@ -593,57 +533,21 @@ export default function LibrarianReservationsPage() {
 
       {/* ── Page Header ── */}
       <div className="px-4 sm:px-8 pt-6 pb-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1
-              className="text-ink-900 font-semibold leading-tight"
-              style={{ fontSize: "var(--text-3xl)", fontFamily: "var(--font-display)" }}
-            >
-              Reservation Queue
-            </h1>
-            <p
-              className="text-ink-500 mt-1"
-              style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-            >
-              Review and manage student book reservation requests.
-            </p>
-          </div>
-        </div>
-
-        {/* ── Summary Counters ── */}
-        <div className="flex flex-wrap gap-3 mt-5">
-          <SummaryCard
-            label="Pending"
-            count={summary.pending}
-            icon={<Clock size={16} />}
-            iconBg="bg-warn-bg"
-            iconColor="text-warn"
-          />
-          <SummaryCard
-            label="Confirmed"
-            count={summary.confirmed}
-            icon={<CheckCircle size={16} />}
-            iconBg="bg-info-bg"
-            iconColor="text-info"
-          />
-          <SummaryCard
-            label="Ready"
-            count={summary.ready}
-            icon={<CheckCircle size={16} />}
-            iconBg="bg-success-bg"
-            iconColor="text-success"
-          />
-          <SummaryCard
-            label="Cancelled"
-            count={summary.cancelled}
-            icon={<XCircle size={16} />}
-            iconBg="bg-ink-100"
-            iconColor="text-ink-400"
-          />
-        </div>
+        <h1
+          className="text-ink-900 font-semibold leading-tight"
+          style={{ fontSize: "var(--text-3xl)", fontFamily: "var(--font-display)" }}
+        >
+          Reservation Queue
+        </h1>
+        <p
+          className="text-ink-500 mt-1"
+          style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+        >
+          Review and manage student book reservation requests.
+        </p>
       </div>
 
-      {/* ── Tab Filters — mirrors NotificationFeed exactly ── */}
+      {/* ── Tab Filters ── */}
       <div className="border-b border-ink-200">
         <div className="flex sm:hidden w-full overflow-x-auto px-2 scrollbar-none">
           {TABS.map((tab) => <TabButton key={tab.key} tab={tab} isMobile={true} />)}
@@ -655,7 +559,6 @@ export default function LibrarianReservationsPage() {
 
       {/* ── Search + Sort bar ── */}
       <div className="px-4 sm:px-8 py-3 flex flex-col sm:flex-row gap-2 border-b border-ink-100 bg-white">
-        {/* Search input */}
         <div className="relative flex-1">
           <Search
             size={15}
@@ -670,8 +573,6 @@ export default function LibrarianReservationsPage() {
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
           />
         </div>
-
-        {/* Sort dropdown */}
         <div className="relative flex-shrink-0">
           <select
             value={sortBy}
@@ -704,7 +605,6 @@ export default function LibrarianReservationsPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-1">
-            {/* Result count */}
             <p
               className="text-ink-400 px-1 mb-2"
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
@@ -712,8 +612,6 @@ export default function LibrarianReservationsPage() {
               {filtered.length} reservation{filtered.length !== 1 ? "s" : ""}
               {search ? ` matching "${search}"` : ""}
             </p>
-
-            {/* Card */}
             <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
               {filtered.map((r, i) => (
                 <ReservationRow

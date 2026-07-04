@@ -1,12 +1,26 @@
 // apps/web/components/ui/catalog/FilterSidebar.tsx
-// Sprint 3.1.2 — Filter sidebar (genre, availability, call number range, subject, format, floor)
 
 'use client'
 
-import { useState } from 'react'
-import { X, ChevronDown, ChevronUp } from 'lucide-react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import {
+  X,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  BookOpen,
+  CircleDot,
+  FileText,
+  MapPin,
+  Tag,
+  Hash,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BookStatus, BookFormat } from '@lasallia/types'
+
+const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type CatalogFilters = {
   genre: string
@@ -39,19 +53,98 @@ type FilterSidebarProps = {
   className?: string
 }
 
-// ─── Collapsible section ──────────────────────────────────────────────────────
-function FilterSection({
-  title,
-  children,
-  defaultOpen = true,
-}: {
+// ─── Filter group definitions ─────────────────────────────────────────────────
+
+type GroupDef = {
+  id: string
+  label: string
+  icon: React.ReactNode
+  isActive: (f: CatalogFilters) => boolean
+}
+
+const GROUP_DEFS: GroupDef[] = [
+  {
+    id: 'genre',
+    label: 'Genre',
+    icon: <BookOpen size={16} />,
+    isActive: (f) => f.genre !== 'all',
+  },
+  {
+    id: 'availability',
+    label: 'Availability',
+    icon: <CircleDot size={16} />,
+    isActive: (f) => f.availability !== 'all',
+  },
+  {
+    id: 'format',
+    label: 'Format',
+    icon: <FileText size={16} />,
+    isActive: (f) => f.format !== 'all',
+  },
+  {
+    id: 'floor',
+    label: 'Floor Location',
+    icon: <MapPin size={16} />,
+    isActive: (f) => f.floor !== 'all',
+  },
+  {
+    id: 'subject',
+    label: 'Subject',
+    icon: <Tag size={16} />,
+    isActive: (f) => f.subject !== 'all',
+  },
+  {
+    id: 'callno',
+    label: 'Call No. Range',
+    icon: <Hash size={16} />,
+    isActive: (f) => f.call_number_start !== '' || f.call_number_end !== '',
+  },
+]
+
+// ─── Collapsible filter section ───────────────────────────────────────────────
+
+type FilterSectionProps = {
+  id: string
   title: string
   children: React.ReactNode
   defaultOpen?: boolean
-}) {
+  highlighted?: boolean
+  onHighlightDone?: () => void
+}
+
+function FilterSection({
+  id,
+  title,
+  children,
+  defaultOpen = true,
+  highlighted = false,
+  onHighlightDone,
+}: FilterSectionProps) {
   const [open, setOpen] = useState(defaultOpen)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!highlighted) return
+    setOpen(true)
+    const frame = requestAnimationFrame(() => {
+      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
+    const timer = setTimeout(() => onHighlightDone?.(), 900)
+    return () => {
+      cancelAnimationFrame(frame)
+      clearTimeout(timer)
+    }
+  }, [highlighted, onHighlightDone])
+
   return (
-    <div className="border-b border-ink-100 last:border-b-0">
+    <div
+      ref={ref}
+      id={`filter-section-${id}`}
+      className={cn(
+        'border-b border-ink-100 last:border-b-0 transition-colors duration-700',
+        highlighted && 'bg-green-50/70'
+      )}
+    >
       <button
         type="button"
         suppressHydrationWarning
@@ -68,7 +161,7 @@ function FilterSection({
         >
           {title}
         </span>
-          <ChevronDown
+        <ChevronDown
           size={13}
           className={cn(
             'text-ink-400 shrink-0 transition-transform duration-300',
@@ -91,6 +184,7 @@ function FilterSection({
 }
 
 // ─── Radio option ─────────────────────────────────────────────────────────────
+
 function RadioOption({
   name,
   value,
@@ -125,9 +219,7 @@ function RadioOption({
           checked ? 'border-green-700 bg-white' : 'border-ink-400 bg-white'
         )}
       >
-        {checked && (
-          <span className="w-1.5 h-1.5 rounded-full bg-green-700" />
-        )}
+        {checked && <span className="w-1.5 h-1.5 rounded-full bg-green-700" />}
       </span>
       <span
         className={cn(
@@ -143,6 +235,7 @@ function RadioOption({
 }
 
 // ─── Options ──────────────────────────────────────────────────────────────────
+
 const AVAIL_OPTIONS: Array<{ value: BookStatus | 'all'; label: string }> = [
   { value: 'all',       label: 'All' },
   { value: 'available', label: 'Available' },
@@ -158,7 +251,64 @@ const FORMAT_OPTIONS: Array<{ value: BookFormat | 'all'; label: string }> = [
   { value: 'reference', label: 'Reference' },
 ]
 
+// ─── Collapsed icon rail ──────────────────────────────────────────────────────
+
+function CollapsedRail({
+  filters,
+  onExpand,
+}: {
+  filters: CatalogFilters
+  onExpand: (groupId?: string) => void
+}) {
+  return (
+    <div className="flex flex-col items-center py-2 gap-0.5">
+
+      {/* Expand chevron */}
+      <button
+        type="button"
+        onClick={() => onExpand()}
+        aria-label="Expand filters panel"
+        className="flex items-center justify-center w-9 h-9 rounded-(--radius-sm) text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+      >
+        <ChevronRight size={15} />
+      </button>
+
+      {/* Divider */}
+      <div className="w-6 border-t border-ink-200 my-1" />
+
+      {/* One button per filter group */}
+      {GROUP_DEFS.map((group) => {
+        const active = group.isActive(filters)
+        return (
+          <button
+            key={group.id}
+            type="button"
+            onClick={() => onExpand(group.id)}
+            aria-label={`${group.label} filter${active ? ' (active)' : ''}`}
+            aria-pressed={active}
+            className={cn(
+              'relative flex items-center justify-center w-9 h-9 rounded-(--radius-sm) transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1',
+              active
+                ? 'text-green-700 bg-green-50 hover:bg-green-100'
+                : 'text-ink-400 hover:bg-ink-100 hover:text-ink-700'
+            )}
+          >
+            {group.icon}
+            {active && (
+              <span
+                aria-hidden="true"
+                className="absolute top-1 right-1 w-2 h-2 rounded-full bg-green-600 ring-1 ring-white"
+              />
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
+
 export function FilterSidebar({
   filters,
   onChange,
@@ -169,6 +319,24 @@ export function FilterSidebar({
   onClose,
   className,
 }: FilterSidebarProps) {
+  const [collapsed, setCollapsed] = useState(false)
+  const [highlightGroup, setHighlightGroup] = useState<string | null>(null)
+
+  useLayoutEffectSafe(() => {
+    if (localStorage.getItem('catalog-filter-collapsed') === 'true') setCollapsed(true)
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem('catalog-filter-collapsed', String(collapsed))
+  }, [collapsed])
+
+  const handleExpand = useCallback((groupId?: string) => {
+    setCollapsed(false)
+    if (groupId) setHighlightGroup(groupId)
+  }, [])
+
+  const clearHighlight = useCallback(() => setHighlightGroup(null), [])
+
   const set = <K extends keyof CatalogFilters>(key: K, value: CatalogFilters[K]) =>
     onChange({ ...filters, [key]: value })
 
@@ -185,7 +353,7 @@ export function FilterSidebar({
   const subjectOptions = subjects.map((s) => ({ value: s === 'All' ? 'all' : s, label: s }))
   const floorOptions   = floors.map((f) => ({ value: f === 'All' ? 'all' : f, label: f }))
 
-  const content = (
+  const expandedContent = (
     <div className="flex flex-col h-full">
 
       {/* Header */}
@@ -206,7 +374,7 @@ export function FilterSidebar({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {hasActive && (
             <button
               type="button"
@@ -218,11 +386,22 @@ export function FilterSidebar({
               Clear all
             </button>
           )}
+          {/* Desktop collapse */}
+          <button
+            type="button"
+            onClick={() => setCollapsed(true)}
+            aria-label="Collapse filters panel"
+            className="hidden lg:flex items-center justify-center w-6 h-6 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          {/* Mobile close */}
           {onClose && (
             <button
               type="button"
               suppressHydrationWarning
               onClick={onClose}
+              aria-label="Close filters"
               className="lg:hidden flex items-center justify-center w-6 h-6 rounded-sm text-ink-400 hover:bg-ink-100 transition-colors"
             >
               <X size={14} />
@@ -234,7 +413,12 @@ export function FilterSidebar({
       {/* Sections */}
       <div className="flex-1 overflow-y-auto">
 
-        <FilterSection title="Genre">
+        <FilterSection
+          id="genre"
+          title="Genre"
+          highlighted={highlightGroup === 'genre'}
+          onHighlightDone={clearHighlight}
+        >
           <div className="flex flex-col gap-0.5">
             {genreOptions.map((opt) => (
               <RadioOption
@@ -249,7 +433,12 @@ export function FilterSidebar({
           </div>
         </FilterSection>
 
-        <FilterSection title="Availability">
+        <FilterSection
+          id="availability"
+          title="Availability"
+          highlighted={highlightGroup === 'availability'}
+          onHighlightDone={clearHighlight}
+        >
           <div className="flex flex-col gap-0.5">
             {AVAIL_OPTIONS.map((opt) => (
               <RadioOption
@@ -264,7 +453,13 @@ export function FilterSidebar({
           </div>
         </FilterSection>
 
-        <FilterSection title="Format" defaultOpen={false}>
+        <FilterSection
+          id="format"
+          title="Format"
+          defaultOpen={false}
+          highlighted={highlightGroup === 'format'}
+          onHighlightDone={clearHighlight}
+        >
           <div className="flex flex-col gap-0.5">
             {FORMAT_OPTIONS.map((opt) => (
               <RadioOption
@@ -279,7 +474,13 @@ export function FilterSidebar({
           </div>
         </FilterSection>
 
-        <FilterSection title="Floor Location" defaultOpen={false}>
+        <FilterSection
+          id="floor"
+          title="Floor Location"
+          defaultOpen={false}
+          highlighted={highlightGroup === 'floor'}
+          onHighlightDone={clearHighlight}
+        >
           <div className="flex flex-col gap-0.5">
             {floorOptions.map((opt) => (
               <RadioOption
@@ -294,7 +495,13 @@ export function FilterSidebar({
           </div>
         </FilterSection>
 
-        <FilterSection title="Subject" defaultOpen={false}>
+        <FilterSection
+          id="subject"
+          title="Subject"
+          defaultOpen={false}
+          highlighted={highlightGroup === 'subject'}
+          onHighlightDone={clearHighlight}
+        >
           <div className="flex flex-col gap-0.5">
             {subjectOptions.map((opt) => (
               <RadioOption
@@ -309,7 +516,13 @@ export function FilterSidebar({
           </div>
         </FilterSection>
 
-        <FilterSection title="Call No. Range" defaultOpen={false}>
+        <FilterSection
+          id="callno"
+          title="Call No. Range"
+          defaultOpen={false}
+          highlighted={highlightGroup === 'callno'}
+          onHighlightDone={clearHighlight}
+        >
           <div className="flex flex-col gap-2">
             <div>
               <label
@@ -355,12 +568,16 @@ export function FilterSidebar({
       {/* Desktop sticky sidebar */}
       <aside
         className={cn(
-          'hidden lg:flex flex-col bg-white border-r border-ink-200 flex-shrink-0 overflow-hidden sticky top-0 self-start',
+          'hidden lg:flex flex-col bg-white border-r border-ink-200 shrink-0 overflow-hidden sticky top-0 self-start transition-all duration-200 ease-in-out',
           className
         )}
-        style={{ width: 220, height: 'calc(100vh - var(--height-nav))' }}
+        style={{ width: collapsed ? 56 : 220, height: 'calc(100vh - var(--height-nav))' }}
+        aria-label="Filters panel"
       >
-        {content}
+        {collapsed
+          ? <CollapsedRail filters={filters} onExpand={handleExpand} />
+          : expandedContent
+        }
       </aside>
 
       {/* Mobile backdrop */}
@@ -380,8 +597,9 @@ export function FilterSidebar({
           isOpen ? 'translate-x-0' : '-translate-x-full'
         )}
         style={{ top: 'var(--height-nav)' }}
+        aria-label="Filters panel"
       >
-        {content}
+        {expandedContent}
       </aside>
     </>
   )
