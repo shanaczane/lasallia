@@ -67,14 +67,6 @@ const MOCK_RESERVATIONS: Reservation[] = [
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function formatTime(isoString: string): string {
-  return new Date(isoString).toLocaleTimeString("en-PH", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  })
-}
-
 function formatPickupDate(isoString: string): string {
   return new Date(isoString).toLocaleDateString("en-PH", {
     month: "short",
@@ -107,7 +99,6 @@ function groupByDate(reservations: Reservation[]): { label: string; items: Reser
     groups[label].push(r)
   }
 
-  // Sort newest group first
   return Object.entries(groups)
     .sort((a, b) => {
       const dateA = new Date(a[1][0].reservationDate).getTime()
@@ -117,7 +108,7 @@ function groupByDate(reservations: Reservation[]): { label: string; items: Reser
     .map(([label, items]) => ({ label, items }))
 }
 
-// ─── Status Config — mirrors typeConfig in NotificationItemCard ───────────────
+// ─── Status Config ────────────────────────────────────────────────────────────
 type StatusConfig = {
   icon: () => React.ReactNode
   iconBg: string
@@ -182,7 +173,7 @@ const TABS: Tab[] = [
   { key: "Cancelled", label: "Cancelled", shortLabel: "Cancelled", status: "Cancelled" },
 ]
 
-// ─── Reservation Item Row — mirrors NotificationItemCard exactly ───────────────
+// ─── Reservation Item Row ─────────────────────────────────────────────────────
 interface ReservationItemCardProps {
   reservation: Reservation
   onCancel: () => void
@@ -196,16 +187,15 @@ function ReservationItemCard({ reservation: r, onCancel, isLast }: ReservationIt
   return (
     <div
       className={cn(
-        "flex items-start gap-3 px-4 sm:px-5 py-4 transition-colors",
+        "flex items-center gap-3 px-4 sm:px-5 py-4 transition-colors",
         isActive && "hover:bg-green-50/60",
         !isActive && "hover:bg-ink-50",
         !isLast && "border-b border-ink-100"
       )}
     >
-      {/* Icon — same size-7 rounded-full as NotificationItemCard */}
       <div
         className={cn(
-          "mt-0.5 flex-shrink-0 flex items-center justify-center rounded-full size-7",
+          "flex-shrink-0 flex items-center justify-center rounded-full size-7",
           config.iconBg,
           config.iconColor
         )}
@@ -213,7 +203,6 @@ function ReservationItemCard({ reservation: r, onCancel, isLast }: ReservationIt
         {config.icon()}
       </div>
 
-      {/* Body */}
       <div className="flex-1 min-w-0">
         <p
           className={cn(
@@ -230,36 +219,26 @@ function ReservationItemCard({ reservation: r, onCancel, isLast }: ReservationIt
         >
           {config.message(r)}
         </p>
+      </div>
 
-        {/* Cancel button — only for active statuses */}
+      {/* Right side: cancel button vertically centered */}
+      <div className="flex items-center flex-shrink-0">
         {canCancel(r.status) && (
           <button
             onClick={onCancel}
-            className="mt-2 px-3 py-1 rounded-(--radius) border border-danger/30 bg-white text-danger font-medium hover:bg-danger-bg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-(--radius) border border-danger/30 bg-white text-danger font-medium hover:bg-danger-bg transition-colors whitespace-nowrap"
             style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
           >
-            Cancel reservation
+            <XCircle size={13} />
+            <span className="hidden sm:inline">Cancel</span>
           </button>
-        )}
-      </div>
-
-      {/* Right: time + unread dot — mirrors NotificationItemCard exactly */}
-      <div className="flex flex-col items-end gap-2 flex-shrink-0 pt-0.5">
-        <span
-          className="text-ink-400 whitespace-nowrap"
-          style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
-        >
-          {formatTime(r.reservationDate)}
-        </span>
-        {isActive && (
-          <span className="size-2 rounded-full bg-green-600" />
         )}
       </div>
     </div>
   )
 }
 
-// ─── Skeleton Row — mirrors NotificationItemCard structure ────────────────────
+// ─── Skeleton Row ─────────────────────────────────────────────────────────────
 function SkeletonRow({ isLast }: { isLast: boolean }) {
   return (
     <div
@@ -311,7 +290,7 @@ interface CancelModalProps {
 function CancelModal({ reservation, onConfirm, onClose }: CancelModalProps) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
@@ -389,7 +368,6 @@ export default function ReservationsPage() {
     setCancelTarget(null)
   }
 
-  // Tab counts — mirrors tabCounts in NotificationFeed (counts active/unread only)
   const tabCounts: Record<TabKey, number> = {
     all:       reservations.filter((r) => canCancel(r.status)).length,
     Pending:   reservations.filter((r) => r.status === "Pending").length,
@@ -405,7 +383,6 @@ export default function ReservationsPage() {
 
   const groups = groupByDate(filtered)
 
-  // Shared tab button — mirrors TabButton in NotificationFeed exactly
   function TabButton({ tab, isMobile }: { tab: Tab; isMobile: boolean }) {
     const isActive = activeTab === tab.key
     const count = tabCounts[tab.key]
@@ -444,7 +421,6 @@ export default function ReservationsPage() {
   return (
     <div className="flex flex-col w-full min-h-screen bg-paper">
 
-      {/* ── Page header — mirrors NotificationFeed header exactly ── */}
       <div className="px-4 sm:px-8 pt-6 pb-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -476,15 +452,12 @@ export default function ReservationsPage() {
         </div>
       </div>
 
-      {/* ── Tab filters — mirrors NotificationFeed tabs exactly ── */}
       <div className="border-b border-ink-200">
-        {/* Mobile */}
         <div className="flex sm:hidden w-full overflow-x-auto px-2 scrollbar-none">
           {TABS.map((tab) => (
             <TabButton key={tab.key} tab={tab} isMobile={true} />
           ))}
         </div>
-        {/* Desktop */}
         <div className="hidden sm:flex px-8">
           {TABS.map((tab) => (
             <TabButton key={tab.key} tab={tab} isMobile={false} />
@@ -492,7 +465,6 @@ export default function ReservationsPage() {
         </div>
       </div>
 
-      {/* ── Content — mirrors NotificationFeed group layout exactly ── */}
       <div className="flex-1 px-4 sm:px-8 py-4">
         {isLoading ? (
           <div className="flex flex-col gap-4">
@@ -515,7 +487,6 @@ export default function ReservationsPage() {
           <div className="flex flex-col gap-4">
             {groups.map(({ label, items }) => (
               <div key={label} className="flex flex-col gap-2">
-                {/* Date label — mirrors NotificationFeed group label exactly */}
                 <p
                   className="text-ink-400 uppercase font-semibold px-1"
                   style={{
@@ -526,7 +497,6 @@ export default function ReservationsPage() {
                 >
                   {label}
                 </p>
-                {/* Card group */}
                 <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
                   {items.map((r, i) => (
                     <ReservationItemCard
@@ -543,7 +513,6 @@ export default function ReservationsPage() {
         )}
       </div>
 
-      {/* ── Cancel Modal ── */}
       {cancelTarget && (
         <CancelModal
           reservation={cancelTarget}
