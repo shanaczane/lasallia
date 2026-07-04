@@ -9,11 +9,10 @@ import {
   LayoutDashboard,
   BookOpen,
   ScanLine,
-  RotateCcw,
   BarChart2,
   Library,
   Users,
-  Tag,
+  Bell,
   Settings,
   ArrowRight,
 } from "lucide-react"
@@ -36,7 +35,6 @@ const librarianNav: NavSection[] = [
     items: [
       { label: "Dashboard",       icon: <LayoutDashboard size={16} />, href: "/librarian/dashboard" },
       { label: "Borrow & Return", icon: <ScanLine size={16} />,        href: "/librarian/borrow-return" },
-      { label: "Renewals",        icon: <RotateCcw size={16} />,       href: "/librarian/renewals" },
       { label: "Reservations",    icon: <BookOpen size={16} />,        href: "/librarian/reservations" },
       { label: "Reports",         icon: <BarChart2 size={16} />,       href: "/librarian/reports" },
     ],
@@ -44,10 +42,10 @@ const librarianNav: NavSection[] = [
   {
     title: "Manage",
     items: [
-      { label: "Catalog",    icon: <Library size={16} />,  href: "/librarian/catalog" },
-      { label: "Patrons",    icon: <Users size={16} />,    href: "/librarian/patrons" },
-      { label: "Categories", icon: <Tag size={16} />,      href: "/librarian/categories" },
-      { label: "Settings",   icon: <Settings size={16} />, href: "/librarian/settings" },
+      { label: "Catalog",       icon: <Library size={16} />,  href: "/librarian/catalog" },
+      { label: "Patrons",       icon: <Users size={16} />,    href: "/librarian/patrons" },
+      { label: "Notifications", icon: <Bell size={16} />,     href: "/librarian/notifications" },
+      { label: "Settings",      icon: <Settings size={16} />, href: "/librarian/settings" },
     ],
   },
 ]
@@ -70,7 +68,7 @@ export function LibrarianLayout({
 
   const sidebarContent = (
     <>
-      {/* ── Quick Scan card – Sprint 5.4.1 ─────────────── */}
+      {/* Quick Scan card */}
       <div className="px-3 pt-4 pb-1">
         <a
           href="/librarian/borrow-return"
