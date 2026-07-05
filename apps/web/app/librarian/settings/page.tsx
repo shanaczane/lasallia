@@ -56,7 +56,7 @@ export default function LibrarianSettingsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-ink-200 overflow-x-auto">
+      <div className="flex border-b border-ink-200 overflow-x-auto [&::-webkit-scrollbar]:hidden">
         {TABS.map((tab) => {
           const isActive = activeTab === tab.key
           return (
@@ -189,7 +189,7 @@ function Field({
         disabled={disabled}
         placeholder={placeholder}
         className={cn(
-          "w-full px-3 py-2 rounded-(--radius-sm) border border-ink-200 text-ink-900 outline-none transition-colors",
+          "w-full px-3 py-2 rounded-sm border border-ink-200 text-ink-900 outline-none transition-colors",
           "focus:border-green-700 focus:ring-1 focus:ring-green-700",
           disabled && "bg-ink-50 text-ink-400 cursor-not-allowed"
         )}
