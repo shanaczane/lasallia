@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { loginRequest, saveSession, roleRedirect } from '@/lib/auth';
 
 type UserRole = 'guest' | 'student' | 'librarian';
 
@@ -28,7 +29,11 @@ export default function LoginSection() {
     setErrors({ email: '', password: '' });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (selectedRole === 'guest') {
@@ -37,6 +42,7 @@ export default function LoginSection() {
     }
 
     setErrors({ email: '', password: '' });
+    setApiError('');
 
     if (!validateDLSLEmail(formData.email)) {
       setErrors(prev => ({
@@ -46,17 +52,25 @@ export default function LoginSection() {
       return;
     }
 
-    if (formData.password.length < 6) {
-      setErrors(prev => ({
-        ...prev,
-        password: 'Password must be at least 6 characters long.',
-      }));
-      return;
+    setLoading(true);
+    try {
+      const data = await loginRequest(formData.email, formData.password);
+      if (data.user.role !== selectedRole) {
+        setApiError(
+          selectedRole === 'librarian'
+            ? 'This account does not have librarian access.'
+            : 'This account is not registered as a student.'
+        );
+        return;
+      }
+      saveSession(data);
+      router.push(roleRedirect(data.user.role));
+    } catch (err: unknown) {
+      setApiError(err instanceof Error ? err.message : 'Invalid email or password.');
+    } finally {
+      setLoading(false);
     }
-
-    router.push(selectedRole === 'student' ? '/student/dashboard' : '/librarian/dashboard');
   };
-  const [showPassword, setShowPassword] = useState(false);
 
   const isGuest = selectedRole === 'guest';
 
@@ -110,7 +124,7 @@ export default function LoginSection() {
                   </div>
                   <div>
                     <h3 className="font-semibold text-xs text-gray-900 sm:text-sm">Guest</h3>
-                    <p className="text-[10px] text-gray-500 sm:text-xs">Browse catalog</p>
+                    <p className="text-2xs text-gray-500 sm:text-xs">Browse catalog</p>
                   </div>
                 </div>
                 {selectedRole === 'guest' && (
@@ -147,7 +161,7 @@ export default function LoginSection() {
                     <h3 className={`font-semibold text-xs sm:text-sm ${selectedRole === 'student' ? 'text-emerald-900' : 'text-gray-900'}`}>
                       Student
                     </h3>
-                    <p className="text-[10px] text-gray-500 sm:text-xs">Browse & borrow</p>
+                    <p className="text-2xs text-gray-500 sm:text-xs">Browse & borrow</p>
                   </div>
                 </div>
                 {selectedRole === 'student' && (
@@ -184,7 +198,7 @@ export default function LoginSection() {
                     <h3 className={`font-semibold text-xs sm:text-sm ${selectedRole === 'librarian' ? 'text-amber-900' : 'text-gray-900'}`}>
                       Librarian
                     </h3>
-                    <p className="text-[10px] text-gray-500 sm:text-xs">Manage library</p>
+                    <p className="text-2xs text-gray-500 sm:text-xs">Manage library</p>
                   </div>
                 </div>
                 {selectedRole === 'librarian' && (
@@ -277,7 +291,6 @@ export default function LoginSection() {
                         errors.password ? 'border-red-500' : 'border-gray-300'
                       } py-2 pl-9 pr-11 text-sm text-gray-900 placeholder-gray-400 focus:border-emerald-600 focus:outline-none focus:ring-2 sm:py-2.5 sm:pl-10 sm:pr-12 transition-all`}
                       required
-                      minLength={6}
                     />
 
                     {/* Password Toggle Button (Eye Icon) */}
@@ -336,19 +349,29 @@ export default function LoginSection() {
               </div>
             )}
 
+            {/* API error */}
+            {apiError && (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                {apiError}
+              </p>
+            )}
+
             {/* Submit Button */}
             <button
               suppressHydrationWarning
               type="submit"
+              disabled={loading}
               className={`w-full rounded-lg py-2.5 px-4 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] sm:py-3 sm:text-base ${
                 selectedRole === 'guest'
-                  ? 'bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800'
+                  ? 'bg-linear-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800'
                   : selectedRole === 'student'
-                  ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800'
-                  : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700'
+                  ? 'bg-linear-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800'
+                  : 'bg-linear-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700'
               }`}
             >
-              {isGuest
+              {loading
+                ? 'Signing in…'
+                : isGuest
                 ? 'Continue as Guest'
                 : `Sign In as ${selectedRole === 'student' ? 'Student / Faculty' : 'Librarian'}`}
             </button>

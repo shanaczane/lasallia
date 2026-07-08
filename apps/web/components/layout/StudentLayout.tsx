@@ -72,6 +72,10 @@ export function StudentLayout({ children, userName, userInitials, initialUnread 
   )
 }
 
+function getInitials(name: string): string {
+  return name.split(" ").map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase()
+}
+
 function StudentLayoutInner({
   children,
   userName,
@@ -85,9 +89,19 @@ function StudentLayoutInner({
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [displayName, setDisplayName] = useState(userName ?? "")
+  const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("sidebar-collapsed") === "true") setCollapsed(true)
+    const raw = localStorage.getItem("user")
+    if (raw) {
+      const user = JSON.parse(raw)
+      if (user.full_name) {
+        setDisplayName(user.full_name)
+        setDisplayInitials(getInitials(user.full_name))
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -183,8 +197,8 @@ function StudentLayoutInner({
   return (
     <div className="min-h-screen bg-paper">
       <TopNav
-        userName={userName}
-        userInitials={userInitials}
+        userName={displayName}
+        userInitials={displayInitials}
         notificationCount={unreadCount}
         notificationsHref="/student/notifications"
         showNotifications={true}

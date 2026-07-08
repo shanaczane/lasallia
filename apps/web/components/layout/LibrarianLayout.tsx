@@ -63,6 +63,10 @@ type LibrarianLayoutProps = {
   notificationCount?: number
 }
 
+function getInitials(name: string): string {
+  return name.split(" ").map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase()
+}
+
 export function LibrarianLayout({
   children,
   userName,
@@ -72,9 +76,19 @@ export function LibrarianLayout({
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [displayName, setDisplayName] = useState(userName ?? "")
+  const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("librarian-sidebar-collapsed") === "true") setCollapsed(true)
+    const raw = localStorage.getItem("user")
+    if (raw) {
+      const user = JSON.parse(raw)
+      if (user.full_name) {
+        setDisplayName(user.full_name)
+        setDisplayInitials(getInitials(user.full_name))
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -169,8 +183,8 @@ export function LibrarianLayout({
   return (
     <div className="min-h-screen bg-paper">
       <TopNav
-        userName={userName}
-        userInitials={userInitials}
+        userName={displayName}
+        userInitials={displayInitials}
         notificationCount={notificationCount}
         notificationsHref="/librarian/notifications"
         showNotifications={true}
