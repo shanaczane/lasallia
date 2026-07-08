@@ -9,11 +9,10 @@ import {
   LayoutDashboard,
   BookOpen,
   ScanLine,
-  RotateCcw,
   BarChart2,
   Library,
   Users,
-  Tag,
+  Bell,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -40,7 +39,6 @@ const librarianNav: NavSection[] = [
     items: [
       { label: "Dashboard",       icon: <LayoutDashboard size={16} />, href: "/librarian/dashboard" },
       { label: "Borrow & Return", icon: <ScanLine size={16} />,        href: "/librarian/borrow-return" },
-      { label: "Renewals",        icon: <RotateCcw size={16} />,       href: "/librarian/renewals" },
       { label: "Reservations",    icon: <BookOpen size={16} />,        href: "/librarian/reservations" },
       { label: "Reports",         icon: <BarChart2 size={16} />,       href: "/librarian/reports" },
     ],
@@ -48,10 +46,10 @@ const librarianNav: NavSection[] = [
   {
     title: "Manage",
     items: [
-      { label: "Catalog",    icon: <Library size={16} />,  href: "/librarian/catalog" },
-      { label: "Patrons",    icon: <Users size={16} />,    href: "/librarian/patrons" },
-      { label: "Categories", icon: <Tag size={16} />,      href: "/librarian/categories" },
-      { label: "Settings",   icon: <Settings size={16} />, href: "/librarian/settings" },
+      { label: "Catalog",       icon: <Library size={16} />,  href: "/librarian/catalog" },
+      { label: "Patrons",       icon: <Users size={16} />,    href: "/librarian/patrons" },
+      { label: "Notifications", icon: <Bell size={16} />,     href: "/librarian/notifications" },
+      { label: "Settings",      icon: <Settings size={16} />, href: "/librarian/settings" },
     ],
   },
 ]
@@ -63,6 +61,10 @@ type LibrarianLayoutProps = {
   notificationCount?: number
 }
 
+function getInitials(name: string): string {
+  return name.split(" ").map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase()
+}
+
 export function LibrarianLayout({
   children,
   userName,
@@ -72,9 +74,19 @@ export function LibrarianLayout({
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [displayName, setDisplayName] = useState(userName ?? "")
+  const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("librarian-sidebar-collapsed") === "true") setCollapsed(true)
+    const raw = localStorage.getItem("user")
+    if (raw) {
+      const user = JSON.parse(raw)
+      if (user.full_name) {
+        setDisplayName(user.full_name)
+        setDisplayInitials(getInitials(user.full_name))
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -83,94 +95,94 @@ export function LibrarianLayout({
 
   const renderSidebarContent = (isCollapsed: boolean) => (
     <>
-    <nav className={cn("flex-1 py-4 flex flex-col gap-5", isCollapsed ? "px-1" : "px-3")}>
-      {librarianNav.map((section) => (
-        <div key={section.title}>
-          {!isCollapsed && (
-            <p
-              className="px-2 mb-1 text-ink-400 uppercase font-semibold"
-              style={{
-                fontSize: "var(--text-2xs)",
-                letterSpacing: "var(--tracking-section)",
-                fontFamily: "var(--font-body)",
-              }}
-            >
-              {section.title}
-            </p>
-          )}
-          <ul className="flex flex-col gap-0.5">
-            {section.items.map((item) => {
-              const isActive = pathname === item.href
-              return (
-                <li key={item.href}>
-                  <a
-                    href={item.href}
-                    onClick={() => setMenuOpen(false)}
-                    title={isCollapsed ? item.label : undefined}
-                    className={cn(
-                      "flex items-center transition-colors rounded-sm",
-                      isCollapsed
-                        ? "justify-center p-2 mx-1"
-                        : "gap-2.5 px-2 py-1.5",
-                      isActive
-                        ? "bg-green-100 text-green-800 font-semibold"
-                        : "text-ink-500 hover:bg-ink-50 hover:text-ink-900"
-                    )}
-                  >
-                    <span className={cn(isActive ? "text-green-700" : "text-ink-400")}>
-                      {item.icon}
-                    </span>
-                    {!isCollapsed && (
-                      <>
-                        <span className="flex-1" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                          {item.label}
-                        </span>
-                        {item.badge !== undefined && (
-                          <span
-                            className={cn(
-                              "flex items-center justify-center rounded-full min-w-4.5 h-4.5 px-1",
-                              isActive ? "bg-green-700 text-white" : "bg-ink-200 text-ink-500"
-                            )}
-                            style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
-                          >
-                            {item.badge}
+      <nav className={cn("flex-1 py-4 flex flex-col gap-5", isCollapsed ? "px-1" : "px-3")}>
+        {librarianNav.map((section) => (
+          <div key={section.title}>
+            {!isCollapsed && (
+              <p
+                className="px-2 mb-1 text-ink-400 uppercase font-semibold"
+                style={{
+                  fontSize: "var(--text-2xs)",
+                  letterSpacing: "var(--tracking-section)",
+                  fontFamily: "var(--font-body)",
+                }}
+              >
+                {section.title}
+              </p>
+            )}
+            <ul className="flex flex-col gap-0.5">
+              {section.items.map((item) => {
+                const isActive = pathname === item.href
+                return (
+                  <li key={item.href}>
+                    <a
+                      href={item.href}
+                      onClick={() => setMenuOpen(false)}
+                      title={isCollapsed ? item.label : undefined}
+                      className={cn(
+                        "flex items-center transition-colors rounded-sm",
+                        isCollapsed
+                          ? "justify-center p-2 mx-1"
+                          : "gap-2.5 px-2 py-1.5",
+                        isActive
+                          ? "bg-green-100 text-green-800 font-semibold"
+                          : "text-ink-500 hover:bg-ink-50 hover:text-ink-900"
+                      )}
+                    >
+                      <span className={cn(isActive ? "text-green-700" : "text-ink-400")}>
+                        {item.icon}
+                      </span>
+                      {!isCollapsed && (
+                        <>
+                          <span className="flex-1" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                            {item.label}
                           </span>
-                        )}
-                      </>
-                    )}
-                  </a>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      ))}
-    </nav>
+                          {item.badge !== undefined && (
+                            <span
+                              className={cn(
+                                "flex items-center justify-center rounded-full min-w-4.5 h-4.5 px-1",
+                                isActive ? "bg-green-700 text-white" : "bg-ink-200 text-ink-500"
+                              )}
+                              style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
+                            >
+                              {item.badge}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </a>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ))}
+      </nav>
 
-    {/* Sign out */}
-    <div className={cn("border-t border-ink-100", isCollapsed ? "p-2" : "p-3")}>
-      <button
-        type="button"
-        onClick={() => window.location.replace("/login")}
-        title={isCollapsed ? "Sign out" : undefined}
-        className={cn(
-          "flex items-center rounded-sm text-ink-500 hover:bg-ink-50 hover:text-red-600 transition-colors",
-          isCollapsed ? "w-full justify-center p-2" : "w-full gap-2.5 px-3 py-2"
-        )}
-        style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-      >
-        <LogOut size={16} className="text-ink-400" />
-        {!isCollapsed && "Sign out"}
-      </button>
-    </div>
+      {/* Sign out */}
+      <div className={cn("border-t border-ink-100", isCollapsed ? "p-2" : "p-3")}>
+        <button
+          type="button"
+          onClick={() => window.location.replace("/login")}
+          title={isCollapsed ? "Sign out" : undefined}
+          className={cn(
+            "flex items-center rounded-sm text-ink-500 hover:bg-ink-50 hover:text-red-600 transition-colors",
+            isCollapsed ? "w-full justify-center p-2" : "w-full gap-2.5 px-3 py-2"
+          )}
+          style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+        >
+          <LogOut size={16} className="text-ink-400" />
+          {!isCollapsed && "Sign out"}
+        </button>
+      </div>
     </>
   )
 
   return (
     <div className="min-h-screen bg-paper">
       <TopNav
-        userName={userName}
-        userInitials={userInitials}
+        userName={displayName}
+        userInitials={displayInitials}
         notificationCount={notificationCount}
         notificationsHref="/librarian/notifications"
         showNotifications={true}

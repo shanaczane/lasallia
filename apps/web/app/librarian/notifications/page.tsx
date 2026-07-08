@@ -172,7 +172,7 @@ export default function LibrarianNotificationsPage() {
       </div>
 
       {/* Tab filters */}
-      <div className="flex border-b border-ink-200 px-4 sm:px-8 overflow-x-auto">
+      <div className="flex border-b border-ink-200 px-4 sm:px-8 overflow-x-auto [&::-webkit-scrollbar]:hidden">
         {TABS.map((tab) => {
           const isActive = activeTab === tab.key
           const count = tabCounts[tab.key]
