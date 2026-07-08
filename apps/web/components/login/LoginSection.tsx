@@ -3,9 +3,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { loginRequest, saveSession, roleRedirect } from '@/lib/auth';
+import { loginRequest, saveSession, roleRedirect, type Role } from '@/lib/auth';
 
 type UserRole = 'guest' | 'User' | 'librarian';
+
+// UI-facing role labels differ from the backend's Role type (students & faculty are both 'student' there).
+const toBackendRole = (role: UserRole): Role => (role === 'User' ? 'student' : role);
 
 export default function LoginSection() {
   const router = useRouter();
@@ -26,7 +29,6 @@ export default function LoginSection() {
 
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,7 +52,7 @@ export default function LoginSection() {
     setLoading(true);
     try {
       const data = await loginRequest(formData.email, formData.password);
-      if (data.user.role !== selectedRole) {
+      if (data.user.role !== toBackendRole(selectedRole)) {
         setApiError(
           selectedRole === 'librarian'
             ? 'This account does not have librarian access.'
@@ -368,13 +370,8 @@ export default function LoginSection() {
               suppressHydrationWarning
               type="submit"
               disabled={loading}
-              className={`w-full rounded-lg py-2.5 px-4 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] sm:py-3 sm:text-base ${
               className={`w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] sm:py-3 sm:text-base ${
                 selectedRole === 'guest'
-                  ? 'bg-linear-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800'
-                  : selectedRole === 'student'
-                  ? 'bg-linear-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800'
-                  : 'bg-linear-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700'
                   ? 'bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800'
                   : selectedRole === 'User'
                   ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800'
