@@ -8,8 +8,8 @@ apps/web/out/
 
 # Python
 apps/api/venv/
-apps/api/__pycache__/
-apps/api/*.pyc
+**/__pycache__/
+*.pyc
 apps/api/.pytest_cache/
 
 # Env files
