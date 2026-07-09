@@ -1,13 +1,24 @@
 // apps/web/app/guest/catalog/page.tsx
 // Sprint 3.1.1–3.1.3 — Guest Public Catalog Screen (Static UI)
+// Responsive filters: desktop sidebar / mobile bottom sheet (sprint: responsive catalog filters)
 
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
-import { Search, SlidersHorizontal, X, ArrowUpDown } from 'lucide-react'
+import { Suspense, useMemo, useRef, useState } from 'react'
+import { Search, X, ArrowUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Book } from '@lasallia/types'
-import { FilterSidebar, BookGrid, CatalogFilters, DEFAULT_FILTERS } from '@/components/ui/catalog'
+import {
+  FilterSidebar,
+  FilterSheet,
+  QuickChipRow,
+  AppliedChips,
+  BookGrid,
+  buildFilterSections,
+  filterBooksByCatalogFilters,
+  useCatalogFilters,
+  CatalogFilters,
+} from '@/components/ui/catalog'
 import {
   MOCK_BOOKS,
   MOCK_CATEGORIES,
@@ -38,77 +49,48 @@ function sortBooks(books: Book[], sort: SortOption): Book[] {
   }
 }
 
-function filterBooks(books: Book[], query: string, filters: CatalogFilters): Book[] {
-  return books.filter((book) => {
-    if (query.trim()) {
-      const q = query.toLowerCase()
-      const hit =
-        book.title.toLowerCase().includes(q) ||
-        book.author.toLowerCase().includes(q) ||
-        book.category.toLowerCase().includes(q) ||
-        (book.subject?.toLowerCase().includes(q) ?? false) ||
-        book.call_number.toLowerCase().includes(q)
-      if (!hit) return false
-    }
-    if (filters.genre !== 'all' && book.category !== filters.genre) return false
-    if (filters.availability !== 'all') {
-      const match = filters.availability === 'misplaced'
-        ? book.status === 'misplaced'
-        : book.status === filters.availability
-      if (!match) return false
-    }
-    if (filters.subject !== 'all' && book.subject !== filters.subject) return false
-    if (filters.format !== 'all' && book.format !== filters.format) return false
-    if (filters.floor !== 'all' && book.floor !== filters.floor) return false
-    if (filters.call_number_start && book.call_number < filters.call_number_start) return false
-    if (filters.call_number_end && book.call_number > filters.call_number_end) return false
-    return true
-  })
+function searchBooks(books: Book[], query: string): Book[] {
+  if (!query.trim()) return books
+  const q = query.toLowerCase()
+  return books.filter(
+    (book) =>
+      book.title.toLowerCase().includes(q) ||
+      book.author.toLowerCase().includes(q) ||
+      book.category.toLowerCase().includes(q) ||
+      (book.subject?.toLowerCase().includes(q) ?? false) ||
+      book.call_number.toLowerCase().includes(q)
+  )
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
-export default function GuestCatalogPage() {
+function GuestCatalogContent() {
   const [query, setQuery] = useState('')
-  const [filters, setFilters] = useState<CatalogFilters>(DEFAULT_FILTERS)
   const [sort, setSort] = useState<SortOption>('relevance')
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const filtersButtonRef = useRef<HTMLButtonElement>(null)
+
+  const { filters, setFilter, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
+
+  const sections = useMemo(
+    () => buildFilterSections({ genres: MOCK_CATEGORIES, subjects: MOCK_SUBJECTS, floors: MOCK_FLOORS }),
+    []
+  )
 
   const results = useMemo(
-    () => sortBooks(filterBooks(MOCK_BOOKS, query, filters), sort),
+    () => sortBooks(filterBooksByCatalogFilters(searchBooks(MOCK_BOOKS, query), filters), sort),
     [query, filters, sort]
   )
 
-  const hasActive =
-    filters.genre !== 'all' ||
-    filters.availability !== 'all' ||
-    filters.format !== 'all' ||
-    filters.floor !== 'all' ||
-    filters.subject !== 'all' ||
-    filters.call_number_start !== '' ||
-    filters.call_number_end !== ''
-
-  const activeCount = [
-    filters.genre !== 'all',
-    filters.availability !== 'all',
-    filters.format !== 'all',
-    filters.floor !== 'all',
-    filters.subject !== 'all',
-    filters.call_number_start !== '' || filters.call_number_end !== '',
-  ].filter(Boolean).length
+  function clearAll() {
+    setQuery('')
+    resetAll()
+  }
 
   return (
     <div className="flex" style={{ minHeight: 'calc(100vh - var(--height-nav))' }}>
 
-      {/* ── Filter sidebar ─────────────────────────────────────────────── */}
-      <FilterSidebar
-        filters={filters}
-        onChange={setFilters}
-        genres={MOCK_CATEGORIES}
-        subjects={MOCK_SUBJECTS}
-        floors={MOCK_FLOORS}
-        isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-      />
+      {/* ── Filter sidebar (desktop only) ──────────────────────────────── */}
+      <FilterSidebar filters={filters} setFilter={setFilter} resetAll={resetAll} sections={sections} />
 
       {/* ── Main area ──────────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 px-5 sm:px-8 py-7">
@@ -131,7 +113,7 @@ export default function GuestCatalogPage() {
         </div>
 
         {/* ── Search + Sort row ─────────────────────────────────────────── */}
-        <div className="flex items-center gap-2 mb-5">
+        <div className="flex items-center gap-2 mb-4">
 
           {/* Search input */}
           <div className="flex-1 relative">
@@ -187,71 +169,13 @@ export default function GuestCatalogPage() {
               ))}
             </select>
           </div>
-
-          {/* Mobile filter button */}
-          <button
-            type="button"
-            suppressHydrationWarning
-            onClick={() => setDrawerOpen(true)}
-            className={cn(
-              'lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-sm border font-medium transition-colors flex-shrink-0',
-              hasActive
-                ? 'border-green-700 bg-green-50 text-green-800'
-                : 'border-ink-200 bg-white text-ink-600 hover:border-ink-300'
-            )}
-            style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-          >
-            <SlidersHorizontal size={14} />
-            <span className="hidden sm:inline">Filters</span>
-            {activeCount > 0 && (
-              <span
-                className="flex items-center justify-center rounded-full bg-green-700 text-white font-bold"
-                style={{ width: 16, height: 16, fontSize: 9 }}
-              >
-                {activeCount}
-              </span>
-            )}
-          </button>
         </div>
 
-        {/* Active filter tags */}
-        {hasActive && (
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <span
-              className="text-ink-400"
-              style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
-            >
-              Active:
-            </span>
-            {filters.genre !== 'all' && (
-              <FilterTag label={filters.genre} onRemove={() => setFilters((f) => ({ ...f, genre: 'all' }))} />
-            )}
-            {filters.availability !== 'all' && (
-              <FilterTag label={filters.availability} onRemove={() => setFilters((f) => ({ ...f, availability: 'all' }))} />
-            )}
-            {filters.format !== 'all' && (
-              <FilterTag label={filters.format} onRemove={() => setFilters((f) => ({ ...f, format: 'all' }))} />
-            )}
-            {filters.floor !== 'all' && (
-              <FilterTag label={filters.floor} onRemove={() => setFilters((f) => ({ ...f, floor: 'all' }))} />
-            )}
-            {filters.subject !== 'all' && (
-              <FilterTag label={filters.subject} onRemove={() => setFilters((f) => ({ ...f, subject: 'all' }))} />
-            )}
-            <button
-              type="button"
-              suppressHydrationWarning
-              onClick={() => setFilters(DEFAULT_FILTERS)}
-              className="text-green-700 font-medium hover:text-green-900 underline underline-offset-2 transition-colors"
-              style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
-            >
-              Clear all
-            </button>
-          </div>
-        )}
+        {/* Applied filter chips */}
+        <AppliedChips filters={filters} sections={sections} resetSection={resetSection} resetAll={resetAll} />
 
         {/* Result count */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-3">
           <p
             className="text-ink-500"
             style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
@@ -268,26 +192,43 @@ export default function GuestCatalogPage() {
           </p>
         </div>
 
+        {/* Mobile quick-chip row (above results grid) */}
+        <QuickChipRow
+          filters={filters}
+          activeCount={activeCount}
+          onOpenSheet={() => setSheetOpen(true)}
+          setFilter={setFilter}
+          filtersButtonRef={filtersButtonRef}
+        />
+
         {/* Grid */}
-        <BookGrid books={results} hrefPrefix="/guest/catalog" />
+        <BookGrid
+          books={results}
+          hrefPrefix="/guest/catalog"
+          hasActiveFilters={hasActive || !!query}
+          onClearFilters={clearAll}
+        />
       </div>
+
+      {/* Mobile filter bottom sheet */}
+      <FilterSheet
+        isOpen={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        sections={sections}
+        filters={filters}
+        setFilter={setFilter}
+        resetAll={resetAll}
+        resultCount={results.length}
+        triggerRef={filtersButtonRef}
+      />
     </div>
   )
 }
 
-// ─── Filter tag chip ──────────────────────────────────────────────────────────
-function FilterTag({ label, onRemove }: { label: string; onRemove: () => void }) {
+export default function GuestCatalogPage() {
   return (
-    <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-green-100 text-green-800 font-medium capitalize">
-      <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}>{label}</span>
-      <button
-        type="button"
-        suppressHydrationWarning
-        onClick={onRemove}
-        className="text-green-600 hover:text-green-900 transition-colors"
-      >
-        <X size={11} />
-      </button>
-    </span>
+    <Suspense fallback={null}>
+      <GuestCatalogContent />
+    </Suspense>
   )
 }

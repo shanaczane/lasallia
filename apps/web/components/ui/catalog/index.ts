@@ -3,8 +3,19 @@ export { BookCard } from './BookCard'
 export { BookGrid } from './BookGrid'
 export { CatalogSearchBar } from './CatalogSearchBar'
 export { FilterSidebar } from './FilterSidebar'
-export type { CatalogFilters } from './FilterSidebar'
-export { DEFAULT_FILTERS } from './FilterSidebar'
+export { FilterSheet } from './FilterSheet'
+export { QuickChipRow, AppliedChips } from './FilterChips'
+export { useCatalogFilters } from './useCatalogFilters'
+export type {
+  CatalogFilters,
+  FilterSectionConfig,
+  RadioFilterKey,
+} from './filterConfig'
+export {
+  DEFAULT_FILTERS,
+  buildFilterSections,
+  filterBooksByCatalogFilters,
+} from './filterConfig'
 // Librarian Sprint 5.2
 export { LibrarianBookCard } from './LibrarianBookCard'
 export { BookFormModal } from './BookFormModal'

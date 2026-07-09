@@ -1,10 +1,10 @@
 // apps/web/components/ui/catalog/FilterSidebar.tsx
+// Desktop persistent filter sidebar (lg and up only). Mobile filtering lives in FilterSheet.
 
 'use client'
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import {
-  X,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -16,90 +16,40 @@ import {
   Hash,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { BookStatus, BookFormat } from '@lasallia/types'
+import {
+  CatalogFilters,
+  DEFAULT_FILTERS,
+  FilterSectionConfig,
+  RadioFilterKey,
+  isSectionActive,
+} from './filterConfig'
+
+export type { CatalogFilters } from './filterConfig'
+export { DEFAULT_FILTERS } from './filterConfig'
 
 const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export type CatalogFilters = {
-  genre: string
-  availability: BookStatus | 'all'
-  call_number_start: string
-  call_number_end: string
-  subject: string
-  format: BookFormat | 'all'
-  floor: string
+const SECTION_ICONS: Record<FilterSectionConfig['key'], React.ReactNode> = {
+  genre: <BookOpen size={16} />,
+  availability: <CircleDot size={16} />,
+  format: <FileText size={16} />,
+  floor: <MapPin size={16} />,
+  subject: <Tag size={16} />,
+  callNo: <Hash size={16} />,
 }
 
-export const DEFAULT_FILTERS: CatalogFilters = {
-  genre: 'all',
-  availability: 'all',
-  call_number_start: '',
-  call_number_end: '',
-  subject: 'all',
-  format: 'all',
-  floor: 'all',
+const DEFAULT_OPEN: Partial<Record<FilterSectionConfig['key'], boolean>> = {
+  genre: true,
+  availability: true,
 }
 
 type FilterSidebarProps = {
   filters: CatalogFilters
-  onChange: (filters: CatalogFilters) => void
-  genres: string[]
-  subjects: string[]
-  floors: string[]
-  isOpen?: boolean
-  onClose?: () => void
+  setFilter: <K extends keyof CatalogFilters>(key: K, value: CatalogFilters[K]) => void
+  resetAll: () => void
+  sections: FilterSectionConfig[]
   className?: string
 }
-
-// ─── Filter group definitions ─────────────────────────────────────────────────
-
-type GroupDef = {
-  id: string
-  label: string
-  icon: React.ReactNode
-  isActive: (f: CatalogFilters) => boolean
-}
-
-const GROUP_DEFS: GroupDef[] = [
-  {
-    id: 'genre',
-    label: 'Genre',
-    icon: <BookOpen size={16} />,
-    isActive: (f) => f.genre !== 'all',
-  },
-  {
-    id: 'availability',
-    label: 'Availability',
-    icon: <CircleDot size={16} />,
-    isActive: (f) => f.availability !== 'all',
-  },
-  {
-    id: 'format',
-    label: 'Format',
-    icon: <FileText size={16} />,
-    isActive: (f) => f.format !== 'all',
-  },
-  {
-    id: 'floor',
-    label: 'Floor Location',
-    icon: <MapPin size={16} />,
-    isActive: (f) => f.floor !== 'all',
-  },
-  {
-    id: 'subject',
-    label: 'Subject',
-    icon: <Tag size={16} />,
-    isActive: (f) => f.subject !== 'all',
-  },
-  {
-    id: 'callno',
-    label: 'Call No. Range',
-    icon: <Hash size={16} />,
-    isActive: (f) => f.call_number_start !== '' || f.call_number_end !== '',
-  },
-]
 
 // ─── Collapsible filter section ───────────────────────────────────────────────
 
@@ -215,7 +165,7 @@ function RadioOption({
       />
       <span
         className={cn(
-          'flex-shrink-0 w-3.5 h-3.5 rounded-full border-2 transition-colors flex items-center justify-center',
+          'shrink-0 w-3.5 h-3.5 rounded-full border-2 transition-colors flex items-center justify-center',
           checked ? 'border-green-700 bg-white' : 'border-ink-400 bg-white'
         )}
       >
@@ -234,31 +184,16 @@ function RadioOption({
   )
 }
 
-// ─── Options ──────────────────────────────────────────────────────────────────
-
-const AVAIL_OPTIONS: Array<{ value: BookStatus | 'all'; label: string }> = [
-  { value: 'all',       label: 'All' },
-  { value: 'available', label: 'Available' },
-  { value: 'borrowed',  label: 'Borrowed' },
-  { value: 'reserved',  label: 'Reserved' },
-  { value: 'misplaced', label: 'Missing' },
-]
-
-const FORMAT_OPTIONS: Array<{ value: BookFormat | 'all'; label: string }> = [
-  { value: 'all',       label: 'All Formats' },
-  { value: 'print',     label: 'Print' },
-  { value: 'digital',   label: 'Digital' },
-  { value: 'reference', label: 'Reference' },
-]
-
 // ─── Collapsed icon rail ──────────────────────────────────────────────────────
 
 function CollapsedRail({
+  sections,
   filters,
   onExpand,
 }: {
+  sections: FilterSectionConfig[]
   filters: CatalogFilters
-  onExpand: (groupId?: string) => void
+  onExpand: (sectionKey?: string) => void
 }) {
   return (
     <div className="flex flex-col items-center py-2 gap-0.5">
@@ -276,15 +211,15 @@ function CollapsedRail({
       {/* Divider */}
       <div className="w-6 border-t border-ink-200 my-1" />
 
-      {/* One button per filter group */}
-      {GROUP_DEFS.map((group) => {
-        const active = group.isActive(filters)
+      {/* One button per filter section */}
+      {sections.map((section) => {
+        const active = isSectionActive(section, filters)
         return (
           <button
-            key={group.id}
+            key={section.key}
             type="button"
-            onClick={() => onExpand(group.id)}
-            aria-label={`${group.label} filter${active ? ' (active)' : ''}`}
+            onClick={() => onExpand(section.key)}
+            aria-label={`${section.label} filter${active ? ' (active)' : ''}`}
             aria-pressed={active}
             className={cn(
               'relative flex items-center justify-center w-9 h-9 rounded-(--radius-sm) transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1',
@@ -293,7 +228,7 @@ function CollapsedRail({
                 : 'text-ink-400 hover:bg-ink-100 hover:text-ink-700'
             )}
           >
-            {group.icon}
+            {SECTION_ICONS[section.key]}
             {active && (
               <span
                 aria-hidden="true"
@@ -311,16 +246,13 @@ function CollapsedRail({
 
 export function FilterSidebar({
   filters,
-  onChange,
-  genres,
-  subjects,
-  floors,
-  isOpen,
-  onClose,
+  setFilter,
+  resetAll,
+  sections,
   className,
 }: FilterSidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
-  const [highlightGroup, setHighlightGroup] = useState<string | null>(null)
+  const [highlightSection, setHighlightSection] = useState<string | null>(null)
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem('catalog-filter-collapsed') === 'true') setCollapsed(true)
@@ -330,28 +262,14 @@ export function FilterSidebar({
     localStorage.setItem('catalog-filter-collapsed', String(collapsed))
   }, [collapsed])
 
-  const handleExpand = useCallback((groupId?: string) => {
+  const handleExpand = useCallback((sectionKey?: string) => {
     setCollapsed(false)
-    if (groupId) setHighlightGroup(groupId)
+    if (sectionKey) setHighlightSection(sectionKey)
   }, [])
 
-  const clearHighlight = useCallback(() => setHighlightGroup(null), [])
+  const clearHighlight = useCallback(() => setHighlightSection(null), [])
 
-  const set = <K extends keyof CatalogFilters>(key: K, value: CatalogFilters[K]) =>
-    onChange({ ...filters, [key]: value })
-
-  const hasActive =
-    filters.genre !== 'all' ||
-    filters.availability !== 'all' ||
-    filters.format !== 'all' ||
-    filters.floor !== 'all' ||
-    filters.subject !== 'all' ||
-    filters.call_number_start !== '' ||
-    filters.call_number_end !== ''
-
-  const genreOptions   = genres.map((g) => ({ value: g === 'All' ? 'all' : g, label: g }))
-  const subjectOptions = subjects.map((s) => ({ value: s === 'All' ? 'all' : s, label: s }))
-  const floorOptions   = floors.map((f) => ({ value: f === 'All' ? 'all' : f, label: f }))
+  const hasActive = sections.some((s) => isSectionActive(s, filters))
 
   const expandedContent = (
     <div className="flex flex-col h-full">
@@ -379,7 +297,7 @@ export function FilterSidebar({
             <button
               type="button"
               suppressHydrationWarning
-              onClick={() => onChange(DEFAULT_FILTERS)}
+              onClick={resetAll}
               className="text-green-700 font-medium hover:text-green-900 transition-colors underline underline-offset-2"
               style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
             >
@@ -391,216 +309,92 @@ export function FilterSidebar({
             type="button"
             onClick={() => setCollapsed(true)}
             aria-label="Collapse filters panel"
-            className="hidden lg:flex items-center justify-center w-6 h-6 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+            className="flex items-center justify-center w-6 h-6 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
           >
             <ChevronLeft size={14} />
           </button>
-          {/* Mobile close */}
-          {onClose && (
-            <button
-              type="button"
-              suppressHydrationWarning
-              onClick={onClose}
-              aria-label="Close filters"
-              className="lg:hidden flex items-center justify-center w-6 h-6 rounded-sm text-ink-400 hover:bg-ink-100 transition-colors"
-            >
-              <X size={14} />
-            </button>
-          )}
         </div>
       </div>
 
       {/* Sections */}
       <div className="flex-1 overflow-y-auto">
-
-        <FilterSection
-          id="genre"
-          title="Genre"
-          highlighted={highlightGroup === 'genre'}
-          onHighlightDone={clearHighlight}
-        >
-          <div className="flex flex-col gap-0.5">
-            {genreOptions.map((opt) => (
-              <RadioOption
-                key={opt.value}
-                name="genre"
-                value={opt.value}
-                checked={filters.genre === opt.value}
-                label={opt.label}
-                onChange={(v) => set('genre', v)}
-              />
-            ))}
-          </div>
-        </FilterSection>
-
-        <FilterSection
-          id="availability"
-          title="Availability"
-          highlighted={highlightGroup === 'availability'}
-          onHighlightDone={clearHighlight}
-        >
-          <div className="flex flex-col gap-0.5">
-            {AVAIL_OPTIONS.map((opt) => (
-              <RadioOption
-                key={opt.value}
-                name="availability"
-                value={opt.value}
-                checked={filters.availability === opt.value}
-                label={opt.label}
-                onChange={(v) => set('availability', v as BookStatus | 'all')}
-              />
-            ))}
-          </div>
-        </FilterSection>
-
-        <FilterSection
-          id="format"
-          title="Format"
-          defaultOpen={false}
-          highlighted={highlightGroup === 'format'}
-          onHighlightDone={clearHighlight}
-        >
-          <div className="flex flex-col gap-0.5">
-            {FORMAT_OPTIONS.map((opt) => (
-              <RadioOption
-                key={opt.value}
-                name="format"
-                value={opt.value}
-                checked={filters.format === opt.value}
-                label={opt.label}
-                onChange={(v) => set('format', v as BookFormat | 'all')}
-              />
-            ))}
-          </div>
-        </FilterSection>
-
-        <FilterSection
-          id="floor"
-          title="Floor Location"
-          defaultOpen={false}
-          highlighted={highlightGroup === 'floor'}
-          onHighlightDone={clearHighlight}
-        >
-          <div className="flex flex-col gap-0.5">
-            {floorOptions.map((opt) => (
-              <RadioOption
-                key={opt.value}
-                name="floor"
-                value={opt.value}
-                checked={filters.floor === opt.value}
-                label={opt.label}
-                onChange={(v) => set('floor', v)}
-              />
-            ))}
-          </div>
-        </FilterSection>
-
-        <FilterSection
-          id="subject"
-          title="Subject"
-          defaultOpen={false}
-          highlighted={highlightGroup === 'subject'}
-          onHighlightDone={clearHighlight}
-        >
-          <div className="flex flex-col gap-0.5">
-            {subjectOptions.map((opt) => (
-              <RadioOption
-                key={opt.value}
-                name="subject"
-                value={opt.value}
-                checked={filters.subject === opt.value}
-                label={opt.label}
-                onChange={(v) => set('subject', v)}
-              />
-            ))}
-          </div>
-        </FilterSection>
-
-        <FilterSection
-          id="callno"
-          title="Call No. Range"
-          defaultOpen={false}
-          highlighted={highlightGroup === 'callno'}
-          onHighlightDone={clearHighlight}
-        >
-          <div className="flex flex-col gap-2">
-            <div>
-              <label
-                className="block text-ink-400 mb-1"
-                style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
-              >
-                From
-              </label>
-              <input
-                type="text"
-                value={filters.call_number_start}
-                onChange={(e) => set('call_number_start', e.target.value)}
-                placeholder="e.g. 000"
-                className="w-full px-2.5 py-1.5 rounded-sm border border-ink-200 bg-white text-ink-900 placeholder:text-ink-300 focus:outline-none focus:border-green-700 transition-colors"
-                style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-mono)' }}
-              />
-            </div>
-            <div>
-              <label
-                className="block text-ink-400 mb-1"
-                style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
-              >
-                To
-              </label>
-              <input
-                type="text"
-                value={filters.call_number_end}
-                onChange={(e) => set('call_number_end', e.target.value)}
-                placeholder="e.g. 999"
-                className="w-full px-2.5 py-1.5 rounded-sm border border-ink-200 bg-white text-ink-900 placeholder:text-ink-300 focus:outline-none focus:border-green-700 transition-colors"
-                style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-mono)' }}
-              />
-            </div>
-          </div>
-        </FilterSection>
-
+        {sections.map((section) => (
+          <FilterSection
+            key={section.key}
+            id={section.key}
+            title={section.label}
+            defaultOpen={DEFAULT_OPEN[section.key] ?? false}
+            highlighted={highlightSection === section.key}
+            onHighlightDone={clearHighlight}
+          >
+            {section.type === 'radio' ? (
+              <div className="flex flex-col gap-0.5">
+                {section.options.map((opt) => (
+                  <RadioOption
+                    key={opt.value}
+                    name={section.key}
+                    value={opt.value}
+                    checked={filters[section.key as RadioFilterKey] === opt.value}
+                    label={opt.label}
+                    onChange={(v) => setFilter(section.key as RadioFilterKey, v as never)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div>
+                  <label
+                    className="block text-ink-400 mb-1"
+                    style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
+                  >
+                    From
+                  </label>
+                  <input
+                    type="text"
+                    value={filters.call_number_start}
+                    onChange={(e) => setFilter('call_number_start', e.target.value)}
+                    placeholder="e.g. QA76"
+                    className="w-full px-2.5 py-1.5 rounded-sm border border-ink-200 bg-white text-ink-900 placeholder:text-ink-300 focus:outline-none focus:border-green-700 transition-colors"
+                    style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-mono)' }}
+                  />
+                </div>
+                <div>
+                  <label
+                    className="block text-ink-400 mb-1"
+                    style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
+                  >
+                    To
+                  </label>
+                  <input
+                    type="text"
+                    value={filters.call_number_end}
+                    onChange={(e) => setFilter('call_number_end', e.target.value)}
+                    placeholder="e.g. QA99"
+                    className="w-full px-2.5 py-1.5 rounded-sm border border-ink-200 bg-white text-ink-900 placeholder:text-ink-300 focus:outline-none focus:border-green-700 transition-colors"
+                    style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-mono)' }}
+                  />
+                </div>
+              </div>
+            )}
+          </FilterSection>
+        ))}
       </div>
     </div>
   )
 
   return (
-    <>
-      {/* Desktop sticky sidebar */}
-      <aside
-        className={cn(
-          'hidden lg:flex flex-col bg-white border-r border-ink-200 shrink-0 overflow-hidden sticky top-0 self-start transition-all duration-200 ease-in-out',
-          className
-        )}
-        style={{ width: collapsed ? 56 : 220, height: 'calc(100vh - var(--height-nav))' }}
-        aria-label="Filters panel"
-      >
-        {collapsed
-          ? <CollapsedRail filters={filters} onExpand={handleExpand} />
-          : expandedContent
-        }
-      </aside>
-
-      {/* Mobile backdrop */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-150 lg:hidden"
-          style={{ background: 'rgba(0,0,0,0.4)' }}
-          onClick={onClose}
-        />
+    <aside
+      className={cn(
+        'hidden lg:flex flex-col bg-white border-r border-ink-200 shrink-0 overflow-hidden sticky top-0 self-start transition-all duration-200 ease-in-out',
+        className
       )}
-
-      {/* Mobile drawer */}
-      <aside
-        className={cn(
-          'fixed left-0 bottom-0 z-160 flex flex-col bg-white border-r border-ink-200',
-          'transition-transform duration-300 lg:hidden w-72',
-          isOpen ? 'translate-x-0' : '-translate-x-full'
-        )}
-        style={{ top: 'var(--height-nav)' }}
-        aria-label="Filters panel"
-      >
-        {expandedContent}
-      </aside>
-    </>
+      style={{ width: collapsed ? 56 : 220, height: 'calc(100vh - var(--height-nav))' }}
+      aria-label="Filters panel"
+    >
+      {collapsed
+        ? <CollapsedRail sections={sections} filters={filters} onExpand={handleExpand} />
+        : expandedContent
+      }
+    </aside>
   )
 }

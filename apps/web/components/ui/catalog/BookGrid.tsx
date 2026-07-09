@@ -11,6 +11,8 @@ type BookGridProps = {
   isLoading?: boolean
   hrefPrefix?: string
   showBookmark?: boolean
+  hasActiveFilters?: boolean
+  onClearFilters?: () => void
 }
 
 function SkeletonCard() {
@@ -27,10 +29,17 @@ function SkeletonCard() {
   )
 }
 
-export function BookGrid({ books, isLoading = false, hrefPrefix = '/guest/catalog', showBookmark = false }: BookGridProps) {
+export function BookGrid({
+  books,
+  isLoading = false,
+  hrefPrefix = '/guest/catalog',
+  showBookmark = false,
+  hasActiveFilters = false,
+  onClearFilters,
+}: BookGridProps) {
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         {Array.from({ length: 10 }).map((_, i) => (
           <SkeletonCard key={i} />
         ))}
@@ -48,20 +57,30 @@ export function BookGrid({ books, isLoading = false, hrefPrefix = '/guest/catalo
           className="text-ink-700 font-semibold mb-1"
           style={{ fontSize: 'var(--text-lg)', fontFamily: 'var(--font-display)' }}
         >
-          No books found
+          {hasActiveFilters ? 'No titles match these filters' : 'No books found'}
         </p>
         <p
-          className="text-ink-400 max-w-xs"
+          className="text-ink-400 max-w-xs mb-4"
           style={{ fontSize: 'var(--text-body)', fontFamily: 'var(--font-body)' }}
         >
           Try adjusting your search query or filters to find what you&apos;re looking for.
         </p>
+        {hasActiveFilters && onClearFilters && (
+          <button
+            type="button"
+            onClick={onClearFilters}
+            className="text-green-700 font-semibold hover:text-green-900 underline underline-offset-2 transition-colors"
+            style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+          >
+            Clear filters
+          </button>
+        )}
       </div>
     )
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
       {books.map((book) => (
         <BookCard
           key={book.id}
