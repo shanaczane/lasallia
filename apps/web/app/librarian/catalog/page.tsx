@@ -300,8 +300,11 @@ export default function LibrarianCatalogPage() {
         {/* Stats */}
         <CatalogStats books={books} />
 
-        {/* Search + sort + mobile filter toggle */}
-        <div className="flex items-center gap-2 mb-3">
+        {/* Search + sort + mobile filter toggle — sticky so it stays reachable while scrolling */}
+        <div
+          className="sticky z-40 bg-paper/95 backdrop-blur-sm border-b border-ink-100 py-3 -mt-3 flex items-center gap-2 mb-3"
+          style={{ top: 'var(--height-nav)' }}
+        >
           {/* Search */}
           <div className="flex-1 relative min-w-0">
             <Search
