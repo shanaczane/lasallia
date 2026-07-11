@@ -300,6 +300,7 @@ function BorrowedTab() {
       <div className="flex gap-2 flex-wrap">
         {filterBtns.map((f) => {
           const isActive = filter === f.key
+          const isOverdue = f.key === "overdue" && counts.overdue > 0
           return (
             <button
               key={f.key}
@@ -307,8 +308,12 @@ function BorrowedTab() {
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors",
                 isActive
-                  ? "bg-green-700 border-green-700 text-white font-semibold"
-                  : "bg-white border-ink-200 text-ink-600 hover:bg-ink-50",
+                  ? isOverdue
+                    ? "bg-danger border-danger text-white font-semibold"
+                    : "bg-green-700 border-green-700 text-white font-semibold"
+                  : isOverdue
+                    ? "bg-white border-danger/30 text-danger hover:bg-danger-bg"
+                    : "bg-white border-ink-200 text-ink-600 hover:bg-ink-50",
               )}
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
             >
@@ -316,7 +321,7 @@ function BorrowedTab() {
               <span
                 className={cn(
                   "flex items-center justify-center rounded-full min-w-[18px] h-[18px] px-1 font-semibold",
-                  isActive ? "bg-white/25 text-white" : "bg-ink-100 text-ink-500",
+                  isActive ? "bg-white/25 text-white" : isOverdue ? "bg-danger-bg text-danger" : "bg-ink-100 text-ink-500",
                 )}
                 style={{ fontSize: "var(--text-2xs)" }}
               >
