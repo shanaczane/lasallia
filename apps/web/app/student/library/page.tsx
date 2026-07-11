@@ -242,7 +242,7 @@ function Pill({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold",
+        "inline-flex items-center justify-center gap-1 w-[82px] shrink-0 px-1.5 py-0.5 rounded-full font-semibold",
         className,
       )}
       style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
@@ -348,7 +348,7 @@ function BorrowedTab() {
           <span>Book</span>
           <span>Borrowed</span>
           <span>Due Date</span>
-          <span>Status</span>
+          <span className="text-center">Status</span>
         </div>
 
         {pageItems.length === 0 ? (
@@ -412,7 +412,7 @@ function BorrowedTab() {
                   <Pill
                     icon={<span className={cn("w-1.5 h-1.5 rounded-full shrink-0", s.dot)} />}
                     label={s.label}
-                    className={cn(s.bg, s.text)}
+                    className={cn(s.bg, s.text, "justify-self-center")}
                   />
                 </div>
 
@@ -767,7 +767,7 @@ function HistoryTab() {
           <span>Book</span>
           <span>Borrowed</span>
           <span>Returned</span>
-          <span>Status</span>
+          <span className="text-center">Status</span>
           <span />
         </div>
 
@@ -829,7 +829,7 @@ function HistoryTab() {
                   <Pill
                     icon={s.icon}
                     label={s.shortLabel}
-                    className={cn(s.bg, s.text)}
+                    className={cn(s.bg, s.text, "justify-self-center")}
                   />
                   <span className="text-ink-300 flex justify-end">
                     {isExp ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
