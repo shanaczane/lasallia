@@ -116,8 +116,11 @@ export default function StudentCatalogPage() {
           </p>
         </div>
 
-        {/* Search + Sort */}
-        <div className="flex items-center gap-2 mb-5">
+        {/* Search + Sort — sticky so it stays in view while scrolling, header stays put */}
+        <div
+          className="sticky z-40 bg-paper/95 backdrop-blur-sm border-b border-ink-100 py-3 -mt-3 flex items-center gap-2 mb-5"
+          style={{ top: 'var(--height-nav)' }}
+        >
           <div className="flex-1 relative">
             <Search
               size={15}
