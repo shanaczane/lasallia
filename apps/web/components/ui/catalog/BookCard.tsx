@@ -121,7 +121,7 @@ export function BookCard({ book, href, className, showBookmark = false }: BookCa
         {/* Meta */}
         <div className="flex flex-col gap-1 p-3 flex-1">
           <p
-            className="text-ink-900 font-semibold leading-snug line-clamp-2"
+            className="text-ink-900 font-semibold leading-snug line-clamp-2 min-h-9"
             style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
           >
             {book.title}
