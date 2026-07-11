@@ -555,7 +555,7 @@ export default function StudentBookDetailPage({
               Book Details
             </h2>
           </div>
-          <div className="divide-y divide-ink-100">
+          <div className="grid grid-cols-1 sm:grid-cols-2">
             {[
               { icon: <Hash size={14} />,     label: 'Call Number',    value: book.call_number },
               { icon: <MapPin size={14} />,    label: 'Shelf Location', value: book.shelf_location },
@@ -566,23 +566,35 @@ export default function StudentBookDetailPage({
               { icon: <Hash size={14} />,      label: 'ISBN',           value: book.isbn },
             ]
               .filter((r) => r.value != null && r.value !== '')
-              .map((r) => (
-                <div key={r.label} className="flex items-center gap-4 px-5 py-3">
-                  <span className="text-ink-400 shrink-0">{r.icon}</span>
-                  <span
-                    className="text-ink-400 w-32 shrink-0"
-                    style={{ fontSize: 'var(--text-sm)', fontFamily: 'var(--font-body)' }}
+              .map((r, i, rows) => {
+                const isLast = i === rows.length - 1
+                const isSecondToLastOfEvenRow = rows.length % 2 === 0 && i === rows.length - 2
+                const hasRightNeighbor = i + 1 < rows.length
+                return (
+                  <div
+                    key={r.label}
+                    className={cn(
+                      'flex items-center gap-3 px-5 py-3 border-ink-100 min-w-0',
+                      !isLast && (isSecondToLastOfEvenRow ? 'border-b sm:border-b-0' : 'border-b'),
+                      i % 2 === 0 && hasRightNeighbor && 'sm:border-r',
+                    )}
                   >
-                    {r.label}
-                  </span>
-                  <span
-                    className="text-ink-900 font-medium"
-                    style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-                  >
-                    {r.value}
-                  </span>
-                </div>
-              ))}
+                    <span className="text-ink-400 shrink-0">{r.icon}</span>
+                    <span
+                      className="text-ink-400 w-28 shrink-0"
+                      style={{ fontSize: 'var(--text-sm)', fontFamily: 'var(--font-body)' }}
+                    >
+                      {r.label}
+                    </span>
+                    <span
+                      className="text-ink-900 font-medium truncate"
+                      style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+                    >
+                      {r.value}
+                    </span>
+                  </div>
+                )
+              })}
           </div>
         </div>
 
