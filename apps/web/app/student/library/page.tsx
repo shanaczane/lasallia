@@ -10,7 +10,7 @@ import { useState } from "react"
 import Link from "next/link"
 import {
   Library, Bookmark, History,
-  AlertTriangle, CheckCircle2, Clock,
+  CheckCircle2, Clock,
   BookOpen, ChevronDown, ChevronUp, Info,
   ChevronLeft, ChevronRight,
 } from "lucide-react"
@@ -286,39 +286,15 @@ function BorrowedTab() {
   return (
     <div className="flex flex-col gap-4">
 
-      {/* Return info banner */}
-      <div className="flex items-start gap-2.5 p-3 rounded-[10px] bg-ink-50 border border-ink-200">
-        <Info size={14} className="text-ink-400 shrink-0 mt-0.5" />
-        <p
-          className="text-ink-500"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-        >
-          To return a book, bring it to the{" "}
-          <span className="font-semibold text-ink-700">LRC librarian counter</span>.
-          {" "}No QR code needed for returns.
-        </p>
-      </div>
-
-      {/* Overdue banner */}
-      {counts.overdue > 0 && (
-        <div className="flex items-start gap-2.5 p-3 rounded-[10px] bg-danger-bg border border-danger/20">
-          <AlertTriangle size={14} className="text-danger shrink-0 mt-0.5" />
-          <div>
-            <p
-              className="text-danger font-semibold"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-            >
-              {counts.overdue} {counts.overdue === 1 ? "book is" : "books are"} overdue
-            </p>
-            <p
-              className="text-danger/80 mt-0.5"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-            >
-              Return to the librarian counter to avoid additional fines.
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Return info — lightweight caption */}
+      <p
+        className="flex items-center gap-1.5 text-ink-400"
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+      >
+        <Info size={13} className="shrink-0" />
+        To return a book, bring it to the{" "}
+        <span className="font-medium text-ink-600">LRC librarian counter</span> — no QR code needed.
+      </p>
 
       {/* Filter pills */}
       <div className="flex gap-2 flex-wrap">
