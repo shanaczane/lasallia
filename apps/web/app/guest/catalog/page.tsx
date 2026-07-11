@@ -99,24 +99,13 @@ export default function GuestCatalogPage() {
   return (
     <div className="flex" style={{ minHeight: 'calc(100vh - var(--height-nav))' }}>
 
-      {/* ── Filter sidebar ─────────────────────────────────────────────── */}
-      <FilterSidebar
-        filters={filters}
-        onChange={setFilters}
-        genres={MOCK_CATEGORIES}
-        subjects={MOCK_SUBJECTS}
-        floors={MOCK_FLOORS}
-        isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-      />
-
       {/* ── Main area ──────────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 px-5 sm:px-8 py-7">
 
         {/* Header */}
         <div className="mb-5">
           <h1
-            className="text-ink-900 leading-tight mb-0.5"
+            className="text-ink-900 font-semibold leading-tight mb-0.5"
             style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-4xl)' }}
           >
             Search the{' '}
@@ -271,6 +260,17 @@ export default function GuestCatalogPage() {
         {/* Grid */}
         <BookGrid books={results} hrefPrefix="/guest/catalog" />
       </div>
+
+      {/* ── Filter sidebar ─────────────────────────────────────────────── */}
+      <FilterSidebar
+        filters={filters}
+        onChange={setFilters}
+        genres={MOCK_CATEGORIES}
+        subjects={MOCK_SUBJECTS}
+        floors={MOCK_FLOORS}
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+      />
     </div>
   )
 }

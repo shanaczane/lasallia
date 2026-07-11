@@ -10,7 +10,7 @@ import { useState } from "react"
 import Link from "next/link"
 import {
   Library, Bookmark, History,
-  AlertTriangle, CheckCircle2, Clock,
+  CheckCircle2, Clock,
   BookOpen, ChevronDown, ChevronUp, Info,
   ChevronLeft, ChevronRight,
 } from "lucide-react"
@@ -242,7 +242,7 @@ function Pill({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold",
+        "inline-flex items-center justify-center gap-1 w-[82px] shrink-0 px-1.5 py-0.5 rounded-full font-semibold",
         className,
       )}
       style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
@@ -286,44 +286,21 @@ function BorrowedTab() {
   return (
     <div className="flex flex-col gap-4">
 
-      {/* Return info banner */}
-      <div className="flex items-start gap-2.5 p-3 rounded-[10px] bg-ink-50 border border-ink-200">
-        <Info size={14} className="text-ink-400 shrink-0 mt-0.5" />
-        <p
-          className="text-ink-500"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-        >
-          To return a book, bring it to the{" "}
-          <span className="font-semibold text-ink-700">LRC librarian counter</span>.
-          {" "}No QR code needed for returns.
-        </p>
-      </div>
-
-      {/* Overdue banner */}
-      {counts.overdue > 0 && (
-        <div className="flex items-start gap-2.5 p-3 rounded-[10px] bg-danger-bg border border-danger/20">
-          <AlertTriangle size={14} className="text-danger shrink-0 mt-0.5" />
-          <div>
-            <p
-              className="text-danger font-semibold"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-            >
-              {counts.overdue} {counts.overdue === 1 ? "book is" : "books are"} overdue
-            </p>
-            <p
-              className="text-danger/80 mt-0.5"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-            >
-              Return to the librarian counter to avoid additional fines.
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Return info — lightweight caption */}
+      <p
+        className="flex items-center gap-1.5 text-ink-400"
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+      >
+        <Info size={13} className="shrink-0" />
+        To return a book, bring it to the{" "}
+        <span className="font-medium text-ink-600">LRC librarian counter</span> — no QR code needed.
+      </p>
 
       {/* Filter pills */}
       <div className="flex gap-2 flex-wrap">
         {filterBtns.map((f) => {
           const isActive = filter === f.key
+          const isOverdue = f.key === "overdue" && counts.overdue > 0
           return (
             <button
               key={f.key}
@@ -331,8 +308,12 @@ function BorrowedTab() {
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors",
                 isActive
-                  ? "bg-green-700 border-green-700 text-white font-semibold"
-                  : "bg-white border-ink-200 text-ink-600 hover:bg-ink-50",
+                  ? isOverdue
+                    ? "bg-danger border-danger text-white font-semibold"
+                    : "bg-green-700 border-green-700 text-white font-semibold"
+                  : isOverdue
+                    ? "bg-white border-danger/30 text-danger hover:bg-danger-bg"
+                    : "bg-white border-ink-200 text-ink-600 hover:bg-ink-50",
               )}
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
             >
@@ -340,7 +321,7 @@ function BorrowedTab() {
               <span
                 className={cn(
                   "flex items-center justify-center rounded-full min-w-[18px] h-[18px] px-1 font-semibold",
-                  isActive ? "bg-white/25 text-white" : "bg-ink-100 text-ink-500",
+                  isActive ? "bg-white/25 text-white" : isOverdue ? "bg-danger-bg text-danger" : "bg-ink-100 text-ink-500",
                 )}
                 style={{ fontSize: "var(--text-2xs)" }}
               >
@@ -367,7 +348,7 @@ function BorrowedTab() {
           <span>Book</span>
           <span>Borrowed</span>
           <span>Due Date</span>
-          <span>Status</span>
+          <span className="text-center">Status</span>
         </div>
 
         {pageItems.length === 0 ? (
@@ -431,7 +412,7 @@ function BorrowedTab() {
                   <Pill
                     icon={<span className={cn("w-1.5 h-1.5 rounded-full shrink-0", s.dot)} />}
                     label={s.label}
-                    className={cn(s.bg, s.text)}
+                    className={cn(s.bg, s.text, "justify-self-center")}
                   />
                 </div>
 
@@ -786,7 +767,7 @@ function HistoryTab() {
           <span>Book</span>
           <span>Borrowed</span>
           <span>Returned</span>
-          <span>Status</span>
+          <span className="text-center">Status</span>
           <span />
         </div>
 
@@ -848,7 +829,7 @@ function HistoryTab() {
                   <Pill
                     icon={s.icon}
                     label={s.shortLabel}
-                    className={cn(s.bg, s.text)}
+                    className={cn(s.bg, s.text, "justify-self-center")}
                   />
                   <span className="text-ink-300 flex justify-end">
                     {isExp ? <ChevronUp size={14} /> : <ChevronDown size={14} />}

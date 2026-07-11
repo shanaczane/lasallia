@@ -164,39 +164,32 @@ function ActionPanel({
 
   if (isAvailable) {
     return (
-      <div className="rounded-[10px] border border-green-200 bg-green-50 px-5 py-5 flex flex-col sm:flex-row sm:items-center gap-4">
-        <div className="flex-1">
-          <p
-            className="text-green-800 font-semibold"
-            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-base)' }}
-          >
-            {availableCopies} of {totalCopies}{' '}
-            {totalCopies === 1 ? 'copy' : 'copies'} available
-          </p>
-          {/* Availability bar */}
-          <div className="w-36 h-1.5 rounded-full bg-white/60 overflow-hidden mt-2">
+      <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex-1 flex items-center gap-3 min-w-0">
+          <div className="w-14 h-1.5 rounded-full bg-white/60 overflow-hidden shrink-0">
             <div
               className="h-full rounded-full bg-green-500 transition-all"
               style={{ width: `${pct}%` }}
             />
           </div>
           <p
-            className="text-green-700 mt-2"
-            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+            className="text-green-800 leading-snug"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
           >
-            Go to{' '}
-            <span className="font-semibold">{book.shelf_location}</span> to find
-            this book, then show the QR code at the counter.
+            <span className="font-semibold">
+              {availableCopies} of {totalCopies} {totalCopies === 1 ? 'copy' : 'copies'}
+            </span>{' '}
+            available — go to <span className="font-semibold">{book.shelf_location}</span> and show the QR code at the counter.
           </p>
         </div>
         {/* Borrow button */}
         <button
           type="button"
           onClick={onBorrow}
-          className="shrink-0 inline-flex items-center gap-2 px-5 py-2.5 rounded-[10px] bg-green-700 text-white font-semibold hover:bg-green-800 active:scale-95 transition-all"
+          className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-green-700 text-white font-semibold hover:bg-green-800 active:scale-95 transition-all"
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
         >
-          <QrCode size={16} />
+          <QrCode size={15} />
           Borrow this book
         </button>
       </div>
@@ -206,35 +199,27 @@ function ActionPanel({
   // Not available — waitlist / notify me
   if (notified) {
     return (
-      <div className="rounded-[10px] border border-green-200 bg-green-50 px-5 py-5 flex flex-col sm:flex-row sm:items-center gap-4">
-        <div className="flex items-center gap-3 flex-1">
-          <CheckCircle2 size={22} className="text-green-600 shrink-0" />
-          <div>
-            <p
-              className="text-green-800 font-semibold"
-              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-base)' }}
+      <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+          <CheckCircle2 size={16} className="text-green-600 shrink-0" />
+          <p
+            className="text-green-800 leading-snug"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+          >
+            <span className="font-semibold">You're on the waitlist</span> — we'll notify you when a copy is available. Check{' '}
+            <Link
+              href="/student/notifications"
+              className="underline underline-offset-2 hover:text-green-900"
             >
-              You're on the waitlist
-            </p>
-            <p
-              className="text-green-700 mt-0.5"
-              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
-            >
-              We'll notify you when a copy becomes available. Check{' '}
-              <Link
-                href="/student/notifications"
-                className="underline underline-offset-2 hover:text-green-900"
-              >
-                Notifications
-              </Link>{' '}
-              for updates.
-            </p>
-          </div>
+              Notifications
+            </Link>{' '}
+            for updates.
+          </p>
         </div>
         <button
           type="button"
           onClick={() => setNotified(false)}
-          className="shrink-0 text-green-600 hover:text-green-800 underline underline-offset-2 transition-colors text-sm sm:ml-auto"
+          className="shrink-0 text-green-600 hover:text-green-800 underline underline-offset-2 transition-colors sm:ml-auto"
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
         >
           Leave waitlist
@@ -244,30 +229,23 @@ function ActionPanel({
   }
 
   return (
-    <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-5 py-5 flex flex-col sm:flex-row sm:items-center gap-4">
-      <div className="flex-1">
-        <p
-          className="text-ink-700 font-semibold"
-          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-base)' }}
-        >
-          No copies currently available
-        </p>
-        <div className="w-36 h-1.5 rounded-full bg-ink-200 overflow-hidden mt-2">
+    <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex-1 flex items-center gap-3 min-w-0">
+        <div className="w-14 h-1.5 rounded-full bg-ink-200 overflow-hidden shrink-0">
           <div className="h-full rounded-full bg-ink-300" style={{ width: '0%' }} />
         </div>
         <p
-          className="text-ink-500 mt-2"
-          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+          className="text-ink-600 leading-snug"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
         >
-          All {totalCopies} {totalCopies === 1 ? 'copy is' : 'copies are'} currently{' '}
-          {book.status === 'reserved' ? 'reserved' : 'borrowed'}.
-          Join the waitlist to be notified when one is returned.
+          <span className="font-semibold text-ink-700">No copies available</span> — all {totalCopies} {totalCopies === 1 ? 'copy is' : 'copies are'} currently{' '}
+          {book.status === 'reserved' ? 'reserved' : 'borrowed'}. Join the waitlist to be notified.
         </p>
       </div>
       <button
         type="button"
         onClick={() => setNotified(true)}
-        className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-[10px] bg-ink-900 text-white font-semibold hover:bg-ink-700 transition-colors"
+        className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-ink-900 text-white font-semibold hover:bg-ink-700 transition-colors"
         style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
       >
         <Bell size={15} />
@@ -282,7 +260,7 @@ function ActionPanel({
 function Recommendations({ currentId, category }: { currentId: string; category: string }) {
   const related = MOCK_BOOKS
     .filter((b) => b.category === category && b.id !== currentId)
-    .slice(0, 4)
+    .slice(0, 5)
 
   if (related.length === 0) return null
 
@@ -294,7 +272,7 @@ function Recommendations({ currentId, category }: { currentId: string; category:
       >
         You may also like
       </h2>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
         {related.map((book) => (
           <BookCard
             key={book.id}
@@ -555,7 +533,7 @@ export default function StudentBookDetailPage({
               Book Details
             </h2>
           </div>
-          <div className="divide-y divide-ink-100">
+          <div className="grid grid-cols-1 sm:grid-cols-2">
             {[
               { icon: <Hash size={14} />,     label: 'Call Number',    value: book.call_number },
               { icon: <MapPin size={14} />,    label: 'Shelf Location', value: book.shelf_location },
@@ -566,23 +544,35 @@ export default function StudentBookDetailPage({
               { icon: <Hash size={14} />,      label: 'ISBN',           value: book.isbn },
             ]
               .filter((r) => r.value != null && r.value !== '')
-              .map((r) => (
-                <div key={r.label} className="flex items-center gap-4 px-5 py-3">
-                  <span className="text-ink-400 shrink-0">{r.icon}</span>
-                  <span
-                    className="text-ink-400 w-32 shrink-0"
-                    style={{ fontSize: 'var(--text-sm)', fontFamily: 'var(--font-body)' }}
+              .map((r, i, rows) => {
+                const isLast = i === rows.length - 1
+                const isSecondToLastOfEvenRow = rows.length % 2 === 0 && i === rows.length - 2
+                const hasRightNeighbor = i + 1 < rows.length
+                return (
+                  <div
+                    key={r.label}
+                    className={cn(
+                      'flex items-center gap-3 px-5 py-3 border-ink-100 min-w-0',
+                      !isLast && (isSecondToLastOfEvenRow ? 'border-b sm:border-b-0' : 'border-b'),
+                      i % 2 === 0 && hasRightNeighbor && 'sm:border-r',
+                    )}
                   >
-                    {r.label}
-                  </span>
-                  <span
-                    className="text-ink-900 font-medium"
-                    style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-                  >
-                    {r.value}
-                  </span>
-                </div>
-              ))}
+                    <span className="text-ink-400 shrink-0">{r.icon}</span>
+                    <span
+                      className="text-ink-400 w-28 shrink-0"
+                      style={{ fontSize: 'var(--text-sm)', fontFamily: 'var(--font-body)' }}
+                    >
+                      {r.label}
+                    </span>
+                    <span
+                      className="text-ink-900 font-medium truncate"
+                      style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+                    >
+                      {r.value}
+                    </span>
+                  </div>
+                )
+              })}
           </div>
         </div>
 

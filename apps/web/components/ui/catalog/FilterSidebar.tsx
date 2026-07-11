@@ -51,6 +51,8 @@ type FilterSidebarProps = {
   isOpen?: boolean
   onClose?: () => void
   className?: string
+  /** 'sidebar' (default) keeps a persistent panel on desktop. 'drawer' always opens via the trigger button, even on desktop. */
+  variant?: 'sidebar' | 'drawer'
 }
 
 // ─── Filter group definitions ─────────────────────────────────────────────────
@@ -270,7 +272,7 @@ function CollapsedRail({
         aria-label="Expand filters panel"
         className="flex items-center justify-center w-9 h-9 rounded-(--radius-sm) text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
       >
-        <ChevronRight size={15} />
+        <ChevronLeft size={15} />
       </button>
 
       {/* Divider */}
@@ -318,7 +320,9 @@ export function FilterSidebar({
   isOpen,
   onClose,
   className,
+  variant = 'sidebar',
 }: FilterSidebarProps) {
+  const isDrawer = variant === 'drawer'
   const [collapsed, setCollapsed] = useState(false)
   const [highlightGroup, setHighlightGroup] = useState<string | null>(null)
 
@@ -386,23 +390,25 @@ export function FilterSidebar({
               Clear all
             </button>
           )}
-          {/* Desktop collapse */}
-          <button
-            type="button"
-            onClick={() => setCollapsed(true)}
-            aria-label="Collapse filters panel"
-            className="hidden lg:flex items-center justify-center w-6 h-6 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
-          >
-            <ChevronLeft size={14} />
-          </button>
-          {/* Mobile close */}
+          {/* Desktop collapse-to-rail (sidebar variant only — the drawer variant closes fully instead) */}
+          {!isDrawer && (
+            <button
+              type="button"
+              onClick={() => setCollapsed(true)}
+              aria-label="Collapse filters panel"
+              className="hidden lg:flex items-center justify-center w-6 h-6 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+            >
+              <ChevronRight size={14} />
+            </button>
+          )}
+          {/* Close (mobile always; desktop only in drawer variant, since the sidebar variant has no way to close) */}
           {onClose && (
             <button
               type="button"
               suppressHydrationWarning
               onClick={onClose}
               aria-label="Close filters"
-              className="lg:hidden flex items-center justify-center w-6 h-6 rounded-sm text-ink-400 hover:bg-ink-100 transition-colors"
+              className={cn('flex items-center justify-center w-6 h-6 rounded-sm text-ink-400 hover:bg-ink-100 transition-colors', !isDrawer && 'lg:hidden')}
             >
               <X size={14} />
             </button>
@@ -563,40 +569,58 @@ export function FilterSidebar({
     </div>
   )
 
+  // Drawer variant: width animates between 0 and its normal size instead of mounting/unmounting,
+  // so opening/closing on desktop slides smoothly rather than popping in and out. It has no
+  // collapse-to-rail state — 'collapsed' only applies to the persistent sidebar variant.
+  const desktopClosed = isDrawer && !isOpen
+  const desktopCollapsedToRail = !isDrawer && collapsed
+  const desktopWidth = desktopClosed ? 0 : (desktopCollapsedToRail ? 56 : 220)
+
   return (
     <>
-      {/* Desktop sticky sidebar */}
+      {/* Desktop sticky sidebar — always shown (sidebar variant), or slides open/closed via width (drawer variant) */}
       <aside
         className={cn(
-          'hidden lg:flex flex-col bg-white border-r border-ink-200 shrink-0 overflow-hidden sticky top-0 self-start transition-all duration-200 ease-in-out',
+          'hidden lg:flex flex-col bg-white border-l border-ink-200 shrink-0 overflow-hidden sticky top-0 self-start',
+          'transition-[width,opacity] duration-300 ease-in-out',
           className
         )}
-        style={{ width: collapsed ? 56 : 220, height: 'calc(100vh - var(--height-nav))' }}
+        style={{
+          width: desktopWidth,
+          height: 'calc(100vh - var(--height-nav))',
+          opacity: desktopClosed ? 0 : 1,
+        }}
+        aria-hidden={desktopClosed}
+        inert={desktopClosed ? true : undefined}
         aria-label="Filters panel"
       >
-        {collapsed
+        {desktopCollapsedToRail
           ? <CollapsedRail filters={filters} onExpand={handleExpand} />
           : expandedContent
         }
       </aside>
 
       {/* Mobile backdrop */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-150 lg:hidden"
-          style={{ background: 'rgba(0,0,0,0.4)' }}
-          onClick={onClose}
-        />
-      )}
+      <div
+        className={cn(
+          'fixed inset-0 z-150 lg:hidden transition-opacity duration-300 ease-in-out',
+          isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        )}
+        style={{ background: 'rgba(0,0,0,0.4)' }}
+        onClick={onClose}
+        aria-hidden="true"
+      />
 
       {/* Mobile drawer */}
       <aside
         className={cn(
-          'fixed left-0 bottom-0 z-160 flex flex-col bg-white border-r border-ink-200',
-          'transition-transform duration-300 lg:hidden w-72',
-          isOpen ? 'translate-x-0' : '-translate-x-full'
+          'fixed right-0 bottom-0 z-160 flex flex-col bg-white border-l border-ink-200',
+          'transition-transform duration-300 ease-in-out lg:hidden w-72',
+          isOpen ? 'translate-x-0' : 'translate-x-full'
         )}
         style={{ top: 'var(--height-nav)' }}
+        aria-hidden={!isOpen}
+        inert={!isOpen ? true : undefined}
         aria-label="Filters panel"
       >
         {expandedContent}

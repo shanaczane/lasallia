@@ -119,9 +119,9 @@ export function BookCard({ book, href, className, showBookmark = false }: BookCa
         </div>
 
         {/* Meta */}
-        <div className="flex flex-col gap-1 p-3 flex-1">
+        <div className="flex flex-col gap-0.5 p-2.5 flex-1">
           <p
-            className="text-ink-900 font-semibold leading-snug line-clamp-2"
+            className="text-ink-900 font-semibold leading-snug truncate"
             style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
           >
             {book.title}
@@ -134,13 +134,13 @@ export function BookCard({ book, href, className, showBookmark = false }: BookCa
           </p>
           {book.published_year && (
             <p
-              className="text-ink-300"
+              className="text-ink-300 truncate"
               style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
             >
               {book.published_year}
             </p>
           )}
-          <div className="mt-auto pt-2">
+          <div className="mt-auto pt-1.5">
             <AvailabilityPill status={book.status === 'misplaced' ? 'missing' : book.status} />
           </div>
         </div>

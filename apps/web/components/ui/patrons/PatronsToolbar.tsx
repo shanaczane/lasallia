@@ -37,10 +37,14 @@ export function PatronsToolbar({
 }: PatronsToolbarProps) {
   return (
     <div className="flex flex-col gap-3">
-      {/* Search + role filter — beside each other on every device.
-          Search grows to fill space; the select has a comfortable min-width
-          and only drops to its own line on truly tiny viewports. */}
-      <div className="flex flex-row flex-wrap items-stretch gap-2">
+      {/* Search + role filter — sticky so it stays reachable while scrolling.
+          Beside each other on every device: search grows to fill space; the
+          select has a comfortable min-width and only drops to its own line
+          on truly tiny viewports. */}
+      <div
+        className="sticky z-40 bg-paper/95 backdrop-blur-sm border-b border-ink-100 py-3 -mt-3 flex flex-row flex-wrap items-stretch gap-2"
+        style={{ top: 'var(--height-nav)' }}
+      >
         {/* Search */}
         <div className="flex-1 min-w-[160px] relative">
           <Search
