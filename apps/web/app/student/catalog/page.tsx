@@ -97,22 +97,12 @@ export default function StudentCatalogPage() {
   return (
     <div className="flex" style={{ minHeight: 'calc(100vh - var(--height-nav))' }}>
 
-      <FilterSidebar
-        filters={filters}
-        onChange={setFilters}
-        genres={MOCK_CATEGORIES}
-        subjects={MOCK_SUBJECTS}
-        floors={MOCK_FLOORS}
-        isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-      />
-
       <div className="flex-1 min-w-0 px-5 sm:px-8 py-7">
 
         {/* Header */}
         <div className="mb-5">
           <h1
-            className="text-ink-900 leading-tight mb-0.5"
+            className="text-ink-900 font-semibold leading-tight mb-0.5"
             style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-4xl)' }}
           >
             Search the{' '}
@@ -184,10 +174,10 @@ export default function StudentCatalogPage() {
           <button
             type="button"
             suppressHydrationWarning
-            onClick={() => setDrawerOpen(true)}
+            onClick={() => setDrawerOpen((v) => !v)}
             className={cn(
-              'lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-sm border font-medium transition-colors shrink-0',
-              hasActive
+              'flex items-center gap-1.5 px-3 py-2 rounded-sm border font-medium transition-colors shrink-0',
+              drawerOpen || hasActive
                 ? 'border-green-700 bg-green-50 text-green-800'
                 : 'border-ink-200 bg-white text-ink-600 hover:border-ink-300'
             )}
@@ -267,6 +257,17 @@ export default function StudentCatalogPage() {
           showBookmark={true}
         />
       </div>
+
+      <FilterSidebar
+        filters={filters}
+        onChange={setFilters}
+        genres={MOCK_CATEGORIES}
+        subjects={MOCK_SUBJECTS}
+        floors={MOCK_FLOORS}
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        variant="drawer"
+      />
     </div>
   )
 }

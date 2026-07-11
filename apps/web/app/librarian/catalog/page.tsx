@@ -259,17 +259,6 @@ export default function LibrarianCatalogPage() {
   return (
     <div className="flex" style={{ minHeight: 'calc(100vh - var(--height-nav))' }}>
 
-      {/* Filter sidebar */}
-      <FilterSidebar
-        filters={filters}
-        onChange={setFilters}
-        genres={MOCK_CATEGORIES}
-        subjects={MOCK_SUBJECTS}
-        floors={MOCK_FLOORS}
-        isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-      />
-
       {/* Main */}
       <div className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6">
 
@@ -479,6 +468,17 @@ export default function LibrarianCatalogPage() {
           </div>
         )}
       </div>
+
+      {/* Filter sidebar */}
+      <FilterSidebar
+        filters={filters}
+        onChange={setFilters}
+        genres={MOCK_CATEGORIES}
+        subjects={MOCK_SUBJECTS}
+        floors={MOCK_FLOORS}
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+      />
 
       {/* Modals */}
       <BookFormModal
