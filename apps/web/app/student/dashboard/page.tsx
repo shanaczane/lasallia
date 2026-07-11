@@ -135,7 +135,9 @@ export default function StudentDashboard() {
 
         {/* Currently Borrowed */}
         <div className="flex-1 flex flex-col gap-3 min-w-0">
-          <div className="flex items-center justify-between">
+
+          {/* Title row */}
+          <div className="flex items-center">
             <h2
               className="text-ink-900 font-semibold"
               style={{ fontSize: "var(--text-xl)", fontFamily: "var(--font-display)" }}
@@ -144,42 +146,40 @@ export default function StudentDashboard() {
             </h2>
           </div>
 
-          {/* Filter pills */}
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {filters.map((f) => {
-              const isActive = filter === f.key
-              return (
-                <button
-                  key={f.key}
-                  onClick={() => setFilter(f.key)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-pill border whitespace-nowrap transition-colors",
-                    isActive
-                      ? "bg-green-700 border-green-700 text-white font-medium"
-                      : "bg-white border-ink-200 text-ink-700 hover:bg-ink-50"
-                  )}
-                  style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
-                >
-                  {f.label}
-                  <span
+          {/* Filter pills + See all on same row */}
+          <div className="flex items-end gap-2">
+            <div className="flex gap-2 overflow-x-auto flex-1">
+              {filters.map((f) => {
+                const isActive = filter === f.key
+                return (
+                  <button
+                    key={f.key}
+                    onClick={() => setFilter(f.key)}
                     className={cn(
-                      "flex items-center justify-center rounded-full min-w-5 h-5 px-1 font-semibold",
-                      isActive ? "bg-white/20 text-white" : "bg-ink-100 text-ink-500"
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-pill border whitespace-nowrap transition-colors",
+                      isActive
+                        ? "bg-green-700 border-green-700 text-white font-medium"
+                        : "bg-white border-ink-200 text-ink-700 hover:bg-ink-50"
                     )}
-                    style={{ fontSize: "var(--text-2xs)" }}
+                    style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
                   >
-                    {f.count}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-
-          {/* See all — above table */}
-          <div className="flex justify-end">
+                    {f.label}
+                    <span
+                      className={cn(
+                        "flex items-center justify-center rounded-full min-w-5 h-5 px-1 font-semibold",
+                        isActive ? "bg-white/20 text-white" : "bg-ink-100 text-ink-500"
+                      )}
+                      style={{ fontSize: "var(--text-2xs)" }}
+                    >
+                      {f.count}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
             <Link
               href="/student/library"
-              className="text-green-700 font-medium hover:underline"
+              className="text-green-700 font-medium hover:underline whitespace-nowrap shrink-0"
               style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
             >
               See all →

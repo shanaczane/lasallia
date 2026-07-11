@@ -228,7 +228,7 @@ export default function LibrarianDashboard() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 bg-ink-50 rounded-(--radius-sm) p-3">
+            <div className="flex flex-col gap-2 bg-ink-50 rounded-sm(--radius-sm) p-3">
               <DetailRow label="Book" value="Clean Code" />
               <DetailRow label="Borrower" value="Shan A. Cruz" />
               <DetailRow label="Condition" value="Good" />
