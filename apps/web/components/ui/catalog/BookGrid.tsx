@@ -30,7 +30,7 @@ function SkeletonCard() {
 export function BookGrid({ books, isLoading = false, hrefPrefix = '/guest/catalog', showBookmark = false }: BookGridProps) {
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
         {Array.from({ length: 10 }).map((_, i) => (
           <SkeletonCard key={i} />
         ))}
@@ -61,7 +61,7 @@ export function BookGrid({ books, isLoading = false, hrefPrefix = '/guest/catalo
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
       {books.map((book) => (
         <BookCard
           key={book.id}
