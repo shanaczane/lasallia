@@ -260,7 +260,7 @@ function ActionPanel({
 function Recommendations({ currentId, category }: { currentId: string; category: string }) {
   const related = MOCK_BOOKS
     .filter((b) => b.category === category && b.id !== currentId)
-    .slice(0, 4)
+    .slice(0, 5)
 
   if (related.length === 0) return null
 
@@ -272,7 +272,7 @@ function Recommendations({ currentId, category }: { currentId: string; category:
       >
         You may also like
       </h2>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
         {related.map((book) => (
           <BookCard
             key={book.id}
