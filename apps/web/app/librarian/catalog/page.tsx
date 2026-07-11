@@ -273,7 +273,7 @@ export default function LibrarianCatalogPage() {
         <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
           <div>
             <h1
-              className="text-ink-900 leading-tight mb-0.5"
+              className="text-ink-900 font-semibold leading-tight mb-0.5"
               style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-4xl)' }}
             >
               Book <span className="text-green-600 italic">Catalog</span>
