@@ -6,7 +6,7 @@
 import { useState, useMemo } from 'react'
 import {
   Plus, Search, X, SlidersHorizontal, ArrowUpDown,
-  BookMarked, Copy, CheckCircle2,
+  BookMarked, Copy, CheckCircle2, ArrowRightLeft,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Book } from '@lasallia/types'
@@ -105,30 +105,37 @@ function CatalogStats({ books }: { books: Book[] }) {
   const avail    = books.reduce((sum, b) => sum + (b.available_copies ?? 0), 0)
   const borrowed = total - avail
 
+  const stats = [
+    { icon: <BookMarked size={18} className="text-green-700" />, iconBg: 'bg-green-100', label: 'Titles',       value: books.length },
+    { icon: <Copy size={18} className="text-info" />,            iconBg: 'bg-info-bg',    label: 'Total Copies', value: total },
+    { icon: <CheckCircle2 size={18} className="text-success" />, iconBg: 'bg-success-bg', label: 'Available',    value: avail },
+    { icon: <ArrowRightLeft size={18} className="text-warn" />,  iconBg: 'bg-warn-bg',    label: 'Checked Out',  value: borrowed },
+  ]
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
-      {[
-        { label: 'Titles',       value: books.length },
-        { label: 'Total copies', value: total },
-        { label: 'Available',    value: avail },
-        { label: 'Checked out',  value: borrowed },
-      ].map(({ label, value }) => (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+      {stats.map(({ icon, iconBg, label, value }) => (
         <div
           key={label}
-          className="flex flex-col items-start px-5 py-4 bg-white border border-ink-200 rounded-(--radius-sm)"
+          className="min-w-0 bg-white rounded-(--radius) border border-ink-200 p-3 sm:p-4 flex flex-col gap-2 sm:gap-3"
         >
-          <span
-            className="text-ink-900 font-bold tabular-nums leading-none"
-            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-4xl)' }}
-          >
-            {value.toLocaleString()}
-          </span>
-          <span
-            className="text-ink-400 mt-1.5"
-            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}
-          >
-            {label}
-          </span>
+          <div className={cn('flex items-center justify-center rounded-sm w-7 h-7 sm:w-9 sm:h-9', iconBg)}>
+            {icon}
+          </div>
+          <div>
+            <p
+              className="text-ink-400 uppercase font-semibold truncate"
+              style={{ fontSize: 'var(--text-2xs)', letterSpacing: 'var(--tracking-caps)', fontFamily: 'var(--font-body)' }}
+            >
+              {label}
+            </p>
+            <p
+              className="text-ink-900 font-bold leading-tight tabular-nums"
+              style={{ fontSize: 'var(--text-2xl)', fontFamily: 'var(--font-display)' }}
+            >
+              {value.toLocaleString()}
+            </p>
+          </div>
         </div>
       ))}
     </div>
