@@ -2,7 +2,9 @@
 // Sprint 4.5 — My Library (unified tabbed page)
 // 4.5.1 Borrowed Books · 4.5.2 Saved · 4.5.3 History
 // QR for BORROWING only — lives on catalog detail page
-// Status badges shortened · layout matches NotificationFeed exactly
+// Fix: all three tabs use a 5-per-row book-card grid (matching the catalog),
+//      instead of a table/list. Each tab keeps its own filter pills and the
+//      status/date/fine info specific to that tab, shown on the card itself.
 
 "use client"
 
@@ -11,7 +13,7 @@ import Link from "next/link"
 import {
   Library, Bookmark, History,
   CheckCircle2, Clock,
-  BookOpen, ChevronDown, ChevronUp, Info,
+  BookOpen, Info, X,
   ChevronLeft, ChevronRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -58,9 +60,9 @@ const HISTORY_CFG: Record<
   HistoryStatus,
   { label: string; shortLabel: string; icon: React.ReactNode; text: string; bg: string }
 > = {
-  returned:         { label: "Returned",      shortLabel: "Returned", icon: <CheckCircle2 size={12} />, text: "text-success", bg: "bg-success-bg" },
-  overdue_returned: { label: "Returned Late", shortLabel: "Late",     icon: <Clock size={12} />,        text: "text-warn",    bg: "bg-warn-bg"    },
-  lost:             { label: "Lost",          shortLabel: "Lost",     icon: <Clock size={12} />,        text: "text-danger",  bg: "bg-danger-bg"  },
+  returned:         { label: "Returned",      shortLabel: "Returned", icon: <CheckCircle2 size={11} />, text: "text-success", bg: "bg-success-bg" },
+  overdue_returned: { label: "Returned Late", shortLabel: "Late",     icon: <Clock size={11} />,        text: "text-warn",    bg: "bg-warn-bg"    },
+  lost:             { label: "Lost",          shortLabel: "Lost",     icon: <Clock size={11} />,        text: "text-danger",  bg: "bg-danger-bg"  },
 }
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
@@ -82,7 +84,8 @@ const HISTORY_DATA: HistoryEntry[] = [
   { bookId: "8", borrowedDate: "Feb 20, 2026", dueDate: "Mar 6, 2026",  returnedDate: "Mar 8, 2026",  status: "overdue_returned", fine: 20 },
 ]
 
-const PAGE_SIZE = 8
+// 5 columns at lg — pick a page size that fills whole rows (2 rows/page)
+const PAGE_SIZE = 10
 
 // ─── Pagination hook ──────────────────────────────────────────────────────────
 
@@ -221,16 +224,8 @@ function getBook(id: string): Book | undefined {
   return MOCK_BOOKS.find((b) => b.id === id)
 }
 
-function MiniCover({ book }: { book: Book }) {
-  return (
-    <div
-      className="shrink-0 rounded-sm"
-      style={{ width: 40, height: 56, background: book.cover_color ?? "#1E3A5F" }}
-    />
-  )
-}
-
-function Pill({
+// Small auto-width status badge — overlaid on a card's cover corner
+function Badge({
   icon,
   label,
   className,
@@ -242,7 +237,7 @@ function Pill({
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center gap-1 w-[82px] shrink-0 px-1.5 py-0.5 rounded-full font-semibold",
+        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold shadow-sm",
         className,
       )}
       style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
@@ -253,9 +248,115 @@ function Pill({
   )
 }
 
+// Deterministic color palette for books without cover images — matches BookCard
+const COVER_COLORS = [
+  "#1E3A5F", "#5C3D11", "#1B3A2D", "#4A1942",
+  "#2C3E50", "#1A1A2E", "#0F4C75", "#154360",
+  "#1B2631", "#2E4057", "#3B1F2B", "#1C3144",
+]
+
+function getCoverColor(book: Book): string {
+  if (book.cover_color) return book.cover_color
+  const idx = book.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0)
+  return COVER_COLORS[idx % COVER_COLORS.length]
+}
+
+// Book cover — same visual language as the catalog's BookCard (grid texture +
+// title overlay on the color block when there's no cover image)
+function Cover({ book, children }: { book: Book; children?: React.ReactNode }) {
+  const coverColor = getCoverColor(book)
+
+  return (
+    <div
+      className="relative w-full overflow-hidden"
+      style={{ aspectRatio: "2/3", background: coverColor }}
+    >
+      {book.cover_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={book.cover_url}
+          alt={`Cover of ${book.title}`}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="relative w-full h-full flex flex-col justify-end p-3">
+          <svg className="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <pattern id={`mylib-grid-${book.id}`} width="24" height="24" patternUnits="userSpaceOnUse">
+                <path d="M 24 0 L 0 0 0 24" fill="none" stroke="white" strokeWidth="0.5" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#mylib-grid-${book.id})`} />
+          </svg>
+          <p
+            className="text-white font-semibold z-10 leading-snug"
+            style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-display)" }}
+          >
+            {book.title}
+          </p>
+        </div>
+      )}
+      {children}
+    </div>
+  )
+}
+
+const CARD_GRID = "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3"
+
+function EmptyState({ icon, message }: { icon: React.ReactNode; message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-14 gap-2 text-ink-300 bg-white rounded-[10px] border border-ink-200">
+      {icon}
+      <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+        {message}
+      </p>
+    </div>
+  )
+}
+
 // ─── Borrowed Tab (4.5.1) ─────────────────────────────────────────────────────
 
 type BorrowFilter = "all" | BorrowStatus
+
+function BorrowedCard({ entry, book }: { entry: BorrowedEntry; book: Book }) {
+  const s = BORROW_CFG[entry.status]
+  return (
+    <Link
+      href={`/student/catalog/${book.id}`}
+      className="group flex flex-col rounded-(--radius) overflow-hidden bg-white border border-ink-200 shadow-(--shadow-sm) hover:shadow-(--shadow) transition-shadow duration-200"
+    >
+      <Cover book={book}>
+        <div className="absolute top-2 right-2">
+          <Badge
+            icon={<span className={cn("w-1.5 h-1.5 rounded-full shrink-0", s.dot)} />}
+            label={s.label}
+            className={cn(s.bg, s.text)}
+          />
+        </div>
+      </Cover>
+      <div className="flex flex-col gap-0.5 p-2.5 flex-1">
+        <p
+          className="text-ink-900 font-semibold leading-snug truncate"
+          style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+        >
+          {book.title}
+        </p>
+        <p
+          className="text-ink-400 leading-snug truncate"
+          style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
+        >
+          {book.author}
+        </p>
+        <p
+          className={cn("mt-auto pt-1.5 font-medium", s.text)}
+          style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
+        >
+          Due {entry.dueDate}
+        </p>
+      </div>
+    </Link>
+  )
+}
 
 function BorrowedTab() {
   const [filter, setFilter] = useState<BorrowFilter>("all")
@@ -288,12 +389,14 @@ function BorrowedTab() {
 
       {/* Return info — lightweight caption */}
       <p
-        className="flex items-center gap-1.5 text-ink-400"
+        className="flex items-start gap-1.5 text-ink-400"
         style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
       >
-        <Info size={13} className="shrink-0" />
-        To return a book, bring it to the{" "}
-        <span className="font-medium text-ink-600">LRC librarian counter</span> — no QR code needed.
+        <Info size={13} className="shrink-0 mt-0.5" />
+        <span>
+          To return a book, bring it to the{" "}
+          <span className="font-medium text-ink-600">LRC librarian counter</span> — no QR code needed.
+        </span>
       </p>
 
       {/* Filter pills */}
@@ -332,139 +435,16 @@ function BorrowedTab() {
         })}
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-[10px] border border-ink-200 overflow-hidden">
-
-        {/* Desktop header */}
-        <div
-          className="hidden sm:grid px-4 py-2.5 border-b border-ink-100 text-ink-400 font-semibold uppercase"
-          style={{
-            gridTemplateColumns: "1fr 100px 100px 80px",
-            fontSize: "var(--text-2xs)",
-            letterSpacing: "var(--tracking-caps)",
-            fontFamily: "var(--font-body)",
-          }}
-        >
-          <span>Book</span>
-          <span>Borrowed</span>
-          <span>Due Date</span>
-          <span className="text-center">Status</span>
+      {/* Grid */}
+      {pageItems.length === 0 ? (
+        <EmptyState icon={<BookOpen size={28} />} message="No loans found." />
+      ) : (
+        <div className={CARD_GRID}>
+          {pageItems.map(({ entry, book }) => (
+            <BorrowedCard key={entry.bookId + entry.borrowedDate} entry={entry} book={book} />
+          ))}
         </div>
-
-        {pageItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-14 gap-2 text-ink-300">
-            <BookOpen size={28} />
-            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-              No loans found.
-            </p>
-          </div>
-        ) : (
-          pageItems.map(({ entry, book }) => {
-            const s = BORROW_CFG[entry.status]
-            return (
-              <div
-                key={entry.bookId + entry.borrowedDate}
-                className="border-b border-ink-100 last:border-b-0"
-              >
-                {/* Desktop row */}
-                <div
-                  className="hidden sm:grid items-center px-4 py-3 gap-3"
-                  style={{ gridTemplateColumns: "1fr 100px 100px 80px" }}
-                >
-                  <Link
-                    href={`/student/catalog/${book.id}`}
-                    className="flex items-center gap-3 min-w-0 group"
-                  >
-                    <MiniCover book={book} />
-                    <div className="min-w-0">
-                      <p
-                        className="text-ink-900 font-semibold line-clamp-1 group-hover:text-green-700 transition-colors"
-                        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                      >
-                        {book.title}
-                      </p>
-                      <p
-                        className="text-ink-400 truncate mt-0.5"
-                        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-                      >
-                        {book.author}
-                      </p>
-                      <p
-                        className="text-ink-300 mt-0.5"
-                        style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}
-                      >
-                        {book.call_number}
-                      </p>
-                    </div>
-                  </Link>
-                  <span
-                    className="text-ink-600"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-                  >
-                    {entry.borrowedDate}
-                  </span>
-                  <span
-                    className={cn("font-semibold", s.text)}
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-                  >
-                    {entry.dueDate}
-                  </span>
-                  <Pill
-                    icon={<span className={cn("w-1.5 h-1.5 rounded-full shrink-0", s.dot)} />}
-                    label={s.label}
-                    className={cn(s.bg, s.text, "justify-self-center")}
-                  />
-                </div>
-
-                {/* Mobile card */}
-                <div className="sm:hidden flex items-start gap-3 p-4">
-                  <Link href={`/student/catalog/${book.id}`} className="shrink-0">
-                    <MiniCover book={book} />
-                  </Link>
-                  <div className="flex-1 min-w-0">
-                    <Link href={`/student/catalog/${book.id}`}>
-                      <p
-                        className="text-ink-900 font-semibold line-clamp-2 hover:text-green-700 transition-colors"
-                        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                      >
-                        {book.title}
-                      </p>
-                    </Link>
-                    <p
-                      className="text-ink-400 truncate mt-0.5"
-                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-                    >
-                      {book.author}
-                    </p>
-                    <div className="flex items-center justify-between gap-2 mt-2 flex-wrap">
-                      <div>
-                        <p
-                          className="text-ink-400"
-                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
-                        >
-                          Borrowed {entry.borrowedDate}
-                        </p>
-                        <p
-                          className={cn("font-semibold mt-0.5", s.text)}
-                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
-                        >
-                          Due {entry.dueDate}
-                        </p>
-                      </div>
-                      <Pill
-                        icon={<span className={cn("w-1.5 h-1.5 rounded-full shrink-0", s.dot)} />}
-                        label={s.label}
-                        className={cn(s.bg, s.text)}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-            )
-          })
-        )}
-      </div>
+      )}
 
       {/* Pagination */}
       <Paginator
@@ -496,6 +476,74 @@ function BorrowedTab() {
 }
 
 // ─── Saved Tab (4.5.2) ────────────────────────────────────────────────────────
+
+function SavedCard({
+  book,
+  isRemoving,
+  onRemove,
+}: {
+  book: Book
+  isRemoving: boolean
+  onRemove: () => void
+}) {
+  const isAvailable = book.status === "available"
+  return (
+    <div
+      className={cn(
+        "relative flex flex-col rounded-(--radius) overflow-hidden bg-white border border-ink-200",
+        "shadow-(--shadow-sm) hover:shadow-(--shadow) transition-all duration-200",
+        isRemoving && "opacity-0 scale-95",
+      )}
+    >
+      <Link href={`/student/catalog/${book.id}`} className="block">
+        <Cover book={book}>
+          <div className="absolute top-2 left-2">
+            <AvailabilityPill
+              status={book.status === "misplaced" ? "missing" : book.status}
+              className="shadow-sm"
+            />
+          </div>
+        </Cover>
+      </Link>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove "${book.title}" from saved`}
+        className="absolute top-2 right-2 z-10 flex items-center justify-center w-7 h-7 rounded-full bg-black/30 text-white hover:bg-danger transition-colors"
+      >
+        <X size={13} />
+      </button>
+      <div className="flex flex-col gap-0.5 p-2.5 flex-1">
+        <Link href={`/student/catalog/${book.id}`}>
+          <p
+            className="text-ink-900 font-semibold leading-snug truncate hover:text-green-700 transition-colors"
+            style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+          >
+            {book.title}
+          </p>
+        </Link>
+        <p
+          className="text-ink-400 leading-snug truncate"
+          style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
+        >
+          {book.author}
+        </p>
+        <Link
+          href={`/student/catalog/${book.id}`}
+          className={cn(
+            "mt-auto w-full text-center py-1.5 rounded-[8px] font-semibold transition-colors",
+            isAvailable
+              ? "bg-green-700 text-white hover:bg-green-800"
+              : "border border-ink-200 text-ink-600 hover:bg-ink-50",
+          )}
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
+        >
+          {isAvailable ? "Borrow" : "View"}
+        </Link>
+      </div>
+    </div>
+  )
+}
 
 function SavedTab() {
   const [savedIds, setSavedIds] = useState<string[]>(SAVED_IDS)
@@ -565,91 +613,15 @@ function SavedTab() {
         </Link>
       </div>
 
-      <div className="bg-white rounded-[10px] border border-ink-200 overflow-hidden">
-        {pageItems.map((book) => {
-          const isAvailable = book.status === "available"
-          const isRemoving  = removingId === book.id
-
-          return (
-            <div
-              key={book.id}
-              className={cn(
-                "flex items-center gap-3 px-4 py-3.5 border-b border-ink-100 last:border-b-0 transition-all duration-200",
-                isRemoving && "opacity-0 scale-y-95",
-              )}
-            >
-              {/* Cover */}
-              <Link href={`/student/catalog/${book.id}`} className="shrink-0">
-                <div
-                  className="rounded-sm hover:opacity-90 transition-opacity"
-                  style={{ width: 40, height: 56, background: book.cover_color ?? "#1E3A5F" }}
-                />
-              </Link>
-
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <Link href={`/student/catalog/${book.id}`}>
-                  <p
-                    className="text-ink-900 font-semibold line-clamp-1 hover:text-green-700 transition-colors"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                  >
-                    {book.title}
-                  </p>
-                </Link>
-                <p
-                  className="text-ink-400 truncate mt-0.5"
-                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-                >
-                  {book.author}
-                </p>
-                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                  <AvailabilityPill
-                    status={book.status === "misplaced" ? "missing" : book.status}
-                  />
-                  <span
-                    className="text-ink-300 hidden sm:inline"
-                    style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}
-                  >
-                    {book.shelf_location}
-                  </span>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center gap-2 shrink-0">
-                {isAvailable ? (
-                  <Link
-                    href={`/student/catalog/${book.id}`}
-                    className="px-3 py-1.5 rounded-[8px] bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
-                  >
-                    Borrow
-                  </Link>
-                ) : (
-                  <Link
-                    href={`/student/catalog/${book.id}`}
-                    className="px-3 py-1.5 rounded-[8px] border border-ink-200 text-ink-600 font-medium hover:bg-ink-50 transition-colors"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
-                  >
-                    View
-                  </Link>
-                )}
-                <button
-                  onClick={() => handleRemove(book.id)}
-                  aria-label={`Remove "${book.title}" from saved`}
-                  className="flex items-center justify-center w-7 h-7 rounded-full text-ink-300 hover:text-danger hover:bg-danger-bg transition-colors"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-                    <path d="M10 11v6M14 11v6" />
-                    <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          )
-        })}
+      <div className={CARD_GRID}>
+        {pageItems.map((book) => (
+          <SavedCard
+            key={book.id}
+            book={book}
+            isRemoving={removingId === book.id}
+            onRemove={() => handleRemove(book.id)}
+          />
+        ))}
       </div>
 
       {/* Pagination */}
@@ -676,9 +648,52 @@ function SavedTab() {
 
 type HistoryFilter = "all" | HistoryStatus
 
+function HistoryCard({ entry, book }: { entry: HistoryEntry; book: Book }) {
+  const s = HISTORY_CFG[entry.status]
+  return (
+    <Link
+      href={`/student/catalog/${book.id}`}
+      className="group flex flex-col rounded-(--radius) overflow-hidden bg-white border border-ink-200 shadow-(--shadow-sm) hover:shadow-(--shadow) transition-shadow duration-200"
+    >
+      <Cover book={book}>
+        <div className="absolute top-2 right-2">
+          <Badge icon={s.icon} label={s.shortLabel} className={cn(s.bg, s.text)} />
+        </div>
+      </Cover>
+      <div className="flex flex-col gap-0.5 p-2.5 flex-1">
+        <p
+          className="text-ink-900 font-semibold leading-snug truncate"
+          style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+        >
+          {book.title}
+        </p>
+        <p
+          className="text-ink-400 leading-snug truncate"
+          style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
+        >
+          {book.author}
+        </p>
+        <p
+          className="text-ink-400 pt-1.5"
+          style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
+        >
+          Returned {entry.returnedDate ?? "—"}
+        </p>
+        {entry.fine !== undefined && (
+          <p
+            className="text-warn font-semibold"
+            style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
+          >
+            ₱{entry.fine}.00 fine
+          </p>
+        )}
+      </div>
+    </Link>
+  )
+}
+
 function HistoryTab() {
-  const [filter, setFilter]         = useState<HistoryFilter>("all")
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [filter, setFilter] = useState<HistoryFilter>("all")
 
   const entries = HISTORY_DATA
     .map((e) => ({ entry: e, book: getBook(e.bookId) }))
@@ -708,235 +723,61 @@ function HistoryTab() {
   return (
     <div className="flex flex-col gap-4">
 
-      {totalFines > 0 && (
-        <div className="flex items-center gap-2 self-start px-3 py-2 rounded-[10px] bg-warn-bg border border-warn/20">
-          <Clock size={14} className="text-warn shrink-0" />
-          <p
-            className="text-warn font-semibold"
-            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-          >
-            ₱{totalFines}.00 in fines paid
-          </p>
+      {/* Filter pills + total fines */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
+          {filterBtns.map((f) => {
+            const isActive = filter === f.key
+            return (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors",
+                  isActive
+                    ? "bg-green-700 border-green-700 text-white font-semibold"
+                    : "bg-white border-ink-200 text-ink-600 hover:bg-ink-50",
+                )}
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+              >
+                {f.label}
+                <span
+                  className={cn(
+                    "flex items-center justify-center rounded-full min-w-[18px] h-[18px] px-1 font-semibold",
+                    isActive ? "bg-white/25 text-white" : "bg-ink-100 text-ink-500",
+                  )}
+                  style={{ fontSize: "var(--text-2xs)" }}
+                >
+                  {counts[f.key]}
+                </span>
+              </button>
+            )
+          })}
         </div>
-      )}
 
-      {/* Filter pills */}
-      <div className="flex gap-2 flex-wrap">
-        {filterBtns.map((f) => {
-          const isActive = filter === f.key
-          return (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors",
-                isActive
-                  ? "bg-green-700 border-green-700 text-white font-semibold"
-                  : "bg-white border-ink-200 text-ink-600 hover:bg-ink-50",
-              )}
+        {totalFines > 0 && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-warn-bg border border-warn/20 shrink-0">
+            <Clock size={13} className="text-warn shrink-0" />
+            <p
+              className="text-warn font-semibold"
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
             >
-              {f.label}
-              <span
-                className={cn(
-                  "flex items-center justify-center rounded-full min-w-[18px] h-[18px] px-1 font-semibold",
-                  isActive ? "bg-white/25 text-white" : "bg-ink-100 text-ink-500",
-                )}
-                style={{ fontSize: "var(--text-2xs)" }}
-              >
-                {counts[f.key]}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Table */}
-      <div className="bg-white rounded-[10px] border border-ink-200 overflow-hidden">
-
-        {/* Desktop header */}
-        <div
-          className="hidden sm:grid px-4 py-2.5 border-b border-ink-100 text-ink-400 font-semibold uppercase"
-          style={{
-            gridTemplateColumns: "1fr 100px 100px 80px 20px",
-            fontSize: "var(--text-2xs)",
-            letterSpacing: "var(--tracking-caps)",
-            fontFamily: "var(--font-body)",
-          }}
-        >
-          <span>Book</span>
-          <span>Borrowed</span>
-          <span>Returned</span>
-          <span className="text-center">Status</span>
-          <span />
-        </div>
-
-        {pageItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-14 gap-2 text-ink-300">
-            <History size={28} />
-            <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-              No matching transactions.
+              ₱{totalFines}.00 in fines paid
             </p>
           </div>
-        ) : (
-          pageItems.map(({ entry, book }) => {
-            const s      = HISTORY_CFG[entry.status]
-            const rowKey = entry.bookId + entry.borrowedDate
-            const isExp  = expandedId === rowKey
-
-            return (
-              <div key={rowKey} className="border-b border-ink-100 last:border-b-0">
-
-                {/* Desktop row */}
-                <div
-                  className="hidden sm:grid items-center px-4 py-3 gap-3 cursor-pointer hover:bg-ink-50 transition-colors"
-                  style={{ gridTemplateColumns: "1fr 100px 100px 80px 20px" }}
-                  onClick={() => setExpandedId(isExp ? null : rowKey)}
-                >
-                  <Link
-                    href={`/student/catalog/${book.id}`}
-                    className="flex items-center gap-3 min-w-0 group"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <MiniCover book={book} />
-                    <div className="min-w-0">
-                      <p
-                        className="text-ink-900 font-semibold line-clamp-1 group-hover:text-green-700 transition-colors"
-                        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                      >
-                        {book.title}
-                      </p>
-                      <p
-                        className="text-ink-400 truncate mt-0.5"
-                        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-                      >
-                        {book.author}
-                      </p>
-                    </div>
-                  </Link>
-                  <span
-                    className="text-ink-600"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-                  >
-                    {entry.borrowedDate}
-                  </span>
-                  <span
-                    className="text-ink-600"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-                  >
-                    {entry.returnedDate ?? "—"}
-                  </span>
-                  <Pill
-                    icon={s.icon}
-                    label={s.shortLabel}
-                    className={cn(s.bg, s.text, "justify-self-center")}
-                  />
-                  <span className="text-ink-300 flex justify-end">
-                    {isExp ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                  </span>
-                </div>
-
-                {/* Mobile card */}
-                <div
-                  className="sm:hidden flex items-start gap-3 p-4 cursor-pointer hover:bg-ink-50 transition-colors"
-                  onClick={() => setExpandedId(isExp ? null : rowKey)}
-                >
-                  <Link
-                    href={`/student/catalog/${book.id}`}
-                    className="shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <MiniCover book={book} />
-                  </Link>
-                  <div className="flex-1 min-w-0">
-                    <Link
-                      href={`/student/catalog/${book.id}`}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <p
-                        className="text-ink-900 font-semibold line-clamp-2 hover:text-green-700 transition-colors"
-                        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                      >
-                        {book.title}
-                      </p>
-                    </Link>
-                    <p
-                      className="text-ink-400 truncate mt-0.5"
-                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-                    >
-                      {book.author}
-                    </p>
-                    <div className="flex items-center justify-between gap-2 mt-2 flex-wrap">
-                      <div>
-                        <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
-                          {entry.borrowedDate} → {entry.returnedDate ?? "—"}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Pill icon={s.icon} label={s.shortLabel} className={cn(s.bg, s.text)} />
-                        <span className="text-ink-300">
-                          {isExp ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Expanded detail */}
-                {isExp && (
-                  <div className="px-4 pb-4 pt-3 sm:pl-[68px] bg-ink-50 border-t border-ink-100 flex flex-wrap gap-x-8 gap-y-3">
-                    <div>
-                      <p className="text-ink-400 uppercase font-semibold" style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}>
-                        Call Number
-                      </p>
-                      <p className="text-ink-700 mt-0.5" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
-                        {book.call_number}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-ink-400 uppercase font-semibold" style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}>
-                        Due Date
-                      </p>
-                      <p className="text-ink-700 mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-                        {entry.dueDate}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-ink-400 uppercase font-semibold" style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}>
-                        Shelf
-                      </p>
-                      <p className="text-ink-700 mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-                        {book.shelf_location}
-                      </p>
-                    </div>
-                    {entry.fine !== undefined && (
-                      <div>
-                        <p className="text-ink-400 uppercase font-semibold" style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}>
-                          Fine Paid
-                        </p>
-                        <p className="text-warn font-semibold mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-                          ₱{entry.fine}.00
-                        </p>
-                      </div>
-                    )}
-                    <div className="flex items-end">
-                      <Link
-                        href={`/student/catalog/${book.id}`}
-                        className="text-green-700 font-medium hover:underline"
-                        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        View in catalog →
-                      </Link>
-                    </div>
-                  </div>
-                )}
-
-              </div>
-            )
-          })
         )}
       </div>
+
+      {/* Grid */}
+      {pageItems.length === 0 ? (
+        <EmptyState icon={<History size={28} />} message="No matching transactions." />
+      ) : (
+        <div className={CARD_GRID}>
+          {pageItems.map(({ entry, book }) => (
+            <HistoryCard key={entry.bookId + entry.borrowedDate} entry={entry} book={book} />
+          ))}
+        </div>
+      )}
 
       {/* Pagination */}
       <Paginator
@@ -950,7 +791,7 @@ function HistoryTab() {
         className="text-ink-400"
         style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
       >
-        Tap any row to see transaction details.
+        Tap a book to view its full details in the catalog.
       </p>
 
     </div>

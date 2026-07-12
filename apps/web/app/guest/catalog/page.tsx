@@ -119,11 +119,14 @@ export default function GuestCatalogPage() {
           </p>
         </div>
 
-        {/* ── Search + Sort row ─────────────────────────────────────────── */}
-        <div className="flex items-center gap-2 mb-5">
+        {/* Search + Sort — sticky so it stays in view while scrolling, header stays put */}
+        <div
+          className="sticky z-40 bg-paper/95 backdrop-blur-sm border-b border-ink-100 py-3 -mt-3 flex items-center gap-2 mb-5"
+          style={{ top: 'var(--height-nav)' }}
+        >
 
           {/* Search input */}
-          <div className="flex-1 relative">
+          <div className="flex-1 min-w-0 relative">
             <Search
               size={15}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none"
@@ -177,14 +180,14 @@ export default function GuestCatalogPage() {
             </select>
           </div>
 
-          {/* Mobile filter button */}
+          {/* Filter toggle */}
           <button
             type="button"
             suppressHydrationWarning
-            onClick={() => setDrawerOpen(true)}
+            onClick={() => setDrawerOpen((v) => !v)}
             className={cn(
-              'lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-sm border font-medium transition-colors flex-shrink-0',
-              hasActive
+              'flex items-center gap-1.5 px-3 py-2 rounded-sm border font-medium transition-colors flex-shrink-0',
+              drawerOpen || hasActive
                 ? 'border-green-700 bg-green-50 text-green-800'
                 : 'border-ink-200 bg-white text-ink-600 hover:border-ink-300'
             )}
@@ -270,6 +273,7 @@ export default function GuestCatalogPage() {
         floors={MOCK_FLOORS}
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        variant="drawer"
       />
     </div>
   )
