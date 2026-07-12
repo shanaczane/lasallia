@@ -91,7 +91,7 @@ export default function LoginSection() {
         <div className="flex flex-col items-center gap-2 text-white">
           <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-white bg-white shadow-lg">
             <img
-              src="/DeLaSalleLipa_Seal.png"
+              src="/DLSL.png"
               alt="De La Salle Lipa"
               className="h-14 w-14 object-contain"
               style={{ mixBlendMode: 'multiply' }}
