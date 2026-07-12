@@ -5,6 +5,7 @@ export { CatalogSearchBar } from './CatalogSearchBar'
 export { FilterSidebar } from './FilterSidebar'
 export type { CatalogFilters } from './FilterSidebar'
 export { DEFAULT_FILTERS } from './FilterSidebar'
+export { FilterPillBar } from './FilterPillBar'
 // Librarian Sprint 5.2
 export { LibrarianBookCard } from './LibrarianBookCard'
 export { BookFormModal } from './BookFormModal'

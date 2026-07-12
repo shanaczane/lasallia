@@ -238,7 +238,7 @@ function RadioOption({
 
 // ─── Options ──────────────────────────────────────────────────────────────────
 
-const AVAIL_OPTIONS: Array<{ value: BookStatus | 'all'; label: string }> = [
+export const AVAIL_OPTIONS: Array<{ value: BookStatus | 'all'; label: string }> = [
   { value: 'all',       label: 'All' },
   { value: 'available', label: 'Available' },
   { value: 'borrowed',  label: 'Borrowed' },
@@ -246,7 +246,7 @@ const AVAIL_OPTIONS: Array<{ value: BookStatus | 'all'; label: string }> = [
   { value: 'misplaced', label: 'Missing' },
 ]
 
-const FORMAT_OPTIONS: Array<{ value: BookFormat | 'all'; label: string }> = [
+export const FORMAT_OPTIONS: Array<{ value: BookFormat | 'all'; label: string }> = [
   { value: 'all',       label: 'All Formats' },
   { value: 'print',     label: 'Print' },
   { value: 'digital',   label: 'Digital' },
