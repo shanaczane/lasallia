@@ -123,7 +123,7 @@ export default function GuestCatalogPage() {
         <div className="flex items-center gap-2 mb-5">
 
           {/* Search input */}
-          <div className="flex-1 relative">
+          <div className="flex-1 min-w-0 relative">
             <Search
               size={15}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none"

@@ -121,7 +121,7 @@ export default function StudentCatalogPage() {
           className="sticky z-40 bg-paper/95 backdrop-blur-sm border-b border-ink-100 py-3 -mt-3 flex items-center gap-2 mb-5"
           style={{ top: 'var(--height-nav)' }}
         >
-          <div className="flex-1 relative">
+          <div className="flex-1 min-w-0 relative">
             <Search
               size={15}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none"
