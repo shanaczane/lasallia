@@ -62,25 +62,14 @@ function AvailabilityCallout({ available, total }: { available: number; total: n
   return (
     <div
       className={cn(
-        'rounded-lg px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4',
-        isNone ? 'bg-red-50 border border-red-200' :
-        isLow  ? 'bg-amber-50 border border-amber-200' :
-                 'bg-green-50 border border-green-200'
+        'rounded-[10px] border px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3',
+        isNone ? 'bg-red-50 border-red-200' :
+        isLow  ? 'bg-amber-50 border-amber-200' :
+                 'bg-green-50 border-green-200'
       )}
     >
-      <div>
-        <p
-          className={cn(
-            'font-semibold mb-0.5',
-            isNone ? 'text-red-700' : isLow ? 'text-amber-700' : 'text-green-700'
-          )}
-          style={{ fontSize: 'var(--text-base)', fontFamily: 'var(--font-body)' }}
-        >
-          {isNone
-            ? 'No copies available'
-            : `${available} of ${total} ${total === 1 ? 'copy' : 'copies'} available`}
-        </p>
-        <div className="w-40 h-1.5 rounded-full bg-white/60 overflow-hidden mt-1.5">
+      <div className="flex-1 flex items-center gap-3 min-w-0">
+        <div className="w-14 h-1.5 rounded-full bg-white/60 overflow-hidden shrink-0">
           <div
             className={cn(
               'h-full rounded-full transition-all',
@@ -89,12 +78,23 @@ function AvailabilityCallout({ available, total }: { available: number; total: n
             style={{ width: `${pct}%` }}
           />
         </div>
+        <p
+          className={cn(
+            'font-semibold leading-snug',
+            isNone ? 'text-red-700' : isLow ? 'text-amber-700' : 'text-green-800'
+          )}
+          style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+        >
+          {isNone
+            ? 'No copies available'
+            : `${available} of ${total} ${total === 1 ? 'copy' : 'copies'} available`}
+        </p>
       </div>
       {/* Sprint 3.1 — guest prompt only; reservation wired in Sprint 4.3 */}
       <Link
         href="/login"
         className={cn(
-          'inline-flex items-center gap-2 px-4 py-2 rounded-md font-semibold text-white transition-colors flex-shrink-0',
+          'shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[8px] font-semibold text-white transition-colors',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1',
           isNone
             ? 'bg-ink-400 hover:bg-ink-500 focus-visible:ring-ink-400'
@@ -235,7 +235,7 @@ export default function GuestBookDetailPage({
 
           {/* Title */}
           <h1
-            className="text-ink-900 leading-tight mb-1"
+            className="text-ink-900 font-semibold leading-tight mb-1"
             style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-4xl)' }}
           >
             {book.title}
@@ -324,7 +324,7 @@ export default function GuestBookDetailPage({
       )}
 
       {/* ── Full bib details card ────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-ink-200 overflow-hidden">
+      <div className="bg-white rounded-[10px] border border-ink-200 overflow-hidden">
         <div className="px-5 py-3 border-b border-ink-100">
           <h2
             className="text-ink-700 font-semibold uppercase"
@@ -337,7 +337,7 @@ export default function GuestBookDetailPage({
             Book Details
           </h2>
         </div>
-        <div className="divide-y divide-ink-100">
+        <div className="grid grid-cols-1 sm:grid-cols-2">
           {[
             { icon: <Hash size={14} />,      label: 'Call Number',    value: book.call_number },
             { icon: <MapPin size={14} />,     label: 'Shelf Location', value: book.shelf_location },
@@ -348,23 +348,35 @@ export default function GuestBookDetailPage({
             { icon: <Hash size={14} />,       label: 'ISBN',           value: book.isbn },
           ]
             .filter((row) => row.value != null && row.value !== '')
-            .map((row) => (
-              <div key={row.label} className="flex items-center gap-4 px-5 py-3">
-                <span className="text-ink-400 flex-shrink-0">{row.icon}</span>
-                <span
-                  className="text-ink-400 w-32 flex-shrink-0"
-                  style={{ fontSize: 'var(--text-sm)', fontFamily: 'var(--font-body)' }}
+            .map((row, i, rows) => {
+              const isLast = i === rows.length - 1
+              const isSecondToLastOfEvenRow = rows.length % 2 === 0 && i === rows.length - 2
+              const hasRightNeighbor = i + 1 < rows.length
+              return (
+                <div
+                  key={row.label}
+                  className={cn(
+                    'flex items-center gap-3 px-5 py-3 border-ink-100 min-w-0',
+                    !isLast && (isSecondToLastOfEvenRow ? 'border-b sm:border-b-0' : 'border-b'),
+                    i % 2 === 0 && hasRightNeighbor && 'sm:border-r',
+                  )}
                 >
-                  {row.label}
-                </span>
-                <span
-                  className="text-ink-900 font-medium"
-                  style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-                >
-                  {row.value}
-                </span>
-              </div>
-            ))}
+                  <span className="text-ink-400 shrink-0">{row.icon}</span>
+                  <span
+                    className="text-ink-400 w-28 shrink-0"
+                    style={{ fontSize: 'var(--text-sm)', fontFamily: 'var(--font-body)' }}
+                  >
+                    {row.label}
+                  </span>
+                  <span
+                    className="text-ink-900 font-medium truncate"
+                    style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+                  >
+                    {row.value}
+                  </span>
+                </div>
+              )
+            })}
         </div>
       </div>
 
