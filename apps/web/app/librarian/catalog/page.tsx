@@ -1,12 +1,13 @@
 // apps/web/app/librarian/catalog/page.tsx
 // Fix: responsive layout, bigger cover card, stat bar wraps cleanly on mobile
+// Responsive filters: desktop sidebar / mobile bottom sheet (sprint: responsive catalog filters)
 
 'use client'
 
-import { useState, useMemo } from 'react'
+import { Suspense, useMemo, useRef, useState } from 'react'
 import {
-  Plus, Search, X, SlidersHorizontal, ArrowUpDown,
-  BookMarked, Copy, CheckCircle2, ArrowRightLeft,
+  Plus, Search, X, ArrowUpDown,
+  BookMarked, CheckCircle2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Book } from '@lasallia/types'
@@ -16,7 +17,15 @@ import {
   MOCK_SUBJECTS,
   MOCK_FLOORS,
 } from '@/lib/mock/catalog'
-import { FilterSidebar, CatalogFilters, DEFAULT_FILTERS } from '@/components/ui/catalog'
+import {
+  FilterSidebar,
+  FilterSheet,
+  QuickChipRow,
+  AppliedChips,
+  buildFilterSections,
+  filterBooksByCatalogFilters,
+  useCatalogFilters,
+} from '@/components/ui/catalog'
 import { LibrarianBookCard } from '@/components/ui/catalog/LibrarianBookCard'
 import { BookFormModal, type BookFormData } from '@/components/ui/catalog/BookFormModal'
 import { DeleteBookModal } from '@/components/ui/catalog/DeleteBookModal'
@@ -55,34 +64,18 @@ function sortBooks(books: Book[], sort: SortOption): Book[] {
   }
 }
 
-function filterBooks(books: Book[], query: string, filters: CatalogFilters): Book[] {
-  return books.filter((book) => {
-    if (query.trim()) {
-      const q = query.toLowerCase()
-      const hit =
-        book.title.toLowerCase().includes(q) ||
-        book.author.toLowerCase().includes(q) ||
-        book.category.toLowerCase().includes(q) ||
-        (book.subject?.toLowerCase().includes(q) ?? false) ||
-        book.call_number.toLowerCase().includes(q) ||
-        (book.isbn?.includes(q) ?? false)
-      if (!hit) return false
-    }
-    if (filters.genre !== 'all' && book.category !== filters.genre) return false
-    if (filters.availability !== 'all') {
-      const match =
-        filters.availability === 'misplaced'
-          ? book.status === 'misplaced'
-          : book.status === filters.availability
-      if (!match) return false
-    }
-    if (filters.subject !== 'all' && book.subject !== filters.subject) return false
-    if (filters.format !== 'all' && book.format !== filters.format) return false
-    if (filters.floor !== 'all' && book.floor !== filters.floor) return false
-    if (filters.call_number_start && book.call_number < filters.call_number_start) return false
-    if (filters.call_number_end   && book.call_number > filters.call_number_end)   return false
-    return true
-  })
+function searchBooks(books: Book[], query: string): Book[] {
+  if (!query.trim()) return books
+  const q = query.toLowerCase()
+  return books.filter(
+    (book) =>
+      book.title.toLowerCase().includes(q) ||
+      book.author.toLowerCase().includes(q) ||
+      book.category.toLowerCase().includes(q) ||
+      (book.subject?.toLowerCase().includes(q) ?? false) ||
+      book.call_number.toLowerCase().includes(q) ||
+      (book.isbn?.includes(q) ?? false)
+  )
 }
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
@@ -142,31 +135,14 @@ function CatalogStats({ books }: { books: Book[] }) {
   )
 }
 
-// ─── Active filter tag ────────────────────────────────────────────────────────
-
-function FilterTag({ label, onRemove }: { label: string; onRemove: () => void }) {
-  return (
-    <span className="flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full bg-green-100 text-green-800 font-medium capitalize">
-      <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}>{label}</span>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="flex items-center justify-center w-4 h-4 rounded-full text-green-600 hover:text-green-900 hover:bg-green-200 transition-colors"
-      >
-        <X size={10} />
-      </button>
-    </span>
-  )
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function LibrarianCatalogPage() {
+function LibrarianCatalogContent() {
   const [books, setBooks]       = useState<Book[]>(MOCK_BOOKS)
   const [query, setQuery]       = useState('')
-  const [filters, setFilters]   = useState<CatalogFilters>(DEFAULT_FILTERS)
   const [sort, setSort]         = useState<SortOption>('relevance')
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const filtersButtonRef = useRef<HTMLButtonElement>(null)
 
   const [addOpen,    setAddOpen]    = useState(false)
   const [editBook,   setEditBook]   = useState<Book | null>(null)
@@ -174,23 +150,27 @@ export default function LibrarianCatalogPage() {
 
   const [toast, setToast] = useState<string | null>(null)
 
+  const { filters, setFilter, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
+
+  const sections = useMemo(
+    () => buildFilterSections({ genres: MOCK_CATEGORIES, subjects: MOCK_SUBJECTS, floors: MOCK_FLOORS }),
+    []
+  )
+
   function showToast(msg: string) {
     setToast(msg)
     setTimeout(() => setToast(null), 3000)
   }
 
   const results = useMemo(
-    () => sortBooks(filterBooks(books, query, filters), sort),
+    () => sortBooks(filterBooksByCatalogFilters(searchBooks(books, query), filters), sort),
     [books, query, filters, sort]
   )
 
-  const activeFilters = [
-    filters.genre        !== 'all' && { key: 'genre',        label: filters.genre,        clear: () => setFilters((f) => ({ ...f, genre: 'all' })) },
-    filters.availability !== 'all' && { key: 'availability', label: filters.availability, clear: () => setFilters((f) => ({ ...f, availability: 'all' })) },
-    filters.format       !== 'all' && { key: 'format',       label: filters.format,       clear: () => setFilters((f) => ({ ...f, format: 'all' })) },
-    filters.floor        !== 'all' && { key: 'floor',        label: filters.floor,        clear: () => setFilters((f) => ({ ...f, floor: 'all' })) },
-    filters.subject      !== 'all' && { key: 'subject',      label: filters.subject,      clear: () => setFilters((f) => ({ ...f, subject: 'all' })) },
-  ].filter(Boolean) as Array<{ key: string; label: string; clear: () => void }>
+  function clearAll() {
+    setQuery('')
+    resetAll()
+  }
 
   // ── Handlers ──
 
@@ -265,6 +245,9 @@ export default function LibrarianCatalogPage() {
 
   return (
     <div className="flex" style={{ minHeight: 'calc(100vh - var(--height-nav))' }}>
+
+      {/* Filter sidebar (desktop only) */}
+      <FilterSidebar filters={filters} setFilter={setFilter} resetAll={resetAll} sections={sections} />
 
       {/* Main */}
       <div className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6">
@@ -358,30 +341,6 @@ export default function LibrarianCatalogPage() {
               ))}
             </select>
           </div>
-
-          {/* Mobile filter toggle */}
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(true)}
-            className={cn(
-              'lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-sm border font-medium transition-colors shrink-0',
-              activeFilters.length > 0
-                ? 'border-green-700 bg-green-50 text-green-800'
-                : 'border-ink-200 bg-white text-ink-600 hover:border-ink-300'
-            )}
-            style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-          >
-            <SlidersHorizontal size={14} />
-            <span className="hidden xs:inline">Filters</span>
-            {activeFilters.length > 0 && (
-              <span
-                className="flex items-center justify-center rounded-full bg-green-700 text-white font-bold"
-                style={{ width: 16, height: 16, fontSize: 9 }}
-              >
-                {activeFilters.length}
-              </span>
-            )}
-          </button>
         </div>
 
         {/* Mobile sort — shown only on mobile */}
@@ -402,35 +361,15 @@ export default function LibrarianCatalogPage() {
           </select>
         </div>
 
-        {/* Active filter tags */}
-        {activeFilters.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            <span
-              className="text-ink-400"
-              style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
-            >
-              Active:
-            </span>
-            {activeFilters.map(({ key, label, clear }) => (
-              <FilterTag key={key} label={label} onRemove={clear} />
-            ))}
-            <button
-              type="button"
-              onClick={() => setFilters(DEFAULT_FILTERS)}
-              className="text-green-700 font-medium hover:text-green-900 underline underline-offset-2 transition-colors"
-              style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
-            >
-              Clear all
-            </button>
-          </div>
-        )}
+        {/* Applied filter chips */}
+        <AppliedChips filters={filters} sections={sections} resetSection={resetSection} resetAll={resetAll} />
 
         {/* Result count */}
         <p
-          className="text-ink-500 mb-4"
+          className="text-ink-500 mb-3"
           style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
         >
-          {query || activeFilters.length > 0 ? (
+          {query || hasActive ? (
             <>
               <span className="font-semibold text-ink-900">{results.length}</span>{' '}
               {results.length === 1 ? 'result' : 'results'}
@@ -446,6 +385,15 @@ export default function LibrarianCatalogPage() {
           )}
         </p>
 
+        {/* Mobile quick-chip row (above results list) */}
+        <QuickChipRow
+          filters={filters}
+          activeCount={activeCount}
+          onOpenSheet={() => setSheetOpen(true)}
+          setFilter={setFilter}
+          filtersButtonRef={filtersButtonRef}
+        />
+
         {/* Book list */}
         {results.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -456,14 +404,24 @@ export default function LibrarianCatalogPage() {
               className="text-ink-700 font-semibold mb-1"
               style={{ fontSize: 'var(--text-lg)', fontFamily: 'var(--font-display)' }}
             >
-              No books found
+              {hasActive || query ? 'No titles match these filters' : 'No books found'}
             </p>
             <p
-              className="text-ink-400 max-w-xs"
+              className="text-ink-400 max-w-xs mb-4"
               style={{ fontSize: 'var(--text-body)', fontFamily: 'var(--font-body)' }}
             >
               Try adjusting your search or filters, or add a new book.
             </p>
+            {(hasActive || query) && (
+              <button
+                type="button"
+                onClick={clearAll}
+                className="text-green-700 font-semibold hover:text-green-900 underline underline-offset-2 transition-colors"
+                style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -513,6 +471,26 @@ export default function LibrarianCatalogPage() {
       />
 
       {toast && <Toast message={toast} />}
+
+      {/* Mobile filter bottom sheet */}
+      <FilterSheet
+        isOpen={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        sections={sections}
+        filters={filters}
+        setFilter={setFilter}
+        resetAll={resetAll}
+        resultCount={results.length}
+        triggerRef={filtersButtonRef}
+      />
     </div>
+  )
+}
+
+export default function LibrarianCatalogPage() {
+  return (
+    <Suspense fallback={null}>
+      <LibrarianCatalogContent />
+    </Suspense>
   )
 }
