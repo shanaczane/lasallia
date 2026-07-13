@@ -4,6 +4,7 @@ export { BookGrid } from './BookGrid'
 export { CatalogSearchBar } from './CatalogSearchBar'
 export { FilterSidebar } from './FilterSidebar'
 export { FilterSheet } from './FilterSheet'
+export { FilterPillBar } from './FilterPillBar'
 export { QuickChipRow, AppliedChips } from './FilterChips'
 export { useCatalogFilters } from './useCatalogFilters'
 export type {

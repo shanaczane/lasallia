@@ -14,8 +14,10 @@ import {
   MapPin,
   Tag,
   Hash,
+  X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { BookStatus, BookFormat } from '@lasallia/types'
 import {
   CatalogFilters,
   DEFAULT_FILTERS,
@@ -51,6 +53,9 @@ type FilterSidebarProps = {
   className?: string
   /** 'sidebar' (default) keeps a persistent panel on desktop. 'drawer' always opens via the trigger button, even on desktop. */
   variant?: 'sidebar' | 'drawer'
+  /** Controls the mobile slide-in drawer (and the desktop panel when variant='drawer'). */
+  isOpen?: boolean
+  onClose?: () => void
 }
 
 // ─── Collapsible filter section ───────────────────────────────────────────────
@@ -270,6 +275,8 @@ export function FilterSidebar({
   sections,
   className,
   variant = 'sidebar',
+  isOpen,
+  onClose,
 }: FilterSidebarProps) {
   const isDrawer = variant === 'drawer'
   const [collapsed, setCollapsed] = useState(false)
@@ -443,7 +450,7 @@ export function FilterSidebar({
         aria-label="Filters panel"
       >
         {desktopCollapsedToRail
-          ? <CollapsedRail filters={filters} onExpand={handleExpand} />
+          ? <CollapsedRail sections={sections} filters={filters} onExpand={handleExpand} />
           : expandedContent
         }
       </aside>

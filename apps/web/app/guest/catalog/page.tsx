@@ -9,7 +9,7 @@ import { Search, X, ArrowUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Book } from '@lasallia/types'
 import {
-  FilterSidebar,
+  FilterPillBar,
   FilterSheet,
   QuickChipRow,
   AppliedChips,
@@ -17,7 +17,6 @@ import {
   buildFilterSections,
   filterBooksByCatalogFilters,
   useCatalogFilters,
-  CatalogFilters,
 } from '@/components/ui/catalog'
 import {
   MOCK_BOOKS,
@@ -69,7 +68,7 @@ function GuestCatalogContent() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const filtersButtonRef = useRef<HTMLButtonElement>(null)
 
-  const { filters, setFilter, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
+  const { filters, setFilter, setFilters, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
 
   const sections = useMemo(
     () => buildFilterSections({ genres: MOCK_CATEGORIES, subjects: MOCK_SUBJECTS, floors: MOCK_FLOORS }),
@@ -88,9 +87,6 @@ function GuestCatalogContent() {
 
   return (
     <div className="flex" style={{ minHeight: 'calc(100vh - var(--height-nav))' }}>
-
-      {/* ── Filter sidebar (desktop only) ──────────────────────────────── */}
-      <FilterSidebar filters={filters} setFilter={setFilter} resetAll={resetAll} sections={sections} />
 
       {/* ── Main area ──────────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0 px-5 sm:px-8 py-7">
@@ -112,41 +108,44 @@ function GuestCatalogContent() {
           </p>
         </div>
 
-        {/* ── Search + Sort row ─────────────────────────────────────────── */}
-        <div className="flex items-center gap-2 mb-4">
-
-          {/* Search input */}
-          <div className="flex-1 relative">
-            <Search
-              size={15}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none"
-            />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by title, author, subject…"
-              className={cn(
-                'w-full pl-9 pr-8 py-2 rounded-sm border bg-white text-ink-900',
-                'placeholder:text-ink-300 focus:outline-none transition-colors',
-                'border-ink-200 focus:border-green-700 hover:border-ink-300'
+        {/* ── Search + Sort + filter pills — sticky so they stay in view while scrolling ── */}
+        <div
+          className="sticky z-40 bg-paper/95 backdrop-blur-sm border-b border-ink-100 py-3 -mt-3 flex flex-col gap-3 mb-5"
+          style={{ top: 'var(--height-nav)' }}
+        >
+          <div className="flex items-center gap-2">
+            {/* Search input */}
+            <div className="flex-1 min-w-0 relative">
+              <Search
+                size={15}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none"
+              />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by title, author, subject…"
+                className={cn(
+                  'w-full pl-9 pr-8 py-2 rounded-sm border bg-white text-ink-900',
+                  'placeholder:text-ink-300 focus:outline-none transition-colors',
+                  'border-ink-200 focus:border-green-700 hover:border-ink-300'
+                )}
+                style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+              />
+              {query && (
+                <button
+                  type="button"
+                  suppressHydrationWarning
+                  onClick={() => setQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700 transition-colors"
+                >
+                  <X size={13} />
+                </button>
               )}
-              style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-            />
-            {query && (
-              <button
-                type="button"
-                suppressHydrationWarning
-                onClick={() => setQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700 transition-colors"
-              >
-                <X size={13} />
-              </button>
-            )}
-          </div>
+            </div>
 
             {/* Sort — beside search bar */}
-            <div className="flex items-center gap-1.5 flex-shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               <ArrowUpDown size={13} className="text-ink-400 hidden sm:block" />
               <select
                 value={sort}
@@ -170,6 +169,14 @@ function GuestCatalogContent() {
               </select>
             </div>
           </div>
+
+          <FilterPillBar
+            filters={filters}
+            onChange={setFilters}
+            genres={MOCK_CATEGORIES}
+            floors={MOCK_FLOORS}
+            subjects={MOCK_SUBJECTS}
+          />
         </div>
 
         {/* Applied filter chips */}

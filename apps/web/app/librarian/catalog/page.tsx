@@ -7,7 +7,7 @@
 import { Suspense, useMemo, useRef, useState } from 'react'
 import {
   Plus, Search, X, ArrowUpDown,
-  BookMarked, CheckCircle2,
+  BookMarked, CheckCircle2, Copy, ArrowRightLeft,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Book } from '@lasallia/types'
@@ -436,17 +436,6 @@ function LibrarianCatalogContent() {
           </div>
         )}
       </div>
-
-      {/* Filter sidebar */}
-      <FilterSidebar
-        filters={filters}
-        onChange={setFilters}
-        genres={MOCK_CATEGORIES}
-        subjects={MOCK_SUBJECTS}
-        floors={MOCK_FLOORS}
-        isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-      />
 
       {/* Modals */}
       <BookFormModal

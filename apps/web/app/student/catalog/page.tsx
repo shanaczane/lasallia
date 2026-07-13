@@ -9,8 +9,8 @@ import { Search, ArrowUpDown, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Book } from '@lasallia/types'
 import {
-  FilterSidebar,
   FilterSheet,
+  FilterPillBar,
   QuickChipRow,
   AppliedChips,
   BookGrid,
@@ -66,7 +66,7 @@ function StudentCatalogContent() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const filtersButtonRef = useRef<HTMLButtonElement>(null)
 
-  const { filters, setFilter, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
+  const { filters, setFilter, setFilters, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
 
   const sections = useMemo(
     () => buildFilterSections({ genres: MOCK_CATEGORIES, subjects: MOCK_SUBJECTS, floors: MOCK_FLOORS }),
@@ -85,8 +85,6 @@ function StudentCatalogContent() {
 
   return (
     <div className="flex" style={{ minHeight: 'calc(100vh - var(--height-nav))' }}>
-
-      <FilterSidebar filters={filters} setFilter={setFilter} resetAll={resetAll} sections={sections} />
 
       <div className="flex-1 min-w-0 px-5 sm:px-8 py-7">
 
@@ -107,36 +105,6 @@ function StudentCatalogContent() {
           </p>
         </div>
 
-        {/* Search + Sort */}
-        <div className="flex items-center gap-2 mb-4">
-          <div className="flex-1 relative">
-            <Search
-              size={15}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none"
-            />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by title, author, subject…"
-              className={cn(
-                'w-full pl-9 pr-8 py-2 rounded-sm border bg-white text-ink-900',
-                'placeholder:text-ink-300 focus:outline-none transition-colors',
-                'border-ink-200 focus:border-green-700 hover:border-ink-300'
-              )}
-              style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-            />
-            {query && (
-              <button
-                type="button"
-                suppressHydrationWarning
-                onClick={() => setQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700 transition-colors"
-              >
-                <X size={13} />
-              </button>
-            )}
-          </div>
         {/* Search + Sort + filter pills — sticky so they stay in view while scrolling, header stays put */}
         <div
           className="sticky z-40 bg-paper/95 backdrop-blur-sm border-b border-ink-100 py-3 -mt-3 flex flex-col gap-3 mb-5"
