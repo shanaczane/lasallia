@@ -21,6 +21,9 @@ apps/api/.pytest_cache/
 **/.env
 **/.env.local
 
+# Claude Code
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db

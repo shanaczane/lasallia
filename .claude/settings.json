@@ -1,13 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(xargs -I{} echo {})",
-      "Bash(pnpm build:web)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/guest/catalog)",
-      "Bash(node \"C:\\\\Users\\\\SHANAC~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Dev-lasallia\\\\2867f3bd-4ab6-4c3e-a1a5-52c9063f8767\\\\scratchpad\\\\check.mjs\")",
-      "Bash(node check.mjs)",
-      "Bash(node check3.mjs)",
-      "Bash(node check4.mjs)"
+      "Bash(pnpm *)",
+      "Bash(git *)",
+      "Bash(mkdir *)",
+      "Bash(ls *)",
+      "Bash(npx tsc *)"
     ]
   }
 }
