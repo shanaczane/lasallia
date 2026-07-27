@@ -4,7 +4,7 @@
 
 'use client'
 
-import { Suspense, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Search, X, ArrowUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Book } from '@lasallia/types'
@@ -14,17 +14,15 @@ import {
   QuickChipRow,
   AppliedChips,
   BookGrid,
+  Pagination,
   buildFilterSections,
   filterBooksByCatalogFilters,
   useCatalogFilters,
 } from '@/components/ui/catalog'
-import {
-  MOCK_BOOKS,
-  MOCK_CATEGORIES,
-  MOCK_SUBJECTS,
-  MOCK_FLOORS,
-  CATALOG_STATS,
-} from '@/lib/mock/catalog'
+import { useBooks } from '@/lib/hooks/useBooks'
+import { deriveCatalogOptions } from '@/lib/catalogOptions'
+
+const PAGE_SIZE = 24
 
 // ─── Sort ─────────────────────────────────────────────────────────────────────
 type SortOption = 'relevance' | 'title_asc' | 'title_desc' | 'year_desc' | 'year_asc'
@@ -69,16 +67,24 @@ function GuestCatalogContent() {
   const filtersButtonRef = useRef<HTMLButtonElement>(null)
 
   const { filters, setFilter, setFilters, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
+  const { books, loading, error } = useBooks()
+
+  const { genres, subjects, floors } = useMemo(() => deriveCatalogOptions(books), [books])
 
   const sections = useMemo(
-    () => buildFilterSections({ genres: MOCK_CATEGORIES, subjects: MOCK_SUBJECTS, floors: MOCK_FLOORS }),
-    []
+    () => buildFilterSections({ genres, subjects, floors }),
+    [genres, subjects, floors]
   )
 
   const results = useMemo(
-    () => sortBooks(filterBooksByCatalogFilters(searchBooks(MOCK_BOOKS, query), filters), sort),
-    [query, filters, sort]
+    () => sortBooks(filterBooksByCatalogFilters(searchBooks(books, query), filters), sort),
+    [books, query, filters, sort]
   )
+
+  const [page, setPage] = useState(1)
+  useEffect(() => setPage(1), [query, filters, sort])
+  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE))
+  const pagedResults = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function clearAll() {
     setQuery('')
@@ -104,7 +110,7 @@ function GuestCatalogContent() {
             className="text-ink-400"
             style={{ fontSize: 'var(--text-body)', fontFamily: 'var(--font-body)' }}
           >
-            {CATALOG_STATS.total.toLocaleString()} titles indexed · live availability
+            {loading ? 'Loading titles…' : `${books.length.toLocaleString()} titles indexed · live availability`}
           </p>
         </div>
 
@@ -173,9 +179,9 @@ function GuestCatalogContent() {
           <FilterPillBar
             filters={filters}
             onChange={setFilters}
-            genres={MOCK_CATEGORIES}
-            floors={MOCK_FLOORS}
-            subjects={MOCK_SUBJECTS}
+            genres={genres}
+            floors={floors}
+            subjects={subjects}
           />
         </div>
 
@@ -210,12 +216,25 @@ function GuestCatalogContent() {
         />
 
         {/* Grid */}
-        <BookGrid
-          books={results}
-          hrefPrefix="/guest/catalog"
-          hasActiveFilters={hasActive || !!query}
-          onClearFilters={clearAll}
-        />
+        {error ? (
+          <p
+            className="text-center py-12 text-danger"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+          >
+            {error}
+          </p>
+        ) : (
+          <>
+            <BookGrid
+              books={pagedResults}
+              isLoading={loading}
+              hrefPrefix="/guest/catalog"
+              hasActiveFilters={hasActive || !!query}
+              onClearFilters={clearAll}
+            />
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+          </>
+        )}
       </div>
 
       {/* Mobile filter bottom sheet */}

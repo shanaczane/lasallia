@@ -4,7 +4,7 @@
 
 'use client'
 
-import { Suspense, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, Search, X, ArrowUpDown,
   BookMarked, CheckCircle2, Copy, ArrowRightLeft,
@@ -12,20 +12,19 @@ import {
 import { cn } from '@/lib/utils'
 import { Book } from '@lasallia/types'
 import {
-  MOCK_BOOKS,
-  MOCK_CATEGORIES,
-  MOCK_SUBJECTS,
-  MOCK_FLOORS,
-} from '@/lib/mock/catalog'
-import {
   FilterSidebar,
   FilterSheet,
   QuickChipRow,
   AppliedChips,
+  Pagination,
   buildFilterSections,
   filterBooksByCatalogFilters,
   useCatalogFilters,
 } from '@/components/ui/catalog'
+import { useBooks } from '@/lib/hooks/useBooks'
+import { deriveCatalogOptions } from '@/lib/catalogOptions'
+
+const PAGE_SIZE = 24
 import { LibrarianBookCard } from '@/components/ui/catalog/LibrarianBookCard'
 import { BookFormModal, type BookFormData } from '@/components/ui/catalog/BookFormModal'
 import { DeleteBookModal } from '@/components/ui/catalog/DeleteBookModal'
@@ -138,7 +137,8 @@ function CatalogStats({ books }: { books: Book[] }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function LibrarianCatalogContent() {
-  const [books, setBooks]       = useState<Book[]>(MOCK_BOOKS)
+  const { books: fetchedBooks, loading, error } = useBooks()
+  const [books, setBooks]       = useState<Book[]>([])
   const [query, setQuery]       = useState('')
   const [sort, setSort]         = useState<SortOption>('relevance')
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -150,11 +150,20 @@ function LibrarianCatalogContent() {
 
   const [toast, setToast] = useState<string | null>(null)
 
+  // Seeds local editable state from the fetch once it lands. Add/edit/
+  // archive/delete below only mutate this local copy — Sprint 9.1 wires
+  // these to real write endpoints; until then changes don't persist.
+  useEffect(() => {
+    if (!loading && !error) setBooks(fetchedBooks)
+  }, [loading, error, fetchedBooks])
+
   const { filters, setFilter, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
 
+  const { genres, subjects, floors } = useMemo(() => deriveCatalogOptions(books), [books])
+
   const sections = useMemo(
-    () => buildFilterSections({ genres: MOCK_CATEGORIES, subjects: MOCK_SUBJECTS, floors: MOCK_FLOORS }),
-    []
+    () => buildFilterSections({ genres, subjects, floors }),
+    [genres, subjects, floors]
   )
 
   function showToast(msg: string) {
@@ -166,6 +175,11 @@ function LibrarianCatalogContent() {
     () => sortBooks(filterBooksByCatalogFilters(searchBooks(books, query), filters), sort),
     [books, query, filters, sort]
   )
+
+  const [page, setPage] = useState(1)
+  useEffect(() => setPage(1), [query, filters, sort])
+  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE))
+  const pagedResults = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function clearAll() {
     setQuery('')
@@ -395,7 +409,20 @@ function LibrarianCatalogContent() {
         />
 
         {/* Book list */}
-        {results.length === 0 ? (
+        {error ? (
+          <p
+            className="text-center py-12 text-danger"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+          >
+            {error}
+          </p>
+        ) : loading ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="h-24 rounded-(--radius) bg-white border border-ink-200 animate-pulse" />
+            ))}
+          </div>
+        ) : results.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="flex items-center justify-center w-16 h-16 rounded-full bg-ink-100 mb-4">
               <BookMarked size={28} className="text-ink-300" />
@@ -424,16 +451,19 @@ function LibrarianCatalogContent() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {results.map((book) => (
-              <LibrarianBookCard
-                key={book.id}
-                book={book}
-                onEdit={(b) => setEditBook(b)}
-                onDelete={(b) => setDeleteBook(b)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {pagedResults.map((book) => (
+                <LibrarianBookCard
+                  key={book.id}
+                  book={book}
+                  onEdit={(b) => setEditBook(b)}
+                  onDelete={(b) => setDeleteBook(b)}
+                />
+              ))}
+            </div>
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+          </>
         )}
       </div>
 

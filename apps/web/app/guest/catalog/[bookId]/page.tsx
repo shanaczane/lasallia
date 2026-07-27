@@ -7,7 +7,7 @@ import { use } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, MapPin, Hash, Building2, Calendar, BookOpen, Tag, BookMarked } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { MOCK_BOOKS } from '@/lib/mock/catalog'
+import { useBook } from '@/lib/hooks/useBooks'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 
 // ─── Cover helpers ────────────────────────────────────────────────────────────
@@ -116,9 +116,23 @@ export default function GuestBookDetailPage({
   params: Promise<{ bookId: string }>
 }) {
   const { bookId } = use(params)
+  const { book, loading } = useBook(bookId)
 
-  // Sprint 5: replace with fetch(`/api/books/${bookId}`)
-  const book = MOCK_BOOKS.find((b) => b.id === bookId)
+  // ── Loading state ────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="px-5 sm:px-8 py-7 max-w-5xl mx-auto animate-pulse">
+        <div className="h-4 w-32 bg-ink-100 rounded mb-7" />
+        <div className="flex flex-col sm:flex-row gap-8">
+          <div className="shrink-0 mx-auto sm:mx-0 rounded-xl bg-ink-100" style={{ width: 176, aspectRatio: '2/3' }} />
+          <div className="flex-1 min-w-0 flex flex-col gap-3">
+            <div className="h-8 w-3/4 bg-ink-100 rounded" />
+            <div className="h-4 w-1/2 bg-ink-100 rounded" />
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // ── 404 state ────────────────────────────────────────────────────────────
   if (!book) {

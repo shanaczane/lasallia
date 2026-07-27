@@ -6,6 +6,7 @@ export { FilterSidebar } from './FilterSidebar'
 export { FilterSheet } from './FilterSheet'
 export { FilterPillBar } from './FilterPillBar'
 export { QuickChipRow, AppliedChips } from './FilterChips'
+export { Pagination } from './Pagination'
 export { useCatalogFilters } from './useCatalogFilters'
 export type {
   CatalogFilters,

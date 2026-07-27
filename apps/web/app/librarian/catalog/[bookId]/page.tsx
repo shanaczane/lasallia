@@ -3,14 +3,14 @@
 
 'use client'
 
-import { use, useState } from 'react'
+import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft, MapPin, Hash, Building2, Calendar,
   BookOpen, Tag, Copy, Pencil, Trash2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { MOCK_BOOKS } from '@/lib/mock/catalog'
+import { useBook } from '@/lib/hooks/useBooks'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 import type { Book } from '@lasallia/types'
 import { CopyManagementTable, type BookCopy, type CopyStatus } from '@/components/ui/catalog/CopyManagementTable'
@@ -109,13 +109,33 @@ export default function LibrarianBookDetailPage({
   const { bookId } = use(params)
   const router = useRouter()
 
-  const book = MOCK_BOOKS.find((b) => b.id === bookId)
+  const { book, loading } = useBook(bookId)
 
   const [editOpen,   setEditOpen]   = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [copies, setCopies] = useState<BookCopy[]>(() =>
-    book ? generateMockCopies(book) : []
-  )
+  const [copies, setCopies] = useState<BookCopy[]>([])
+
+  // Per-copy tracking isn't backed by a real table yet — this regenerates
+  // placeholder copy rows from total_copies/available_copies once the real
+  // book loads. Replace once Sprint 5.2.4's copies table exists.
+  useEffect(() => {
+    if (book) setCopies(generateMockCopies(book))
+  }, [book])
+
+  if (loading) {
+    return (
+      <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-5xl mx-auto animate-pulse">
+        <div className="h-4 w-32 bg-ink-100 rounded mb-6" />
+        <div className="flex flex-col sm:flex-row gap-5 sm:gap-7">
+          <div className="shrink-0 rounded-(--radius) bg-ink-100" style={{ width: 140, height: 198 }} />
+          <div className="flex-1 min-w-0 flex flex-col gap-3">
+            <div className="h-7 w-2/3 bg-ink-100 rounded" />
+            <div className="h-4 w-1/3 bg-ink-100 rounded" />
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (!book) {
     return (
