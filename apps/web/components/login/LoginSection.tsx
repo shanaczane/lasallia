@@ -5,7 +5,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Mail, Lock, Eye, EyeOff, Loader2, Check } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, Loader2, Check, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSignIn } from '@/lib/hooks/useSignIn'
 
@@ -111,7 +111,7 @@ export default function LoginSection() {
             <div>
               <label
                 htmlFor="email"
-                className="mb-1 block text-ink-900 font-semibold"
+                className={cn('mb-1 block font-semibold', emailError || error ? 'text-danger' : 'text-ink-900')}
                 style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
               >
                 DLSL email
@@ -133,7 +133,7 @@ export default function LoginSection() {
                   className={cn(
                     'w-full rounded-xl border bg-white py-2.5 pl-9 pr-3 text-ink-900 placeholder:text-ink-300',
                     'focus:outline-none transition-colors motion-reduce:transition-none',
-                    emailError
+                    emailError || error
                       ? 'border-danger focus:shadow-(--shadow-focus-danger)'
                       : 'border-ink-200 focus:border-green-700 focus:shadow-(--shadow-focus-green)'
                   )}
@@ -155,7 +155,7 @@ export default function LoginSection() {
             <div>
               <label
                 htmlFor="password"
-                className="mb-1 block text-ink-900 font-semibold"
+                className={cn('mb-1 block font-semibold', error ? 'text-danger' : 'text-ink-900')}
                 style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
               >
                 Password
@@ -173,9 +173,11 @@ export default function LoginSection() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   className={cn(
-                    'w-full rounded-xl border border-ink-200 bg-white py-2.5 pl-9 pr-10 text-ink-900 placeholder:text-ink-300',
-                    'focus:outline-none focus:border-green-700 focus:shadow-(--shadow-focus-green)',
-                    'transition-colors motion-reduce:transition-none'
+                    'w-full rounded-xl border bg-white py-2.5 pl-9 pr-10 text-ink-900 placeholder:text-ink-300',
+                    'focus:outline-none transition-colors motion-reduce:transition-none',
+                    error
+                      ? 'border-danger focus:shadow-(--shadow-focus-danger)'
+                      : 'border-ink-200 focus:border-green-700 focus:shadow-(--shadow-focus-green)'
                   )}
                   style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
                 />
@@ -233,14 +235,10 @@ export default function LoginSection() {
             {error && (
               <p
                 role="alert"
-                className="rounded-xl border border-danger px-3 py-2"
-                style={{
-                  fontFamily: 'var(--font-body)',
-                  fontSize: 'var(--text-xs)',
-                  backgroundColor: 'var(--color-danger-bg)',
-                  color: 'var(--color-danger-dark)',
-                }}
+                className="flex items-center gap-1.5 text-danger"
+                style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}
               >
+                <AlertCircle size={14} className="shrink-0" />
                 {error}
               </p>
             )}
