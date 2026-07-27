@@ -7,6 +7,7 @@ export type BookFormat = 'print' | 'digital' | 'reference'
 
 export type Book = {
   id: string
+  accession_no?: string      // LRC physical-copy identifier, e.g. "T44882" — encoded on the QR code
   title: string
   author: string
   isbn?: string
