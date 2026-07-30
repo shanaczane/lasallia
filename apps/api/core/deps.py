@@ -4,8 +4,10 @@ import httpx
 from jwt.algorithms import ECAlgorithm
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from supabase import Client
 from schemas.auth import UserProfile, Role
 from core.config import SUPABASE_URL
+from core.supabase import get_user_client
 
 bearer = HTTPBearer()
 
@@ -50,6 +52,11 @@ def get_current_user(
         role=role,
         full_name=meta.get("full_name"),
     )
+
+def get_user_supabase(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+) -> Client:
+    return get_user_client(credentials.credentials)
 
 def require_role(*roles: Role):
     def _check(user: UserProfile = Depends(get_current_user)) -> UserProfile:

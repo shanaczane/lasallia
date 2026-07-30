@@ -2,83 +2,31 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { CheckCircle, Clock, XCircle, BookMarked } from "lucide-react"
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-type ReservationStatus = "Pending" | "Confirmed" | "Ready" | "Cancelled"
-
-interface Reservation {
-  id: string
-  bookTitle: string
-  author: string
-  reservationDate: string  // ISO string
-  pickupDate: string       // ISO string
-  status: ReservationStatus
-}
-
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-function daysAgo(n: number, hours = 8, minutes = 0): string {
-  const d = new Date()
-  d.setDate(d.getDate() - n)
-  d.setHours(hours, minutes, 0, 0)
-  return d.toISOString()
-}
-
-function daysFromNow(n: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + n)
-  return d.toISOString()
-}
-
-const MOCK_RESERVATIONS: Reservation[] = [
-  {
-    id: "RSV-001",
-    bookTitle: "Introduction to Algorithms",
-    author: "Cormen, Leiserson, Rivest & Stein",
-    reservationDate: daysAgo(0, 10, 42),
-    pickupDate: daysFromNow(3),
-    status: "Ready",
-  },
-  {
-    id: "RSV-002",
-    bookTitle: "Clean Code: A Handbook of Agile Software Craftsmanship",
-    author: "Robert C. Martin",
-    reservationDate: daysAgo(0, 8, 0),
-    pickupDate: daysFromNow(4),
-    status: "Confirmed",
-  },
-  {
-    id: "RSV-003",
-    bookTitle: "The Pragmatic Programmer",
-    author: "David Thomas & Andrew Hunt",
-    reservationDate: daysAgo(1, 15, 20),
-    pickupDate: daysFromNow(2),
-    status: "Pending",
-  },
-  {
-    id: "RSV-004",
-    bookTitle: "Design Patterns: Elements of Reusable Object-Oriented Software",
-    author: "Gang of Four",
-    reservationDate: daysAgo(2, 14, 30),
-    pickupDate: daysFromNow(1),
-    status: "Cancelled",
-  },
-]
+import { useReservations } from "@/lib/hooks/useReservations"
+import { updateReservationStatus } from "@/lib/reservations"
+import type { Reservation, ReservationStatus } from "@lasallia/types"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function formatPickupDate(isoString: string): string {
-  return new Date(isoString).toLocaleDateString("en-PH", {
-    month: "short",
-    day: "numeric",
-  })
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric" })
+}
+
+function bookTitle(r: Reservation): string {
+  return r.books?.title ?? "Unknown title"
+}
+
+function bookAuthor(r: Reservation): string {
+  return r.books?.author ?? ""
 }
 
 function groupByDate(reservations: Reservation[]): { label: string; items: Reservation[] }[] {
   const groups: Record<string, Reservation[]> = {}
 
   for (const r of reservations) {
-    const date = new Date(r.reservationDate)
+    const date = new Date(r.requested_at)
     const now = new Date()
     const yesterday = new Date(now)
     yesterday.setDate(yesterday.getDate() - 1)
@@ -100,11 +48,7 @@ function groupByDate(reservations: Reservation[]): { label: string; items: Reser
   }
 
   return Object.entries(groups)
-    .sort((a, b) => {
-      const dateA = new Date(a[1][0].reservationDate).getTime()
-      const dateB = new Date(b[1][0].reservationDate).getTime()
-      return dateB - dateA
-    })
+    .sort((a, b) => new Date(b[1][0].requested_at).getTime() - new Date(a[1][0].requested_at).getTime())
     .map(([label, items]) => ({ label, items }))
 }
 
@@ -118,59 +62,52 @@ type StatusConfig = {
 }
 
 const STATUS_CONFIG: Record<ReservationStatus, StatusConfig> = {
-  Ready: {
+  ready: {
     icon: () => <CheckCircle size={15} />,
     iconBg: "bg-success-bg",
     iconColor: "text-success",
     title: "Your reserved book is ready for pickup",
     message: (r) =>
-      `"${r.bookTitle}" by ${r.author} is waiting at the Main LRC desk. Pick up by ${formatPickupDate(r.pickupDate)}.`,
+      `"${bookTitle(r)}" by ${bookAuthor(r)} is waiting at the Main LRC desk.${r.pickup_by ? ` Pick up by ${formatDate(r.pickup_by)}.` : ""}`,
   },
-  Confirmed: {
+  confirmed: {
     icon: () => <Clock size={15} />,
     iconBg: "bg-info-bg",
     iconColor: "text-info",
     title: "Reservation confirmed",
     message: (r) =>
-      `Your reservation for "${r.bookTitle}" has been confirmed. Pick up by ${formatPickupDate(r.pickupDate)}.`,
+      `Your reservation for "${bookTitle(r)}" has been confirmed.${r.pickup_by ? ` Pick up by ${formatDate(r.pickup_by)}.` : ""}`,
   },
-  Pending: {
+  pending: {
     icon: () => <Clock size={15} />,
     iconBg: "bg-warn-bg",
     iconColor: "text-warn",
     title: "Reservation pending",
-    message: (r) =>
-      `"${r.bookTitle}" by ${r.author} is awaiting confirmation. Expected pickup by ${formatPickupDate(r.pickupDate)}.`,
+    message: (r) => `"${bookTitle(r)}" by ${bookAuthor(r)} is awaiting confirmation from a librarian.`,
   },
-  Cancelled: {
+  cancelled: {
     icon: () => <XCircle size={15} />,
     iconBg: "bg-ink-100",
     iconColor: "text-ink-400",
     title: "Reservation cancelled",
-    message: (r) =>
-      `Your reservation for "${r.bookTitle}" has been cancelled.`,
+    message: (r) => `Your reservation for "${bookTitle(r)}" has been cancelled.`,
   },
 }
 
 const canCancel = (status: ReservationStatus) =>
-  status === "Pending" || status === "Confirmed" || status === "Ready"
+  status === "pending" || status === "confirmed" || status === "ready"
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
-type TabKey = "all" | "Pending" | "Confirmed" | "Ready" | "Cancelled"
+type TabKey = "all" | ReservationStatus
 
-type Tab = {
-  key: TabKey
-  label: string
-  shortLabel: string
-  status?: ReservationStatus
-}
+type Tab = { key: TabKey; label: string; shortLabel: string }
 
 const TABS: Tab[] = [
   { key: "all",       label: "All",       shortLabel: "All"       },
-  { key: "Pending",   label: "Pending",   shortLabel: "Pending",   status: "Pending"   },
-  { key: "Confirmed", label: "Confirmed", shortLabel: "Confirmed", status: "Confirmed" },
-  { key: "Ready",     label: "Ready",     shortLabel: "Ready",     status: "Ready"     },
-  { key: "Cancelled", label: "Cancelled", shortLabel: "Cancelled", status: "Cancelled" },
+  { key: "pending",   label: "Pending",   shortLabel: "Pending"   },
+  { key: "confirmed", label: "Confirmed", shortLabel: "Confirmed" },
+  { key: "ready",     label: "Ready",     shortLabel: "Ready"     },
+  { key: "cancelled", label: "Cancelled", shortLabel: "Cancelled" },
 ]
 
 // ─── Reservation Item Row ─────────────────────────────────────────────────────
@@ -221,7 +158,6 @@ function ReservationItemCard({ reservation: r, onCancel, isLast }: ReservationIt
         </p>
       </div>
 
-      {/* Right side: cancel button vertically centered */}
       <div className="flex items-center flex-shrink-0">
         {canCancel(r.status) && (
           <button
@@ -241,21 +177,12 @@ function ReservationItemCard({ reservation: r, onCancel, isLast }: ReservationIt
 // ─── Skeleton Row ─────────────────────────────────────────────────────────────
 function SkeletonRow({ isLast }: { isLast: boolean }) {
   return (
-    <div
-      className={cn(
-        "flex items-start gap-3 px-4 sm:px-5 py-4",
-        !isLast && "border-b border-ink-100"
-      )}
-    >
+    <div className={cn("flex items-start gap-3 px-4 sm:px-5 py-4", !isLast && "border-b border-ink-100")}>
       <div className="mt-0.5 size-7 rounded-full bg-ink-100 animate-pulse flex-shrink-0" />
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         <div className="h-3.5 w-3/5 rounded bg-ink-100 animate-pulse" />
         <div className="h-3 w-4/5 rounded bg-ink-100 animate-pulse" />
         <div className="h-3 w-2/3 rounded bg-ink-100 animate-pulse" />
-      </div>
-      <div className="flex flex-col items-end gap-2 flex-shrink-0 pt-0.5">
-        <div className="h-3 w-12 rounded bg-ink-100 animate-pulse" />
-        <div className="size-2 rounded-full bg-ink-100 animate-pulse" />
       </div>
     </div>
   )
@@ -269,13 +196,13 @@ function EmptyState() {
       <p style={{ fontSize: "var(--text-body)", fontFamily: "var(--font-body)" }}>
         No reservations here
       </p>
-      <a
+      <Link
         href="/student/catalog"
         className="mt-1 px-4 py-1.5 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors"
         style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
       >
         Browse Catalog
-      </a>
+      </Link>
     </div>
   )
 }
@@ -283,11 +210,12 @@ function EmptyState() {
 // ─── Cancel Modal ─────────────────────────────────────────────────────────────
 interface CancelModalProps {
   reservation: Reservation
+  pending: boolean
   onConfirm: () => void
   onClose: () => void
 }
 
-function CancelModal({ reservation, onConfirm, onClose }: CancelModalProps) {
+function CancelModal({ reservation, pending, onConfirm, onClose }: CancelModalProps) {
   return (
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -320,7 +248,7 @@ function CancelModal({ reservation, onConfirm, onClose }: CancelModalProps) {
           className="text-ink-900 font-semibold bg-ink-50 px-3.5 py-2.5 rounded-(--radius) border-l-[3px] border-green-600 break-words"
           style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
         >
-          {reservation.bookTitle}
+          {bookTitle(reservation)}
         </p>
 
         <p
@@ -333,17 +261,19 @@ function CancelModal({ reservation, onConfirm, onClose }: CancelModalProps) {
         <div className="flex flex-wrap gap-2">
           <button
             onClick={onClose}
-            className="flex-1 min-w-[120px] px-4 py-2.5 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm"
+            disabled={pending}
+            className="flex-1 min-w-[120px] px-4 py-2.5 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm disabled:opacity-50"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
           >
             Keep Reservation
           </button>
           <button
             onClick={onConfirm}
-            className="flex-1 min-w-[120px] px-4 py-2.5 rounded-(--radius) bg-danger text-white font-medium hover:opacity-90 transition-opacity"
+            disabled={pending}
+            className="flex-1 min-w-[120px] px-4 py-2.5 rounded-(--radius) bg-danger text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
           >
-            Yes, Cancel It
+            {pending ? "Cancelling…" : "Yes, Cancel It"}
           </button>
         </div>
       </div>
@@ -353,33 +283,35 @@ function CancelModal({ reservation, onConfirm, onClose }: CancelModalProps) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ReservationsPage() {
-  const [reservations, setReservations] = useState<Reservation[]>(MOCK_RESERVATIONS)
-  const [isLoading, setIsLoading] = useState(false)
+  const { reservations, loading, error, refresh } = useReservations()
   const [cancelTarget, setCancelTarget] = useState<Reservation | null>(null)
+  const [cancelling, setCancelling] = useState(false)
   const [activeTab, setActiveTab] = useState<TabKey>("all")
 
-  const handleCancelConfirm = () => {
+  async function handleCancelConfirm() {
     if (!cancelTarget) return
-    setReservations((prev) =>
-      prev.map((r) =>
-        r.id === cancelTarget.id ? { ...r, status: "Cancelled" as ReservationStatus } : r
-      )
-    )
-    setCancelTarget(null)
+    setCancelling(true)
+    try {
+      await updateReservationStatus(cancelTarget.id, "cancelled")
+      await refresh()
+      setCancelTarget(null)
+    } catch {
+      // error surfaces via the page-level error state on next refresh; keep modal open
+    } finally {
+      setCancelling(false)
+    }
   }
 
   const tabCounts: Record<TabKey, number> = {
     all:       reservations.filter((r) => canCancel(r.status)).length,
-    Pending:   reservations.filter((r) => r.status === "Pending").length,
-    Confirmed: reservations.filter((r) => r.status === "Confirmed").length,
-    Ready:     reservations.filter((r) => r.status === "Ready").length,
-    Cancelled: reservations.filter((r) => r.status === "Cancelled").length,
+    pending:   reservations.filter((r) => r.status === "pending").length,
+    confirmed: reservations.filter((r) => r.status === "confirmed").length,
+    ready:     reservations.filter((r) => r.status === "ready").length,
+    cancelled: reservations.filter((r) => r.status === "cancelled").length,
   }
 
   const filtered =
-    activeTab === "all"
-      ? reservations
-      : reservations.filter((r) => r.status === activeTab)
+    activeTab === "all" ? reservations : reservations.filter((r) => r.status === activeTab)
 
   const groups = groupByDate(filtered)
 
@@ -391,16 +323,10 @@ export default function ReservationsPage() {
         type="button"
         onClick={() => setActiveTab(tab.key)}
         className={cn(
-          "flex items-center gap-1.5 py-2.5 font-medium border-b-2 transition-colors -mb-px whitespace-nowrap flex-shrink-0",
-          isMobile ? "px-3" : "px-3",
-          isActive
-            ? "border-green-700 text-green-700"
-            : "border-transparent text-ink-500 hover:text-ink-900"
+          "flex items-center gap-1.5 py-2.5 font-medium border-b-2 transition-colors -mb-px whitespace-nowrap flex-shrink-0 px-3",
+          isActive ? "border-green-700 text-green-700" : "border-transparent text-ink-500 hover:text-ink-900"
         )}
-        style={{
-          fontSize: isMobile ? "var(--text-xs)" : "var(--text-sm-body)",
-          fontFamily: "var(--font-body)",
-        }}
+        style={{ fontSize: isMobile ? "var(--text-xs)" : "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
       >
         {isMobile ? tab.shortLabel : tab.label}
         {count > 0 && (
@@ -440,10 +366,7 @@ export default function ReservationsPage() {
 
           <button
             type="button"
-            onClick={() => {
-              setIsLoading(true)
-              setTimeout(() => { setReservations(MOCK_RESERVATIONS); setIsLoading(false) }, 1500)
-            }}
+            onClick={() => refresh()}
             className="flex-shrink-0 px-3 py-1.5 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm"
             style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
           >
@@ -454,19 +377,19 @@ export default function ReservationsPage() {
 
       <div className="border-b border-ink-200">
         <div className="flex sm:hidden w-full overflow-x-auto px-2 scrollbar-none">
-          {TABS.map((tab) => (
-            <TabButton key={tab.key} tab={tab} isMobile={true} />
-          ))}
+          {TABS.map((tab) => <TabButton key={tab.key} tab={tab} isMobile={true} />)}
         </div>
         <div className="hidden sm:flex px-8">
-          {TABS.map((tab) => (
-            <TabButton key={tab.key} tab={tab} isMobile={false} />
-          ))}
+          {TABS.map((tab) => <TabButton key={tab.key} tab={tab} isMobile={false} />)}
         </div>
       </div>
 
       <div className="flex-1 px-4 sm:px-8 py-4">
-        {isLoading ? (
+        {error ? (
+          <p className="text-center py-12 text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            {error}
+          </p>
+        ) : loading ? (
           <div className="flex flex-col gap-4">
             {[2, 1].map((count, gi) => (
               <div key={gi} className="flex flex-col gap-2">
@@ -489,11 +412,7 @@ export default function ReservationsPage() {
               <div key={label} className="flex flex-col gap-2">
                 <p
                   className="text-ink-400 uppercase font-semibold px-1"
-                  style={{
-                    fontSize: "var(--text-xs)",
-                    fontFamily: "var(--font-body)",
-                    letterSpacing: "var(--tracking-caps)",
-                  }}
+                  style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)", letterSpacing: "var(--tracking-caps)" }}
                 >
                   {label}
                 </p>
@@ -516,6 +435,7 @@ export default function ReservationsPage() {
       {cancelTarget && (
         <CancelModal
           reservation={cancelTarget}
+          pending={cancelling}
           onConfirm={handleCancelConfirm}
           onClose={() => setCancelTarget(null)}
         />

@@ -22,9 +22,11 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useBook, useBooks } from '@/lib/hooks/useBooks'
+import { useReservations } from '@/lib/hooks/useReservations'
+import { createReservation, updateReservationStatus } from '@/lib/reservations'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 import { BookCard } from '@/components/ui/catalog'
-import type { Book } from '@lasallia/types'
+import type { Book, Reservation } from '@lasallia/types'
 
 // ─── Cover color helper ───────────────────────────────────────────────────────
 
@@ -152,15 +154,48 @@ function ActionPanel({
   availableCopies,
   totalCopies,
   onBorrow,
+  reservation,
+  onReservationChange,
 }: {
   book: Book
   isAvailable: boolean
   availableCopies: number
   totalCopies: number
   onBorrow: () => void
+  reservation: Reservation | undefined
+  onReservationChange: () => void
 }) {
-  const [notified, setNotified] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [actionError, setActionError] = useState('')
+  const notified = !!reservation
   const pct = totalCopies > 0 ? (availableCopies / totalCopies) * 100 : 0
+
+  async function joinWaitlist() {
+    setPending(true)
+    setActionError('')
+    try {
+      await createReservation(book.id)
+      onReservationChange()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to join the waitlist')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function leaveWaitlist() {
+    if (!reservation) return
+    setPending(true)
+    setActionError('')
+    try {
+      await updateReservationStatus(reservation.id, 'cancelled')
+      onReservationChange()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to leave the waitlist')
+    } finally {
+      setPending(false)
+    }
+  }
 
   if (isAvailable) {
     return (
@@ -199,58 +234,74 @@ function ActionPanel({
   // Not available — waitlist / notify me
   if (notified) {
     return (
-      <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex items-center gap-2.5 flex-1 min-w-0">
-          <CheckCircle2 size={16} className="text-green-600 shrink-0" />
-          <p
-            className="text-green-800 leading-snug"
-            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
-          >
-            <span className="font-semibold">You're on the waitlist</span> — we'll notify you when a copy is available. Check{' '}
-            <Link
-              href="/student/notifications"
-              className="underline underline-offset-2 hover:text-green-900"
+      <div className="flex flex-col gap-2">
+        <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+            <CheckCircle2 size={16} className="text-green-600 shrink-0" />
+            <p
+              className="text-green-800 leading-snug"
+              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
             >
-              Notifications
-            </Link>{' '}
-            for updates.
-          </p>
+              <span className="font-semibold">You're on the waitlist</span> — we'll notify you when a copy is available. Check{' '}
+              <Link
+                href="/student/notifications"
+                className="underline underline-offset-2 hover:text-green-900"
+              >
+                Notifications
+              </Link>{' '}
+              for updates.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={leaveWaitlist}
+            disabled={pending}
+            className="shrink-0 text-green-600 hover:text-green-800 underline underline-offset-2 transition-colors sm:ml-auto disabled:opacity-50"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+          >
+            {pending ? 'Leaving…' : 'Leave waitlist'}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setNotified(false)}
-          className="shrink-0 text-green-600 hover:text-green-800 underline underline-offset-2 transition-colors sm:ml-auto"
-          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
-        >
-          Leave waitlist
-        </button>
+        {actionError && (
+          <p className="text-danger" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}>
+            {actionError}
+          </p>
+        )}
       </div>
     )
   }
 
   return (
-    <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
-      <div className="flex-1 flex items-center gap-3 min-w-0">
-        <div className="w-14 h-1.5 rounded-full bg-ink-200 overflow-hidden shrink-0">
-          <div className="h-full rounded-full bg-ink-300" style={{ width: '0%' }} />
+    <div className="flex flex-col gap-2">
+      <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex-1 flex items-center gap-3 min-w-0">
+          <div className="w-14 h-1.5 rounded-full bg-ink-200 overflow-hidden shrink-0">
+            <div className="h-full rounded-full bg-ink-300" style={{ width: '0%' }} />
+          </div>
+          <p
+            className="text-ink-600 leading-snug"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+          >
+            <span className="font-semibold text-ink-700">No copies available</span> — all {totalCopies} {totalCopies === 1 ? 'copy is' : 'copies are'} currently{' '}
+            {book.status === 'reserved' ? 'reserved' : 'borrowed'}. Join the waitlist to be notified.
+          </p>
         </div>
-        <p
-          className="text-ink-600 leading-snug"
+        <button
+          type="button"
+          onClick={joinWaitlist}
+          disabled={pending}
+          className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-ink-900 text-white font-semibold hover:bg-ink-700 transition-colors disabled:opacity-50"
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
         >
-          <span className="font-semibold text-ink-700">No copies available</span> — all {totalCopies} {totalCopies === 1 ? 'copy is' : 'copies are'} currently{' '}
-          {book.status === 'reserved' ? 'reserved' : 'borrowed'}. Join the waitlist to be notified.
-        </p>
+          <Bell size={15} />
+          {pending ? 'Joining…' : 'Notify me'}
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={() => setNotified(true)}
-        className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-ink-900 text-white font-semibold hover:bg-ink-700 transition-colors"
-        style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
-      >
-        <Bell size={15} />
-        Notify me
-      </button>
+      {actionError && (
+        <p className="text-danger" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}>
+          {actionError}
+        </p>
+      )}
     </div>
   )
 }
@@ -299,6 +350,10 @@ export default function StudentBookDetailPage({
   const [showQR, setShowQR]   = useState(false)
 
   const { book, loading } = useBook(bookId)
+  const { reservations, refresh: refreshReservations } = useReservations()
+  const existingReservation = reservations.find(
+    (r) => r.book_id === bookId && r.status !== 'cancelled'
+  )
 
   // ── Loading state ──────────────────────────────────────────────────────────
   if (loading) {
@@ -519,6 +574,8 @@ export default function StudentBookDetailPage({
             availableCopies={availableCopies}
             totalCopies={totalCopies}
             onBorrow={() => setShowQR(true)}
+            reservation={existingReservation}
+            onReservationChange={refreshReservations}
           />
         </div>
 

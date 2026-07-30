@@ -18,3 +18,12 @@ def get_admin_client() -> Client:
     if _admin_client is None:
         _admin_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     return _admin_client
+
+# User-scoped client — anon key + the caller's own access token, so RLS
+# policies see auth.uid() as that user. This is the real authorization
+# boundary for anything row-owner-scoped (reservations, borrow history):
+# the caller only ever sees/touches what their own RLS policies allow.
+def get_user_client(access_token: str) -> Client:
+    client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    client.postgrest.auth(access_token)
+    return client
