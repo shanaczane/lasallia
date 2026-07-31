@@ -1,4 +1,4 @@
-// Sprint 5.4 – Quick Scanner Interface
+// Sprint 5.4 / 7.1 – Quick Scanner Interface, wired to the real borrow/return API
 "use client"
 
 import { useState, useRef } from "react"
@@ -17,11 +17,15 @@ import {
   AlertCircle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Book, BorrowTransaction } from "@lasallia/types"
+import { useBooks } from "@/lib/hooks/useBooks"
+import { useBorrowTransactions } from "@/lib/hooks/useBorrowTransactions"
+import { createBorrow, returnBorrow } from "@/lib/borrow"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tab = "borrow" | "return"
 type InputMode = "camera" | "usb"
-type ScanState = "idle" | "scanning" | "found" | "confirmed"
+type ScanState = "idle" | "scanning" | "found" | "notfound" | "confirmed"
 
 interface BookResult {
   isbn: string
@@ -34,7 +38,7 @@ interface BookResult {
   total: number
   color: string
   borrowedBy?: string
-  borrowedById?: string
+  borrowedByEmail?: string
   dueDate?: string
 }
 
@@ -42,48 +46,56 @@ interface TxRecord {
   id: string
   title: string
   patron: string
-  patronId: string
+  patronEmail: string
   time: string
 }
 
-// ─── Sample data ──────────────────────────────────────────────────────────────
-const SAMPLE_BORROW_BOOK: BookResult = {
-  isbn: "978-3-16-148410-0",
-  title: "Introduction to Data Science",
-  author: "Dr. Maria Santos",
-  callNo: "QA76.9.D37 S26 2021",
-  floor: "Floor 2",
-  aisle: "Aisle B4",
-  available: 3,
-  total: 5,
-  color: "#2563EB",
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function findBookByCode(books: Book[], code: string): Book | undefined {
+  const needle = code.trim().toLowerCase()
+  if (!needle) return undefined
+  return books.find(
+    (b) => b.isbn?.toLowerCase() === needle || b.accession_no?.toLowerCase() === needle
+  )
 }
 
-const SAMPLE_RETURN_BOOK: BookResult = {
-  isbn: "978-0-13-468599-1",
-  title: "Clean Code: A Handbook of Agile Software Craftsmanship",
-  author: "Robert C. Martin",
-  callNo: "QA76.73.J38 M37 2008",
-  floor: "Floor 3",
-  aisle: "Aisle C2",
-  available: 0,
-  total: 2,
-  color: "#DC2626",
-  borrowedBy: "Juan dela Cruz",
-  borrowedById: "2021-00123",
-  dueDate: "July 5, 2026",
+function toBookResult(book: Book, activeTx?: BorrowTransaction): BookResult {
+  return {
+    isbn: book.isbn ?? book.accession_no ?? "—",
+    title: book.title,
+    author: book.author,
+    callNo: book.call_number,
+    floor: book.floor ?? "—",
+    aisle: book.aisle ?? "—",
+    available: book.available_copies ?? 0,
+    total: book.total_copies ?? 0,
+    color: book.cover_color ?? "#2563EB",
+    borrowedBy: activeTx?.profiles?.full_name ?? activeTx?.profiles?.email,
+    borrowedByEmail: activeTx?.profiles?.email,
+    dueDate: activeTx
+      ? new Date(activeTx.due_date).toLocaleDateString("en-PH", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : undefined,
+  }
 }
 
-const INITIAL_BORROWS: TxRecord[] = [
-  { id: "b1", title: "Fundamentals of Nursing", patron: "Ana Reyes", patronId: "2022-00456", time: "11:42 AM" },
-  { id: "b2", title: "Calculus: Early Transcendentals", patron: "Mark Santos", patronId: "2023-00789", time: "10:15 AM" },
-  { id: "b3", title: "Philippine History", patron: "Liza Villanueva", patronId: "2021-00234", time: "9:01 AM" },
-]
+function isToday(iso: string): boolean {
+  return new Date(iso).toDateString() === new Date().toDateString()
+}
 
-const INITIAL_RETURNS: TxRecord[] = [
-  { id: "r1", title: "Introduction to Data Science", patron: "Carlo Bautista", patronId: "2022-00567", time: "11:50 AM" },
-  { id: "r2", title: "General Chemistry", patron: "Sofia Mendoza", patronId: "2023-00102", time: "10:38 AM" },
-]
+function toTxRecord(tx: BorrowTransaction): TxRecord {
+  const timestamp = tx.status === "returned" && tx.returned_at ? tx.returned_at : tx.borrowed_at
+  return {
+    id: tx.id,
+    title: tx.books?.title ?? "Unknown title",
+    patron: tx.profiles?.full_name ?? tx.profiles?.email ?? "Unknown patron",
+    patronEmail: tx.profiles?.email ?? "—",
+    time: new Date(timestamp).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
+  }
+}
 
 // ─── Camera placeholder ───────────────────────────────────────────────────────
 function CameraViewfinder({ scanning }: { scanning: boolean }) {
@@ -154,16 +166,20 @@ function CameraViewfinder({ scanning }: { scanning: boolean }) {
 function BookResultCard({
   book,
   tab,
+  submitting,
+  submitError,
   onConfirm,
   onReset,
 }: {
   book: BookResult
   tab: Tab
-  onConfirm: (patronId: string) => void
+  submitting: boolean
+  submitError: string
+  onConfirm: (patronEmail: string) => void
   onReset: () => void
 }) {
-  const [patronId, setPatronId] = useState("")
-  const canConfirm = tab === "return" || patronId.trim().length > 0
+  const [patronEmail, setPatronEmail] = useState("")
+  const canConfirm = (tab === "return" || patronEmail.trim().length > 0) && !submitting
 
   return (
     <div className="rounded border border-green-200 bg-green-50 p-4 flex flex-col gap-3">
@@ -239,7 +255,7 @@ function BookResultCard({
           </p>
           <p className="text-ink-900 font-semibold" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
             {book.borrowedBy}{" "}
-            <span className="text-ink-400 font-normal">({book.borrowedById})</span>
+            {book.borrowedByEmail && <span className="text-ink-400 font-normal">({book.borrowedByEmail})</span>}
           </p>
           {book.dueDate && (
             <p className="text-ink-500 mt-0.5" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
@@ -257,16 +273,16 @@ function BookResultCard({
             className="block text-ink-700 mb-1"
             style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
           >
-            Patron ID <span className="text-red-500">*</span>
+            Patron Email <span className="text-red-500">*</span>
           </label>
           <div className="relative">
             <User size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
             <input
-              type="text"
-              placeholder="e.g. 2023-00123"
-              value={patronId}
-              onChange={(e) => setPatronId(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && canConfirm && onConfirm(patronId)}
+              type="email"
+              placeholder="e.g. juan.delacruz@dlsl.edu.ph"
+              value={patronEmail}
+              onChange={(e) => setPatronEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && canConfirm && onConfirm(patronEmail)}
               className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
               style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
             />
@@ -274,10 +290,16 @@ function BookResultCard({
         </div>
       )}
 
+      {submitError && (
+        <p className="text-red-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          {submitError}
+        </p>
+      )}
+
       {/* Actions */}
       <div className="flex items-center gap-2">
         <button
-          onClick={() => onConfirm(patronId)}
+          onClick={() => onConfirm(patronEmail)}
           disabled={!canConfirm || (tab === "borrow" && book.available === 0)}
           className={cn(
             "flex-1 flex items-center justify-center gap-2 py-2 rounded font-semibold transition-colors",
@@ -288,7 +310,7 @@ function BookResultCard({
           style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
         >
           <CheckCircle2 size={15} />
-          {tab === "borrow" ? "Confirm Borrow" : "Confirm Return"}
+          {submitting ? "Processing…" : tab === "borrow" ? "Confirm Borrow" : "Confirm Return"}
         </button>
         <button
           onClick={onReset}
@@ -298,6 +320,31 @@ function BookResultCard({
           Cancel
         </button>
       </div>
+    </div>
+  )
+}
+
+// ─── Not-found panel ──────────────────────────────────────────────────────────
+function NotFoundPanel({ tab, onReset }: { tab: Tab; onReset: () => void }) {
+  return (
+    <div className="rounded border border-red-200 bg-red-50 p-6 flex flex-col items-center gap-3 text-center">
+      <AlertCircle size={26} className="text-red-600" />
+      <p className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}>
+        {tab === "borrow" ? "Book not found" : "No active loan found for this book"}
+      </p>
+      <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+        {tab === "borrow"
+          ? "That ISBN or accession number doesn't match anything in the catalog."
+          : "This book doesn't have a copy currently checked out."}
+      </p>
+      <button
+        onClick={onReset}
+        className="flex items-center gap-1.5 px-4 py-2 rounded border border-ink-300 text-ink-600 hover:bg-white transition-colors font-medium"
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+      >
+        <RotateCcw size={13} />
+        Try Again
+      </button>
     </div>
   )
 }
@@ -345,19 +392,46 @@ function SuccessBanner({
 }
 
 // ─── Scanner panel (one per tab) ──────────────────────────────────────────────
-function ScannerPanel({ tab }: { tab: Tab }) {
+function ScannerPanel({
+  tab,
+  books,
+  activeTransactions,
+  onSettled,
+}: {
+  tab: Tab
+  books: Book[]
+  activeTransactions: BorrowTransaction[]
+  onSettled: () => void
+}) {
   const [inputMode, setInputMode] = useState<InputMode>("camera")
   const [scanState, setScanState] = useState<ScanState>("idle")
   const [usbValue, setUsbValue] = useState("")
   const [cameraScanning, setCameraScanning] = useState(false)
+  const [matchedBook, setMatchedBook] = useState<Book | null>(null)
+  const [matchedTx, setMatchedTx] = useState<BorrowTransaction | undefined>(undefined)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState("")
   const [confirmed, setConfirmed] = useState<{ title: string; patron: string } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const book = tab === "borrow" ? SAMPLE_BORROW_BOOK : SAMPLE_RETURN_BOOK
-
-  const triggerScan = () => {
-    setScanState("scanning")
-    setTimeout(() => setScanState("found"), 900)
+  const resolveMatch = (book: Book | undefined) => {
+    if (!book) {
+      setScanState("notfound")
+      return
+    }
+    if (tab === "return") {
+      const tx = activeTransactions.find((t) => t.book_id === book.id)
+      if (!tx) {
+        setScanState("notfound")
+        return
+      }
+      setMatchedBook(book)
+      setMatchedTx(tx)
+    } else {
+      setMatchedBook(book)
+      setMatchedTx(undefined)
+    }
+    setScanState("found")
   }
 
   const handleCameraStart = () => {
@@ -365,34 +439,59 @@ function ScannerPanel({ tab }: { tab: Tab }) {
     setScanState("scanning")
     setTimeout(() => {
       setCameraScanning(false)
-      setScanState("found")
+      const demo =
+        tab === "borrow"
+          ? books.find((b) => (b.available_copies ?? 0) > 0)
+          : activeTransactions[0]?.books
+      resolveMatch(demo)
     }, 2200)
   }
 
   const handleUsbSubmit = () => {
     if (!usbValue.trim()) return
-    triggerScan()
+    setScanState("scanning")
+    setTimeout(() => resolveMatch(findBookByCode(books, usbValue)), 600)
   }
 
-  const handleConfirm = (patronId: string) => {
-    setConfirmed({
-      title: book.title,
-      patron: tab === "return" ? (book.borrowedBy ?? "Unknown") : patronId,
-    })
-    setScanState("confirmed")
+  const handleConfirm = async (patronEmail: string) => {
+    if (!matchedBook) return
+    setSubmitting(true)
+    setSubmitError("")
+    try {
+      if (tab === "borrow") {
+        await createBorrow(matchedBook.id, patronEmail)
+        setConfirmed({ title: matchedBook.title, patron: patronEmail })
+      } else {
+        if (!matchedTx) return
+        await returnBorrow(matchedTx.id)
+        setConfirmed({
+          title: matchedBook.title,
+          patron: matchedTx.profiles?.full_name ?? matchedTx.profiles?.email ?? "Unknown",
+        })
+      }
+      setScanState("confirmed")
+      onSettled()
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Something went wrong")
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleReset = () => {
     setScanState("idle")
     setUsbValue("")
     setCameraScanning(false)
+    setMatchedBook(null)
+    setMatchedTx(undefined)
+    setSubmitError("")
     setConfirmed(null)
   }
 
   return (
     <div className="flex flex-col gap-4">
       {/* ── Scanner card ─────────────────────────────────── */}
-      {scanState !== "confirmed" && (
+      {scanState !== "confirmed" && scanState !== "notfound" && (
         <div className="rounded border border-ink-200 bg-white" style={{ boxShadow: "var(--shadow)" }}>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-ink-100">
@@ -456,7 +555,7 @@ function ScannerPanel({ tab }: { tab: Tab }) {
             {inputMode === "usb" && (
               <div className="flex flex-col gap-2">
                 <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-                  Scan with USB barcode reader or type ISBN manually
+                  Scan with USB barcode reader or type ISBN/accession no. manually
                 </p>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
@@ -464,7 +563,7 @@ function ScannerPanel({ tab }: { tab: Tab }) {
                     <input
                       ref={inputRef}
                       type="text"
-                      placeholder="ISBN or barcode…"
+                      placeholder="ISBN or accession no.…"
                       value={usbValue}
                       onChange={(e) => setUsbValue(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleUsbSubmit()}
@@ -503,9 +602,19 @@ function ScannerPanel({ tab }: { tab: Tab }) {
       )}
 
       {/* ── Book result ───────────────────────────────────── */}
-      {scanState === "found" && (
-        <BookResultCard book={book} tab={tab} onConfirm={handleConfirm} onReset={handleReset} />
+      {scanState === "found" && matchedBook && (
+        <BookResultCard
+          book={toBookResult(matchedBook, matchedTx)}
+          tab={tab}
+          submitting={submitting}
+          submitError={submitError}
+          onConfirm={handleConfirm}
+          onReset={handleReset}
+        />
       )}
+
+      {/* ── Not found ─────────────────────────────────────── */}
+      {scanState === "notfound" && <NotFoundPanel tab={tab} onReset={handleReset} />}
 
       {/* ── Success ───────────────────────────────────────── */}
       {scanState === "confirmed" && confirmed && (
@@ -539,7 +648,7 @@ function TransactionsTable({ tab, records }: { tab: Tab; records: TxRecord[] }) 
       <table className="w-full min-w-95">
         <thead>
           <tr className="border-b border-ink-200">
-            {["Book", "Patron", "ID No.", "Time"].map((h) => (
+            {["Book", "Patron", "Email", "Time"].map((h) => (
               <th
                 key={h}
                 className="pb-2 text-left text-ink-400 font-semibold"
@@ -578,7 +687,7 @@ function TransactionsTable({ tab, records }: { tab: Tab; records: TxRecord[] }) 
                   className="text-ink-400"
                   style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)" }}
                 >
-                  {tx.patronId}
+                  {tx.patronEmail}
                 </p>
               </td>
               <td className="py-2.5">
@@ -601,6 +710,14 @@ function TransactionsTable({ tab, records }: { tab: Tab; records: TxRecord[] }) 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function BorrowAndReturnPage() {
   const [tab, setTab] = useState<Tab>("borrow")
+  const { books } = useBooks()
+  const { transactions, refresh } = useBorrowTransactions()
+
+  const activeTransactions = transactions.filter((t) => t.status === "active")
+  const todaysBorrows = transactions.filter((t) => isToday(t.borrowed_at)).map(toTxRecord)
+  const todaysReturns = transactions
+    .filter((t) => t.status === "returned" && t.returned_at && isToday(t.returned_at))
+    .map(toTxRecord)
 
   const today = new Date().toLocaleDateString("en-PH", {
     weekday: "long",
@@ -613,6 +730,8 @@ export default function BorrowAndReturnPage() {
     { key: "borrow", label: "Borrow",  icon: <BookOpen size={14} /> },
     { key: "return", label: "Return", icon: <RotateCcw size={14} /> },
   ]
+
+  const records = tab === "borrow" ? todaysBorrows : todaysReturns
 
   return (
     <div className="p-4 sm:p-6">
@@ -655,7 +774,13 @@ export default function BorrowAndReturnPage() {
       {/* ── Two-column layout ─────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl">
         {/* Left: scanner */}
-        <ScannerPanel key={tab} tab={tab} />
+        <ScannerPanel
+          key={tab}
+          tab={tab}
+          books={books}
+          activeTransactions={activeTransactions}
+          onSettled={refresh}
+        />
 
         {/* Right: today's records */}
         <div>
@@ -670,17 +795,14 @@ export default function BorrowAndReturnPage() {
               className="text-ink-400"
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
             >
-              {tab === "borrow" ? INITIAL_BORROWS.length : INITIAL_RETURNS.length} records
+              {records.length} records
             </span>
           </div>
           <div
             className="rounded border border-ink-200 bg-white p-4"
             style={{ boxShadow: "var(--shadow)" }}
           >
-            <TransactionsTable
-              tab={tab}
-              records={tab === "borrow" ? INITIAL_BORROWS : INITIAL_RETURNS}
-            />
+            <TransactionsTable tab={tab} records={records} />
           </div>
         </div>
       </div>

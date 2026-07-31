@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import FRONTEND_URL
-from routers import auth, books, reservations
+from routers import auth, books, borrow, reservations
 
 app = FastAPI(
     title="Lasallia API",
@@ -19,6 +19,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(books.router)
+app.include_router(borrow.router)
 app.include_router(reservations.router)
 
 @app.get("/health")
