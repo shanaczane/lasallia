@@ -8,7 +8,7 @@
 
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
   Library, Bookmark, History,
@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils"
 import { AvailabilityPill } from "@/components/ui/pills/availability-pill"
 import { MOCK_BOOKS } from "@/lib/mock/catalog"
+import { fetchLoans, type Loan as ApiLoan } from "@/lib/kiosk"
 import type { Book } from "@lasallia/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -26,13 +27,6 @@ import type { Book } from "@lasallia/types"
 type Tab = "borrowed" | "saved" | "history"
 
 type BorrowStatus = "active" | "due_soon" | "overdue"
-
-type BorrowedEntry = {
-  bookId: string
-  borrowedDate: string
-  dueDate: string
-  status: BorrowStatus
-}
 
 type HistoryStatus = "returned" | "overdue_returned" | "lost"
 
@@ -66,13 +60,9 @@ const HISTORY_CFG: Record<
 }
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
-
-const BORROWED_DATA: BorrowedEntry[] = [
-  { bookId: "1", borrowedDate: "Jun 8, 2026",  dueDate: "Jun 22, 2026", status: "overdue"  },
-  { bookId: "4", borrowedDate: "Jun 14, 2026", dueDate: "Jun 28, 2026", status: "due_soon" },
-  { bookId: "6", borrowedDate: "Jun 17, 2026", dueDate: "Jul 1, 2026",  status: "active"   },
-  { bookId: "8", borrowedDate: "Jun 18, 2026", dueDate: "Jul 2, 2026",  status: "active"   },
-]
+// Saved/History still use mock books — Saved has no backing table yet
+// (separate feature), History has nothing real to show until returns exist
+// (Phase 4). Borrowed below is wired to the real /loans endpoint.
 
 const SAVED_IDS = ["2", "5", "3", "7", "6"]
 
@@ -86,6 +76,9 @@ const HISTORY_DATA: HistoryEntry[] = [
 
 // 5 columns at lg — pick a page size that fills whole rows (2 rows/page)
 const PAGE_SIZE = 10
+
+// Matches apps/web/app/borrow/[token]/page.tsx — pending real LRC borrow-limit policy
+const BORROW_LIMIT_PLACEHOLDER = 3
 
 // ─── Pagination hook ──────────────────────────────────────────────────────────
 
@@ -318,8 +311,22 @@ function EmptyState({ icon, message }: { icon: React.ReactNode; message: string 
 
 type BorrowFilter = "all" | BorrowStatus
 
-function BorrowedCard({ entry, book }: { entry: BorrowedEntry; book: Book }) {
-  const s = BORROW_CFG[entry.status]
+const DUE_SOON_DAYS = 3
+
+function deriveBorrowStatus(loan: ApiLoan): BorrowStatus {
+  if (loan.status === "overdue") return "overdue"
+  const daysLeft = (new Date(loan.due_date).getTime() - Date.now()) / 86_400_000
+  return daysLeft <= DUE_SOON_DAYS ? "due_soon" : "active"
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+}
+
+function BorrowedCard({ loan, status }: { loan: ApiLoan; status: BorrowStatus }) {
+  const book = loan.books
+  const s = BORROW_CFG[status]
+  if (!book) return null
   return (
     <Link
       href={`/student/catalog/${book.id}`}
@@ -351,29 +358,29 @@ function BorrowedCard({ entry, book }: { entry: BorrowedEntry; book: Book }) {
           className={cn("mt-auto pt-1.5 font-medium", s.text)}
           style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
         >
-          Due {entry.dueDate}
+          Due {formatDate(loan.due_date)}
         </p>
       </div>
     </Link>
   )
 }
 
-function BorrowedTab() {
+function BorrowedTab({ loans, loading, error }: { loans: ApiLoan[]; loading: boolean; error: string | null }) {
   const [filter, setFilter] = useState<BorrowFilter>("all")
 
-  const entries = BORROWED_DATA
-    .map((e) => ({ entry: e, book: getBook(e.bookId) }))
-    .filter((x) => !!x.book) as { entry: BorrowedEntry; book: Book }[]
+  const entries = loans
+    .filter((loan) => loan.status !== "returned")
+    .map((loan) => ({ loan, status: deriveBorrowStatus(loan) }))
 
   const counts = {
     all:      entries.length,
-    active:   entries.filter((x) => x.entry.status === "active").length,
-    due_soon: entries.filter((x) => x.entry.status === "due_soon").length,
-    overdue:  entries.filter((x) => x.entry.status === "overdue").length,
+    active:   entries.filter((x) => x.status === "active").length,
+    due_soon: entries.filter((x) => x.status === "due_soon").length,
+    overdue:  entries.filter((x) => x.status === "overdue").length,
   }
 
   const filtered =
-    filter === "all" ? entries : entries.filter((x) => x.entry.status === filter)
+    filter === "all" ? entries : entries.filter((x) => x.status === filter)
 
   const { page, totalPages, pageItems, goTo } = usePagination(filtered, filter)
 
@@ -383,6 +390,14 @@ function BorrowedTab() {
     { key: "due_soon", label: "Due Soon" },
     { key: "overdue",  label: "Overdue" },
   ]
+
+  if (loading) {
+    return <EmptyState icon={<BookOpen size={28} />} message="Loading your loans…" />
+  }
+
+  if (error) {
+    return <EmptyState icon={<BookOpen size={28} />} message={error} />
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -440,8 +455,8 @@ function BorrowedTab() {
         <EmptyState icon={<BookOpen size={28} />} message="No loans found." />
       ) : (
         <div className={CARD_GRID}>
-          {pageItems.map(({ entry, book }) => (
-            <BorrowedCard key={entry.bookId + entry.borrowedDate} entry={entry} book={book} />
+          {pageItems.map(({ loan, status }) => (
+            <BorrowedCard key={loan.id} loan={loan} status={status} />
           ))}
         </div>
       )}
@@ -813,14 +828,26 @@ const TABS: TabDef[] = [
   { key: "history",  label: "History",        shortLabel: "History",  icon: <History size={14} /> },
 ]
 
-const TAB_SUB: Record<Tab, string> = {
-  borrowed: `${BORROWED_DATA.length} active loans · Limit: 5 books`,
-  saved:    `${SAVED_IDS.length} books saved`,
-  history:  `${HISTORY_DATA.length} past transactions`,
-}
-
 export default function MyLibraryPage() {
   const [tab, setTab] = useState<Tab>("borrowed")
+  const [loans, setLoans] = useState<ApiLoan[]>([])
+  const [loansLoading, setLoansLoading] = useState(true)
+  const [loansError, setLoansError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchLoans()
+      .then(setLoans)
+      .catch((err) => setLoansError(err.message ?? "Failed to load your loans"))
+      .finally(() => setLoansLoading(false))
+  }, [])
+
+  const activeLoanCount = loans.filter((l) => l.status !== "returned").length
+
+  const TAB_SUB: Record<Tab, string> = {
+    borrowed: `${activeLoanCount} active loan${activeLoanCount === 1 ? "" : "s"} · Limit: ${BORROW_LIMIT_PLACEHOLDER} books`,
+    saved:    `${SAVED_IDS.length} books saved`,
+    history:  `${HISTORY_DATA.length} past transactions`,
+  }
 
   function TabButton({ t, mobile }: { t: TabDef; mobile: boolean }) {
     const isActive = tab === t.key
@@ -875,7 +902,7 @@ export default function MyLibraryPage() {
 
       {/* Content */}
       <div className="flex-1 px-4 sm:px-8 py-5">
-        {tab === "borrowed" && <BorrowedTab />}
+        {tab === "borrowed" && <BorrowedTab loans={loans} loading={loansLoading} error={loansError} />}
         {tab === "saved"    && <SavedTab />}
         {tab === "history"  && <HistoryTab />}
       </div>

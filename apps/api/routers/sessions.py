@@ -1,10 +1,25 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from supabase_auth.errors import AuthApiError
 
+from core.deps import get_current_user
 from core.supabase import get_admin_client, get_client
+from schemas.auth import UserProfile
 from schemas.session import OpenSessionRequest, StationSession
 
 router = APIRouter(prefix="/station-sessions", tags=["station-sessions"])
+
+def _insert_session(student_id: str, auth_method: str, station_id: str) -> dict:
+    # service-role client: an rfid tap never produces a Supabase JWT, so
+    # every auth_method writes this row the same way for consistency (see
+    # the migration's note on why station_sessions has no RLS policies).
+    res = get_admin_client().table("station_sessions").insert({
+        "student_id": student_id,
+        "auth_method": auth_method,
+        "station_id": station_id,
+    }).execute()
+    if not res.data:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not open session")
+    return res.data[0]
 
 # Not behind auth: this is what the kiosk calls to find out who's standing
 # in front of it. manual_login's own password check IS the credential;
@@ -32,15 +47,13 @@ def open_session(body: OpenSessionRequest):
     else:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unsupported auth_method")
 
-    # service-role client: an rfid tap never produces a Supabase JWT, so
-    # both methods write this row the same way for consistency (see the
-    # migration's note on why station_sessions has no RLS policies).
-    session_res = get_admin_client().table("station_sessions").insert({
-        "student_id": student_id,
-        "auth_method": body.auth_method,
-        "station_id": body.station_id,
-    }).execute()
-    if not session_res.data:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not open session")
+    return _insert_session(student_id, body.auth_method, body.station_id)
 
-    return session_res.data[0]
+# For the student web portal specifically — not a physical kiosk, so
+# there's no reason to make an already-logged-in student retype their
+# password. Their existing JWT is exactly as strong a credential as
+# manual_login's password check, so this counts as auth_method
+# "manual_login" too — same downstream shape either way.
+@router.post("/from-token", response_model=StationSession, status_code=status.HTTP_201_CREATED)
+def open_session_from_token(user: UserProfile = Depends(get_current_user)):
+    return _insert_session(user.id, "manual_login", "web-portal")

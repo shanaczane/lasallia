@@ -13,17 +13,19 @@
 
 'use client'
 
-import { use, useState } from 'react'
+import { use, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { QRCodeSVG } from 'qrcode.react'
 import {
   ArrowLeft, MapPin, Hash, Building2, Calendar,
   BookOpen, Tag, Bookmark, Bell, QrCode, X, Info,
-  CheckCircle2,
+  CheckCircle2, AlertCircle, Monitor,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useBook, useBooks } from '@/lib/hooks/useBooks'
 import { useReservations } from '@/lib/hooks/useReservations'
 import { createReservation, updateReservationStatus } from '@/lib/reservations'
+import { openSessionFromToken, claimHold, releaseHold, type ClaimHoldResponse } from '@/lib/kiosk'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 import { BookCard } from '@/components/ui/catalog'
 import type { Book, Reservation } from '@lasallia/types'
@@ -42,19 +44,69 @@ function getCoverColor(id: string, override?: string): string {
   return COVER_COLORS[idx % COVER_COLORS.length]
 }
 
-// ─── QR Borrow Modal (4.5.4) ──────────────────────────────────────────────────
-// Shown when student taps "Borrow this book" on an available book.
-// Student shows this QR to the librarian counter to process the borrow.
-// Returning is done physically at the counter — no QR needed from the student.
+// ─── QR Borrow Modal (Phase 2) ─────────────────────────────────────────────────
+// Shown when student taps "Borrow this book" on an available book. Claims a
+// 2-minute soft hold on the earliest available copy the instant the modal
+// opens, then shows a QR the student's phone can scan (or "Continue on this
+// laptop" for the same device) to reach the borrowing form at /borrow/[token]
+// — where they type the accession number themselves. This modal never shows
+// it: the whole point is proving they have the actual physical book.
+
+type ClaimState =
+  | { status: 'claiming' }
+  | { status: 'ready'; hold: ClaimHoldResponse }
+  | { status: 'error'; message: string }
 
 function QRBorrowModal({ book, onClose }: { book: Book; onClose: () => void }) {
-  const qrValue = `LASALLIA-BORROW-${book.id.padStart(4, '0')}-${book.call_number.replace(/\s/g, '')}`
+  const [claim, setClaim] = useState<ClaimState>({ status: 'claiming' })
+
+  // Claiming a hold consumes the only available copy of a single-copy
+  // title, so it must run exactly once per modal open. startedRef guards
+  // against React 19 dev-mode's double-invoke of effects (mount ->
+  // cleanup -> mount again). openRef tracks whether the user has actually
+  // closed the modal — set only from handleClose below, deliberately NOT
+  // from this effect's own cleanup, since Strict Mode's synthetic
+  // cleanup fires on every mount (not just a real close) and would
+  // otherwise make an in-flight claim release itself the instant it
+  // resolves, leaving the modal stuck on its loading spinner.
+  const startedRef = useRef(false)
+  const openRef = useRef(true)
+
+  useEffect(() => {
+    if (startedRef.current) return
+    startedRef.current = true
+
+    async function run() {
+      try {
+        const session = await openSessionFromToken()
+        const hold = await claimHold(book.id, session.id)
+        if (openRef.current) {
+          setClaim({ status: 'ready', hold })
+        } else {
+          // Closed while the claim was still in flight — don't leave a
+          // copy held with no UI left to release it.
+          releaseHold(hold.token).catch(() => {})
+        }
+      } catch (err) {
+        if (openRef.current) {
+          setClaim({ status: 'error', message: err instanceof Error ? err.message : 'Could not start borrowing this book' })
+        }
+      }
+    }
+    run()
+  }, [book.id])
+
+  function handleClose() {
+    openRef.current = false
+    if (claim.status === 'ready') releaseHold(claim.hold.token).catch(() => {})
+    onClose()
+  }
 
   return (
     <div
       className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4"
       style={{ background: 'rgba(20,21,15,0.55)' }}
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-sm p-6 flex flex-col items-center gap-4"
@@ -69,7 +121,7 @@ function QRBorrowModal({ book, onClose }: { book: Book; onClose: () => void }) {
             Borrow this Book
           </p>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-ink-100 text-ink-400 transition-colors"
           >
             <X size={16} />
@@ -104,19 +156,51 @@ function QRBorrowModal({ book, onClose }: { book: Book; onClose: () => void }) {
           </div>
         </div>
 
-        {/* QR frame — replaced by qrcode.react in Sprint 7.1.1 */}
-        <div
-          className="flex flex-col items-center justify-center rounded-[10px] border-2 border-dashed border-ink-200 bg-ink-50"
-          style={{ width: 'var(--width-qr-frame)', height: 'var(--height-qr-frame)' }}
-        >
-          <QrCode size={52} className="text-ink-300" />
-          <p
-            className="text-ink-400 mt-2 text-center px-4"
-            style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}
+        {claim.status === 'claiming' && (
+          <div
+            className="flex flex-col items-center justify-center gap-2 rounded-[10px] bg-ink-50"
+            style={{ width: 'var(--width-qr-frame)', height: 'var(--height-qr-frame)' }}
           >
-            {qrValue}
-          </p>
-        </div>
+            <div className="w-6 h-6 rounded-full border-2 border-green-700 border-t-transparent animate-spin motion-reduce:animate-none" />
+            <p className="text-ink-400" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}>
+              Holding a copy for you…
+            </p>
+          </div>
+        )}
+
+        {claim.status === 'error' && (
+          <div
+            className="flex flex-col items-center justify-center gap-2 rounded-[10px] bg-danger-bg px-4 text-center"
+            style={{ width: 'var(--width-qr-frame)', minHeight: 120 }}
+          >
+            <AlertCircle size={24} className="text-danger" />
+            <p style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)', color: 'var(--color-danger-dark)' }}>
+              {claim.message}
+            </p>
+          </div>
+        )}
+
+        {claim.status === 'ready' && (
+          <>
+            <div
+              className="flex flex-col items-center justify-center gap-3 rounded-[10px] border border-ink-200 bg-white p-4"
+            >
+              <QRCodeSVG value={claim.hold.qr_url} size={168} />
+              <p className="text-ink-400 text-center" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-2xs)' }}>
+                Scan with your phone to continue
+              </p>
+            </div>
+
+            <a
+              href={claim.hold.qr_url}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-[10px] border-2 border-green-700 text-green-700 font-semibold hover:bg-green-50 transition-colors"
+              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+            >
+              <Monitor size={15} />
+              Continue on this laptop
+            </a>
+          </>
+        )}
 
         {/* Instruction */}
         <div className="w-full flex items-start gap-2 p-3 rounded-[10px] bg-green-50 border border-green-200">
@@ -125,17 +209,16 @@ function QRBorrowModal({ book, onClose }: { book: Book; onClose: () => void }) {
             className="text-green-800"
             style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
           >
-            Show this QR code to the librarian at the counter to borrow.
-            To return, simply bring the book back — no QR needed.
+            Get the book from the shelf first — you&apos;ll need the number printed on its label.
           </p>
         </div>
 
         <button
-          onClick={onClose}
-          className="w-full py-2.5 rounded-[10px] bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors"
+          onClick={handleClose}
+          className="w-full py-2.5 rounded-[10px] border border-ink-200 text-ink-600 font-semibold hover:bg-ink-50 transition-colors"
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
         >
-          Got it
+          Cancel
         </button>
       </div>
     </div>
