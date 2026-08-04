@@ -17,7 +17,7 @@ import {
   User, ArrowLeft,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { fetchHold, confirmLoan, type HoldDetail, type Condition } from '@/lib/kiosk'
+import { fetchHold, confirmLoan, extendHold, reportMissing, type HoldDetail, type Condition } from '@/lib/kiosk'
 
 // Placeholder pending real LRC policy (plan doc's open question #2) —
 // display only, not enforced anywhere yet (that's Phase 3).
@@ -80,7 +80,37 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   const [submitError, setSubmitError] = useState('')
   const [confirmed, setConfirmed] = useState<{ dueDate: string } | null>(null)
 
+  const [extending, setExtending] = useState(false)
+  const [reportingMissing, setReportingMissing] = useState(false)
+  const [reportedMissing, setReportedMissing] = useState(false)
+
   const secondsLeft = useCountdown(hold?.expires_at)
+
+  async function handleExtend() {
+    if (!hold || extending) return
+    setExtending(true)
+    setSubmitError('')
+    try {
+      const { expires_at } = await extendHold(token)
+      setHold({ ...hold, expires_at })
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Could not extend — please rescan at the kiosk')
+    } finally {
+      setExtending(false)
+    }
+  }
+
+  async function handleCantFindIt() {
+    if (reportingMissing) return
+    setReportingMissing(true)
+    try {
+      await reportMissing(token)
+    } finally {
+      // Best-effort — the flow ends here either way so the student isn't stuck.
+      setReportingMissing(false)
+      setReportedMissing(true)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -135,6 +165,25 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
     )
   }
 
+  // ── Reported missing ─────────────────────────────────────────────────────
+  if (reportedMissing) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-4" style={{ backgroundColor: 'var(--color-paper)' }}>
+        <div className="w-14 h-14 rounded-full bg-ink-100 flex items-center justify-center">
+          <AlertCircle size={26} className="text-ink-400" />
+        </div>
+        <div>
+          <p className="text-ink-900 font-semibold mb-1" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-xl)' }}>
+            Thanks for letting us know
+          </p>
+          <p className="text-ink-500 max-w-xs" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+            We&apos;ve flagged this copy for a librarian to check. Please see the front desk if you still need this title.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   // ── Success ──────────────────────────────────────────────────────────────
   if (confirmed) {
     return (
@@ -176,6 +225,31 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
           <Clock size={12} />
           {isExpired ? 'Expired — please rescan at the kiosk' : `${minutes}:${String(seconds).padStart(2, '0')} remaining`}
         </div>
+
+        {/* Walk-to-the-shelf actions (2.3) */}
+        {!isExpired && (
+          <div className="flex items-center justify-center gap-4">
+            <button
+              type="button"
+              onClick={handleExtend}
+              disabled={extending}
+              className="text-green-700 font-medium hover:text-green-800 disabled:opacity-50 disabled:pointer-events-none"
+              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}
+            >
+              {extending ? 'Extending…' : "I'm getting the book"}
+            </button>
+            <span className="text-ink-200">·</span>
+            <button
+              type="button"
+              onClick={handleCantFindIt}
+              disabled={reportingMissing}
+              className="text-ink-400 font-medium hover:text-danger disabled:opacity-50 disabled:pointer-events-none"
+              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}
+            >
+              {reportingMissing ? 'Reporting…' : "I can't find it"}
+            </button>
+          </div>
+        )}
 
         {/* Box 1 — who's borrowing */}
         <div className="bg-white rounded-(--radius) border border-ink-200 p-4 flex items-center gap-3">

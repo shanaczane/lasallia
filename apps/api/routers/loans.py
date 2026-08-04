@@ -20,8 +20,16 @@ def list_loans(
 ):
     # RLS scopes this automatically (0009): students see only their own
     # loans, librarians see every loan.
-    res = db.table("loans").select("*, books(*)").order("borrowed_at", desc=True).execute()
+    #
+    # loans has no direct FK to books — only to book_copies, which in turn
+    # points at books — so the embed has to go through book_copies and get
+    # flattened back onto `books` to match the Loan schema's shape (which
+    # mirrors what confirm_loan already returns after inserting a loan).
+    res = db.table("loans").select("*, book_copies(books(*))").order("borrowed_at", desc=True).execute()
     loans = res.data
+    for loan in loans:
+        copy = loan.pop("book_copies", None)
+        loan["books"] = copy["books"] if copy else None
 
     # "overdue" is never written back by anything yet (no return flow, no
     # cron) — a loan whose due_date has passed still says status: "active"

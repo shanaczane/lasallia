@@ -18,3 +18,6 @@ class HoldDetail(BaseModel):
     student_first_name: str
     active_loan_count: int
     due_date_preview: str
+
+class HoldExtendResponse(BaseModel):
+    expires_at: str

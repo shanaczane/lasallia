@@ -5,13 +5,16 @@ from fastapi import APIRouter, HTTPException, status
 
 from core.config import FRONTEND_URL
 from core.supabase import get_admin_client
-from schemas.hold import ClaimHoldRequest, ClaimHoldResponse, HoldDetail
+from schemas.hold import ClaimHoldRequest, ClaimHoldResponse, HoldDetail, HoldExtendResponse
 
 router = APIRouter(prefix="/holds", tags=["holds"])
 
 # Preview only — the real due date is fixed at loan confirmation (2.7: "the
 # due date starts at this moment"), not here.
 BORROW_PERIOD_DAYS = 14
+
+# 2.3: "'I'm getting the book' button extends the session to ~5 minutes."
+EXTEND_SECONDS = 300
 
 # Not behind auth: claiming happens the instant a student (already
 # identified via their open station_session) taps "Borrow this book" —
@@ -90,3 +93,35 @@ def release_hold(token: str):
     res = db.table("soft_holds").delete().eq("token", token).execute()
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Hold not found")
+
+@router.post("/{token}/extend", response_model=HoldExtendResponse)
+def extend_hold(token: str):
+    db = get_admin_client()
+    hold_res = db.table("soft_holds").select("id, expires_at").eq("token", token).execute()
+    if not hold_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "This hold doesn't exist or has already been used")
+    hold = hold_res.data[0]
+
+    if datetime.fromisoformat(hold["expires_at"]) < datetime.now(timezone.utc):
+        db.table("soft_holds").delete().eq("id", hold["id"]).execute()
+        raise HTTPException(status.HTTP_410_GONE, "This hold has expired — please start over at the kiosk")
+
+    new_expiry = (datetime.now(timezone.utc) + timedelta(seconds=EXTEND_SECONDS)).isoformat()
+    db.table("soft_holds").update({"expires_at": new_expiry}).eq("id", hold["id"]).execute()
+    return HoldExtendResponse(expires_at=new_expiry)
+
+# 2.3: "'I can't find it' button flags the copy for librarian attention and
+# releases the hold." Flagging means the copy transitions available ->
+# missing (legal per the Phase 1 status machine) rather than just
+# releasing the hold, which would silently hand the same empty shelf slot
+# to the next student who claims this copy.
+@router.post("/{token}/report-missing", status_code=status.HTTP_204_NO_CONTENT)
+def report_missing(token: str):
+    db = get_admin_client()
+    hold_res = db.table("soft_holds").select("id, book_copy_id").eq("token", token).execute()
+    if not hold_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Hold not found")
+    hold = hold_res.data[0]
+
+    db.table("book_copies").update({"status": "missing"}).eq("id", hold["book_copy_id"]).execute()
+    db.table("soft_holds").delete().eq("id", hold["id"]).execute()

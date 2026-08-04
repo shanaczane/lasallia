@@ -58,6 +58,22 @@ export async function releaseHold(token: string): Promise<void> {
   if (!res.ok && res.status !== 404) return parseErrorOrThrow(res, 'Could not release the hold')
 }
 
+// "I'm getting the book" — extends the soft hold (and the QR's validity
+// window with it) to ~5 minutes.
+export async function extendHold(token: string): Promise<{ expires_at: string }> {
+  const res = await fetch(`${API_URL}/holds/${token}/extend`, { method: 'POST' })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not extend this hold')
+  return res.json()
+}
+
+// "I can't find it" — distinct from releaseHold: also flags the copy
+// `missing` for librarian attention rather than silently freeing it back
+// to available.
+export async function reportMissing(token: string): Promise<void> {
+  const res = await fetch(`${API_URL}/holds/${token}/report-missing`, { method: 'POST' })
+  if (!res.ok && res.status !== 404) return parseErrorOrThrow(res, 'Could not report this copy as missing')
+}
+
 export type HoldDetail = {
   token: string
   expires_at: string
