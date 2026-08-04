@@ -15,15 +15,27 @@ import {
   Search,
   RotateCcw,
   AlertCircle,
+  PackageCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Book, BorrowTransaction } from "@lasallia/types"
 import { useBooks } from "@/lib/hooks/useBooks"
 import { useBorrowTransactions } from "@/lib/hooks/useBorrowTransactions"
 import { createBorrow, returnBorrow } from "@/lib/borrow"
+import {
+  lookupLoanByAccession,
+  searchLoans,
+  confirmReturn,
+  reshelveCopy,
+  type LoanLookupResult,
+  type ReturnCondition,
+} from "@/lib/returns"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = "borrow" | "return"
+// "return" here is the new loans/book_copies-schema flow (Phase 4) —
+// separate from "borrow", which is untouched and still runs on the older
+// borrow_transactions schema.
+type Tab = "borrow" | "return" | "reshelving"
 type InputMode = "camera" | "usb"
 type ScanState = "idle" | "scanning" | "found" | "notfound" | "confirmed"
 
@@ -707,17 +719,579 @@ function TransactionsTable({ tab, records }: { tab: Tab; records: TxRecord[] }) 
   )
 }
 
+// ─── Return flow (Phase 4, new loans/book_copies schema) ──────────────────────
+// Separate from ScannerPanel/BookResultCard above, which stay borrow-only and
+// untouched. No fake camera here — a plain accession-number input plus a
+// title/borrower fallback search is what plan 4.1 actually needs.
+
+type SessionRecord = { title: string; patron: string; time: string; note?: string }
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+}
+
+const RETURN_CONDITIONS: { value: ReturnCondition; label: string }[] = [
+  { value: "good", label: "Good" },
+  { value: "fair", label: "Fair" },
+  { value: "damaged", label: "Damaged" },
+  { value: "incomplete", label: "Incomplete" },
+]
+
+function ConditionButtons({
+  value,
+  onChange,
+}: {
+  value: ReturnCondition | null
+  onChange: (c: ReturnCondition) => void
+}) {
+  return (
+    <div className="flex gap-1.5 flex-wrap">
+      {RETURN_CONDITIONS.map((c) => (
+        <button
+          key={c.value}
+          type="button"
+          onClick={() => onChange(c.value)}
+          className={cn(
+            "px-3 py-1.5 rounded border font-medium transition-colors",
+            value === c.value
+              ? "bg-green-700 border-green-700 text-white"
+              : "bg-white border-ink-300 text-ink-600 hover:border-ink-400"
+          )}
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+        >
+          {c.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function BorrowerAvatar({ name, avatarUrl }: { name: string | null; avatarUrl: string | null }) {
+  if (avatarUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={avatarUrl} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+  }
+  return (
+    <div className="w-10 h-10 rounded-full bg-ink-200 text-ink-600 flex items-center justify-center font-semibold shrink-0">
+      {(name ?? "?")[0]?.toUpperCase()}
+    </div>
+  )
+}
+
+function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void }) {
+  const [accessionInput, setAccessionInput] = useState("")
+  const [searchInput, setSearchInput] = useState("")
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchResults, setSearchResults] = useState<LoanLookupResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [loan, setLoan] = useState<LoanLookupResult | null>(null)
+  const [notFound, setNotFound] = useState(false)
+
+  const [condition, setCondition] = useState<ReturnCondition | null>(null)
+  const [conditionNotes, setConditionNotes] = useState("")
+  const [replacementCost, setReplacementCost] = useState("")
+  const [settlement, setSettlement] = useState<"paid" | "unsettled" | null>(null)
+  const [receiptNumber, setReceiptNumber] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState("")
+  const [confirmed, setConfirmed] = useState<{ title: string; patron: string; fine: number } | null>(null)
+
+  const isNewDamage = !!loan && loan.condition_at_borrow === "good" && (condition === "damaged" || condition === "incomplete")
+  const previewTotal = loan
+    ? loan.preview_fine_amount + (isNewDamage ? (parseFloat(replacementCost) || 0) + 50 : 0)
+    : 0
+
+  async function handleFind() {
+    if (!accessionInput.trim()) return
+    setLoading(true)
+    setNotFound(false)
+    try {
+      const result = await lookupLoanByAccession(accessionInput.trim())
+      setLoan(result)
+    } catch {
+      setNotFound(true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSearch() {
+    if (!searchInput.trim()) return
+    setSearching(true)
+    try {
+      setSearchResults(await searchLoans(searchInput.trim()))
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  function reset() {
+    setAccessionInput("")
+    setSearchInput("")
+    setSearchOpen(false)
+    setSearchResults([])
+    setLoan(null)
+    setNotFound(false)
+    setCondition(null)
+    setConditionNotes("")
+    setReplacementCost("")
+    setSettlement(null)
+    setReceiptNumber("")
+    setSubmitError("")
+    setConfirmed(null)
+  }
+
+  async function handleConfirm() {
+    if (!loan || !condition) return
+    setSubmitting(true)
+    setSubmitError("")
+    try {
+      const result = await confirmReturn(loan.id, {
+        conditionAtReturn: condition,
+        conditionNotes: conditionNotes || undefined,
+        replacementCost: isNewDamage && replacementCost ? parseFloat(replacementCost) : undefined,
+        fineSettlement: previewTotal > 0 ? settlement ?? undefined : undefined,
+        receiptNumber: settlement === "paid" ? receiptNumber : undefined,
+      })
+      const patron = loan.profiles?.full_name ?? "Unknown"
+      const fine = result.fine_amount ?? 0
+      setConfirmed({ title: loan.books?.title ?? "Unknown title", patron, fine })
+      onSettled({
+        title: loan.books?.title ?? "Unknown title",
+        patron,
+        time: new Date().toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
+        note: fine > 0 ? `₱${fine.toFixed(2)} fine` : undefined,
+      })
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Could not confirm this return")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const canConfirm =
+    !!condition &&
+    (condition === "good" || conditionNotes.trim().length > 0) &&
+    (previewTotal <= 0 || !!settlement) &&
+    (settlement !== "paid" || receiptNumber.trim().length > 0) &&
+    !submitting
+
+  if (confirmed) {
+    return (
+      <div className="rounded border border-green-200 bg-green-50 p-6 flex flex-col items-center gap-3 text-center">
+        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-green-100">
+          <CheckCircle2 size={26} className="text-green-700" />
+        </div>
+        <div>
+          <p className="text-green-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}>
+            Book Returned Successfully
+          </p>
+          <p className="text-ink-500 mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            <span className="font-medium text-ink-700">{confirmed.title}</span> returned by{" "}
+            <span className="font-medium text-ink-700">{confirmed.patron}</span>
+          </p>
+          {confirmed.fine > 0 && (
+            <p className="text-amber-700 font-semibold mt-1" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+              ₱{confirmed.fine.toFixed(2)} fine recorded
+            </p>
+          )}
+        </div>
+        <button
+          onClick={reset}
+          className="flex items-center gap-1.5 px-4 py-2 rounded border border-ink-300 text-ink-600 hover:bg-white transition-colors font-medium"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          <RotateCcw size={13} />
+          Scan Another
+        </button>
+      </div>
+    )
+  }
+
+  if (notFound) {
+    return (
+      <div className="rounded border border-red-200 bg-red-50 p-6 flex flex-col items-center gap-3 text-center">
+        <AlertCircle size={26} className="text-red-600" />
+        <p className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}>
+          No active loan found for that copy
+        </p>
+        <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          If the label is damaged or unreadable, try searching by title or borrower name below.
+        </p>
+        <button
+          onClick={reset}
+          className="flex items-center gap-1.5 px-4 py-2 rounded border border-ink-300 text-ink-600 hover:bg-white transition-colors font-medium"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          <RotateCcw size={13} />
+          Try Again
+        </button>
+      </div>
+    )
+  }
+
+  if (loan) {
+    return (
+      <div className="rounded border border-green-200 bg-green-50 p-4 flex flex-col gap-3">
+        {/* Book + accession */}
+        <div className="flex items-start gap-3">
+          <div
+            className="shrink-0 rounded flex items-center justify-center text-white font-bold"
+            style={{ width: 48, height: 66, background: loan.books?.cover_color ?? "#2563EB", fontFamily: "var(--font-display)", fontSize: "1.25rem" }}
+          >
+            {loan.books?.title?.[0] ?? "?"}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-ink-900 font-semibold leading-snug" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}>
+              {loan.books?.title ?? "Unknown title"}
+            </p>
+            <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+              {loan.books?.author}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+              <span className="flex items-center gap-1 text-ink-500" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                <Hash size={11} /> {loan.accession_number}
+              </span>
+              {loan.books?.call_number && (
+                <span className="flex items-center gap-1 text-ink-500" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                  <MapPin size={11} /> {loan.books.call_number}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Borrower + dates */}
+        <div className="rounded bg-white border border-ink-200 px-3 py-2 flex items-center gap-3">
+          <BorrowerAvatar name={loan.profiles?.full_name ?? null} avatarUrl={loan.profiles?.avatar_url ?? null} />
+          <div className="min-w-0 flex-1">
+            <p className="text-ink-900 font-semibold" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+              {loan.profiles?.full_name ?? "Unknown borrower"}
+            </p>
+            <p className="text-ink-400" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+              Borrowed {formatDate(loan.borrowed_at)} · Due {formatDate(loan.due_date)}
+            </p>
+          </div>
+          {loan.days_overdue > 0 && (
+            <span className="px-2 py-1 rounded bg-red-100 text-red-700 font-semibold shrink-0" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+              {loan.days_overdue}d overdue
+            </span>
+          )}
+        </div>
+
+        {/* Declared condition baseline */}
+        <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          Declared at borrow: <span className="font-medium text-ink-700">{loan.condition_at_borrow.replace("_", " ")}</span>
+        </p>
+
+        {/* Inspection */}
+        <div className="flex flex-col gap-2">
+          <label className="text-ink-700 font-medium" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+            Condition on return <span className="text-red-500">*</span>
+          </label>
+          <ConditionButtons value={condition} onChange={setCondition} />
+          {condition && condition !== "good" && (
+            <textarea
+              placeholder="Describe the condition…"
+              value={conditionNotes}
+              onChange={(e) => setConditionNotes(e.target.value)}
+              rows={2}
+              className="w-full px-3 py-2 rounded border border-ink-300 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            />
+          )}
+          {isNewDamage && (
+            <div>
+              <label className="text-ink-700" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                Replacement cost (₱, optional — plus ₱50 processing fee)
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={replacementCost}
+                onChange={(e) => setReplacementCost(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded border border-ink-300 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Settlement */}
+        {previewTotal > 0 && (
+          <div className="rounded bg-amber-50 border border-amber-200 p-3 flex flex-col gap-2">
+            <p className="text-amber-800 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+              ₱{previewTotal.toFixed(2)} fine
+            </p>
+            <div className="flex gap-1.5">
+              {(["paid", "unsettled"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSettlement(s)}
+                  className={cn(
+                    "px-3 py-1.5 rounded border font-medium capitalize transition-colors",
+                    settlement === s ? "bg-green-700 border-green-700 text-white" : "bg-white border-ink-300 text-ink-600"
+                  )}
+                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            {settlement === "paid" && (
+              <input
+                type="text"
+                placeholder="Receipt number"
+                value={receiptNumber}
+                onChange={(e) => setReceiptNumber(e.target.value)}
+                className="w-full px-3 py-2 rounded border border-ink-300 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+              />
+            )}
+          </div>
+        )}
+
+        {submitError && (
+          <p className="text-red-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            {submitError}
+          </p>
+        )}
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleConfirm}
+            disabled={!canConfirm}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 py-2 rounded font-semibold transition-colors",
+              canConfirm ? "bg-green-700 text-white hover:bg-green-800" : "bg-ink-200 text-ink-400 cursor-not-allowed"
+            )}
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+          >
+            <CheckCircle2 size={15} />
+            {submitting ? "Processing…" : "Confirm Return"}
+          </button>
+          <button
+            onClick={reset}
+            className="px-3 py-2 rounded border border-ink-300 text-ink-600 hover:bg-ink-50 transition-colors"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
+      <div className="flex items-center gap-2">
+        <ScanLine size={15} className="text-green-700" />
+        <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+          Scan or Type Accession Number
+        </span>
+      </div>
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Hash size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
+          <input
+            type="text"
+            placeholder="e.g. T45136"
+            value={accessionInput}
+            onChange={(e) => setAccessionInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleFind()}
+            autoFocus
+            className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500"
+            style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
+          />
+        </div>
+        <button
+          onClick={handleFind}
+          disabled={!accessionInput.trim() || loading}
+          className={cn(
+            "px-4 py-2 rounded font-semibold transition-colors",
+            accessionInput.trim() ? "bg-green-700 text-white hover:bg-green-800" : "bg-ink-200 text-ink-400 cursor-not-allowed"
+          )}
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          {loading ? "Finding…" : "Find"}
+        </button>
+      </div>
+
+      <button
+        onClick={() => setSearchOpen((v) => !v)}
+        className="text-left text-ink-500 hover:text-ink-700 transition-colors"
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+      >
+        {searchOpen ? "Hide" : "Can't read the label? Search by title or borrower name →"}
+      </button>
+
+      {searchOpen && (
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
+              <input
+                type="text"
+                placeholder="Title or borrower name…"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+              />
+            </div>
+            <button
+              onClick={handleSearch}
+              disabled={!searchInput.trim() || searching}
+              className="px-4 py-2 rounded border border-ink-300 text-ink-600 hover:bg-ink-50 font-semibold transition-colors"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            >
+              {searching ? "…" : "Search"}
+            </button>
+          </div>
+          {searchResults.length > 0 && (
+            <div className="flex flex-col gap-1">
+              {searchResults.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => setLoan(r)}
+                  className="text-left px-3 py-2 rounded border border-ink-200 hover:bg-ink-50 transition-colors"
+                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                >
+                  <span className="font-medium text-ink-900">{r.books?.title ?? "Unknown title"}</span>
+                  <span className="text-ink-400"> — {r.profiles?.full_name ?? "Unknown borrower"}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Reshelving mode (Phase 4.7) ───────────────────────────────────────────────
+function ReshelvingPanel({ onSettled }: { onSettled: (record: SessionRecord) => void }) {
+  const [accessionInput, setAccessionInput] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [result, setResult] = useState<"success" | "error" | null>(null)
+  const [message, setMessage] = useState("")
+
+  async function handleConfirm() {
+    if (!accessionInput.trim()) return
+    setSubmitting(true)
+    try {
+      await reshelveCopy(accessionInput.trim())
+      setResult("success")
+      onSettled({
+        title: accessionInput.trim(),
+        patron: "—",
+        time: new Date().toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
+        note: "Now available",
+      })
+      setAccessionInput("")
+    } catch (err) {
+      setResult("error")
+      setMessage(err instanceof Error ? err.message : "Could not reshelve this copy")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
+      <div className="flex items-center gap-2">
+        <PackageCheck size={15} className="text-green-700" />
+        <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+          Reshelving Mode
+        </span>
+      </div>
+      <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+        Scan a copy only after it's physically back on the shelf — this is the only action that makes a copy
+        available again.
+      </p>
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Hash size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
+          <input
+            type="text"
+            placeholder="e.g. T45136"
+            value={accessionInput}
+            onChange={(e) => { setAccessionInput(e.target.value); setResult(null) }}
+            onKeyDown={(e) => e.key === "Enter" && handleConfirm()}
+            autoFocus
+            className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500"
+            style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
+          />
+        </div>
+        <button
+          onClick={handleConfirm}
+          disabled={!accessionInput.trim() || submitting}
+          className={cn(
+            "px-4 py-2 rounded font-semibold transition-colors",
+            accessionInput.trim() ? "bg-green-700 text-white hover:bg-green-800" : "bg-ink-200 text-ink-400 cursor-not-allowed"
+          )}
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          {submitting ? "…" : "Confirm"}
+        </button>
+      </div>
+      {result === "success" && (
+        <p className="flex items-center gap-1.5 text-green-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          <CheckCircle2 size={14} /> Copy is now available.
+        </p>
+      )}
+      {result === "error" && (
+        <p className="flex items-center gap-1.5 text-red-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          <AlertCircle size={14} /> {message}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function SessionList({ tab, records }: { tab: "return" | "reshelving"; records: SessionRecord[] }) {
+  if (records.length === 0) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center py-10 gap-2 text-ink-400"
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+      >
+        <AlertCircle size={20} className="text-ink-300" />
+        No {tab === "return" ? "returns" : "reshelves"} yet this session.
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      {records.map((r, i) => (
+        <div key={i} className="flex items-center justify-between gap-3 py-2 border-b border-ink-100 last:border-0">
+          <div className="min-w-0">
+            <p className="text-ink-900 font-medium truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+              {r.title}
+            </p>
+            <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+              {r.patron} · {r.time}{r.note ? ` · ${r.note}` : ""}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function BorrowAndReturnPage() {
   const [tab, setTab] = useState<Tab>("borrow")
+  const [returnedThisSession, setReturnedThisSession] = useState<SessionRecord[]>([])
+  const [reshelvedThisSession, setReshelvedThisSession] = useState<SessionRecord[]>([])
   const { books } = useBooks()
   const { transactions, refresh } = useBorrowTransactions()
 
   const activeTransactions = transactions.filter((t) => t.status === "active")
   const todaysBorrows = transactions.filter((t) => isToday(t.borrowed_at)).map(toTxRecord)
-  const todaysReturns = transactions
-    .filter((t) => t.status === "returned" && t.returned_at && isToday(t.returned_at))
-    .map(toTxRecord)
 
   const today = new Date().toLocaleDateString("en-PH", {
     weekday: "long",
@@ -729,9 +1303,8 @@ export default function BorrowAndReturnPage() {
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "borrow", label: "Borrow",  icon: <BookOpen size={14} /> },
     { key: "return", label: "Return", icon: <RotateCcw size={14} /> },
+    { key: "reshelving", label: "Reshelving", icon: <PackageCheck size={14} /> },
   ]
-
-  const records = tab === "borrow" ? todaysBorrows : todaysReturns
 
   return (
     <div className="p-4 sm:p-6">
@@ -773,36 +1346,46 @@ export default function BorrowAndReturnPage() {
 
       {/* ── Two-column layout ─────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl">
-        {/* Left: scanner */}
-        <ScannerPanel
-          key={tab}
-          tab={tab}
-          books={books}
-          activeTransactions={activeTransactions}
-          onSettled={refresh}
-        />
+        {/* Left: scanner / lookup */}
+        {tab === "borrow" && (
+          <ScannerPanel
+            key={tab}
+            tab={tab}
+            books={books}
+            activeTransactions={activeTransactions}
+            onSettled={refresh}
+          />
+        )}
+        {tab === "return" && (
+          <ReturnPanel onSettled={(r) => setReturnedThisSession((prev) => [r, ...prev])} />
+        )}
+        {tab === "reshelving" && (
+          <ReshelvingPanel onSettled={(r) => setReshelvedThisSession((prev) => [r, ...prev])} />
+        )}
 
-        {/* Right: today's records */}
+        {/* Right: records — today's, for Borrow (old schema); this session's, for Return/Reshelving (new schema, no history endpoint yet) */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2
               className="text-ink-900 font-semibold"
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}
             >
-              Today&apos;s {tab === "borrow" ? "Borrows" : "Returns"}
+              {tab === "borrow" ? "Today's Borrows" : tab === "return" ? "Returned This Session" : "Reshelved This Session"}
             </h2>
             <span
               className="text-ink-400"
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
             >
-              {records.length} records
+              {(tab === "borrow" ? todaysBorrows : tab === "return" ? returnedThisSession : reshelvedThisSession).length} records
             </span>
           </div>
           <div
             className="rounded border border-ink-200 bg-white p-4"
             style={{ boxShadow: "var(--shadow)" }}
           >
-            <TransactionsTable tab={tab} records={records} />
+            {tab === "borrow" && <TransactionsTable tab={tab} records={todaysBorrows} />}
+            {tab === "return" && <SessionList tab="return" records={returnedThisSession} />}
+            {tab === "reshelving" && <SessionList tab="reshelving" records={reshelvedThisSession} />}
           </div>
         </div>
       </div>

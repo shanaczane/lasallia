@@ -78,6 +78,19 @@ def claim_hold(body: ClaimHoldRequest):
     if len(current_loans) >= BORROW_LIMIT:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"You've reached your borrowing limit of {BORROW_LIMIT} books")
 
+    # Phase 4 closes the gap Phase 3 deferred here for lack of data: an
+    # unsettled fine can exist on an already-returned loan, so this is a
+    # separate, status-unscoped query rather than reusing current_loans.
+    unsettled = (
+        db.table("loans")
+        .select("id", count="exact")
+        .eq("student_id", student_id)
+        .eq("fine_status", "unsettled")
+        .execute()
+    )
+    if (unsettled.count or 0) > 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You have an unpaid fine — please settle it with the librarian")
+
     token = secrets.token_urlsafe(24)
 
     res = db.rpc("claim_copy_for_book", {
