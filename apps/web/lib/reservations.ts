@@ -2,8 +2,9 @@
 // Fetch layer for /reservations — every call is authenticated (RLS scopes
 // results server-side: students see their own, librarians see all).
 
-import { Reservation, ReservationStatus } from '@lasallia/types'
+import { Reservation } from '@lasallia/types'
 import { getToken } from '@/lib/auth'
+import type { Condition, Loan } from '@/lib/kiosk'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
@@ -34,12 +35,35 @@ export async function createReservation(bookId: string): Promise<Reservation> {
   return res.json()
 }
 
-export async function updateReservationStatus(id: string, status: ReservationStatus): Promise<Reservation> {
+// 'cancelled' is the only status this endpoint accepts now — becoming
+// 'ready' is automatic (Phase 4's return handler, or the pickup-window
+// expiry sweep), never a manual PATCH.
+export async function cancelReservation(id: string): Promise<Reservation> {
   const res = await fetch(`${API_URL}/reservations/${id}`, {
     method: 'PATCH',
     headers: authHeaders(),
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status: 'cancelled' }),
   })
-  if (!res.ok) return parseErrorOrThrow(res, 'Failed to update reservation')
+  if (!res.ok) return parseErrorOrThrow(res, 'Failed to cancel reservation')
+  return res.json()
+}
+
+// Fulfillment (plan 5.3) — same possession check as a normal borrow,
+// sourced from a 'ready' reservation's assigned copy.
+export async function pickupReservation(
+  id: string,
+  params: { condition: Condition; accessionNumber: string; purpose?: string; notes?: string }
+): Promise<Loan> {
+  const res = await fetch(`${API_URL}/reservations/${id}/pickup`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      accession_number: params.accessionNumber,
+      condition: params.condition,
+      purpose: params.purpose || undefined,
+      notes: params.notes || undefined,
+    }),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not confirm this pickup')
   return res.json()
 }

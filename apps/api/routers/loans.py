@@ -268,8 +268,9 @@ def return_loan(
 
     # Reservation-aware routing (4.6): first-in-queue for this title, if
     # any, gets the hold shelf instead of the copy going back into general
-    # reshelving. Doesn't build the pickup flow itself (accession-number
-    # verification at pickup, hold-shelf expiry) — that's Phase 5.
+    # reshelving — goes straight to 'ready' (Phase 5 made this automatic,
+    # no librarian pre-approval step) with the specific copy linked so
+    # pickup can verify it.
     pending_res = (
         admin.table("reservations")
         .select("id")
@@ -282,7 +283,8 @@ def return_loan(
     if pending_res.data:
         admin.table("book_copies").update({"status": "reserved"}).eq("id", copy["id"]).execute()
         admin.table("reservations").update({
-            "status": "confirmed",
+            "book_copy_id": copy["id"],
+            "status": "ready",
             "confirmed_at": datetime.now(timezone.utc).isoformat(),
             "pickup_by": (datetime.now(timezone.utc) + timedelta(days=PICKUP_WINDOW_DAYS)).isoformat(),
         }).eq("id", pending_res.data[0]["id"]).execute()

@@ -28,6 +28,8 @@ export type Book = {
   total_copies?: number
   available_copies?: number
   call_number_start?: string // For call number range filter
+  expected_back?: string     // soonest due_date among copies out — only set when 0 available
+  waiting_count?: number     // pending + ready reservations for this title
   created_at: string
   updated_at: string
 }

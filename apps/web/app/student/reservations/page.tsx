@@ -4,9 +4,10 @@
 import { useState } from "react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
-import { CheckCircle, Clock, XCircle, BookMarked } from "lucide-react"
+import { CheckCircle, Clock, XCircle, BookMarked, PackageCheck, AlertCircle } from "lucide-react"
 import { useReservations } from "@/lib/hooks/useReservations"
-import { updateReservationStatus } from "@/lib/reservations"
+import { cancelReservation, pickupReservation } from "@/lib/reservations"
+import type { Condition } from "@/lib/kiosk"
 import type { Reservation, ReservationStatus } from "@lasallia/types"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -66,24 +67,31 @@ const STATUS_CONFIG: Record<ReservationStatus, StatusConfig> = {
     icon: () => <CheckCircle size={15} />,
     iconBg: "bg-success-bg",
     iconColor: "text-success",
-    title: "Your reserved book is ready for pickup",
+    title: "Ready for pickup",
     message: (r) =>
-      `"${bookTitle(r)}" by ${bookAuthor(r)} is waiting at the Main LRC desk.${r.pickup_by ? ` Pick up by ${formatDate(r.pickup_by)}.` : ""}`,
-  },
-  confirmed: {
-    icon: () => <Clock size={15} />,
-    iconBg: "bg-info-bg",
-    iconColor: "text-info",
-    title: "Reservation confirmed",
-    message: (r) =>
-      `Your reservation for "${bookTitle(r)}" has been confirmed.${r.pickup_by ? ` Pick up by ${formatDate(r.pickup_by)}.` : ""}`,
+      `"${bookTitle(r)}" by ${bookAuthor(r)} is waiting for you.${r.pickup_by ? ` Pick up by ${formatDate(r.pickup_by)}.` : ""}`,
   },
   pending: {
     icon: () => <Clock size={15} />,
     iconBg: "bg-warn-bg",
     iconColor: "text-warn",
-    title: "Reservation pending",
-    message: (r) => `"${bookTitle(r)}" by ${bookAuthor(r)} is awaiting confirmation from a librarian.`,
+    title: "In queue",
+    message: (r) =>
+      `"${bookTitle(r)}" by ${bookAuthor(r)}${r.queue_position ? ` — you're #${r.queue_position} in line` : ""}. We'll hold a copy the moment it's your turn.`,
+  },
+  fulfilled: {
+    icon: () => <PackageCheck size={15} />,
+    iconBg: "bg-ink-100",
+    iconColor: "text-ink-500",
+    title: "Picked up",
+    message: (r) => `You picked up "${bookTitle(r)}" — it's now in My Library.`,
+  },
+  expired: {
+    icon: () => <AlertCircle size={15} />,
+    iconBg: "bg-ink-100",
+    iconColor: "text-ink-400",
+    title: "Pickup window passed",
+    message: (r) => `Your reservation for "${bookTitle(r)}" expired before pickup.`,
   },
   cancelled: {
     icon: () => <XCircle size={15} />,
@@ -94,8 +102,7 @@ const STATUS_CONFIG: Record<ReservationStatus, StatusConfig> = {
   },
 }
 
-const canCancel = (status: ReservationStatus) =>
-  status === "pending" || status === "confirmed" || status === "ready"
+const canCancel = (status: ReservationStatus) => status === "pending" || status === "ready"
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 type TabKey = "all" | ReservationStatus
@@ -103,10 +110,11 @@ type TabKey = "all" | ReservationStatus
 type Tab = { key: TabKey; label: string; shortLabel: string }
 
 const TABS: Tab[] = [
-  { key: "all",       label: "All",       shortLabel: "All"       },
-  { key: "pending",   label: "Pending",   shortLabel: "Pending"   },
-  { key: "confirmed", label: "Confirmed", shortLabel: "Confirmed" },
-  { key: "ready",     label: "Ready",     shortLabel: "Ready"     },
+  { key: "all",       label: "All",       shortLabel: "All"     },
+  { key: "pending",   label: "Pending",   shortLabel: "Pending" },
+  { key: "ready",     label: "Ready",     shortLabel: "Ready"   },
+  { key: "fulfilled", label: "Picked Up", shortLabel: "Picked Up" },
+  { key: "expired",   label: "Expired",   shortLabel: "Expired" },
   { key: "cancelled", label: "Cancelled", shortLabel: "Cancelled" },
 ]
 
@@ -114,10 +122,11 @@ const TABS: Tab[] = [
 interface ReservationItemCardProps {
   reservation: Reservation
   onCancel: () => void
+  onPickup: () => void
   isLast: boolean
 }
 
-function ReservationItemCard({ reservation: r, onCancel, isLast }: ReservationItemCardProps) {
+function ReservationItemCard({ reservation: r, onCancel, onPickup, isLast }: ReservationItemCardProps) {
   const config = STATUS_CONFIG[r.status]
   const isActive = canCancel(r.status)
 
@@ -158,7 +167,17 @@ function ReservationItemCard({ reservation: r, onCancel, isLast }: ReservationIt
         </p>
       </div>
 
-      <div className="flex items-center flex-shrink-0">
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {r.status === "ready" && (
+          <button
+            onClick={onPickup}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-(--radius) border border-green-700 bg-green-700 text-white font-medium hover:bg-green-800 transition-colors whitespace-nowrap"
+            style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
+          >
+            <PackageCheck size={13} />
+            <span className="hidden sm:inline">Pick up</span>
+          </button>
+        )}
         {canCancel(r.status) && (
           <button
             onClick={onCancel}
@@ -203,6 +222,154 @@ function EmptyState() {
       >
         Browse Catalog
       </Link>
+    </div>
+  )
+}
+
+// ─── Pickup Modal ─────────────────────────────────────────────────────────────
+// Fulfillment (plan 5.3): same possession check as a normal borrow — the
+// accession number is never shown, the student types it themselves.
+const CONDITION_OPTIONS: Array<{ value: Condition; label: string }> = [
+  { value: "good", label: "Good" },
+  { value: "minor_wear", label: "Minor wear" },
+  { value: "already_damaged", label: "Already damaged" },
+]
+
+interface PickupModalProps {
+  reservation: Reservation
+  onConfirmed: (dueDate: string) => void
+  onClose: () => void
+}
+
+function PickupModal({ reservation, onConfirmed, onClose }: PickupModalProps) {
+  const [accessionNumber, setAccessionNumber] = useState("")
+  const [condition, setCondition] = useState<Condition>("good")
+  const [notes, setNotes] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState("")
+
+  async function handleConfirm() {
+    if (!accessionNumber.trim()) return
+    setSubmitting(true)
+    setError("")
+    try {
+      const loan = await pickupReservation(reservation.id, {
+        accessionNumber,
+        condition,
+        notes: notes || undefined,
+      })
+      onConfirmed(loan.due_date)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not confirm this pickup")
+      setAccessionNumber("")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const canConfirm = accessionNumber.trim().length > 0 && (condition === "good" || notes.trim().length > 0) && !submitting
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="flex flex-col gap-4 bg-white rounded-(--radius) p-6 w-full max-w-sm shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="size-11 rounded-full bg-success-bg flex items-center justify-center flex-shrink-0">
+          <PackageCheck size={20} className="text-success" />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <h3 className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>
+            Confirm Pickup
+          </h3>
+          <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            Type the number on the book&apos;s label to confirm it&apos;s the right copy.
+          </p>
+        </div>
+
+        <p
+          className="text-ink-900 font-semibold bg-ink-50 px-3.5 py-2.5 rounded-(--radius) border-l-[3px] border-green-600 break-words"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          {bookTitle(reservation)}
+        </p>
+
+        <div>
+          <label className="block text-ink-700 mb-1" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
+            Accession number
+          </label>
+          <input
+            type="text"
+            value={accessionNumber}
+            onChange={(e) => setAccessionNumber(e.target.value)}
+            placeholder="e.g. T45136"
+            autoFocus
+            className="w-full h-11 px-3 rounded-(--radius) border-2 border-ink-200 bg-white text-ink-900 outline-none focus-visible:border-green-700 transition-colors"
+            style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-base)" }}
+          />
+        </div>
+
+        <div>
+          <label className="block text-ink-700 mb-1.5 font-medium" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
+            Book condition
+          </label>
+          <div className="flex gap-1.5">
+            {CONDITION_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setCondition(opt.value)}
+                className={cn(
+                  "flex-1 py-2 rounded border font-medium transition-colors",
+                  condition === opt.value ? "bg-green-50 border-green-700 text-green-800" : "bg-white border-ink-200 text-ink-600"
+                )}
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {condition !== "good" && (
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Describe the condition…"
+              rows={2}
+              className="w-full mt-2 px-3 py-2 rounded-(--radius) border border-ink-200 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            />
+          )}
+        </div>
+
+        {error && (
+          <p className="text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+            {error}
+          </p>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            className="flex-1 min-w-[120px] px-4 py-2.5 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm disabled:opacity-50"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={!canConfirm}
+            className="flex-1 min-w-[120px] px-4 py-2.5 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors disabled:opacity-50"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+          >
+            {submitting ? "Confirming…" : "Confirm Pickup"}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -286,13 +453,15 @@ export default function ReservationsPage() {
   const { reservations, loading, error, refresh } = useReservations()
   const [cancelTarget, setCancelTarget] = useState<Reservation | null>(null)
   const [cancelling, setCancelling] = useState(false)
+  const [pickupTarget, setPickupTarget] = useState<Reservation | null>(null)
+  const [pickedUp, setPickedUp] = useState<{ title: string; dueDate: string } | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>("all")
 
   async function handleCancelConfirm() {
     if (!cancelTarget) return
     setCancelling(true)
     try {
-      await updateReservationStatus(cancelTarget.id, "cancelled")
+      await cancelReservation(cancelTarget.id)
       await refresh()
       setCancelTarget(null)
     } catch {
@@ -302,11 +471,19 @@ export default function ReservationsPage() {
     }
   }
 
+  async function handlePickupConfirmed(dueDate: string) {
+    const title = pickupTarget ? bookTitle(pickupTarget) : "This book"
+    setPickupTarget(null)
+    setPickedUp({ title, dueDate })
+    await refresh()
+  }
+
   const tabCounts: Record<TabKey, number> = {
     all:       reservations.filter((r) => canCancel(r.status)).length,
     pending:   reservations.filter((r) => r.status === "pending").length,
-    confirmed: reservations.filter((r) => r.status === "confirmed").length,
     ready:     reservations.filter((r) => r.status === "ready").length,
+    fulfilled: reservations.filter((r) => r.status === "fulfilled").length,
+    expired:   reservations.filter((r) => r.status === "expired").length,
     cancelled: reservations.filter((r) => r.status === "cancelled").length,
   }
 
@@ -422,6 +599,7 @@ export default function ReservationsPage() {
                       key={r.id}
                       reservation={r}
                       onCancel={() => setCancelTarget(r)}
+                      onPickup={() => setPickupTarget(r)}
                       isLast={i === items.length - 1}
                     />
                   ))}
@@ -439,6 +617,48 @@ export default function ReservationsPage() {
           onConfirm={handleCancelConfirm}
           onClose={() => setCancelTarget(null)}
         />
+      )}
+
+      {pickupTarget && (
+        <PickupModal
+          reservation={pickupTarget}
+          onConfirmed={handlePickupConfirmed}
+          onClose={() => setPickupTarget(null)}
+        />
+      )}
+
+      {pickedUp && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setPickedUp(null)}
+        >
+          <div
+            className="flex flex-col items-center gap-3 bg-white rounded-(--radius) p-6 w-full max-w-sm shadow-2xl text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="size-12 rounded-full bg-success-bg flex items-center justify-center">
+              <CheckCircle size={26} className="text-success" />
+            </div>
+            <div>
+              <p className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}>
+                You&apos;ve borrowed this book
+              </p>
+              <p className="text-ink-500 mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                {pickedUp.title}
+              </p>
+              <p className="text-green-700 font-semibold mt-2" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                Due back {formatDate(pickedUp.dueDate)}
+              </p>
+            </div>
+            <button
+              onClick={() => setPickedUp(null)}
+              className="mt-1 px-4 py-2 rounded-(--radius) border border-ink-200 text-ink-600 font-medium hover:bg-ink-50 transition-colors"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+            >
+              Done
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -28,6 +28,8 @@ class Book(BaseModel):
     total_copies: int | None = None
     available_copies: int | None = None
     call_number_start: str | None = None
+    expected_back: str | None = None  # soonest due_date among copies out, computed on read
+    waiting_count: int | None = None  # pending + ready reservations for this title
     created_at: str
     updated_at: str
 

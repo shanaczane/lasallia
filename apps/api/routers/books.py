@@ -86,8 +86,37 @@ def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
 
-    copies_res = get_admin_client().table("book_copies").select("book_id, status").eq("book_id", book_id).execute()
+    admin = get_admin_client()
+    copies_res = admin.table("book_copies").select("id, book_id, status").eq("book_id", book_id).execute()
     book = _apply_real_availability(res.data, copies_res.data)
+
+    # Phase 5, plan 5.1: no button, no date, no waiting count once a copy
+    # is actually available — they should just go get it. Detail-page only
+    # (not list_books) — not worth an N+1 cost across the whole catalog.
+    if not book[0].get("available_copies"):
+        copy_ids = [c["id"] for c in copies_res.data]
+        if copy_ids:
+            soonest = (
+                admin.table("loans")
+                .select("due_date")
+                .in_("book_copy_id", copy_ids)
+                .in_("status", ["active", "overdue"])
+                .order("due_date")
+                .limit(1)
+                .execute()
+            )
+            if soonest.data:
+                book[0]["expected_back"] = soonest.data[0]["due_date"]
+
+        waiting_res = (
+            admin.table("reservations")
+            .select("id", count="exact")
+            .eq("book_id", book_id)
+            .in_("status", ["pending", "ready"])
+            .execute()
+        )
+        book[0]["waiting_count"] = waiting_res.count or 0
+
     book = _redact_accession(book, user)
 
     return book[0]

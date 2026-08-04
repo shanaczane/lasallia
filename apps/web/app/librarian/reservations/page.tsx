@@ -7,12 +7,14 @@ import {
   CheckCircle,
   XCircle,
   Clock,
+  PackageCheck,
+  AlertCircle,
   Search,
   BookMarked,
   ChevronDown,
 } from "lucide-react"
 import { useReservations } from "@/lib/hooks/useReservations"
-import { updateReservationStatus } from "@/lib/reservations"
+import { cancelReservation } from "@/lib/reservations"
 import type { Reservation, ReservationStatus } from "@lasallia/types"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -41,14 +43,18 @@ function bookAuthor(r: Reservation): string {
 }
 
 // ─── Status config ────────────────────────────────────────────────────────────
+// Becoming 'ready' is automatic now (Phase 4's return handler, or the
+// pickup-window expiry sweep in the API) — nothing here manually advances
+// a reservation, only cancels one.
 const STATUS_CONFIG: Record<
   ReservationStatus,
   { icon: React.ReactNode; iconBg: string; iconColor: string; badge: string; label: string }
 > = {
-  pending:   { icon: <Clock size={13} />,       iconBg: "bg-warn-bg",    iconColor: "text-warn",    badge: "bg-warn-bg text-warn",       label: "Pending"   },
-  confirmed: { icon: <CheckCircle size={13} />, iconBg: "bg-info-bg",    iconColor: "text-info",    badge: "bg-info-bg text-info",       label: "Confirmed" },
-  ready:     { icon: <CheckCircle size={13} />, iconBg: "bg-success-bg", iconColor: "text-success", badge: "bg-success-bg text-success", label: "Ready"     },
-  cancelled: { icon: <XCircle size={13} />,     iconBg: "bg-ink-100",    iconColor: "text-ink-400", badge: "bg-ink-100 text-ink-400",    label: "Cancelled" },
+  pending:   { icon: <Clock size={13} />,        iconBg: "bg-warn-bg",    iconColor: "text-warn",    badge: "bg-warn-bg text-warn",       label: "Pending"   },
+  ready:     { icon: <CheckCircle size={13} />,  iconBg: "bg-success-bg", iconColor: "text-success", badge: "bg-success-bg text-success", label: "Ready"     },
+  fulfilled: { icon: <PackageCheck size={13} />, iconBg: "bg-ink-100",    iconColor: "text-ink-500", badge: "bg-ink-100 text-ink-500",    label: "Picked Up" },
+  expired:   { icon: <AlertCircle size={13} />,  iconBg: "bg-ink-100",    iconColor: "text-ink-400", badge: "bg-ink-100 text-ink-400",    label: "Expired"   },
+  cancelled: { icon: <XCircle size={13} />,      iconBg: "bg-ink-100",    iconColor: "text-ink-400", badge: "bg-ink-100 text-ink-400",    label: "Cancelled" },
 }
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
@@ -59,30 +65,21 @@ type Tab = { key: TabKey; label: string; shortLabel: string }
 const TABS: Tab[] = [
   { key: "all",       label: "All",       shortLabel: "All"       },
   { key: "pending",   label: "Pending",   shortLabel: "Pending"   },
-  { key: "confirmed", label: "Confirmed", shortLabel: "Confirmed" },
   { key: "ready",     label: "Ready",     shortLabel: "Ready"     },
+  { key: "fulfilled", label: "Picked Up", shortLabel: "Picked Up" },
+  { key: "expired",   label: "Expired",   shortLabel: "Expired"   },
   { key: "cancelled", label: "Cancelled", shortLabel: "Cancelled" },
 ]
 
-// ─── Confirm / Reject / Mark-ready Modal ──────────────────────────────────────
-type Action = "confirm" | "ready" | "reject"
-
-interface ActionModalProps {
+// ─── Reject Modal ──────────────────────────────────────────────────────────────
+interface RejectModalProps {
   reservation: Reservation
-  action: Action
   pending: boolean
   onConfirm: () => void
   onClose: () => void
 }
 
-const ACTION_COPY: Record<Action, { title: string; body: string; cta: string; danger?: boolean }> = {
-  confirm: { title: "Confirm Reservation", body: "Confirm this reservation and notify the student it's being prepared?", cta: "Yes, Confirm" },
-  ready:   { title: "Mark Ready for Pickup", body: "Mark this book ready and notify the student it's waiting at the desk?", cta: "Yes, Mark Ready" },
-  reject:  { title: "Reject Reservation", body: "Reject this reservation? The student will be notified.", cta: "Yes, Reject", danger: true },
-}
-
-function ActionModal({ reservation, action, pending, onConfirm, onClose }: ActionModalProps) {
-  const copy = ACTION_COPY[action]
+function RejectModal({ reservation, pending, onConfirm, onClose }: RejectModalProps) {
   return (
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -92,24 +89,16 @@ function ActionModal({ reservation, action, pending, onConfirm, onClose }: Actio
         className="flex flex-col gap-4 bg-white rounded-(--radius) p-6 w-full max-w-sm shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className={cn(
-            "size-11 rounded-full flex items-center justify-center flex-shrink-0",
-            copy.danger ? "bg-danger-bg" : "bg-success-bg"
-          )}
-        >
-          {copy.danger
-            ? <XCircle size={20} className="text-danger" />
-            : <CheckCircle size={20} className="text-success" />
-          }
+        <div className="size-11 rounded-full bg-danger-bg flex items-center justify-center flex-shrink-0">
+          <XCircle size={20} className="text-danger" />
         </div>
 
         <div className="flex flex-col gap-1">
           <h3 className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>
-            {copy.title}
+            Reject Reservation
           </h3>
           <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-            {copy.body}
+            Cancel this student&apos;s spot in the queue for this title?
           </p>
         </div>
 
@@ -129,18 +118,15 @@ function ActionModal({ reservation, action, pending, onConfirm, onClose }: Actio
             className="flex-1 min-w-[120px] px-4 py-2.5 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm disabled:opacity-50"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
           >
-            Cancel
+            Keep It
           </button>
           <button
             onClick={onConfirm}
             disabled={pending}
-            className={cn(
-              "flex-1 min-w-[120px] px-4 py-2.5 rounded-(--radius) text-white font-medium transition-opacity hover:opacity-90 disabled:opacity-50",
-              copy.danger ? "bg-danger" : "bg-green-700"
-            )}
+            className="flex-1 min-w-[120px] px-4 py-2.5 rounded-(--radius) bg-danger text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
           >
-            {pending ? "Working…" : copy.cta}
+            {pending ? "Working…" : "Yes, Reject"}
           </button>
         </div>
       </div>
@@ -180,7 +166,6 @@ function SkeletonRow({ isLast }: { isLast: boolean }) {
       </div>
       <div className="flex gap-2 flex-shrink-0">
         <div className="h-7 w-20 rounded-(--radius) bg-ink-100 animate-pulse" />
-        <div className="h-7 w-16 rounded-(--radius) bg-ink-100 animate-pulse" />
       </div>
     </div>
   )
@@ -202,19 +187,18 @@ function EmptyState() {
 interface ReservationRowProps {
   reservation: Reservation
   isLast: boolean
-  onAction: (r: Reservation, action: Action) => void
+  onReject: (r: Reservation) => void
 }
 
-function ReservationRow({ reservation: r, isLast, onAction }: ReservationRowProps) {
+function ReservationRow({ reservation: r, isLast, onReject }: ReservationRowProps) {
   const cfg = STATUS_CONFIG[r.status]
   const isPending = r.status === "pending"
-  const isConfirmed = r.status === "confirmed"
 
   return (
     <div
       className={cn(
         "flex items-start gap-3 px-4 sm:px-5 py-4 transition-colors hover:bg-ink-50",
-        r.status !== "pending" && r.status !== "confirmed" && "opacity-80",
+        r.status !== "pending" && r.status !== "ready" && "opacity-80",
         !isLast && "border-b border-ink-100"
       )}
     >
@@ -245,9 +229,9 @@ function ReservationRow({ reservation: r, isLast, onAction }: ReservationRowProp
             <span className="text-ink-300 mx-1">·</span>
             <span className="text-ink-400">{formatTime(r.requested_at)}</span>
           </span>
-          {r.pickup_by && (
+          {r.status === "ready" && r.pickup_by && (
             <span className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-              Pickup by: <span className="text-ink-400 font-medium">{formatDate(r.pickup_by)}</span>
+              On hold shelf — pickup by <span className="text-ink-400 font-medium">{formatDate(r.pickup_by)}</span>
             </span>
           )}
         </div>
@@ -255,33 +239,13 @@ function ReservationRow({ reservation: r, isLast, onAction }: ReservationRowProp
 
       <div className="flex items-center gap-2 flex-shrink-0 pt-0.5">
         {isPending && (
-          <>
-            <button
-              onClick={() => onAction(r, "confirm")}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-            >
-              <CheckCircle size={13} />
-              <span className="hidden sm:inline">Confirm</span>
-            </button>
-            <button
-              onClick={() => onAction(r, "reject")}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-(--radius) border border-danger/30 bg-white text-danger font-medium hover:bg-danger-bg transition-colors"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-            >
-              <XCircle size={13} />
-              <span className="hidden sm:inline">Reject</span>
-            </button>
-          </>
-        )}
-        {isConfirmed && (
           <button
-            onClick={() => onAction(r, "ready")}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors"
+            onClick={() => onReject(r)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-(--radius) border border-danger/30 bg-white text-danger font-medium hover:bg-danger-bg transition-colors"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
           >
-            <CheckCircle size={13} />
-            <span className="hidden sm:inline">Mark Ready</span>
+            <XCircle size={13} />
+            <span className="hidden sm:inline">Reject</span>
           </button>
         )}
       </div>
@@ -297,13 +261,14 @@ export default function LibrarianReservationsPage() {
   const [search, setSearch] = useState("")
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "pickup">("newest")
 
-  const [modalTarget, setModalTarget] = useState<{ reservation: Reservation; action: Action } | null>(null)
+  const [rejectTarget, setRejectTarget] = useState<Reservation | null>(null)
 
   const tabCounts: Record<TabKey, number> = useMemo(() => ({
     all:       reservations.length,
     pending:   reservations.filter((r) => r.status === "pending").length,
-    confirmed: reservations.filter((r) => r.status === "confirmed").length,
     ready:     reservations.filter((r) => r.status === "ready").length,
+    fulfilled: reservations.filter((r) => r.status === "fulfilled").length,
+    expired:   reservations.filter((r) => r.status === "expired").length,
     cancelled: reservations.filter((r) => r.status === "cancelled").length,
   }), [reservations])
 
@@ -331,19 +296,13 @@ export default function LibrarianReservationsPage() {
     })
   }, [reservations, activeTab, search, sortBy])
 
-  function handleAction(reservation: Reservation, action: Action) {
-    setModalTarget({ reservation, action })
-  }
-
-  async function handleActionConfirm() {
-    if (!modalTarget) return
-    const { reservation, action } = modalTarget
-    const nextStatus = action === "confirm" ? "confirmed" : action === "ready" ? "ready" : "cancelled"
+  async function handleRejectConfirm() {
+    if (!rejectTarget) return
     setActionPending(true)
     try {
-      await updateReservationStatus(reservation.id, nextStatus)
+      await cancelReservation(rejectTarget.id)
       await refresh()
-      setModalTarget(null)
+      setRejectTarget(null)
     } catch {
       // keep the modal open so the librarian can retry
     } finally {
@@ -388,7 +347,8 @@ export default function LibrarianReservationsPage() {
           Reservation Queue
         </h1>
         <p className="text-ink-500 mt-1" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-          Review and manage student book reservation requests.
+          Fulfillment is automatic — a copy is assigned the moment it's returned. Rejecting removes a student's
+          spot in the queue.
         </p>
       </div>
 
@@ -451,20 +411,19 @@ export default function LibrarianReservationsPage() {
             </p>
             <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
               {filtered.map((r, i) => (
-                <ReservationRow key={r.id} reservation={r} isLast={i === filtered.length - 1} onAction={handleAction} />
+                <ReservationRow key={r.id} reservation={r} isLast={i === filtered.length - 1} onReject={setRejectTarget} />
               ))}
             </div>
           </div>
         )}
       </div>
 
-      {modalTarget && (
-        <ActionModal
-          reservation={modalTarget.reservation}
-          action={modalTarget.action}
+      {rejectTarget && (
+        <RejectModal
+          reservation={rejectTarget}
           pending={actionPending}
-          onConfirm={handleActionConfirm}
-          onClose={() => setModalTarget(null)}
+          onConfirm={handleRejectConfirm}
+          onClose={() => setRejectTarget(null)}
         />
       )}
     </div>

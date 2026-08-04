@@ -24,7 +24,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useBook, useBooks } from '@/lib/hooks/useBooks'
 import { useReservations } from '@/lib/hooks/useReservations'
-import { createReservation, updateReservationStatus } from '@/lib/reservations'
+import { createReservation, cancelReservation } from '@/lib/reservations'
 import { openSessionFromToken, claimHold, releaseHold, type ClaimHoldResponse } from '@/lib/kiosk'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 import { BookCard } from '@/components/ui/catalog'
@@ -250,31 +250,31 @@ function ActionPanel({
 }) {
   const [pending, setPending] = useState(false)
   const [actionError, setActionError] = useState('')
-  const notified = !!reservation
+  const reserved = !!reservation
   const pct = totalCopies > 0 ? (availableCopies / totalCopies) * 100 : 0
 
-  async function joinWaitlist() {
+  async function reserveBook() {
     setPending(true)
     setActionError('')
     try {
       await createReservation(book.id)
       onReservationChange()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to join the waitlist')
+      setActionError(err instanceof Error ? err.message : 'Failed to reserve this book')
     } finally {
       setPending(false)
     }
   }
 
-  async function leaveWaitlist() {
+  async function leaveQueue() {
     if (!reservation) return
     setPending(true)
     setActionError('')
     try {
-      await updateReservationStatus(reservation.id, 'cancelled')
+      await cancelReservation(reservation.id)
       onReservationChange()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to leave the waitlist')
+      setActionError(err instanceof Error ? err.message : 'Failed to cancel your reservation')
     } finally {
       setPending(false)
     }
@@ -314,8 +314,46 @@ function ActionPanel({
     )
   }
 
-  // Not available — waitlist / notify me
-  if (notified) {
+  // Not available — reserve / queue status
+  if (reserved && reservation) {
+    if (reservation.status === 'ready') {
+      return (
+        <div className="flex flex-col gap-2">
+          <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+              <CheckCircle2 size={16} className="text-green-600 shrink-0" />
+              <p
+                className="text-green-800 leading-snug"
+                style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+              >
+                <span className="font-semibold">Ready for pickup</span>
+                {reservation.pickup_by && <> — bring your ID and pick it up by{' '}
+                  <span className="font-semibold">{formatDate(reservation.pickup_by)}</span></>}. Head to{' '}
+                <Link href="/student/reservations" className="underline underline-offset-2 hover:text-green-900">
+                  My Reservations
+                </Link>{' '}
+                to type the accession number and confirm.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={leaveQueue}
+              disabled={pending}
+              className="shrink-0 text-green-600 hover:text-green-800 underline underline-offset-2 transition-colors sm:ml-auto disabled:opacity-50"
+              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+            >
+              {pending ? 'Cancelling…' : 'Cancel reservation'}
+            </button>
+          </div>
+          {actionError && (
+            <p className="text-danger" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}>
+              {actionError}
+            </p>
+          )}
+        </div>
+      )
+    }
+
     return (
       <div className="flex flex-col gap-2">
         <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -325,24 +363,20 @@ function ActionPanel({
               className="text-green-800 leading-snug"
               style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
             >
-              <span className="font-semibold">You're on the waitlist</span> — we'll notify you when a copy is available. Check{' '}
-              <Link
-                href="/student/notifications"
-                className="underline underline-offset-2 hover:text-green-900"
-              >
-                Notifications
-              </Link>{' '}
-              for updates.
+              <span className="font-semibold">
+                {reservation.queue_position ? `You're #${reservation.queue_position} in line` : "You're in line"}
+              </span>{' '}
+              for this title — we'll hold a copy for you the moment it's your turn.
             </p>
           </div>
           <button
             type="button"
-            onClick={leaveWaitlist}
+            onClick={leaveQueue}
             disabled={pending}
             className="shrink-0 text-green-600 hover:text-green-800 underline underline-offset-2 transition-colors sm:ml-auto disabled:opacity-50"
             style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
           >
-            {pending ? 'Leaving…' : 'Leave waitlist'}
+            {pending ? 'Cancelling…' : 'Leave queue'}
           </button>
         </div>
         {actionError && (
@@ -354,6 +388,9 @@ function ActionPanel({
     )
   }
 
+  const expectedBack = book.expected_back ? new Date(book.expected_back) : null
+  const expectedBackIsPast = expectedBack ? expectedBack.getTime() < Date.now() : false
+
   return (
     <div className="flex flex-col gap-2">
       <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -361,23 +398,31 @@ function ActionPanel({
           <div className="w-14 h-1.5 rounded-full bg-ink-200 overflow-hidden shrink-0">
             <div className="h-full rounded-full bg-ink-300" style={{ width: '0%' }} />
           </div>
-          <p
-            className="text-ink-600 leading-snug"
-            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
-          >
-            <span className="font-semibold text-ink-700">No copies available</span> — all {totalCopies} {totalCopies === 1 ? 'copy is' : 'copies are'} currently{' '}
-            {book.status === 'reserved' ? 'reserved' : 'borrowed'}. Join the waitlist to be notified.
-          </p>
+          <div className="text-ink-600 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+            <p>
+              <span className="font-semibold text-ink-700">{totalCopies} {totalCopies === 1 ? 'copy' : 'copies'} · 0 available</span>
+            </p>
+            <p className="mt-0.5">
+              {expectedBack
+                ? expectedBackIsPast
+                  ? <>Was due {formatDate(book.expected_back!)} · not yet returned</>
+                  : <>Expected back {formatDate(book.expected_back!)}</>
+                : 'No copies currently out'}
+              {typeof book.waiting_count === 'number' && book.waiting_count > 0 && (
+                <> · {book.waiting_count} {book.waiting_count === 1 ? 'person' : 'people'} waiting</>
+              )}
+            </p>
+          </div>
         </div>
         <button
           type="button"
-          onClick={joinWaitlist}
+          onClick={reserveBook}
           disabled={pending}
           className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-ink-900 text-white font-semibold hover:bg-ink-700 transition-colors disabled:opacity-50"
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
         >
           <Bell size={15} />
-          {pending ? 'Joining…' : 'Notify me'}
+          {pending ? 'Reserving…' : 'Reserve this book'}
         </button>
       </div>
       {actionError && (
@@ -387,6 +432,10 @@ function ActionPanel({
       )}
     </div>
   )
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
 // ─── You may also like (4.3.3) ────────────────────────────────────────────────
@@ -435,7 +484,7 @@ export default function StudentBookDetailPage({
   const { book, loading } = useBook(bookId)
   const { reservations, refresh: refreshReservations } = useReservations()
   const existingReservation = reservations.find(
-    (r) => r.book_id === bookId && r.status !== 'cancelled'
+    (r) => r.book_id === bookId && (r.status === 'pending' || r.status === 'ready')
   )
 
   // ── Loading state ──────────────────────────────────────────────────────────
