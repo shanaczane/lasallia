@@ -16,6 +16,18 @@ BORROW_PERIOD_DAYS = 14
 # 2.3: "'I'm getting the book' button extends the session to ~5 minutes."
 EXTEND_SECONDS = 300
 
+# Phase 3 — Blocking checks (server-side, at claim time)
+
+# These collection types are for library use only and never leave the
+# building — matches the build plan's Part 1.3 list exactly.
+NON_BORROWABLE_COLLECTION_TYPES = {"Reference", "Thesis", "Capstone", "MTR", "Archives"}
+
+# Placeholder pending a real number from the LRC (open question #2 in the
+# build plan) — matches the display-only BORROW_LIMIT_PLACEHOLDER already
+# shown to students in apps/web/app/borrow/[token]/page.tsx and
+# apps/web/app/student/library/page.tsx. Change here once that's answered.
+BORROW_LIMIT = 3
+
 # Not behind auth: claiming happens the instant a student (already
 # identified via their open station_session) taps "Borrow this book" —
 # there's no separate login step here. get_hold/release below are reached
@@ -25,6 +37,47 @@ EXTEND_SECONDS = 300
 @router.post("", response_model=ClaimHoldResponse, status_code=status.HTTP_201_CREATED)
 def claim_hold(body: ClaimHoldRequest):
     db = get_admin_client()
+
+    # claim_copy_for_book only knows book_id + station_session_id — it has
+    # no concept of a student, so eligibility has to be decided here,
+    # before it ever runs. Rejecting late would lock a copy away from
+    # other students for a request that was always going to fail.
+    session_res = db.table("station_sessions").select("student_id, ended_at").eq("id", body.station_session_id).execute()
+    if not session_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Your session isn't valid — please sign in again")
+    session = session_res.data[0]
+    if session["ended_at"] is not None:
+        raise HTTPException(status.HTTP_410_GONE, "This session has ended — please sign in again")
+    student_id = session["student_id"]
+
+    book_res = db.table("books").select("collection_type").eq("id", body.book_id).execute()
+    if not book_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
+    collection_type = book_res.data[0]["collection_type"]
+    if collection_type in NON_BORROWABLE_COLLECTION_TYPES:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"{collection_type} items are for library use only and can't be borrowed",
+        )
+
+    current_loans = (
+        db.table("loans")
+        .select("id, due_date, book_copies(book_id)")
+        .eq("student_id", student_id)
+        .in_("status", ["active", "overdue"])
+        .execute()
+    ).data
+
+    now = datetime.now(timezone.utc)
+    if any(datetime.fromisoformat(loan["due_date"]) < now for loan in current_loans):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You have an overdue book — please return it before borrowing another")
+
+    if any(loan["book_copies"]["book_id"] == body.book_id for loan in current_loans):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You already have a copy of this title checked out")
+
+    if len(current_loans) >= BORROW_LIMIT:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"You've reached your borrowing limit of {BORROW_LIMIT} books")
+
     token = secrets.token_urlsafe(24)
 
     res = db.rpc("claim_copy_for_book", {
