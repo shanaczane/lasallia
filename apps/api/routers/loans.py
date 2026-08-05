@@ -59,16 +59,26 @@ def list_loans(
 ):
     # RLS scopes this automatically (0009): students see only their own
     # loans, librarians see every loan.
-    #
-    # loans has no direct FK to books — only to book_copies, which in turn
-    # points at books — so the embed has to go through book_copies and get
-    # flattened back onto `books` to match the Loan schema's shape (which
-    # mirrors what confirm_loan already returns after inserting a loan).
-    res = db.table("loans").select("*, book_copies(books(*))").order("borrowed_at", desc=True).execute()
+    res = db.table("loans").select("*").order("borrowed_at", desc=True).execute()
     loans = res.data
+
+    # book_copies has no RLS policy for authenticated callers at all (see
+    # routers/books.py) — even the caller's own JWT can't embed through it,
+    # PostgREST just silently returns book_copies: null instead of erroring.
+    # loan.book_copy_id is a plain column already on the (correctly scoped)
+    # row above, so this second hop only needs the admin client, never the
+    # caller's own — the loan row itself already proved they can see it.
+    admin = get_admin_client()
+    copy_ids = list({loan["book_copy_id"] for loan in loans})
+    books_by_copy_id: dict[str, dict | None] = {}
+    if copy_ids:
+        copies = admin.table("book_copies").select("id, book_id").in_("id", copy_ids).execute().data
+        book_ids = list({c["book_id"] for c in copies})
+        books = admin.table("books").select("*").in_("id", book_ids).execute().data if book_ids else []
+        books_by_id = {b["id"]: b for b in books}
+        books_by_copy_id = {c["id"]: books_by_id.get(c["book_id"]) for c in copies}
     for loan in loans:
-        copy = loan.pop("book_copies", None)
-        loan["books"] = copy["books"] if copy else None
+        loan["books"] = books_by_copy_id.get(loan["book_copy_id"])
 
     # "overdue" is never written back by anything yet (no return flow, no
     # cron) — a loan whose due_date has passed still says status: "active"
@@ -157,15 +167,19 @@ def confirm_loan(body: ConfirmLoanRequest):
 def lookup_loan(
     accession_number: str,
     librarian: UserProfile = Depends(require_librarian),
-    db: Client = Depends(get_user_supabase),
 ):
-    copy_res = db.table("book_copies").select("id, book_id").eq("accession_number", accession_number.strip()).execute()
+    # book_copies has no RLS policy for authenticated callers — not even a
+    # librarian's own JWT can read it (see routers/books.py) — so this,
+    # like the return/reshelve endpoints below, runs entirely on the admin
+    # client. require_librarian already gates the endpoint itself.
+    admin = get_admin_client()
+    copy_res = admin.table("book_copies").select("id, book_id").eq("accession_number", accession_number.strip()).execute()
     if not copy_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No copy with that accession number")
     copy = copy_res.data[0]
 
     loan_res = (
-        _embed_book_and_borrower(db, db.table("loans"))
+        _embed_book_and_borrower(admin, admin.table("loans"))
         .eq("book_copy_id", copy["id"])
         .in_("status", ["active", "overdue"])
         .execute()
@@ -174,9 +188,9 @@ def lookup_loan(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This copy isn't currently out on loan")
     loan = _flatten_loan(loan_res.data[0])
 
-    book_res = db.table("books").select("collection_type").eq("id", copy["book_id"]).execute()
+    book_res = admin.table("books").select("collection_type").eq("id", copy["book_id"]).execute()
     collection_type = book_res.data[0]["collection_type"] if book_res.data else "General"
-    days_overdue, preview_fine = _compute_fine(db, loan["due_date"], collection_type)
+    days_overdue, preview_fine = _compute_fine(admin, loan["due_date"], collection_type)
 
     return LoanLookupResult(**loan, days_overdue=days_overdue, preview_fine_amount=preview_fine)
 
@@ -188,14 +202,16 @@ def lookup_loan(
 def search_loans(
     q: str,
     librarian: UserProfile = Depends(require_librarian),
-    db: Client = Depends(get_user_supabase),
 ):
     needle = q.strip().lower()
     if not needle:
         return []
 
+    # Same book_copies RLS constraint as lookup_loan above — admin client
+    # throughout, require_librarian gates the endpoint.
+    admin = get_admin_client()
     loans_res = (
-        _embed_book_and_borrower(db, db.table("loans"))
+        _embed_book_and_borrower(admin, admin.table("loans"))
         .in_("status", ["active", "overdue"])
         .execute()
     )
@@ -210,7 +226,7 @@ def search_loans(
         if needle not in title and needle not in name:
             continue
         loan = _flatten_loan(raw)
-        days_overdue, preview_fine = _compute_fine(db, loan["due_date"], book.get("collection_type") or "General")
+        days_overdue, preview_fine = _compute_fine(admin, loan["due_date"], book.get("collection_type") or "General")
         results.append(LoanLookupResult(**loan, days_overdue=days_overdue, preview_fine_amount=preview_fine))
         if len(results) >= 20:
             break

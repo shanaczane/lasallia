@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import FRONTEND_URL
-from routers import auth, books, borrow, holds, loans, reservations, sessions
+from routers import auth, books, borrow, holds, inhouse, loans, reservations, sessions
 
 app = FastAPI(
     title="Lasallia API",
@@ -24,6 +24,7 @@ app.include_router(reservations.router)
 app.include_router(sessions.router)
 app.include_router(holds.router)
 app.include_router(loans.router)
+app.include_router(inhouse.router)
 
 @app.get("/health")
 def health_check():

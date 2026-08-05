@@ -1,13 +1,14 @@
 // Sprint 5.4 / 7.1 – Quick Scanner Interface, wired to the real borrow/return API
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import {
   ScanLine,
   Camera,
   Keyboard,
   CheckCircle2,
   User,
+  UserPlus,
   BookOpen,
   MapPin,
   Hash,
@@ -30,12 +31,20 @@ import {
   type LoanLookupResult,
   type ReturnCondition,
 } from "@/lib/returns"
+import {
+  fetchInHouseLoans,
+  createInHouseLoan,
+  returnInHouseLoan,
+  type InHouseLoan,
+  type VisitorType,
+  type Purpose as GuestPurpose,
+} from "@/lib/inhouse"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 // "return" here is the new loans/book_copies-schema flow (Phase 4) —
 // separate from "borrow", which is untouched and still runs on the older
 // borrow_transactions schema.
-type Tab = "borrow" | "return" | "reshelving"
+type Tab = "borrow" | "return" | "reshelving" | "guest"
 type InputMode = "camera" | "usb"
 type ScanState = "idle" | "scanning" | "found" | "notfound" | "confirmed"
 
@@ -787,6 +796,7 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
   const [loading, setLoading] = useState(false)
   const [loan, setLoan] = useState<LoanLookupResult | null>(null)
   const [notFound, setNotFound] = useState(false)
+  const [notFoundMessage, setNotFoundMessage] = useState("")
 
   const [condition, setCondition] = useState<ReturnCondition | null>(null)
   const [conditionNotes, setConditionNotes] = useState("")
@@ -809,7 +819,8 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
     try {
       const result = await lookupLoanByAccession(accessionInput.trim())
       setLoan(result)
-    } catch {
+    } catch (err) {
+      setNotFoundMessage(err instanceof Error ? err.message : "No active loan found for that copy")
       setNotFound(true)
     } finally {
       setLoading(false)
@@ -833,6 +844,7 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
     setSearchResults([])
     setLoan(null)
     setNotFound(false)
+    setNotFoundMessage("")
     setCondition(null)
     setConditionNotes("")
     setReplacementCost("")
@@ -914,7 +926,7 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
       <div className="rounded border border-red-200 bg-red-50 p-6 flex flex-col items-center gap-3 text-center">
         <AlertCircle size={26} className="text-red-600" />
         <p className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}>
-          No active loan found for that copy
+          {notFoundMessage || "No active loan found for that copy"}
         </p>
         <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
           If the label is damaged or unreadable, try searching by title or borrower name below.
@@ -1282,13 +1294,322 @@ function SessionList({ tab, records }: { tab: "return" | "reshelving"; records: 
   )
 }
 
+// ─── Guest / In-House (Phase 7) ────────────────────────────────────────────────
+// Entirely librarian-driven — a guest never signs in and never touches this
+// screen. A single form check outs a copy for library-use-only, same-day
+// use; a separate list below returns it. Deliberately styled in amber/purple
+// rather than green throughout, so an in-house loan reads as visibly
+// distinct from a real student loan at a glance (plan 7's acceptance
+// criterion), not just distinct in the data model.
+
+const VISITOR_TYPES: { value: VisitorType; label: string }[] = [
+  { value: "nocei", label: "NOCEI-affiliated" },
+  { value: "non_nocei", label: "Non-NOCEI (₱50 fee)" },
+]
+
+const GUEST_PURPOSES: { value: GuestPurpose; label: string }[] = [
+  { value: "library_use", label: "Library use" },
+  { value: "photocopy", label: "Photocopy" },
+]
+
+function GuestPanel({ onSettled }: { onSettled: () => void }) {
+  const [accessionInput, setAccessionInput] = useState("")
+  const [guestName, setGuestName] = useState("")
+  const [guestIdNumber, setGuestIdNumber] = useState("")
+  const [visitorType, setVisitorType] = useState<VisitorType>("nocei")
+  const [feePaid, setFeePaid] = useState(false)
+  const [purpose, setPurpose] = useState<GuestPurpose>("library_use")
+  const [notes, setNotes] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState("")
+  const [confirmed, setConfirmed] = useState<{ title: string; guest: string } | null>(null)
+
+  const requiresFee = visitorType === "non_nocei"
+  const canConfirm =
+    accessionInput.trim().length > 0 &&
+    guestName.trim().length > 0 &&
+    guestIdNumber.trim().length > 0 &&
+    (!requiresFee || feePaid) &&
+    !submitting
+
+  function reset() {
+    setAccessionInput("")
+    setGuestName("")
+    setGuestIdNumber("")
+    setVisitorType("nocei")
+    setFeePaid(false)
+    setPurpose("library_use")
+    setNotes("")
+    setSubmitError("")
+    setConfirmed(null)
+  }
+
+  async function handleConfirm() {
+    if (!canConfirm) return
+    setSubmitting(true)
+    setSubmitError("")
+    try {
+      const loan = await createInHouseLoan({
+        accessionNumber: accessionInput.trim(),
+        guestName: guestName.trim(),
+        guestIdNumber: guestIdNumber.trim(),
+        visitorType,
+        feePaid,
+        purpose,
+        notes: notes || undefined,
+      })
+      setConfirmed({ title: loan.books?.title ?? "Unknown title", guest: loan.guest_name })
+      onSettled()
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Could not check out this item")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (confirmed) {
+    return (
+      <div className="rounded border border-purple-200 bg-purple-50 p-6 flex flex-col items-center gap-3 text-center">
+        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-purple-100">
+          <CheckCircle2 size={26} className="text-purple-700" />
+        </div>
+        <div>
+          <p className="text-purple-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}>
+            Checked Out for In-House Use
+          </p>
+          <p className="text-ink-500 mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            <span className="font-medium text-ink-700">{confirmed.title}</span> — {confirmed.guest}
+          </p>
+          <p className="text-ink-400 mt-1" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            Reminder: the RFID tag stays armed — this copy is not leaving the building.
+          </p>
+        </div>
+        <button
+          onClick={reset}
+          className="flex items-center gap-1.5 px-4 py-2 rounded border border-ink-300 text-ink-600 hover:bg-white transition-colors font-medium"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          <RotateCcw size={13} />
+          Check Out Another
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
+      <div className="flex items-center gap-2">
+        <UserPlus size={15} className="text-purple-700" />
+        <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+          Guest In-House Checkout
+        </span>
+      </div>
+      <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+        Library use or photocopy only — item does not leave the building, returned the same day. Requires a referral
+        letter, valid ID, and gate pass per LRC visitor policy.
+      </p>
+
+      <div>
+        <label className="block text-ink-700 mb-1" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+          Accession Number <span className="text-red-500">*</span>
+        </label>
+        <div className="relative">
+          <Hash size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
+          <input
+            type="text"
+            placeholder="e.g. T45136"
+            value={accessionInput}
+            onChange={(e) => setAccessionInput(e.target.value)}
+            className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-ink-700 mb-1" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+            Guest Name <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={guestName}
+            onChange={(e) => setGuestName(e.target.value)}
+            className="w-full px-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+          />
+        </div>
+        <div>
+          <label className="block text-ink-700 mb-1" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+            Valid ID Number <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={guestIdNumber}
+            onChange={(e) => setGuestIdNumber(e.target.value)}
+            className="w-full px-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-ink-700 mb-1" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+          Visitor Type
+        </label>
+        <div className="flex gap-1.5 flex-wrap">
+          {VISITOR_TYPES.map((v) => (
+            <button
+              key={v.value}
+              type="button"
+              onClick={() => { setVisitorType(v.value); if (v.value === "nocei") setFeePaid(false) }}
+              className={cn(
+                "px-3 py-1.5 rounded border font-medium transition-colors",
+                visitorType === v.value ? "bg-purple-700 border-purple-700 text-white" : "bg-white border-ink-300 text-ink-600 hover:border-ink-400"
+              )}
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
+        {requiresFee && (
+          <label className="flex items-center gap-2 mt-2 text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            <input type="checkbox" checked={feePaid} onChange={(e) => setFeePaid(e.target.checked)} />
+            ₱50.00 visitor fee collected
+          </label>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-ink-700 mb-1" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+          Purpose
+        </label>
+        <div className="flex gap-1.5 flex-wrap">
+          {GUEST_PURPOSES.map((p) => (
+            <button
+              key={p.value}
+              type="button"
+              onClick={() => setPurpose(p.value)}
+              className={cn(
+                "px-3 py-1.5 rounded border font-medium transition-colors",
+                purpose === p.value ? "bg-purple-700 border-purple-700 text-white" : "bg-white border-ink-300 text-ink-600 hover:border-ink-400"
+              )}
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <textarea
+        placeholder="Notes (optional) — e.g. research topic, referral letter reference"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        rows={2}
+        className="w-full px-3 py-2 rounded border border-ink-300 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+      />
+
+      {submitError && (
+        <p className="text-red-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          {submitError}
+        </p>
+      )}
+
+      <button
+        onClick={handleConfirm}
+        disabled={!canConfirm}
+        className={cn(
+          "flex items-center justify-center gap-2 py-2 rounded font-semibold transition-colors",
+          canConfirm ? "bg-purple-700 text-white hover:bg-purple-800" : "bg-ink-200 text-ink-400 cursor-not-allowed"
+        )}
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+      >
+        <CheckCircle2 size={15} />
+        {submitting ? "Processing…" : "Check Out"}
+      </button>
+    </div>
+  )
+}
+
+function InHouseActiveList({ loans, onReturn }: { loans: InHouseLoan[]; onReturn: (id: string) => void }) {
+  const [returningId, setReturningId] = useState<string | null>(null)
+
+  async function handleReturn(id: string) {
+    setReturningId(id)
+    try {
+      await returnInHouseLoan(id)
+      onReturn(id)
+    } finally {
+      setReturningId(null)
+    }
+  }
+
+  if (loans.length === 0) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center py-10 gap-2 text-ink-400"
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+      >
+        <AlertCircle size={20} className="text-ink-300" />
+        No in-house items checked out right now.
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      {loans.map((loan) => (
+        <div key={loan.id} className="flex items-center justify-between gap-3 py-2 border-b border-ink-100 last:border-0">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span
+                className="shrink-0 px-1.5 py-0.5 rounded-sm bg-purple-100 text-purple-700 font-semibold uppercase"
+                style={{ fontFamily: "var(--font-body)", fontSize: "9px", letterSpacing: "var(--tracking-micro)" }}
+              >
+                Guest
+              </span>
+              <p className="text-ink-900 font-medium truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                {loan.books?.title ?? "Unknown title"}
+              </p>
+            </div>
+            <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+              {loan.guest_name} · {loan.accession_number} ·{" "}
+              {new Date(loan.checked_out_at).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}
+            </p>
+          </div>
+          <button
+            onClick={() => handleReturn(loan.id)}
+            disabled={returningId === loan.id}
+            className="shrink-0 px-3 py-1.5 rounded border border-ink-300 text-ink-600 hover:bg-ink-50 font-medium transition-colors disabled:opacity-50"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+          >
+            {returningId === loan.id ? "…" : "Return"}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function BorrowAndReturnPage() {
   const [tab, setTab] = useState<Tab>("borrow")
   const [returnedThisSession, setReturnedThisSession] = useState<SessionRecord[]>([])
   const [reshelvedThisSession, setReshelvedThisSession] = useState<SessionRecord[]>([])
+  const [activeInHouseLoans, setActiveInHouseLoans] = useState<InHouseLoan[]>([])
   const { books } = useBooks()
   const { transactions, refresh } = useBorrowTransactions()
+
+  const loadInHouseLoans = useCallback(() => {
+    fetchInHouseLoans("active").then(setActiveInHouseLoans).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (tab === "guest") loadInHouseLoans()
+  }, [tab, loadInHouseLoans])
 
   const activeTransactions = transactions.filter((t) => t.status === "active")
   const todaysBorrows = transactions.filter((t) => isToday(t.borrowed_at)).map(toTxRecord)
@@ -1304,6 +1625,7 @@ export default function BorrowAndReturnPage() {
     { key: "borrow", label: "Borrow",  icon: <BookOpen size={14} /> },
     { key: "return", label: "Return", icon: <RotateCcw size={14} /> },
     { key: "reshelving", label: "Reshelving", icon: <PackageCheck size={14} /> },
+    { key: "guest", label: "Guest / In-House", icon: <UserPlus size={14} /> },
   ]
 
   return (
@@ -1362,21 +1684,22 @@ export default function BorrowAndReturnPage() {
         {tab === "reshelving" && (
           <ReshelvingPanel onSettled={(r) => setReshelvedThisSession((prev) => [r, ...prev])} />
         )}
+        {tab === "guest" && <GuestPanel onSettled={loadInHouseLoans} />}
 
-        {/* Right: records — today's, for Borrow (old schema); this session's, for Return/Reshelving (new schema, no history endpoint yet) */}
+        {/* Right: records — today's, for Borrow (old schema); this session's, for Return/Reshelving (new schema, no history endpoint yet); currently-out, for Guest */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2
               className="text-ink-900 font-semibold"
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}
             >
-              {tab === "borrow" ? "Today's Borrows" : tab === "return" ? "Returned This Session" : "Reshelved This Session"}
+              {tab === "borrow" ? "Today's Borrows" : tab === "return" ? "Returned This Session" : tab === "reshelving" ? "Reshelved This Session" : "Currently Out (In-House)"}
             </h2>
             <span
               className="text-ink-400"
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
             >
-              {(tab === "borrow" ? todaysBorrows : tab === "return" ? returnedThisSession : reshelvedThisSession).length} records
+              {(tab === "borrow" ? todaysBorrows.length : tab === "return" ? returnedThisSession.length : tab === "reshelving" ? reshelvedThisSession.length : activeInHouseLoans.length)} records
             </span>
           </div>
           <div
@@ -1386,6 +1709,7 @@ export default function BorrowAndReturnPage() {
             {tab === "borrow" && <TransactionsTable tab={tab} records={todaysBorrows} />}
             {tab === "return" && <SessionList tab="return" records={returnedThisSession} />}
             {tab === "reshelving" && <SessionList tab="reshelving" records={reshelvedThisSession} />}
+            {tab === "guest" && <InHouseActiveList loans={activeInHouseLoans} onReturn={loadInHouseLoans} />}
           </div>
         </div>
       </div>

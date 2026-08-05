@@ -15,6 +15,18 @@ def _insert_session(student_id: str, auth_method: str, station_id: str) -> dict:
     # every auth_method writes this row the same way for consistency (see
     # the migration's note on why station_sessions has no RLS policies).
     admin = get_admin_client()
+
+    # Plan 7: "No school ID to tap → cannot open a session or borrow at the
+    # laptops." Checked here, the single choke point all three auth paths
+    # (rfid, manual_login, from-token) funnel through — a guest's loan is
+    # always entered by a librarian instead (routers/inhouse.py).
+    role_res = admin.table("profiles").select("role").eq("id", student_id).execute()
+    if role_res.data and role_res.data[0]["role"] == "guest":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Guests can't sign in at the kiosk — please see the librarian for in-library use",
+        )
+
     res = admin.table("station_sessions").insert({
         "student_id": student_id,
         "auth_method": auth_method,

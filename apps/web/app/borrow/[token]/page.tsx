@@ -185,6 +185,11 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   }
 
   // ── Success ──────────────────────────────────────────────────────────────
+  // No browser-back affordance here on purpose: the hold this page was
+  // built around is already deleted server-side the moment the loan
+  // confirms (routers/loans.py's confirm_loan), so navigating "back" to
+  // this same URL re-fetches a hold that no longer exists and dead-ends on
+  // the terminal error state above. These links go forward instead.
   if (confirmed) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-4" style={{ backgroundColor: 'var(--color-paper)' }}>
@@ -201,6 +206,23 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
           <p className="text-green-700 font-semibold mt-2" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
             Due back {formatDate(confirmed.dueDate)}
           </p>
+        </div>
+        <div className="flex flex-col items-center gap-3 mt-2">
+          <Link
+            href="/student/library"
+            className="h-11 px-6 flex items-center justify-center rounded-xl bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+          >
+            View in My Library
+          </Link>
+          <Link
+            href="/student/catalog"
+            className="flex items-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+          >
+            <ArrowLeft size={14} />
+            Back to catalog
+          </Link>
         </div>
       </div>
     )
