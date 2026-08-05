@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from core.deps import get_current_user, get_user_supabase
+from core.notify import notify
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.loan import Loan
@@ -29,7 +30,7 @@ def _advance_or_release(admin: Client, expired: dict, now: datetime) -> None:
     releases it back toward general circulation if nobody's waiting."""
     next_res = (
         admin.table("reservations")
-        .select("id")
+        .select("id, user_id")
         .eq("book_id", expired["book_id"])
         .eq("status", "pending")
         .order("requested_at")
@@ -43,6 +44,14 @@ def _advance_or_release(admin: Client, expired: dict, now: datetime) -> None:
             "confirmed_at": now.isoformat(),
             "pickup_by": (now + timedelta(days=PICKUP_WINDOW_DAYS)).isoformat(),
         }).eq("id", next_res[0]["id"]).execute()
+        book_res = admin.table("books").select("title").eq("id", expired["book_id"]).execute()
+        book_title = book_res.data[0]["title"] if book_res.data else "A book"
+        notify(
+            next_res[0]["user_id"], "reservation_confirmed",
+            "Your reserved book is ready for pickup",
+            f'"{book_title}" is waiting for you at the LRC counter.',
+            link="/student/reservations",
+        )
     elif expired.get("book_copy_id"):
         # available -> for_reshelving isn't legal, but reserved -> for_reshelving
         # is — same "never straight to available" rule Phase 4 already follows.
@@ -53,7 +62,7 @@ def _sweep_expired_reservations(admin: Client) -> None:
     now = datetime.now(timezone.utc)
     expired = (
         admin.table("reservations")
-        .select("id, book_id, book_copy_id")
+        .select("id, user_id, book_id, book_copy_id")
         .eq("status", "ready")
         .lt("pickup_by", now.isoformat())
         .execute()
@@ -61,6 +70,14 @@ def _sweep_expired_reservations(admin: Client) -> None:
     for row in expired:
         _advance_or_release(admin, row, now)
         admin.table("reservations").update({"status": "expired"}).eq("id", row["id"]).execute()
+        book_res = admin.table("books").select("title").eq("id", row["book_id"]).execute()
+        book_title = book_res.data[0]["title"] if book_res.data else "Your reservation"
+        notify(
+            row["user_id"], "reservation_cancelled",
+            "Pickup window expired",
+            f'"{book_title}" was not picked up in time and the hold has been released.',
+            link="/student/reservations",
+        )
 
 
 @router.get("", response_model=list[Reservation])

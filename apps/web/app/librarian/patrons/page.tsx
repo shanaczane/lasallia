@@ -4,11 +4,11 @@
 
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UserProfile } from "@lasallia/types"
-import { MOCK_PATRONS } from "@/lib/mock/patrons"
+import { fetchPatrons, updatePatronStatus } from "@/lib/users"
 import {
   PatronsToolbar,
   type RoleFilter,
@@ -127,7 +127,15 @@ function Paginator({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PatronsPage() {
-  const [patrons, setPatrons] = useState<UserProfile[]>(MOCK_PATRONS)
+  const [patrons, setPatrons] = useState<UserProfile[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchPatrons()
+      .then(setPatrons)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
 
   const [query, setQuery] = useState("")
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all")
@@ -150,12 +158,20 @@ export default function PatronsPage() {
 
   const { page, totalPages, pageItems, goTo } = usePagination(filtered, `${query}|${roleFilter}`)
 
-  function handleToggleStatus(userId: string) {
-    setPatrons((prev) =>
-      prev.map((p) => (p.id === userId ? { ...p, status: p.status === "inactive" ? "active" : "inactive" } : p))
-    )
+  async function handleToggleStatus(userId: string) {
+    const current = patrons.find((p) => p.id === userId)
+    const nextStatus = current?.status === "inactive" ? "active" : "inactive"
+
+    setPatrons((prev) => prev.map((p) => (p.id === userId ? { ...p, status: nextStatus } : p)))
     setConfirmingStatus(null)
-    setViewing((v) => (v && v.id === userId ? { ...v, status: v.status === "inactive" ? "active" : "inactive" } : v))
+    setViewing((v) => (v && v.id === userId ? { ...v, status: nextStatus } : v))
+
+    try {
+      await updatePatronStatus(userId, nextStatus)
+    } catch {
+      // Revert on failure — the optimistic update above was wrong.
+      setPatrons((prev) => prev.map((p) => (p.id === userId ? { ...p, status: current?.status } : p)))
+    }
   }
 
   return (

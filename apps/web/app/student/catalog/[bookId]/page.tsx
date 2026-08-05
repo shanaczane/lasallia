@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils'
 import { useBook, useBooks } from '@/lib/hooks/useBooks'
 import { useReservations } from '@/lib/hooks/useReservations'
 import { createReservation, cancelReservation } from '@/lib/reservations'
+import { fetchSavedBooks, saveBook, unsaveBook } from '@/lib/saved'
 import { BorrowModal } from '@/components/kiosk/BorrowModal'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 import { BookCard } from '@/components/ui/catalog'
@@ -258,7 +259,17 @@ function formatDate(iso: string): string {
 
 // ─── You may also like (4.3.3) ────────────────────────────────────────────────
 
-function Recommendations({ currentId, category }: { currentId: string; category: string }) {
+function Recommendations({
+  currentId,
+  category,
+  savedBookIds,
+  onToggleSave,
+}: {
+  currentId: string
+  category: string
+  savedBookIds: Set<string>
+  onToggleSave: (book: Book) => void
+}) {
   const { books } = useBooks()
   const related = books
     .filter((b) => b.category === category && b.id !== currentId)
@@ -281,6 +292,8 @@ function Recommendations({ currentId, category }: { currentId: string; category:
             book={book}
             href={`/student/catalog/${book.id}`}
             showBookmark
+            isSaved={savedBookIds.has(book.id)}
+            onToggleSave={onToggleSave}
           />
         ))}
       </div>
@@ -296,7 +309,6 @@ export default function StudentBookDetailPage({
   params: Promise<{ bookId: string }>
 }) {
   const { bookId }      = use(params)
-  const [saved, setSaved]     = useState(false)
   const [showQR, setShowQR]   = useState(false)
 
   const { book, loading } = useBook(bookId)
@@ -304,6 +316,33 @@ export default function StudentBookDetailPage({
   const existingReservation = reservations.find(
     (r) => r.book_id === bookId && (r.status === 'pending' || r.status === 'ready')
   )
+
+  const [savedBookIds, setSavedBookIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    fetchSavedBooks().then((rows) => setSavedBookIds(new Set(rows.map((r) => r.book_id)))).catch(() => {})
+  }, [])
+  const saved = savedBookIds.has(bookId)
+
+  async function handleToggleSave(target: Book) {
+    const wasSaved = savedBookIds.has(target.id)
+    setSavedBookIds((prev) => {
+      const next = new Set(prev)
+      if (wasSaved) next.delete(target.id)
+      else next.add(target.id)
+      return next
+    })
+    try {
+      if (wasSaved) await unsaveBook(target.id)
+      else await saveBook(target.id)
+    } catch {
+      setSavedBookIds((prev) => {
+        const next = new Set(prev)
+        if (wasSaved) next.add(target.id)
+        else next.delete(target.id)
+        return next
+      })
+    }
+  }
 
   // ── Loading state ──────────────────────────────────────────────────────────
   if (loading) {
@@ -440,7 +479,7 @@ export default function StudentBookDetailPage({
               </h1>
               <button
                 type="button"
-                onClick={() => setSaved((v) => !v)}
+                onClick={() => handleToggleSave(book)}
                 aria-label={saved ? 'Remove from saved' : 'Save to favorites'}
                 className={cn(
                   'shrink-0 flex items-center gap-1.5 mt-1 px-3 py-1.5 rounded-[8px] border font-medium transition-all',
@@ -601,7 +640,12 @@ export default function StudentBookDetailPage({
         </div>
 
         {/* ── You may also like (4.3.3) ─────────────────────────────────────── */}
-        <Recommendations currentId={book.id} category={book.category} />
+        <Recommendations
+          currentId={book.id}
+          category={book.category}
+          savedBookIds={savedBookIds}
+          onToggleSave={handleToggleSave}
+        />
 
       </div>
 

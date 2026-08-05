@@ -13,6 +13,8 @@ type BookGridProps = {
   showBookmark?: boolean
   hasActiveFilters?: boolean
   onClearFilters?: () => void
+  savedBookIds?: Set<string>
+  onToggleSave?: (book: Book) => void
 }
 
 function SkeletonCard() {
@@ -36,6 +38,8 @@ export function BookGrid({
   showBookmark = false,
   hasActiveFilters = false,
   onClearFilters,
+  savedBookIds,
+  onToggleSave,
 }: BookGridProps) {
   if (isLoading) {
     return (
@@ -87,6 +91,8 @@ export function BookGrid({
           book={book}
           href={`${hrefPrefix}/${book.id}`}
           showBookmark={showBookmark}
+          isSaved={savedBookIds?.has(book.id)}
+          onToggleSave={onToggleSave}
         />
       ))}
     </div>

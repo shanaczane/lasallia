@@ -5,6 +5,7 @@ from supabase import Client
 
 from core.calendar import count_library_hours, count_school_days
 from core.deps import get_current_user, get_user_supabase, require_librarian
+from core.notify import notify
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.loan import ConfirmLoanRequest, Loan, LoanLookupResult, ReshelveRequest, ReturnLoanRequest
@@ -80,6 +81,18 @@ def list_loans(
     for loan in loans:
         loan["books"] = books_by_copy_id.get(loan["book_copy_id"])
 
+    # Borrower name/avatar — needed by the librarian dashboard's activity
+    # feed. profiles_select_librarian (0008) already lets a librarian's own
+    # JWT read this directly, but the admin client is simplest here since
+    # we're already using it above for the same batch-lookup shape.
+    student_ids = list({loan["student_id"] for loan in loans})
+    profiles_by_id: dict[str, dict] = {}
+    if student_ids:
+        profiles = admin.table("profiles").select("id, full_name, avatar_url").in_("id", student_ids).execute().data
+        profiles_by_id = {p["id"]: p for p in profiles}
+    for loan in loans:
+        loan["profiles"] = profiles_by_id.get(loan["student_id"])
+
     # "overdue" is never written back by anything yet (no return flow, no
     # cron) — a loan whose due_date has passed still says status: "active"
     # in the row. Recompute it here for display rather than trust the
@@ -88,6 +101,18 @@ def list_loans(
     for loan in loans:
         if loan["status"] == "active" and datetime.fromisoformat(loan["due_date"]) < now:
             loan["status"] = "overdue"
+
+    # Fine preview for the still-open overdue rows (build plan's Reports
+    # overdue table needs this) — reuses the same school-day-calendar-aware
+    # _compute_fine everything else already trusts, rather than a naive
+    # days*rate reimplemented in the frontend that could silently disagree
+    # with it around weekends/holidays.
+    for loan in loans:
+        if loan["status"] == "overdue":
+            collection_type = (loan["books"] or {}).get("collection_type") or "General"
+            days_overdue, preview_fine = _compute_fine(admin, loan["due_date"], collection_type)
+            loan["days_overdue"] = days_overdue
+            loan["preview_fine_amount"] = preview_fine
 
     return loans
 
@@ -289,13 +314,17 @@ def return_loan(
     # pickup can verify it.
     pending_res = (
         admin.table("reservations")
-        .select("id")
+        .select("id, user_id")
         .eq("book_id", copy["book_id"])
         .eq("status", "pending")
         .order("requested_at")
         .limit(1)
         .execute()
     )
+
+    book_full_res = admin.table("books").select("*").eq("id", copy["book_id"]).execute()
+    book_title = book_full_res.data[0]["title"] if book_full_res.data else "A book"
+
     if pending_res.data:
         admin.table("book_copies").update({"status": "reserved"}).eq("id", copy["id"]).execute()
         admin.table("reservations").update({
@@ -304,10 +333,22 @@ def return_loan(
             "confirmed_at": datetime.now(timezone.utc).isoformat(),
             "pickup_by": (datetime.now(timezone.utc) + timedelta(days=PICKUP_WINDOW_DAYS)).isoformat(),
         }).eq("id", pending_res.data[0]["id"]).execute()
+        notify(
+            pending_res.data[0]["user_id"], "reservation_confirmed",
+            "Your reserved book is ready for pickup",
+            f'"{book_title}" is waiting for you at the LRC counter.',
+            link="/student/reservations",
+        )
     else:
         admin.table("book_copies").update({"status": "for_reshelving"}).eq("id", copy["id"]).execute()
 
-    book_full_res = admin.table("books").select("*").eq("id", copy["book_id"]).execute()
+    notify(
+        loan["student_id"], "return_confirmed",
+        "Return confirmed",
+        f'"{book_title}" has been checked in.' + (f" A ₱{total_fine:.2f} fine was recorded." if total_fine > 0 else ""),
+        link="/student/library",
+    )
+
     loan["books"] = book_full_res.data[0] if book_full_res.data else None
 
     return loan

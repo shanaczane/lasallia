@@ -1,6 +1,7 @@
 // apps/web/app/librarian/dashboard/page.tsx
 "use client"
 
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
   BookOpen,
@@ -8,17 +9,20 @@ import {
   Bookmark,
   AlertCircle,
   Plus,
-  Download,
   Check,
-  MoreHorizontal,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { fetchLoans, type Loan } from "@/lib/kiosk"
+import { fetchReservations } from "@/lib/reservations"
+import { fetchBooks } from "@/lib/books"
+import type { Reservation } from "@lasallia/types"
 
 type TxType = "checkout" | "return" | "reserve"
 
-type Transaction = {
+type FeedItem = {
   id: string
   time: string
+  timestamp: number
   type: TxType
   user: string
   item: string
@@ -30,16 +34,89 @@ const TX_CONFIG: Record<TxType, { label: string; bg: string; text: string }> = {
   reserve:  { label: "Reserve",  bg: "bg-warn-bg", text: "text-warn" },
 }
 
-const TRANSACTIONS: Transaction[] = [
-  { id: "1", time: "10:42 AM", type: "checkout", user: "Shan A. Cruz",       item: "Clean Architecture" },
-  { id: "2", time: "10:31 AM", type: "return",   user: "Khatrina Gonzales", item: "Database System Concepts" },
-  { id: "3", time: "10:18 AM", type: "reserve",  user: "Jed F. Sayat",      item: "The Pragmatic Programmer" },
-  { id: "4", time: "09:55 AM", type: "checkout", user: "Maria L. Reyes",    item: "Computer Networks (6th Ed)" },
-  { id: "5", time: "09:42 AM", type: "return",   user: "Paolo M. Aguilar",  item: "Operating System Concepts" },
-]
+const OVERDUE_FLAG_DAYS = 7
+
+function timeLabel(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })
+}
+
+// Merges loans + reservations into one feed — there's no single unified
+// "activity log" table, so this is derived client-side from the same real
+// rows the rest of the app already fetches, not a separate fake source.
+function buildFeed(loans: Loan[], reservations: Reservation[]): FeedItem[] {
+  const items: FeedItem[] = []
+
+  for (const loan of loans) {
+    const borrower = loan.profiles?.full_name ?? "Unknown patron"
+    const item = loan.books?.title ?? "Unknown title"
+    items.push({
+      id: `checkout-${loan.id}`,
+      time: timeLabel(loan.borrowed_at),
+      timestamp: new Date(loan.borrowed_at).getTime(),
+      type: "checkout",
+      user: borrower,
+      item,
+    })
+    if (loan.returned_at) {
+      items.push({
+        id: `return-${loan.id}`,
+        time: timeLabel(loan.returned_at),
+        timestamp: new Date(loan.returned_at).getTime(),
+        type: "return",
+        user: borrower,
+        item,
+      })
+    }
+  }
+
+  for (const r of reservations) {
+    items.push({
+      id: `reserve-${r.id}`,
+      time: timeLabel(r.requested_at),
+      timestamp: new Date(r.requested_at).getTime(),
+      type: "reserve",
+      user: r.profiles?.full_name ?? "Unknown patron",
+      item: r.books?.title ?? "Unknown title",
+    })
+  }
+
+  return items.sort((a, b) => b.timestamp - a.timestamp).slice(0, 20)
+}
 
 export default function LibrarianDashboard() {
+  const [loans, setLoans] = useState<Loan[]>([])
+  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [totalCopies, setTotalCopies] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    Promise.all([fetchLoans(), fetchReservations(), fetchBooks()])
+      .then(([l, r, books]) => {
+        setLoans(l)
+        setReservations(r)
+        setTotalCopies(books.reduce((sum, b) => sum + (b.total_copies ?? 0), 0))
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
   const today = new Date().toLocaleDateString("en-PH", { weekday: "long", year: "numeric", month: "long", day: "numeric" })
+
+  const activeLoans = loans.filter((l) => l.status !== "returned")
+  const overdueLoans = loans.filter((l) => l.status === "overdue")
+  const activeBorrowers = new Set(activeLoans.map((l) => l.student_id)).size
+  const deepOverdue = overdueLoans.filter(
+    (l) => (Date.now() - new Date(l.due_date).getTime()) / 86_400_000 > OVERDUE_FLAG_DAYS
+  ).length
+
+  const pendingReservations = reservations.filter((r) => r.status === "pending").length
+  const readyReservations = reservations.filter((r) => r.status === "ready").length
+
+  const feed = buildFeed(loans, reservations)
+
+  const lastReturn = [...loans]
+    .filter((l) => l.status === "returned" && l.returned_at)
+    .sort((a, b) => new Date(b.returned_at!).getTime() - new Date(a.returned_at!).getTime())[0]
 
   return (
     <div className="flex flex-col gap-5 px-4 py-5 sm:gap-6 sm:p-6">
@@ -62,14 +139,6 @@ export default function LibrarianDashboard() {
         </div>
 
         <div className="flex gap-2">
-          <button
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm"
-            style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-          >
-            <Download size={15} />
-            <span className="hidden sm:inline">Export report</span>
-            <span className="sm:hidden">Export</span>
-          </button>
           <Link
             href="/librarian/catalog"
             className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors shadow-sm"
@@ -88,31 +157,29 @@ export default function LibrarianDashboard() {
           icon={<BookOpen size={18} className="text-green-700" />}
           iconBg="bg-green-100"
           label="Total Collection"
-          value="42,318"
-          sub="↑ 124 this month"
-          subColor="text-success"
+          value={totalCopies === null ? "—" : totalCopies.toLocaleString()}
+          sub="Physical copies across the catalog"
         />
         <StatCard
           icon={<Users size={18} className="text-info" />}
           iconBg="bg-info-bg"
           label="Active Borrowers"
-          value="1,247"
-          sub="↑ 8.2% vs last week"
-          subColor="text-success"
+          value={String(activeBorrowers)}
+          sub={`${activeLoans.length} book${activeLoans.length === 1 ? "" : "s"} out`}
         />
         <StatCard
           icon={<Bookmark size={18} className="text-gold-600" />}
           iconBg="bg-gold-100"
           label="Pending Reservations"
-          value="38"
-          sub="12 ready for pickup"
+          value={String(pendingReservations)}
+          sub={`${readyReservations} ready for pickup`}
         />
         <StatCard
           icon={<AlertCircle size={18} className="text-danger" />}
           iconBg="bg-danger-bg"
           label="Overdue"
-          value="17"
-          sub="3 over 7 days late"
+          value={String(overdueLoans.length)}
+          sub={`${deepOverdue} over ${OVERDUE_FLAG_DAYS} days late`}
           subColor="text-danger"
         />
       </div>
@@ -127,80 +194,72 @@ export default function LibrarianDashboard() {
               className="text-ink-900 font-semibold"
               style={{ fontSize: "var(--text-xl)", fontFamily: "var(--font-display)" }}
             >
-              Recent Transactions
+              Recent Activity
             </h2>
-            <Link
-              href="/librarian/reports"
-              className="text-green-700 font-medium hover:underline whitespace-nowrap"
-              style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-            >
-              View log →
-            </Link>
           </div>
 
           <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
 
-            {/* Desktop table header */}
-            <div
-              className="hidden sm:flex px-4 py-2.5 border-b border-ink-100 text-ink-400 uppercase font-semibold"
-              style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}
-            >
-              <span className="w-20">Time</span>
-              <span className="w-24">Type</span>
-              <span className="flex-1">User</span>
-              <span className="flex-1">Item</span>
-              <span className="w-6"></span>
-            </div>
+            {!loading && feed.length === 0 && (
+              <div className="flex items-center justify-center py-10 text-ink-400" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                No activity yet.
+              </div>
+            )}
 
-            <div className="flex flex-col divide-y divide-ink-100">
-              {TRANSACTIONS.map((tx) => {
-                const cfg = TX_CONFIG[tx.type]
-                return (
-                  <div key={tx.id} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-0 px-4 py-3">
+            {feed.length > 0 && (
+              <>
+                {/* Desktop table header */}
+                <div
+                  className="hidden sm:flex px-4 py-2.5 border-b border-ink-100 text-ink-400 uppercase font-semibold"
+                  style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}
+                >
+                  <span className="w-20">Time</span>
+                  <span className="w-24">Type</span>
+                  <span className="flex-1">User</span>
+                  <span className="flex-1">Item</span>
+                </div>
 
-                    {/* Mobile: time + type on one row */}
-                    <div className="flex items-center justify-between sm:hidden">
-                      <span className="text-ink-500" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                        {tx.time}
-                      </span>
-                      <span
-                        className={cn("flex items-center px-2 py-0.5 rounded-pill", cfg.bg)}
-                        style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
-                      >
-                        <span className={cn("font-medium", cfg.text)}>{cfg.label}</span>
-                      </span>
-                    </div>
+                <div className="flex flex-col divide-y divide-ink-100">
+                  {feed.map((tx) => {
+                    const cfg = TX_CONFIG[tx.type]
+                    return (
+                      <div key={tx.id} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-0 px-4 py-3">
 
-                    {/* Desktop columns */}
-                    <span className="hidden sm:block w-20 text-ink-500" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                      {tx.time}
-                    </span>
-                    <span className="hidden sm:flex w-24">
-                      <span
-                        className={cn("flex items-center px-2 py-0.5 rounded-pill", cfg.bg)}
-                        style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
-                      >
-                        <span className={cn("font-medium", cfg.text)}>{cfg.label}</span>
-                      </span>
-                    </span>
+                        {/* Mobile: time + type on one row */}
+                        <div className="flex items-center justify-between sm:hidden">
+                          <span className="text-ink-500" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
+                            {tx.time}
+                          </span>
+                          <span className={cn("flex items-center px-2 py-0.5 rounded-pill", cfg.bg)} style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
+                            <span className={cn("font-medium", cfg.text)}>{cfg.label}</span>
+                          </span>
+                        </div>
 
-                    {/* User + item */}
-                    <div className="flex flex-col sm:flex-row sm:flex-1 sm:items-center gap-0.5 sm:gap-0">
-                      <span className="text-ink-900 font-medium sm:flex-1 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                        {tx.user}
-                      </span>
-                      <span className="text-ink-500 sm:flex-1 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                        {tx.item}
-                      </span>
-                    </div>
+                        {/* Desktop columns */}
+                        <span className="hidden sm:block w-20 text-ink-500" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                          {tx.time}
+                        </span>
+                        <span className="hidden sm:flex w-24">
+                          <span className={cn("flex items-center px-2 py-0.5 rounded-pill", cfg.bg)} style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
+                            <span className={cn("font-medium", cfg.text)}>{cfg.label}</span>
+                          </span>
+                        </span>
 
-                    <button className="hidden sm:flex items-center justify-center w-6 text-ink-400 hover:text-ink-900">
-                      <MoreHorizontal size={16} />
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
+                        {/* User + item */}
+                        <div className="flex flex-col sm:flex-row sm:flex-1 sm:items-center gap-0.5 sm:gap-0">
+                          <span className="text-ink-900 font-medium sm:flex-1 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                            {tx.user}
+                          </span>
+                          <span className="text-ink-500 sm:flex-1 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                            {tx.item}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -213,27 +272,33 @@ export default function LibrarianDashboard() {
             Last Return
           </h2>
 
-          <div className="bg-white rounded-(--radius) border border-ink-200 p-4 flex flex-col gap-4">
-            <div className="flex items-start gap-3">
-              <div className="flex items-center justify-center rounded-full bg-success-bg shrink-0" style={{ width: 36, height: 36 }}>
-                <Check size={18} className="text-success" />
+          {lastReturn ? (
+            <div className="bg-white rounded-(--radius) border border-ink-200 p-4 flex flex-col gap-4">
+              <div className="flex items-start gap-3">
+                <div className="flex items-center justify-center rounded-full bg-success-bg shrink-0" style={{ width: 36, height: 36 }}>
+                  <Check size={18} className="text-success" />
+                </div>
+                <div>
+                  <p className="text-ink-900 font-semibold" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                    Book Successfully Returned
+                  </p>
+                  <p className="text-ink-400" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
+                    {timeLabel(lastReturn.returned_at!)}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-ink-900 font-semibold" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                  Book Successfully Returned
-                </p>
-                <p className="text-ink-400" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                  Scanned today · 09:42 AM
-                </p>
-              </div>
-            </div>
 
-            <div className="flex flex-col gap-2 bg-ink-50 rounded-sm(--radius-sm) p-3">
-              <DetailRow label="Book" value="Clean Code" />
-              <DetailRow label="Borrower" value="Shan A. Cruz" />
-              <DetailRow label="Condition" value="Good" />
+              <div className="flex flex-col gap-2 bg-ink-50 rounded-sm(--radius-sm) p-3">
+                <DetailRow label="Book" value={lastReturn.books?.title ?? "Unknown title"} />
+                <DetailRow label="Borrower" value={lastReturn.profiles?.full_name ?? "Unknown"} />
+                <DetailRow label="Condition" value={lastReturn.condition_at_return ?? "—"} />
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="bg-white rounded-(--radius) border border-ink-200 p-6 flex items-center justify-center text-ink-400" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+              No returns yet.
+            </div>
+          )}
         </div>
       </div>
     </div>

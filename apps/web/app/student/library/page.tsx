@@ -18,8 +18,8 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AvailabilityPill } from "@/components/ui/pills/availability-pill"
-import { MOCK_BOOKS } from "@/lib/mock/catalog"
 import { fetchLoans, type Loan as ApiLoan } from "@/lib/kiosk"
+import { fetchSavedBooks, unsaveBook } from "@/lib/saved"
 import type { Book } from "@lasallia/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -28,16 +28,10 @@ type Tab = "borrowed" | "saved" | "history"
 
 type BorrowStatus = "active" | "due_soon" | "overdue"
 
-type HistoryStatus = "returned" | "overdue_returned" | "lost"
-
-type HistoryEntry = {
-  bookId: string
-  borrowedDate: string
-  dueDate: string
-  returnedDate: string | null
-  status: HistoryStatus
-  fine?: number
-}
+// No "lost" status here — nothing in this codebase can mark a loan lost
+// yet (no UI, no endpoint), so it's not offered as a filter rather than
+// faked with a filter that always shows zero results.
+type HistoryStatus = "returned" | "overdue_returned"
 
 // ─── Status configs ───────────────────────────────────────────────────────────
 
@@ -56,23 +50,7 @@ const HISTORY_CFG: Record<
 > = {
   returned:         { label: "Returned",      shortLabel: "Returned", icon: <CheckCircle2 size={11} />, text: "text-success", bg: "bg-success-bg" },
   overdue_returned: { label: "Returned Late", shortLabel: "Late",     icon: <Clock size={11} />,        text: "text-warn",    bg: "bg-warn-bg"    },
-  lost:             { label: "Lost",          shortLabel: "Lost",     icon: <Clock size={11} />,        text: "text-danger",  bg: "bg-danger-bg"  },
 }
-
-// ─── Mock data ────────────────────────────────────────────────────────────────
-// Saved/History still use mock books — Saved has no backing table yet
-// (separate feature), History has nothing real to show until returns exist
-// (Phase 4). Borrowed below is wired to the real /loans endpoint.
-
-const SAVED_IDS = ["2", "5", "3", "7", "6"]
-
-const HISTORY_DATA: HistoryEntry[] = [
-  { bookId: "1", borrowedDate: "May 12, 2026", dueDate: "May 26, 2026", returnedDate: "May 24, 2026", status: "returned" },
-  { bookId: "3", borrowedDate: "Apr 28, 2026", dueDate: "May 12, 2026", returnedDate: "May 20, 2026", status: "overdue_returned", fine: 40 },
-  { bookId: "4", borrowedDate: "Apr 5, 2026",  dueDate: "Apr 19, 2026", returnedDate: "Apr 18, 2026", status: "returned" },
-  { bookId: "6", borrowedDate: "Mar 15, 2026", dueDate: "Mar 29, 2026", returnedDate: "Mar 28, 2026", status: "returned" },
-  { bookId: "8", borrowedDate: "Feb 20, 2026", dueDate: "Mar 6, 2026",  returnedDate: "Mar 8, 2026",  status: "overdue_returned", fine: 20 },
-]
 
 // 5 columns at lg — pick a page size that fills whole rows (2 rows/page)
 const PAGE_SIZE = 10
@@ -212,10 +190,6 @@ function Paginator({
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getBook(id: string): Book | undefined {
-  return MOCK_BOOKS.find((b) => b.id === id)
-}
 
 // Small auto-width status badge — overlaid on a card's cover corner
 function Badge({
@@ -560,22 +534,21 @@ function SavedCard({
   )
 }
 
-function SavedTab() {
-  const [savedIds, setSavedIds] = useState<string[]>(SAVED_IDS)
+function SavedTab({ savedBooks, loading, onRemove }: { savedBooks: Book[]; loading: boolean; onRemove: (bookId: string) => void }) {
   const [removingId, setRemovingId] = useState<string | null>(null)
-
-  const savedBooks = savedIds
-    .map((id) => getBook(id))
-    .filter(Boolean) as Book[]
 
   const { page, totalPages, pageItems, goTo } = usePagination(savedBooks, savedBooks.length)
 
   function handleRemove(id: string) {
     setRemovingId(id)
     setTimeout(() => {
-      setSavedIds((prev) => prev.filter((x) => x !== id))
+      onRemove(id)
       setRemovingId(null)
     }, 200)
+  }
+
+  if (loading) {
+    return <EmptyState icon={<Bookmark size={28} />} message="Loading your saved books…" />
   }
 
   if (savedBooks.length === 0) {
@@ -663,8 +636,17 @@ function SavedTab() {
 
 type HistoryFilter = "all" | HistoryStatus
 
-function HistoryCard({ entry, book }: { entry: HistoryEntry; book: Book }) {
-  const s = HISTORY_CFG[entry.status]
+function deriveHistoryStatus(loan: ApiLoan): HistoryStatus {
+  if (loan.returned_at && loan.due_date && new Date(loan.returned_at) > new Date(loan.due_date)) {
+    return "overdue_returned"
+  }
+  return "returned"
+}
+
+function HistoryCard({ loan, status }: { loan: ApiLoan; status: HistoryStatus }) {
+  const book = loan.books
+  const s = HISTORY_CFG[status]
+  if (!book) return null
   return (
     <Link
       href={`/student/catalog/${book.id}`}
@@ -692,14 +674,14 @@ function HistoryCard({ entry, book }: { entry: HistoryEntry; book: Book }) {
           className="text-ink-400 pt-1.5"
           style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
         >
-          Returned {entry.returnedDate ?? "—"}
+          Returned {loan.returned_at ? formatDate(loan.returned_at) : "—"}
         </p>
-        {entry.fine !== undefined && (
+        {!!loan.fine_amount && (
           <p
             className="text-warn font-semibold"
             style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
           >
-            ₱{entry.fine}.00 fine
+            ₱{loan.fine_amount.toFixed(2)} fine{loan.fine_status === "unsettled" ? " (unsettled)" : ""}
           </p>
         )}
       </div>
@@ -707,32 +689,30 @@ function HistoryCard({ entry, book }: { entry: HistoryEntry; book: Book }) {
   )
 }
 
-function HistoryTab() {
+function HistoryTab({ loans }: { loans: ApiLoan[] }) {
   const [filter, setFilter] = useState<HistoryFilter>("all")
 
-  const entries = HISTORY_DATA
-    .map((e) => ({ entry: e, book: getBook(e.bookId) }))
-    .filter((x) => !!x.book) as { entry: HistoryEntry; book: Book }[]
+  const entries = loans
+    .filter((loan) => loan.status === "returned")
+    .map((loan) => ({ loan, status: deriveHistoryStatus(loan) }))
 
   const counts = {
     all:              entries.length,
-    returned:         entries.filter((x) => x.entry.status === "returned").length,
-    overdue_returned: entries.filter((x) => x.entry.status === "overdue_returned").length,
-    lost:             entries.filter((x) => x.entry.status === "lost").length,
+    returned:         entries.filter((x) => x.status === "returned").length,
+    overdue_returned: entries.filter((x) => x.status === "overdue_returned").length,
   }
 
   const filtered =
-    filter === "all" ? entries : entries.filter((x) => x.entry.status === filter)
+    filter === "all" ? entries : entries.filter((x) => x.status === filter)
 
   const { page, totalPages, pageItems, goTo } = usePagination(filtered, filter)
 
-  const totalFines = entries.reduce((acc, x) => acc + (x.entry.fine ?? 0), 0)
+  const totalFines = entries.reduce((acc, x) => acc + (x.loan.fine_amount ?? 0), 0)
 
   const filterBtns: { key: HistoryFilter; label: string }[] = [
     { key: "all",              label: "All" },
     { key: "returned",         label: "On Time" },
     { key: "overdue_returned", label: "Late" },
-    { key: "lost",             label: "Lost" },
   ]
 
   return (
@@ -777,7 +757,7 @@ function HistoryTab() {
               className="text-warn font-semibold"
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
             >
-              ₱{totalFines}.00 in fines paid
+              ₱{totalFines.toFixed(2)} in fines from returns
             </p>
           </div>
         )}
@@ -788,8 +768,8 @@ function HistoryTab() {
         <EmptyState icon={<History size={28} />} message="No matching transactions." />
       ) : (
         <div className={CARD_GRID}>
-          {pageItems.map(({ entry, book }) => (
-            <HistoryCard key={entry.bookId + entry.borrowedDate} entry={entry} book={book} />
+          {pageItems.map(({ loan, status }) => (
+            <HistoryCard key={loan.id} loan={loan} status={status} />
           ))}
         </div>
       )}
@@ -841,12 +821,32 @@ export default function MyLibraryPage() {
       .finally(() => setLoansLoading(false))
   }, [])
 
+  const [savedBooks, setSavedBooks] = useState<Book[]>([])
+  const [savedLoading, setSavedLoading] = useState(true)
+
+  useEffect(() => {
+    fetchSavedBooks()
+      .then((rows) => setSavedBooks(rows.map((r) => r.books).filter((b): b is Book => !!b)))
+      .catch(() => {})
+      .finally(() => setSavedLoading(false))
+  }, [])
+
+  async function handleUnsave(bookId: string) {
+    setSavedBooks((prev) => prev.filter((b) => b.id !== bookId))
+    try {
+      await unsaveBook(bookId)
+    } catch {
+      // best-effort — a stale re-fetch would just re-show it if this failed
+    }
+  }
+
   const activeLoanCount = loans.filter((l) => l.status !== "returned").length
+  const returnedLoanCount = loans.filter((l) => l.status === "returned").length
 
   const TAB_SUB: Record<Tab, string> = {
     borrowed: `${activeLoanCount} active loan${activeLoanCount === 1 ? "" : "s"} · Limit: ${BORROW_LIMIT_PLACEHOLDER} books`,
-    saved:    `${SAVED_IDS.length} books saved`,
-    history:  `${HISTORY_DATA.length} past transactions`,
+    saved:    `${savedBooks.length} book${savedBooks.length === 1 ? "" : "s"} saved`,
+    history:  `${returnedLoanCount} past transaction${returnedLoanCount === 1 ? "" : "s"}`,
   }
 
   function TabButton({ t, mobile }: { t: TabDef; mobile: boolean }) {
@@ -903,8 +903,8 @@ export default function MyLibraryPage() {
       {/* Content */}
       <div className="flex-1 px-4 sm:px-8 py-5">
         {tab === "borrowed" && <BorrowedTab loans={loans} loading={loansLoading} error={loansError} />}
-        {tab === "saved"    && <SavedTab />}
-        {tab === "history"  && <HistoryTab />}
+        {tab === "saved"    && <SavedTab savedBooks={savedBooks} loading={savedLoading} onRemove={handleUnsave} />}
+        {tab === "history"  && <HistoryTab loans={loans} />}
       </div>
 
     </div>

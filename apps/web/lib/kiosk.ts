@@ -130,6 +130,13 @@ export async function fetchHold(token: string): Promise<HoldDetail> {
 }
 
 export type Condition = 'good' | 'minor_wear' | 'already_damaged'
+export type ReturnCondition = 'good' | 'fair' | 'damaged' | 'incomplete'
+export type FineStatus = 'none' | 'paid' | 'unsettled'
+
+export type Borrower = {
+  full_name: string | null
+  avatar_url: string | null
+}
 
 export type Loan = {
   id: string
@@ -143,7 +150,16 @@ export type Loan = {
   condition_at_borrow: Condition
   purpose: string | null
   notes: string | null
+  condition_at_return: ReturnCondition | null
+  condition_notes: string | null
+  fine_amount: number | null
+  fine_status: FineStatus | null
+  profiles: Borrower | null
+  receipt_number: string | null
   books: Book | null
+  // Only set by GET /loans for status === 'overdue' rows.
+  days_overdue: number | null
+  preview_fine_amount: number | null
 }
 
 // Authenticated, unlike the rest of this file — this is the student

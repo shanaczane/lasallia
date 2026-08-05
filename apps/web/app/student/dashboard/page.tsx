@@ -1,34 +1,23 @@
 // apps/web/app/student/dashboard/page.tsx
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
   BookOpen,
   Clock,
   Bookmark,
-  Star,
+  Sparkles,
   Search,
+  AlertTriangle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getUser } from "@/lib/auth"
+import { fetchLoans, type Loan as ApiLoan } from "@/lib/kiosk"
+import { fetchReservations } from "@/lib/reservations"
+import type { Reservation } from "@lasallia/types"
 
 type BorrowStatus = "due_soon" | "overdue" | "active"
-
-type BorrowedBook = {
-  id: string
-  title: string
-  author: string
-  borrowedDate: string
-  dueDate: string
-  status: BorrowStatus
-}
-
-type RecommendedBook = {
-  id: string
-  title: string
-  author: string
-  coverColor: string
-}
 
 const STATUS_CONFIG: Record<BorrowStatus, { label: string; dot: string; text: string }> = {
   due_soon: { label: "Due Soon", dot: "bg-warn", text: "text-warn" },
@@ -36,33 +25,70 @@ const STATUS_CONFIG: Record<BorrowStatus, { label: string; dot: string; text: st
   active:   { label: "Active",   dot: "bg-success", text: "text-success" },
 }
 
-const BORROWED_BOOKS: BorrowedBook[] = [
-  { id: "1", title: "Clean Code", author: "Robert C. Martin", borrowedDate: "Nov 7", dueDate: "Nov 21", status: "due_soon" },
-  { id: "2", title: "Designing Data-Intensive Applications", author: "Martin Kleppmann", borrowedDate: "Nov 3", dueDate: "Nov 17", status: "overdue" },
-  { id: "3", title: "The Pragmatic Programmer", author: "Thomas, Hunt", borrowedDate: "Nov 13", dueDate: "Nov 27", status: "active" },
-  { id: "4", title: "Computer Networks, 6th Ed.", author: "Andrew Tanenbaum", borrowedDate: "Nov 14", dueDate: "Nov 28", status: "active" },
-]
+// Matches apps/web/app/student/library/page.tsx — pending real LRC borrow-limit policy
+const BORROW_LIMIT_PLACEHOLDER = 3
+const DUE_SOON_DAYS = 3
 
-const RECOMMENDED_BOOKS: RecommendedBook[] = [
-  { id: "1", title: "Artificial Intelligence: A Modern Approach", author: "Russell · Norvig", coverColor: "bg-[#3D3B1F]" },
-  { id: "2", title: "Database System Concepts", author: "Silberschatz et al.", coverColor: "bg-[#2E1A47]" },
-  { id: "3", title: "Operating System Concepts", author: "Silberschatz et al.", coverColor: "bg-[#1A2540]" },
-]
+function deriveStatus(loan: ApiLoan): BorrowStatus {
+  if (loan.status === "overdue") return "overdue"
+  const daysLeft = (new Date(loan.due_date).getTime() - Date.now()) / 86_400_000
+  return daysLeft <= DUE_SOON_DAYS ? "due_soon" : "active"
+}
 
-type FilterKey = "all" | "due_soon" | "overdue" | "active"
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+}
+
+function greeting(): string {
+  const hour = new Date().getHours()
+  if (hour < 12) return "Good morning"
+  if (hour < 18) return "Good afternoon"
+  return "Good evening"
+}
+
+type FilterKey = "all" | BorrowStatus
 
 export default function StudentDashboard() {
   const [filter, setFilter] = useState<FilterKey>("all")
+  const [loans, setLoans] = useState<ApiLoan[]>([])
+  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [firstName, setFirstName] = useState("there")
 
-  const dueSoonCount = BORROWED_BOOKS.filter((b) => b.status === "due_soon").length
-  const overdueCount = BORROWED_BOOKS.filter((b) => b.status === "overdue").length
-  const activeCount = BORROWED_BOOKS.filter((b) => b.status === "active").length
+  useEffect(() => {
+    Promise.all([fetchLoans(), fetchReservations()])
+      .then(([l, r]) => { setLoans(l); setReservations(r) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
 
-  const filteredBooks =
-    filter === "all" ? BORROWED_BOOKS : BORROWED_BOOKS.filter((b) => b.status === filter)
+  // getUser() reads localStorage, which doesn't exist during Next's SSR
+  // pass of this client component — has to run post-hydration, in an
+  // effect, not directly in the render body.
+  useEffect(() => {
+    setFirstName(getUser()?.full_name?.split(" ")[0] ?? "there")
+  }, [])
+
+  const activeLoans = loans
+    .filter((l) => l.status !== "returned")
+    .map((loan) => ({ loan, status: deriveStatus(loan) }))
+
+  const dueSoonCount = activeLoans.filter((x) => x.status === "due_soon").length
+  const overdueCount = activeLoans.filter((x) => x.status === "overdue").length
+  const activeCount = activeLoans.filter((x) => x.status === "active").length
+
+  const nextDue = [...activeLoans]
+    .filter((x) => x.status !== "overdue")
+    .sort((a, b) => new Date(a.loan.due_date).getTime() - new Date(b.loan.due_date).getTime())[0]
+
+  const activeReservations = reservations.filter((r) => r.status === "pending" || r.status === "ready")
+  const readyForPickup = reservations.filter((r) => r.status === "ready").length
+
+  const filteredLoans =
+    filter === "all" ? activeLoans : activeLoans.filter((x) => x.status === filter)
 
   const filters: { key: FilterKey; label: string; count: number }[] = [
-    { key: "all", label: "All", count: BORROWED_BOOKS.length },
+    { key: "all", label: "All", count: activeLoans.length },
     { key: "due_soon", label: "Due Soon", count: dueSoonCount },
     { key: "overdue", label: "Overdue", count: overdueCount },
     { key: "active", label: "Active", count: activeCount },
@@ -78,13 +104,19 @@ export default function StudentDashboard() {
             className="text-ink-900 font-semibold leading-tight"
             style={{ fontSize: "var(--text-4xl)", fontFamily: "var(--font-display)" }}
           >
-            Good morning, <span className="italic text-green-700">Shan</span>.
+            {greeting()}, <span className="italic text-green-700">{firstName}</span>.
           </h1>
           <p
             className="text-ink-500 mt-1"
             style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
           >
-            You have 4 books out, 1 due in 2 days.
+            {loading
+              ? "Loading your library…"
+              : activeLoans.length === 0
+                ? "You have no books out right now."
+                : `You have ${activeLoans.length} book${activeLoans.length === 1 ? "" : "s"} out${
+                    dueSoonCount + overdueCount > 0 ? `, ${dueSoonCount + overdueCount} due soon or overdue` : ""
+                  }.`}
           </p>
         </div>
 
@@ -104,29 +136,29 @@ export default function StudentDashboard() {
           icon={<BookOpen size={18} className="text-green-700" />}
           iconBg="bg-green-100"
           label="Borrowed"
-          value="4"
-          sub="Borrowing limit: 5 books"
+          value={String(activeLoans.length)}
+          sub={`Borrowing limit: ${BORROW_LIMIT_PLACEHOLDER} books`}
         />
         <StatCard
           icon={<Clock size={18} className="text-warn" />}
           iconBg="bg-warn-bg"
           label="Due Soon"
-          value="1"
-          sub='"Clean Code" — Nov 21'
+          value={String(dueSoonCount)}
+          sub={nextDue ? `"${nextDue.loan.books?.title ?? "Untitled"}" — ${formatShortDate(nextDue.loan.due_date)}` : "Nothing due soon"}
+        />
+        <StatCard
+          icon={<AlertTriangle size={18} className="text-danger" />}
+          iconBg="bg-danger-bg"
+          label="Overdue"
+          value={String(overdueCount)}
+          sub={overdueCount > 0 ? "Please return as soon as possible" : "You're all caught up"}
         />
         <StatCard
           icon={<Bookmark size={18} className="text-gold-600" />}
           iconBg="bg-gold-100"
           label="Active Reservations"
-          value="2"
-          sub="1 ready for pickup"
-        />
-        <StatCard
-          icon={<Star size={18} className="text-green-700" />}
-          iconBg="bg-green-100"
-          label="Recommended for You"
-          value="12"
-          sub="Based on your program"
+          value={String(activeReservations.length)}
+          sub={readyForPickup > 0 ? `${readyForPickup} ready for pickup` : "None ready yet"}
         />
       </div>
 
@@ -189,78 +221,78 @@ export default function StudentDashboard() {
           {/* Borrowed books — table on desktop, cards on mobile */}
           <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
 
-            {/* Desktop table header */}
-            <div
-              className="hidden sm:flex px-4 py-2.5 border-b border-ink-100 text-ink-400 uppercase font-semibold"
-              style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}
-            >
-              <span className="flex-1">Book</span>
-              <span className="w-20">Borrowed</span>
-              <span className="w-20">Due Date</span>
-              <span className="w-24">Status</span>
-              <span className="w-20"></span>
-            </div>
+            {!loading && filteredLoans.length === 0 && (
+              <div
+                className="flex items-center justify-center py-10 text-ink-400"
+                style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+              >
+                No books to show.
+              </div>
+            )}
 
-            <div className="flex flex-col divide-y divide-ink-100">
-              {filteredBooks.map((book) => {
-                const status = STATUS_CONFIG[book.status]
-                return (
-                  <div key={book.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3">
+            {filteredLoans.length > 0 && (
+              <>
+                {/* Desktop table header */}
+                <div
+                  className="hidden sm:flex px-4 py-2.5 border-b border-ink-100 text-ink-400 uppercase font-semibold"
+                  style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}
+                >
+                  <span className="flex-1">Book</span>
+                  <span className="w-24">Borrowed</span>
+                  <span className="w-24">Due Date</span>
+                  <span className="w-24">Status</span>
+                </div>
 
-                    {/* Book info */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-ink-900 font-semibold truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                        {book.title}
-                      </p>
-                      <p className="text-ink-500 truncate" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                        {book.author}
-                      </p>
-                    </div>
-
-                    {/* Mobile: dates + status inline */}
-                    <div className="flex sm:hidden items-center gap-3 text-ink-500" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                      <span>Borrowed {book.borrowedDate}</span>
-                      <span className={cn("font-medium", status.text)}>Due {book.dueDate}</span>
-                    </div>
-
-                    {/* Desktop columns */}
-                    <span className="hidden sm:block w-20 text-ink-500" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                      {book.borrowedDate}
-                    </span>
-                    <span className={cn("hidden sm:block w-20 font-medium", status.text)} style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                      {book.dueDate}
-                    </span>
-
-                    <div className="flex items-center justify-between sm:justify-start sm:w-24 gap-2">
-                      <span className="flex items-center gap-1.5">
-                        <span className={cn("w-1.5 h-1.5 rounded-full", status.dot)} />
-                        <span className={cn("font-medium", status.text)} style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                          {status.label}
-                        </span>
-                      </span>
-
-                      <button
-                        className="sm:hidden px-3 py-1 rounded-sm border border-ink-200 text-ink-700 font-medium hover:bg-ink-50 transition-colors"
-                        style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
+                <div className="flex flex-col divide-y divide-ink-100">
+                  {filteredLoans.map(({ loan, status }) => {
+                    const cfg = STATUS_CONFIG[status]
+                    return (
+                      <Link
+                        key={loan.id}
+                        href={loan.books ? `/student/catalog/${loan.books.id}` : "/student/library"}
+                        className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3 hover:bg-ink-50 transition-colors"
                       >
-                        Renew
-                      </button>
-                    </div>
 
-                    <button
-                      className="hidden sm:block w-20 ml-auto px-3 py-1 rounded-sm border border-ink-200 text-ink-700 font-medium hover:bg-ink-50 transition-colors"
-                      style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
-                    >
-                      Renew
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
+                        {/* Book info */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-ink-900 font-semibold truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                            {loan.books?.title ?? "Unknown title"}
+                          </p>
+                          <p className="text-ink-500 truncate" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
+                            {loan.books?.author}
+                          </p>
+                        </div>
+
+                        {/* Mobile: dates + status inline */}
+                        <div className="flex sm:hidden items-center gap-3 text-ink-500" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
+                          <span>Borrowed {formatShortDate(loan.borrowed_at)}</span>
+                          <span className={cn("font-medium", cfg.text)}>Due {formatShortDate(loan.due_date)}</span>
+                        </div>
+
+                        {/* Desktop columns */}
+                        <span className="hidden sm:block w-24 text-ink-500" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                          {formatShortDate(loan.borrowed_at)}
+                        </span>
+                        <span className={cn("hidden sm:block w-24 font-medium", cfg.text)} style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                          {formatShortDate(loan.due_date)}
+                        </span>
+
+                        <span className="flex items-center gap-1.5 sm:w-24">
+                          <span className={cn("w-1.5 h-1.5 rounded-full", cfg.dot)} />
+                          <span className={cn("font-medium", cfg.text)} style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
+                            {cfg.label}
+                          </span>
+                        </span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Picked for You */}
+        {/* Picked for You — recommendation engine not built yet */}
         <div className="w-full lg:w-80 shrink-0 flex flex-col gap-3">
           <h2
             className="text-ink-900 font-semibold"
@@ -269,34 +301,16 @@ export default function StudentDashboard() {
             Picked for You
           </h2>
 
-          <div className="bg-white rounded-(--radius) border border-ink-200 p-4 flex flex-col gap-3">
-            {RECOMMENDED_BOOKS.map((book, i) => (
-              <div
-                key={book.id}
-                className={cn(
-                  "flex gap-3 pb-3",
-                  i < RECOMMENDED_BOOKS.length - 1 && "border-b border-ink-100"
-                )}
-              >
-                <div className={cn("shrink-0 rounded-sm", book.coverColor)} style={{ width: 40, height: 56 }} />
-                <div className="flex flex-col gap-0.5 min-w-0">
-                  <p className="text-ink-900 font-semibold leading-snug" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                    {book.title}
-                  </p>
-                  <p className="text-ink-500" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                    {book.author}
-                  </p>
-                </div>
-              </div>
-            ))}
-
-            <Link
-              href="/student/catalog"
-              className="text-green-700 font-medium hover:underline"
-              style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-            >
-              See more →
-            </Link>
+          <div className="bg-white rounded-(--radius) border border-ink-200 p-6 flex flex-col items-center text-center gap-2">
+            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100">
+              <Sparkles size={18} className="text-green-700" />
+            </div>
+            <p className="text-ink-700 font-semibold" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+              Recommendations coming soon
+            </p>
+            <p className="text-ink-400" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}>
+              We&apos;re building a personalized recommendation engine based on your borrowing history.
+            </p>
           </div>
         </div>
       </div>

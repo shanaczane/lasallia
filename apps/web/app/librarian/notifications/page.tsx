@@ -1,99 +1,43 @@
 // apps/web/app/librarian/notifications/page.tsx
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
-import { AlertCircle, Bookmark, Check, Settings, Bell } from "lucide-react"
+import { AlertCircle, Bookmark, Check, Bell } from "lucide-react"
+import { fetchNotifications, markNotificationRead, markAllNotificationsRead } from "@/lib/notifications"
+import { useNotifications } from "@/components/ui/notifications/NotificationContext"
+import type { Notification, NotificationType } from "@lasallia/types"
 
-type LibNotifType = "overdue" | "reservation" | "return" | "system"
+// The real notifications table only has these 5 event types (0001_core_schema.sql)
+// — no "system" category exists, since nothing in this codebase generates
+// system/backup-style events. Grouped into the same 3 display buckets the
+// librarian view used before, minus that invented 4th one.
+type LibCategory = "overdue" | "reservation" | "return"
 
-type LibNotification = {
-  id: string
-  type: LibNotifType
-  title: string
-  message: string
-  is_read: boolean
-  created_at: string
+function categoryOf(type: NotificationType): LibCategory | null {
+  if (type === "due_reminder" || type === "overdue") return "overdue"
+  if (type === "reservation_confirmed" || type === "reservation_cancelled") return "reservation"
+  if (type === "return_confirmed") return "return"
+  return null
 }
 
-const ICON_CONFIG: Record<LibNotifType, { icon: React.ReactNode; bg: string }> = {
+const ICON_CONFIG: Record<LibCategory, { icon: React.ReactNode; bg: string }> = {
   overdue:     { icon: <AlertCircle size={16} className="text-danger" />, bg: "bg-danger-bg" },
   reservation: { icon: <Bookmark size={16} className="text-info" />,      bg: "bg-info-bg" },
   return:      { icon: <Check size={16} className="text-success" />,      bg: "bg-success-bg" },
-  system:      { icon: <Settings size={16} className="text-ink-500" />,   bg: "bg-ink-100" },
 }
 
-const MOCK: LibNotification[] = [
-  {
-    id: "1",
-    type: "overdue",
-    title: "3 borrowers are over 7 days overdue",
-    message: 'Paolo Aguilar (2 books), Khatrina Gonzales (1 book), and Jed Sayat (1 book) have items past their due date by 7+ days. Consider sending a follow-up notice.',
-    is_read: false,
-    created_at: new Date(new Date().setHours(9, 0, 0, 0)).toISOString(),
-  },
-  {
-    id: "2",
-    type: "reservation",
-    title: "4 new reservation requests pending approval",
-    message: 'Students have requested: "Clean Code" (×2), "Operating System Concepts" (×1), and "Artificial Intelligence: A Modern Approach" (×1). Review and confirm pickups.',
-    is_read: false,
-    created_at: new Date(new Date().setHours(8, 45, 0, 0)).toISOString(),
-  },
-  {
-    id: "3",
-    type: "return",
-    title: "Batch return processed — 8 books checked in",
-    message: '8 books were returned this morning via the drop box. Titles include: "Database System Concepts", "Operating System Concepts", and 6 others. Shelf re-shelving needed.',
-    is_read: false,
-    created_at: new Date(new Date().setHours(8, 12, 0, 0)).toISOString(),
-  },
-  {
-    id: "4",
-    type: "overdue",
-    title: "Overdue reminder sent — Maria Santos",
-    message: 'An automated reminder was sent to Maria L. Santos for "Computer Networks" (6th Ed.) and "The Pragmatic Programmer", both 5 days past due.',
-    is_read: true,
-    created_at: (() => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(16, 0, 0, 0); return d.toISOString() })(),
-  },
-  {
-    id: "5",
-    type: "reservation",
-    title: "Pickup window expiring tomorrow — 2 holds",
-    message: '"Designing Data-Intensive Applications" (Shan Cruz) and "Refactoring" (Paolo Aguilar) must be picked up by Nov 21 or the hold will be released.',
-    is_read: true,
-    created_at: (() => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(14, 30, 0, 0); return d.toISOString() })(),
-  },
-  {
-    id: "6",
-    type: "return",
-    title: "Return confirmed — Khatrina Gonzales",
-    message: '"Database System Concepts" returned in good condition. No fines applied. Item is now back in circulation.',
-    is_read: true,
-    created_at: (() => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(10, 31, 0, 0); return d.toISOString() })(),
-  },
-  {
-    id: "7",
-    type: "system",
-    title: "Weekly backup completed",
-    message: "System backup for the library database completed successfully. No issues detected.",
-    is_read: true,
-    created_at: (() => { const d = new Date(); d.setDate(d.getDate() - 2); d.setHours(2, 0, 0, 0); return d.toISOString() })(),
-  },
-]
+type TabKey = "all" | LibCategory
 
-type TabKey = "all" | "overdue" | "reservation" | "return" | "system"
-
-const TABS: { key: TabKey; label: string; type?: LibNotifType }[] = [
+const TABS: { key: TabKey; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "overdue", label: "Overdue", type: "overdue" },
-  { key: "reservation", label: "Reservations", type: "reservation" },
-  { key: "return", label: "Returns", type: "return" },
-  { key: "system", label: "System", type: "system" },
+  { key: "overdue", label: "Overdue" },
+  { key: "reservation", label: "Reservations" },
+  { key: "return", label: "Returns" },
 ]
 
-function groupByDate(items: LibNotification[]) {
-  const groups: Record<string, LibNotification[]> = {}
+function groupByDate(items: Notification[]) {
+  const groups: Record<string, Notification[]> = {}
   for (const n of items) {
     const date = new Date(n.created_at)
     const now = new Date()
@@ -112,33 +56,57 @@ function groupByDate(items: LibNotification[]) {
 }
 
 export default function LibrarianNotificationsPage() {
-  const [notifications, setNotifications] = useState<LibNotification[]>(MOCK)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabKey>("all")
+  const { refresh } = useNotifications()
+
+  useEffect(() => {
+    fetchNotifications()
+      .then(setNotifications)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const categorized = notifications
+    .map((n) => ({ n, category: categoryOf(n.type) }))
+    .filter((x): x is { n: Notification; category: LibCategory } => x.category !== null)
 
   const unreadCount = notifications.filter((n) => !n.is_read).length
 
   const filtered =
-    activeTab === "all"
-      ? notifications
-      : notifications.filter((n) => n.type === activeTab)
+    activeTab === "all" ? categorized : categorized.filter((x) => x.category === activeTab)
 
   const tabCounts: Record<TabKey, number> = {
-    all: notifications.filter((n) => !n.is_read).length,
-    overdue: notifications.filter((n) => !n.is_read && n.type === "overdue").length,
-    reservation: notifications.filter((n) => !n.is_read && n.type === "reservation").length,
-    return: notifications.filter((n) => !n.is_read && n.type === "return").length,
-    system: notifications.filter((n) => !n.is_read && n.type === "system").length,
+    all: categorized.filter((x) => !x.n.is_read).length,
+    overdue: categorized.filter((x) => !x.n.is_read && x.category === "overdue").length,
+    reservation: categorized.filter((x) => !x.n.is_read && x.category === "reservation").length,
+    return: categorized.filter((x) => !x.n.is_read && x.category === "return").length,
   }
 
-  function markRead(id: string) {
+  async function markRead(id: string) {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)))
+    try {
+      await markNotificationRead(id)
+      refresh()
+    } catch {
+      // best-effort
+    }
   }
 
-  function markAllRead() {
+  async function markAllRead() {
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
+    try {
+      await markAllNotificationsRead()
+      refresh()
+    } catch {
+      // best-effort
+    }
   }
 
-  const groups = groupByDate(filtered)
+  const groups = groupByDate(filtered.map((x) => x.n))
+
+  if (loading) return null
 
   return (
     <div className="flex flex-col w-full min-h-screen bg-paper">
@@ -156,7 +124,7 @@ export default function LibrarianNotificationsPage() {
             className="text-ink-500 mt-1"
             style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
           >
-            Operational alerts — overdue items, reservations, and system activity
+            Overdue items, reservation activity, and returns
           </p>
         </div>
 
@@ -231,7 +199,8 @@ export default function LibrarianNotificationsPage() {
 
                 <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
                   {items.map((n, i) => {
-                    const cfg = ICON_CONFIG[n.type]
+                    const category = categoryOf(n.type) ?? "return"
+                    const cfg = ICON_CONFIG[category]
                     return (
                       <button
                         key={n.id}

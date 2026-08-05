@@ -6,6 +6,7 @@ import { TopNav } from "./TopNav"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { clearSession } from "@/lib/auth"
+import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
 import {
   LayoutDashboard,
   BookOpen,
@@ -59,19 +60,30 @@ type LibrarianLayoutProps = {
   children: React.ReactNode
   userName?: string
   userInitials?: string
-  notificationCount?: number
 }
 
 function getInitials(name: string): string {
   return name.split(" ").map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase()
 }
 
-export function LibrarianLayout({
+// Real unread count, not a static prop guessed at from layout.tsx — see
+// NotificationContext.tsx's self-fetching provider.
+export function LibrarianLayout({ children, userName, userInitials }: LibrarianLayoutProps) {
+  return (
+    <NotificationProvider>
+      <LibrarianLayoutInner userName={userName} userInitials={userInitials}>
+        {children}
+      </LibrarianLayoutInner>
+    </NotificationProvider>
+  )
+}
+
+function LibrarianLayoutInner({
   children,
   userName,
   userInitials,
-  notificationCount,
 }: LibrarianLayoutProps) {
+  const { unreadCount } = useNotifications()
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -184,7 +196,7 @@ export function LibrarianLayout({
       <TopNav
         userName={displayName}
         userInitials={displayInitials}
-        notificationCount={notificationCount}
+        notificationCount={unreadCount}
         notificationsHref="/librarian/notifications"
         showNotifications={true}
         onMenuClick={() => setMenuOpen(true)}

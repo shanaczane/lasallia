@@ -16,6 +16,11 @@ type BookCardProps = {
   href?: string
   className?: string
   showBookmark?: boolean
+  // Controlled save state — omit to fall back to local-only state (no
+  // persistence). Callers that want the bookmark to actually stick
+  // (anywhere backed by /saved-books) should pass both.
+  isSaved?: boolean
+  onToggleSave?: (book: Book) => void
 }
 
 // Deterministic color palette for books without cover images
@@ -31,8 +36,10 @@ function getCoverColor(book: Book): string {
   return COVER_COLORS[idx % COVER_COLORS.length]
 }
 
-export function BookCard({ book, href, className, showBookmark = false }: BookCardProps) {
-  const [saved, setSaved] = useState(false)
+export function BookCard({ book, href, className, showBookmark = false, isSaved, onToggleSave }: BookCardProps) {
+  const [localSaved, setLocalSaved] = useState(false)
+  const saved = isSaved ?? localSaved
+  const toggleSaved = onToggleSave ? () => onToggleSave(book) : () => setLocalSaved((v) => !v)
   const coverColor = getCoverColor(book)
   const destination = href ?? `/guest/catalog/${book.id}`
 
@@ -46,7 +53,7 @@ export function BookCard({ book, href, className, showBookmark = false }: BookCa
       {showBookmark && (
         <button
           type="button"
-          onClick={() => setSaved((v) => !v)}
+          onClick={(e) => { e.preventDefault(); toggleSaved() }}
           aria-label={saved ? 'Remove from saved' : 'Save to favorites'}
           className={cn(
             'absolute top-2 right-2 z-10 flex items-center justify-center w-7 h-7 rounded-full transition-all',

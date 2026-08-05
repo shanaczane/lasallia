@@ -44,6 +44,13 @@ class Loan(BaseModel):
     receipt_number: str | None = None
     books: Book | None = None
     profiles: Borrower | None = None
+    # Populated by GET /loans only for status == "overdue" rows (the
+    # librarian Reports overdue table needs a real fine preview, not a
+    # frontend-side reimplementation of the school-day-calendar math).
+    # None everywhere else — a returned loan's real fine lives in
+    # fine_amount above, and an active loan has no fine yet.
+    days_overdue: int | None = None
+    preview_fine_amount: float | None = None
 
 # GET /loans/lookup and /loans/search — the librarian's return-lookup
 # screen (build plan 4.1/4.2). days_overdue/preview_fine_amount are

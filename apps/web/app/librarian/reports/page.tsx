@@ -1,10 +1,9 @@
-// Sprint 5.6 – Reports Screen (UI Layout Only)
+// Sprint 5.6 – Reports Screen
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   BarChart2,
-  Download,
   GripVertical,
   ChevronUp,
   ChevronDown,
@@ -33,143 +32,151 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { cn } from "@/lib/utils"
+import { fetchBooks } from "@/lib/books"
+import { fetchLoans, type Loan } from "@/lib/kiosk"
+import { fetchPatrons } from "@/lib/users"
+import type { Book, UserProfile } from "@lasallia/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ReportTab = "overview" | "overdue"
 type SortDir = "asc" | "desc" | null
 type SortKey = "patron" | "book" | "due" | "days" | "program" | null
+type Bucket = { label: string; value: number }
+type CatalogueSlice = { label: string; value: number; color: string }
+type TopPatron = { id: string; name: string; program: string; count: number }
+type OverdueRow = {
+  id: string
+  patron: string
+  patronEmail: string
+  program: string
+  year: string
+  book: string
+  author: string
+  dueDate: string
+  daysOverdue: number
+  fine: number
+}
 
-// ─── Sample data ──────────────────────────────────────────────────────────────
-const CATALOGUE_DATA = [
-  { label: "Non-Fiction", value: 892, color: "#006F3C" },
-  { label: "Fiction",     value: 342, color: "#00874A" },
-  { label: "Reference",   value: 234, color: "#B8923D" },
-  { label: "Periodicals", value: 156, color: "#DDDFD7" },
-]
+const CATALOGUE_COLORS = ["#006F3C", "#00874A", "#B8923D", "#4A6FA5", "#8B5CF6", "#DDDFD7"]
 
-const CIRCULATION_DATA = [
-  { label: "Jan", value: 312 },
-  { label: "Feb", value: 278 },
-  { label: "Mar", value: 401 },
-  { label: "Apr", value: 355 },
-  { label: "May", value: 289 },
-  { label: "Jun", value: 436 },
-]
+// ─── Derivation from real data ─────────────────────────────────────────────────
 
-const TOP_PATRONS = [
-  { name: "Maria Santos",    program: "BS Nursing",         count: 18 },
-  { name: "Juan dela Cruz",  program: "BS Civil Eng.",      count: 15 },
-  { name: "Ana Reyes",       program: "BS Education",       count: 13 },
-  { name: "Carlo Bautista",  program: "BS Computer Sci.",   count: 11 },
-  { name: "Liza Villanueva", program: "BS Accountancy",     count: 9  },
-]
+function deriveCatalogue(books: Book[]): CatalogueSlice[] {
+  const byCategory = new Map<string, number>()
+  for (const b of books) {
+    const key = b.category || "Uncategorized"
+    byCategory.set(key, (byCategory.get(key) ?? 0) + (b.total_copies ?? 1))
+  }
+  return [...byCategory.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, value], i) => ({ label, value, color: CATALOGUE_COLORS[i % CATALOGUE_COLORS.length] }))
+}
 
-const TREND_DATA = [
-  { label: "May 5",  value: 48 },
-  { label: "May 12", value: 61 },
-  { label: "May 19", value: 55 },
-  { label: "May 26", value: 72 },
-  { label: "Jun 2",  value: 68 },
-  { label: "Jun 9",  value: 89 },
-  { label: "Jun 16", value: 76 },
-  { label: "Jun 23", value: 94 },
-]
+function deriveMonthlyCirculation(loans: Loan[], months = 6): Bucket[] {
+  const now = new Date()
+  const buckets: Bucket[] = []
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    buckets.push({ label: d.toLocaleDateString("en-US", { month: "short" }), value: 0 })
+  }
+  for (const loan of loans) {
+    const d = new Date(loan.borrowed_at)
+    const monthsAgo = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth())
+    if (monthsAgo >= 0 && monthsAgo < months) {
+      buckets[months - 1 - monthsAgo].value += 1
+    }
+  }
+  return buckets
+}
 
-const OVERDUE_BOOKS = [
-  {
-    id: "o1",
-    patron: "Jose Santos",
-    patronId: "2021-00289",
-    program: "BS Civil Engineering",
-    year: "2nd Year",
-    book: "Engineering Mathematics Vol. 2",
-    author: "John Bird",
-    dueDate: "2026-06-15",
-    daysOverdue: 16,
-    fine: 80,
-  },
-  {
-    id: "o2",
-    patron: "Maria Garcia",
-    patronId: "2022-00145",
-    program: "BS Psychology",
-    year: "3rd Year",
-    book: "Introduction to Psychology",
-    author: "David Myers",
-    dueDate: "2026-06-20",
-    daysOverdue: 11,
-    fine: 55,
-  },
-  {
-    id: "o3",
-    patron: "Pedro Reyes",
-    patronId: "2023-00412",
-    program: "BS Accountancy",
-    year: "1st Year",
-    book: "Fundamentals of Accounting",
-    author: "Cabrera",
-    dueDate: "2026-06-22",
-    daysOverdue: 9,
-    fine: 45,
-  },
-  {
-    id: "o4",
-    patron: "Sofia Mendoza",
-    patronId: "2022-00567",
-    program: "BS Nursing",
-    year: "3rd Year",
-    book: "Anatomy and Physiology",
-    author: "Tortora & Derrickson",
-    dueDate: "2026-06-25",
-    daysOverdue: 6,
-    fine: 30,
-  },
-  {
-    id: "o5",
-    patron: "Mark Torres",
-    patronId: "2021-00088",
-    program: "BS Education",
-    year: "4th Year",
-    book: "Teaching Strategies in the 21st Century",
-    author: "Dr. R. Cruz",
-    dueDate: "2026-06-28",
-    daysOverdue: 3,
-    fine: 15,
-  },
-  {
-    id: "o6",
-    patron: "Liza Navarro",
-    patronId: "2023-00199",
-    program: "BS Computer Science",
-    year: "2nd Year",
-    book: "Discrete Mathematics and Its Applications",
-    author: "Kenneth Rosen",
-    dueDate: "2026-06-30",
-    daysOverdue: 1,
-    fine: 5,
-  },
-]
+function deriveWeeklyTrend(loans: Loan[], weeks = 8): Bucket[] {
+  const now = new Date()
+  const startOfThisWeek = new Date(now)
+  startOfThisWeek.setDate(now.getDate() - now.getDay())
+  startOfThisWeek.setHours(0, 0, 0, 0)
 
-const QUICK_STATS = [
-  { label: "Total Titles",       value: "1,624", icon: <BookMarked size={18} />, color: "text-green-700", bg: "bg-green-50" },
-  { label: "Books Circulated",   value: "2,071", icon: <TrendingUp size={18} />,  color: "text-blue-700",  bg: "bg-blue-50"  },
-  { label: "Active Borrowers",   value: "348",   icon: <Users size={18} />,       color: "text-amber-700", bg: "bg-amber-50" },
-  { label: "Overdue Books",      value: "6",     icon: <AlertTriangle size={18} />, color: "text-red-700", bg: "bg-red-50"   },
-]
+  const buckets: Bucket[] = []
+  const starts: Date[] = []
+  for (let i = weeks - 1; i >= 0; i--) {
+    const start = new Date(startOfThisWeek)
+    start.setDate(start.getDate() - i * 7)
+    starts.push(start)
+    buckets.push({ label: start.toLocaleDateString("en-US", { month: "short", day: "numeric" }), value: 0 })
+  }
+  for (const loan of loans) {
+    const d = new Date(loan.borrowed_at)
+    for (let i = starts.length - 1; i >= 0; i--) {
+      if (d >= starts[i]) {
+        buckets[i].value += 1
+        break
+      }
+    }
+  }
+  return buckets
+}
 
-// ─── Inline chart components ──────────────────────────────────────────────────
-function DonutChart() {
-  const total = CATALOGUE_DATA.reduce((s, d) => s + d.value, 0)
+function deriveTopPatrons(loans: Loan[], patrons: UserProfile[], limit = 5): TopPatron[] {
+  const patronsById = new Map(patrons.map((p) => [p.id, p]))
+  const counts = new Map<string, number>()
+  for (const loan of loans) {
+    counts.set(loan.student_id, (counts.get(loan.student_id) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([id, count]) => ({
+      id,
+      name: patronsById.get(id)?.full_name ?? "Unknown patron",
+      program: patronsById.get(id)?.program ?? "—",
+      count,
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit)
+}
+
+function deriveOverdueRows(loans: Loan[], patrons: UserProfile[]): OverdueRow[] {
+  const patronsById = new Map(patrons.map((p) => [p.id, p]))
+  return loans
+    .filter((l) => l.status === "overdue")
+    .map((l) => {
+      const patron = patronsById.get(l.student_id)
+      return {
+        id: l.id,
+        patron: patron?.full_name ?? l.profiles?.full_name ?? "Unknown patron",
+        patronEmail: patron?.email ?? "—",
+        program: patron?.program ?? "—",
+        year: patron?.year_level ? `${patron.year_level}${yearSuffix(patron.year_level)} Year` : "—",
+        book: l.books?.title ?? "Unknown title",
+        author: l.books?.author ?? "—",
+        dueDate: l.due_date,
+        daysOverdue: l.days_overdue ?? 0,
+        fine: l.preview_fine_amount ?? 0,
+      }
+    })
+}
+
+function yearSuffix(n: number): string {
+  if (n === 1) return "st"
+  if (n === 2) return "nd"
+  if (n === 3) return "rd"
+  return "th"
+}
+
+// ─── Inline chart components — all data-driven via props now ──────────────────
+function DonutChart({ data }: { data: CatalogueSlice[] }) {
+  const total = data.reduce((s, d) => s + d.value, 0)
   const r = 58
   const cx = 80
   const cy = 80
   const c = 2 * Math.PI * r
   let offset = 0
 
+  if (total === 0) {
+    return <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>No books in the catalog yet.</p>
+  }
+
   return (
     <div className="flex items-center gap-6 flex-wrap">
       <svg viewBox="0 0 160 160" style={{ width: 140, height: 140, flexShrink: 0 }}>
-        {CATALOGUE_DATA.map((d, i) => {
+        {data.map((d, i) => {
           const dash = (d.value / total) * c
           const el = (
             <circle
@@ -191,7 +198,7 @@ function DonutChart() {
         <text x={cx} y={cy + 12} textAnchor="middle" fontSize={8} fill="#6B6E63">Total Books</text>
       </svg>
       <ul className="flex flex-col gap-1.5">
-        {CATALOGUE_DATA.map((d) => (
+        {data.map((d) => (
           <li key={d.label} className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
             <span className="text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
@@ -207,12 +214,12 @@ function DonutChart() {
   )
 }
 
-function BarChartViz() {
-  const max = Math.max(...CIRCULATION_DATA.map((d) => d.value))
+function BarChartViz({ data }: { data: Bucket[] }) {
+  const max = Math.max(1, ...data.map((d) => d.value))
   return (
     <div className="flex flex-col gap-2 w-full">
       <svg viewBox="0 0 270 110" className="w-full">
-        {CIRCULATION_DATA.map((d, i) => {
+        {data.map((d, i) => {
           const bw = 28
           const gap = 42
           const x = i * gap + 8
@@ -232,11 +239,11 @@ function BarChartViz() {
   )
 }
 
-function LineChartViz() {
-  const max = Math.max(...TREND_DATA.map((d) => d.value))
+function LineChartViz({ data }: { data: Bucket[] }) {
+  const max = Math.max(1, ...data.map((d) => d.value))
   const W = 280; const H = 100; const padX = 12; const padY = 14
-  const pts = TREND_DATA.map((d, i) => ({
-    x: padX + (i / (TREND_DATA.length - 1)) * (W - padX * 2),
+  const pts = data.map((d, i) => ({
+    x: padX + (i / (data.length - 1)) * (W - padX * 2),
     y: padY + ((max - d.value) / max) * (H - padY * 2),
     label: d.label,
     value: d.value,
@@ -266,12 +273,15 @@ function LineChartViz() {
   )
 }
 
-function TopPatronsList() {
-  const max = TOP_PATRONS[0].count
+function TopPatronsList({ patrons }: { patrons: TopPatron[] }) {
+  if (patrons.length === 0) {
+    return <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>No borrowing activity yet.</p>
+  }
+  const max = patrons[0].count
   return (
     <ul className="flex flex-col gap-2.5 w-full">
-      {TOP_PATRONS.map((p, i) => (
-        <li key={p.name} className="flex items-center gap-2.5">
+      {patrons.map((p, i) => (
+        <li key={p.id} className="flex items-center gap-2.5">
           <span
             className="text-ink-400 w-4 text-right shrink-0"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
@@ -368,7 +378,7 @@ function SortableCard({ card }: { card: CardDef }) {
 }
 
 // ─── Overdue table ────────────────────────────────────────────────────────────
-function OverdueTable() {
+function OverdueTable({ rows }: { rows: OverdueRow[] }) {
   const [sortKey, setSortKey] = useState<SortKey>(null)
   const [sortDir, setSortDir] = useState<SortDir>(null)
 
@@ -382,7 +392,7 @@ function OverdueTable() {
     }
   }
 
-  const sorted = [...OVERDUE_BOOKS].sort((a, b) => {
+  const sorted = [...rows].sort((a, b) => {
     if (!sortKey || !sortDir) return 0
     let va: string | number = ""
     let vb: string | number = ""
@@ -407,10 +417,10 @@ function OverdueTable() {
       {/* Summary row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Overdue Books", value: `${OVERDUE_BOOKS.length}`, alert: true },
-          { label: "Total Fines",   value: `₱${totalFine}`,          alert: false },
-          { label: "Patrons Affected", value: `${OVERDUE_BOOKS.length}`, alert: false },
-          { label: "Avg Days Late",   value: `${Math.round(OVERDUE_BOOKS.reduce((s, b) => s + b.daysOverdue, 0) / OVERDUE_BOOKS.length)}d`, alert: false },
+          { label: "Overdue Books", value: `${rows.length}`, alert: true },
+          { label: "Total Fines",   value: `₱${totalFine.toFixed(2)}`, alert: false },
+          { label: "Patrons Affected", value: `${new Set(rows.map((r) => r.patronEmail)).size}`, alert: false },
+          { label: "Avg Days Late",   value: rows.length ? `${Math.round(rows.reduce((s, b) => s + b.daysOverdue, 0) / rows.length)}d` : "—", alert: false },
         ].map((s) => (
           <div key={s.label} className="rounded border border-ink-200 bg-white px-4 py-3">
             <p
@@ -429,148 +439,144 @@ function OverdueTable() {
         ))}
       </div>
 
-      {/* Export button */}
-      <div className="flex items-center justify-between">
-        <p
-          className="text-ink-500"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-        >
-          {sorted.length} overdue {sorted.length === 1 ? "book" : "books"} as of today
-        </p>
-        <button
-          className="flex items-center gap-2 px-4 py-2 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 font-medium transition-colors"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-        >
-          <Download size={14} />
-          Export CSV
-        </button>
-      </div>
+      <p
+        className="text-ink-500"
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+      >
+        {sorted.length} overdue {sorted.length === 1 ? "book" : "books"} as of today
+      </p>
 
       {/* Table */}
-      <div className="rounded border border-ink-200 bg-white overflow-x-auto" style={{ boxShadow: "var(--shadow)" }}>
-        <table className="w-full min-w-175">
-          <thead>
-            <tr className="border-b border-ink-200 bg-ink-50">
-              {[
-                { label: "Patron",   key: "patron" as SortKey },
-                { label: "Program / Year", key: "program" as SortKey },
-                { label: "Book",     key: "book"   as SortKey },
-                { label: "Due Date", key: "due"    as SortKey },
-                { label: "Days Overdue", key: "days" as SortKey },
-                { label: "Fine (₱5/day)", key: null },
-                { label: "Status",   key: null },
-              ].map((col) => (
-                <th
-                  key={col.label}
-                  className={cn(
-                    "text-left py-2.5 px-4 text-ink-500 font-semibold select-none",
-                    col.key ? "cursor-pointer hover:text-ink-800 group" : ""
-                  )}
-                  onClick={() => col.key && handleSort(col.key)}
-                  style={{
-                    fontFamily: "var(--font-body)",
-                    fontSize: "var(--text-2xs)",
-                    letterSpacing: "var(--tracking-micro)",
-                  }}
-                >
-                  <span className="flex items-center gap-1">
-                    {col.label}
-                    {col.key && <SortIcon k={col.key} />}
-                  </span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((row) => (
-              <tr key={row.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
-                <td className="py-3 px-4">
-                  <p
-                    className="text-ink-900 font-medium"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                  >
-                    {row.patron}
-                  </p>
-                  <p
-                    className="text-ink-400"
-                    style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)" }}
-                  >
-                    {row.patronId}
-                  </p>
-                </td>
-                <td className="py-3 px-4">
-                  <p
-                    className="text-ink-700"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-                  >
-                    {row.program}
-                  </p>
-                  <p
-                    className="text-ink-400"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-                  >
-                    {row.year}
-                  </p>
-                </td>
-                <td className="py-3 px-4 max-w-50">
-                  <p
-                    className="text-ink-900 font-medium truncate"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                  >
-                    {row.book}
-                  </p>
-                  <p
-                    className="text-ink-400"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-                  >
-                    {row.author}
-                  </p>
-                </td>
-                <td className="py-3 px-4">
-                  <p
-                    className="text-ink-700"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                  >
-                    {new Date(row.dueDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
-                  </p>
-                </td>
-                <td className="py-3 px-4">
-                  <span
+      {sorted.length === 0 ? (
+        <div className="rounded border border-ink-200 bg-white py-10 flex items-center justify-center text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+          Nothing overdue right now.
+        </div>
+      ) : (
+        <div className="rounded border border-ink-200 bg-white overflow-x-auto" style={{ boxShadow: "var(--shadow)" }}>
+          <table className="w-full min-w-175">
+            <thead>
+              <tr className="border-b border-ink-200 bg-ink-50">
+                {[
+                  { label: "Patron",   key: "patron" as SortKey },
+                  { label: "Program / Year", key: "program" as SortKey },
+                  { label: "Book",     key: "book"   as SortKey },
+                  { label: "Due Date", key: "due"    as SortKey },
+                  { label: "Days Overdue", key: "days" as SortKey },
+                  { label: "Fine", key: null },
+                  { label: "Status",   key: null },
+                ].map((col) => (
+                  <th
+                    key={col.label}
                     className={cn(
-                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-sm font-semibold",
-                      row.daysOverdue >= 10
-                        ? "bg-red-100 text-red-700"
-                        : row.daysOverdue >= 5
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-yellow-50 text-yellow-700"
+                      "text-left py-2.5 px-4 text-ink-500 font-semibold select-none",
+                      col.key ? "cursor-pointer hover:text-ink-800 group" : ""
                     )}
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                    onClick={() => col.key && handleSort(col.key)}
+                    style={{
+                      fontFamily: "var(--font-body)",
+                      fontSize: "var(--text-2xs)",
+                      letterSpacing: "var(--tracking-micro)",
+                    }}
                   >
-                    {row.daysOverdue >= 7 && <AlertTriangle size={10} />}
-                    {row.daysOverdue}d
-                  </span>
-                </td>
-                <td className="py-3 px-4">
-                  <p
-                    className="text-ink-900 font-semibold"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                  >
-                    ₱{row.fine}
-                  </p>
-                </td>
-                <td className="py-3 px-4">
-                  <span
-                    className="inline-block px-2 py-0.5 rounded-sm bg-red-50 text-red-700 font-medium"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-                  >
-                    Overdue
-                  </span>
-                </td>
+                    <span className="flex items-center gap-1">
+                      {col.label}
+                      {col.key && <SortIcon k={col.key} />}
+                    </span>
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {sorted.map((row) => (
+                <tr key={row.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
+                  <td className="py-3 px-4">
+                    <p
+                      className="text-ink-900 font-medium"
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                    >
+                      {row.patron}
+                    </p>
+                    <p
+                      className="text-ink-400"
+                      style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)" }}
+                    >
+                      {row.patronEmail}
+                    </p>
+                  </td>
+                  <td className="py-3 px-4">
+                    <p
+                      className="text-ink-700"
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                    >
+                      {row.program}
+                    </p>
+                    <p
+                      className="text-ink-400"
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                    >
+                      {row.year}
+                    </p>
+                  </td>
+                  <td className="py-3 px-4 max-w-50">
+                    <p
+                      className="text-ink-900 font-medium truncate"
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                    >
+                      {row.book}
+                    </p>
+                    <p
+                      className="text-ink-400"
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                    >
+                      {row.author}
+                    </p>
+                  </td>
+                  <td className="py-3 px-4">
+                    <p
+                      className="text-ink-700"
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                    >
+                      {new Date(row.dueDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
+                    </p>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-sm font-semibold",
+                        row.daysOverdue >= 10
+                          ? "bg-red-100 text-red-700"
+                          : row.daysOverdue >= 5
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-yellow-50 text-yellow-700"
+                      )}
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                    >
+                      {row.daysOverdue >= 7 && <AlertTriangle size={10} />}
+                      {row.daysOverdue}d
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <p
+                      className="text-ink-900 font-semibold"
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                    >
+                      ₱{row.fine.toFixed(2)}
+                    </p>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span
+                      className="inline-block px-2 py-0.5 rounded-sm bg-red-50 text-red-700 font-medium"
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                    >
+                      Overdue
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -578,8 +584,19 @@ function OverdueTable() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ReportsPage() {
   const [tab, setTab] = useState<ReportTab>("overview")
+  const [books, setBooks] = useState<Book[]>([])
+  const [loans, setLoans] = useState<Loan[]>([])
+  const [patrons, setPatrons] = useState<UserProfile[]>([])
 
-  // Filter state – Sprint 5.6.2
+  useEffect(() => {
+    Promise.all([fetchBooks(), fetchLoans(), fetchPatrons()])
+      .then(([b, l, p]) => { setBooks(b); setLoans(l); setPatrons(p) })
+      .catch(() => {})
+  }, [])
+
+  // Filter state – Sprint 5.6.2 (not yet wired to the data below — these
+  // controls were inert placeholders before this pass too; leaving them as
+  // UI-only rather than half-wiring a filter that only touches some charts)
   const [dateRange, setDateRange]   = useState<"week" | "month" | "semester" | "custom">("month")
   const [fromDate, setFromDate]     = useState("")
   const [toDate, setToDate]         = useState("")
@@ -587,39 +604,58 @@ export default function ReportsPage() {
   const [program, setProgram]       = useState("All Programs")
   const [yearLevel, setYearLevel]   = useState("All Year Levels")
 
+  const catalogueData = useMemo(() => deriveCatalogue(books), [books])
+  const circulationData = useMemo(() => deriveMonthlyCirculation(loans), [loans])
+  const trendData = useMemo(() => deriveWeeklyTrend(loans), [loans])
+  const topPatrons = useMemo(() => deriveTopPatrons(loans, patrons), [loans, patrons])
+  const overdueRows = useMemo(() => deriveOverdueRows(loans, patrons), [loans, patrons])
+
+  const activeBorrowers = useMemo(
+    () => new Set(loans.filter((l) => l.status !== "returned").map((l) => l.student_id)).size,
+    [loans]
+  )
+
+  const quickStats = [
+    { label: "Total Titles",     value: books.length.toLocaleString(), icon: <BookMarked size={18} />, color: "text-green-700", bg: "bg-green-50" },
+    { label: "Books Circulated", value: loans.length.toLocaleString(), icon: <TrendingUp size={18} />,  color: "text-blue-700",  bg: "bg-blue-50"  },
+    { label: "Active Borrowers", value: activeBorrowers.toLocaleString(), icon: <Users size={18} />,     color: "text-amber-700", bg: "bg-amber-50" },
+    { label: "Overdue Books",    value: overdueRows.length.toLocaleString(), icon: <AlertTriangle size={18} />, color: "text-red-700", bg: "bg-red-50" },
+  ]
+
   // DnD card order – Sprint 5.6.1
-  const INITIAL_CARDS: CardDef[] = [
+  const cardDefs: CardDef[] = [
     {
       id: "catalogue",
       title: "Catalogue Overview",
-      subtitle: "Collection by type",
+      subtitle: "Collection by category",
       icon: <BookMarked size={16} />,
-      content: <DonutChart />,
+      content: <DonutChart data={catalogueData} />,
     },
     {
       id: "circulation",
       title: "Circulation Summary",
-      subtitle: "Monthly borrows (Jan – Jun 2026)",
+      subtitle: "Monthly borrows (last 6 months)",
       icon: <BarChart2 size={16} />,
-      content: <BarChartViz />,
+      content: <BarChartViz data={circulationData} />,
     },
     {
       id: "patrons",
       title: "Top Patrons",
-      subtitle: "Highest borrowers this semester",
+      subtitle: "Highest borrowers all-time",
       icon: <Users size={16} />,
-      content: <TopPatronsList />,
+      content: <TopPatronsList patrons={topPatrons} />,
     },
     {
       id: "trends",
       title: "Borrowing Trends",
-      subtitle: "Weekly activity (May – Jun 2026)",
+      subtitle: "Weekly activity (last 8 weeks)",
       icon: <TrendingUp size={16} />,
-      content: <LineChartViz />,
+      content: <LineChartViz data={trendData} />,
     },
   ]
 
-  const [cards, setCards] = useState(INITIAL_CARDS)
+  const [cardOrder, setCardOrder] = useState<string[]>(["catalogue", "circulation", "patrons", "trends"])
+  const cards = cardOrder.map((id) => cardDefs.find((c) => c.id === id)!).filter(Boolean)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -629,9 +665,9 @@ export default function ReportsPage() {
   function handleDragEnd(e: DragEndEvent) {
     const { active, over } = e
     if (over && active.id !== over.id) {
-      setCards((prev) => {
-        const oldIdx = prev.findIndex((c) => c.id === active.id)
-        const newIdx = prev.findIndex((c) => c.id === over.id)
+      setCardOrder((prev) => {
+        const oldIdx = prev.indexOf(active.id as string)
+        const newIdx = prev.indexOf(over.id as string)
         return arrayMove(prev, oldIdx, newIdx)
       })
     }
@@ -659,13 +695,6 @@ export default function ReportsPage() {
             {today}
           </p>
         </div>
-        <button
-          className="flex items-center gap-2 px-4 py-2 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 font-medium transition-colors self-start"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-        >
-          <Download size={14} />
-          Export All Reports
-        </button>
       </div>
 
       {/* ── Filter bar – Sprint 5.6.2 ─────────────────────── */}
@@ -724,9 +753,9 @@ export default function ReportsPage() {
         {/* Dropdowns */}
         {[
           { label: "Category", value: category, setter: setCategory,
-            options: ["All Categories", "Fiction", "Non-Fiction", "Reference", "Periodicals"] },
+            options: ["All Categories", ...new Set(books.map((b) => b.category).filter(Boolean))] },
           { label: "Program", value: program, setter: setProgram,
-            options: ["All Programs", "BS Nursing", "BS Education", "BS Civil Engineering", "BS Computer Science", "BS Accountancy", "BS Psychology"] },
+            options: ["All Programs", ...new Set(patrons.map((p) => p.program).filter((p): p is string => !!p))] },
           { label: "Year Level", value: yearLevel, setter: setYearLevel,
             options: ["All Year Levels", "1st Year", "2nd Year", "3rd Year", "4th Year"] },
         ].map((f) => (
@@ -769,12 +798,12 @@ export default function ReportsPage() {
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
           >
             {t.label}
-            {t.key === "overdue" && (
+            {t.key === "overdue" && overdueRows.length > 0 && (
               <span
                 className="ml-2 px-1.5 py-0.5 rounded-full bg-red-100 text-red-700"
                 style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
               >
-                {OVERDUE_BOOKS.length}
+                {overdueRows.length}
               </span>
             )}
           </button>
@@ -786,7 +815,7 @@ export default function ReportsPage() {
         <div className="flex flex-col gap-6">
           {/* Quick stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {QUICK_STATS.map((s) => (
+            {quickStats.map((s) => (
               <div key={s.label} className="rounded border border-ink-200 bg-white px-4 py-3 flex items-center gap-3" style={{ boxShadow: "var(--shadow)" }}>
                 <div className={cn("flex items-center justify-center w-9 h-9 rounded-sm shrink-0", s.bg)}>
                   <span className={s.color}>{s.icon}</span>
@@ -832,7 +861,7 @@ export default function ReportsPage() {
       )}
 
       {/* ── Overdue Books tab – Sprint 5.6.4 ──────────────── */}
-      {tab === "overdue" && <OverdueTable />}
+      {tab === "overdue" && <OverdueTable rows={overdueRows} />}
     </div>
   )
 }

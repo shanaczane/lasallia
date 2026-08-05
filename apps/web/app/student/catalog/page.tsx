@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/catalog'
 import { useBooks } from '@/lib/hooks/useBooks'
 import { deriveCatalogOptions } from '@/lib/catalogOptions'
+import { fetchSavedBooks, saveBook, unsaveBook } from '@/lib/saved'
 
 const PAGE_SIZE = 24
 
@@ -66,6 +67,33 @@ function StudentCatalogContent() {
 
   const { filters, setFilter, setFilters, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
   const { books, loading, error } = useBooks()
+
+  const [savedBookIds, setSavedBookIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    fetchSavedBooks().then((rows) => setSavedBookIds(new Set(rows.map((r) => r.book_id)))).catch(() => {})
+  }, [])
+
+  async function handleToggleSave(book: Book) {
+    const wasSaved = savedBookIds.has(book.id)
+    setSavedBookIds((prev) => {
+      const next = new Set(prev)
+      if (wasSaved) next.delete(book.id)
+      else next.add(book.id)
+      return next
+    })
+    try {
+      if (wasSaved) await unsaveBook(book.id)
+      else await saveBook(book.id)
+    } catch {
+      // revert on failure
+      setSavedBookIds((prev) => {
+        const next = new Set(prev)
+        if (wasSaved) next.add(book.id)
+        else next.delete(book.id)
+        return next
+      })
+    }
+  }
 
   const { genres, subjects, floors } = useMemo(() => deriveCatalogOptions(books), [books])
 
@@ -227,6 +255,8 @@ function StudentCatalogContent() {
               showBookmark={true}
               hasActiveFilters={hasActive || !!query}
               onClearFilters={clearAll}
+              savedBookIds={savedBookIds}
+              onToggleSave={handleToggleSave}
             />
             <Pagination page={page} totalPages={totalPages} onChange={setPage} />
           </>
