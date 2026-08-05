@@ -18,6 +18,7 @@ async function parseErrorOrThrow(res: Response, fallback: string): Promise<never
 export type StationSession = {
   id: string
   student_id: string
+  student_first_name: string
   auth_method: 'manual_login' | 'rfid'
   station_id: string
   started_at: string
@@ -35,6 +36,35 @@ export async function openSessionFromToken(): Promise<StationSession> {
   })
   if (!res.ok) return parseErrorOrThrow(res, 'Could not open a borrowing session')
   return res.json()
+}
+
+// The physical/shared-terminal path (Phase 6) — an RFID tap or a manual
+// login typed at the kiosk itself. Not behind auth: this is what the
+// kiosk calls to find out who's standing in front of it in the first
+// place (mirrors apps/api/routers/sessions.py's open_session).
+export async function openSession(
+  stationId: string,
+  auth: { authMethod: 'rfid'; rfidUid: string } | { authMethod: 'manual_login'; email: string; password: string }
+): Promise<StationSession> {
+  const body =
+    auth.authMethod === 'rfid'
+      ? { station_id: stationId, auth_method: 'rfid', rfid_uid: auth.rfidUid }
+      : { station_id: stationId, auth_method: 'manual_login', email: auth.email, password: auth.password }
+  const res = await fetch(`${API_URL}/station-sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not open a session')
+  return res.json()
+}
+
+// Idle timeout, "Done / Log out", or a new tap interrupting this one
+// (Phase 6). Not behind auth, same reasoning as openSession — an
+// rfid-tapped session has no JWT to authenticate this call with.
+export async function endSession(sessionId: string): Promise<void> {
+  const res = await fetch(`${API_URL}/station-sessions/${sessionId}/end`, { method: 'POST' })
+  if (!res.ok && res.status !== 404) return parseErrorOrThrow(res, 'Could not end this session')
 }
 
 export type ClaimHoldResponse = {

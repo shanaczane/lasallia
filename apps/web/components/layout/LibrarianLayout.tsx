@@ -5,6 +5,7 @@ import { useState, useEffect, useLayoutEffect } from "react"
 import { TopNav } from "./TopNav"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { clearSession } from "@/lib/auth"
 import {
   LayoutDashboard,
   BookOpen,
@@ -163,7 +164,7 @@ export function LibrarianLayout({
       <div className={cn("border-t border-ink-100", isCollapsed ? "p-2" : "p-3")}>
         <button
           type="button"
-          onClick={() => window.location.replace("/login")}
+          onClick={() => { clearSession(); window.location.replace("/login") }}
           title={isCollapsed ? "Sign out" : undefined}
           className={cn(
             "flex items-center rounded-sm text-ink-500 hover:bg-ink-50 hover:text-red-600 transition-colors",

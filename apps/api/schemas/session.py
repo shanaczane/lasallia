@@ -16,6 +16,7 @@ class OpenSessionRequest(BaseModel):
 class StationSession(BaseModel):
     id: str
     student_id: str
+    student_first_name: str
     auth_method: AuthMethod
     station_id: str
     started_at: str
