@@ -161,11 +161,22 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
             {loadError || 'Please go back to the kiosk and start again.'}
           </p>
         </div>
+        <Link
+          href="/student/catalog"
+          className="flex items-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+        >
+          <ArrowLeft size={14} />
+          Back to catalog
+        </Link>
       </div>
     )
   }
 
   // ── Reported missing ─────────────────────────────────────────────────────
+  // Same reasoning as the success screen below: the hold behind this page
+  // is already released server-side the instant this fires, so there's
+  // nothing to "go back" to on this URL — link forward instead.
   if (reportedMissing) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-4" style={{ backgroundColor: 'var(--color-paper)' }}>
@@ -180,6 +191,14 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
             We&apos;ve flagged this copy for a librarian to check. Please see the front desk if you still need this title.
           </p>
         </div>
+        <Link
+          href="/student/catalog"
+          className="flex items-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+        >
+          <ArrowLeft size={14} />
+          Back to catalog
+        </Link>
       </div>
     )
   }
