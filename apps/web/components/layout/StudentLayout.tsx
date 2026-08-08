@@ -12,6 +12,8 @@ import { usePathname } from "next/navigation"
 import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
 import { cn } from "@/lib/utils"
 import { clearSession } from "@/lib/auth"
+import { fetchLoans } from "@/lib/kiosk"
+import { fetchReservations } from "@/lib/reservations"
 import {
   LayoutDashboard,
   BookOpen,
@@ -42,7 +44,7 @@ const studentNav: NavSection[] = [
     items: [
       { label: "Dashboard",         icon: <LayoutDashboard size={16} />, href: "/student/dashboard" },
       { label: "Catalog",           icon: <Search size={16} />,          href: "/student/catalog" },
-      { label: "Reservations",      icon: <BookOpen size={16} />,        href: "/student/reservations", badge: 3 },
+      { label: "Reservations",      icon: <BookOpen size={16} />,        href: "/student/reservations" },
       { label: "Library Assistant", icon: <MessageSquare size={16} />,   href: "/student/assistant" },
       { label: "Notifications",     icon: <Bell size={16} />,            href: "/student/notifications" },
     ],
@@ -51,7 +53,7 @@ const studentNav: NavSection[] = [
     title: "My Library",
     items: [
       // Sprint 4.5 — single entry point for Borrowed, Saved, and History tabs
-      { label: "My Library", icon: <Library size={16} />, href: "/student/library", badge: 4 },
+      { label: "My Library", icon: <Library size={16} />, href: "/student/library" },
     ],
   },
 ]
@@ -93,6 +95,21 @@ function StudentLayoutInner({
   const [displayName, setDisplayName] = useState(userName ?? "")
   const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
 
+  // Real counts, not the static placeholders these badges used to show —
+  // hidden entirely (via `undefined` in the badge lookup below) when
+  // there's nothing actually happening, rather than always showing 0.
+  const [activeReservationCount, setActiveReservationCount] = useState(0)
+  const [activeLoanCount, setActiveLoanCount] = useState(0)
+
+  useEffect(() => {
+    fetchReservations()
+      .then((rows) => setActiveReservationCount(rows.filter((r) => r.status === "pending" || r.status === "ready").length))
+      .catch(() => {})
+    fetchLoans()
+      .then((rows) => setActiveLoanCount(rows.filter((l) => l.status !== "returned").length))
+      .catch(() => {})
+  }, [])
+
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("sidebar-collapsed") === "true") setCollapsed(true)
     const raw = localStorage.getItem("user")
@@ -129,7 +146,11 @@ function StudentLayoutInner({
             <ul className="flex flex-col gap-0.5">
               {section.items.map((item) => {
                 const isActive = pathname === item.href
-                const badge = item.href === '/student/notifications' ? (unreadCount || undefined) : item.badge
+                const badge =
+                  item.href === '/student/notifications' ? (unreadCount || undefined) :
+                  item.href === '/student/reservations' ? (activeReservationCount || undefined) :
+                  item.href === '/student/library' ? (activeLoanCount || undefined) :
+                  item.badge
                 return (
                   <li key={item.href}>
                     <Link
