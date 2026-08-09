@@ -1,4 +1,4 @@
-# apps/api/scripts/compare_embedding_models.py
+# apps/api/evals/embedding_comparison.py
 # Chatbot Phase 1 (plan 1.3) — "don't just accept the default embedding
 # model, build a small comparison." Scoped to OpenAI-hosted models only
 # for now (text-embedding-3-small vs text-embedding-3-large) rather than
@@ -12,7 +12,12 @@
 # that table only ever holds the one model actually shipped, decided
 # after this runs.
 #
-# Usage: venv/Scripts/python.exe scripts/compare_embedding_models.py
+# Relocated here from scripts/ during the Phase 2-8 structure pass —
+# this is an evaluation artifact (measures quality), not an operational
+# job like scripts/reembed_books.py. Content unchanged apart from the
+# query-set path below.
+#
+# Usage: venv/Scripts/python.exe evals/embedding_comparison.py
 
 import json
 import sys
@@ -28,7 +33,7 @@ from core.supabase import get_admin_client
 MODELS = ["text-embedding-3-small", "text-embedding-3-large"]
 TOP_K = 5
 BATCH_SIZE = 100
-QUERY_SET_PATH = Path(__file__).parent / "embedding_eval_queries.json"
+QUERY_SET_PATH = Path(__file__).parent / "queries" / "embedding_comparison_v1.json"
 
 
 def embed_batch(texts: list[str], model: str) -> np.ndarray:
