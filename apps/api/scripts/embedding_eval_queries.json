@@ -1,0 +1,32 @@
+[
+  {
+    "query": "books about artificial intelligence",
+    "language": "english",
+    "expected_title": "Introduction to artificial intelligence"
+  },
+  {
+    "query": "do you have anything on cybersecurity",
+    "language": "english",
+    "expected_title": "Introduction to cybersecurity"
+  },
+  {
+    "query": "the art of computer programming",
+    "language": "english",
+    "expected_title": "The art of computer programming: volume 4b"
+  },
+  {
+    "query": "may libro ba kayo about cloud security?",
+    "language": "taglish",
+    "expected_title": "Cloud native security"
+  },
+  {
+    "query": "meron ba kayong libro tungkol sa AI sa mga games",
+    "language": "taglish",
+    "expected_title": "Artificial intelligence in games"
+  },
+  {
+    "query": "may libro ba tungkol sa MATLAB para sa mga engineers",
+    "language": "taglish",
+    "expected_title": "MATLAB programming for engineers. Seventh edition"
+  }
+]
