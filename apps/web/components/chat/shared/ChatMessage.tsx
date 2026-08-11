@@ -9,13 +9,13 @@ export interface ChatMessageData {
   role: "user" | "bot"
   content: string
   timestamp: string
-  book?: BookCardData
+  books?: BookCardData[]
   restricted?: boolean
 }
 
 type Props = Omit<ChatMessageData, "id">
 
-export default function ChatMessage({ role, content, timestamp, book, restricted }: Props) {
+export default function ChatMessage({ role, content, timestamp, books, restricted }: Props) {
   const isUser = role === "user"
 
   return (
@@ -55,7 +55,7 @@ export default function ChatMessage({ role, content, timestamp, book, restricted
         >
           {content}
 
-          {book && <BookCard {...book} />}
+          {books?.map((b, i) => <BookCard key={i} {...b} />)}
 
           {restricted && (
             <div

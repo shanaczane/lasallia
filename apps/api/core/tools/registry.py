@@ -15,6 +15,7 @@ Structural home of two of the chatbot plan's non-negotiable rules:
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from core.tools import catalog
 from schemas.auth import UserProfile
 
 
@@ -43,8 +44,14 @@ class ToolRegistry:
         """The tool specs this session may call, in OpenAI tool-calling
         format. Catalog/book-details/policy tools (Phases 2-4) are
         always included; account tools (Phase 5) are appended only when
-        self.user is not None."""
-        raise NotImplementedError
+        self.user is not None.
+
+        Only Phase 2's search_catalog is wired up so far — book_details
+        (Phase 3), policy (Phase 4), and account (Phase 5) tools stay out
+        of this list until those phases are actually built, per the
+        chatbot plan's "build one phase at a time."
+        """
+        return [ToolSpec(schema=catalog.TOOL_SCHEMA, handler=catalog.search_catalog)]
 
     def dispatch(self, name: str, arguments: dict[str, Any]) -> Any:
         """Executes the named tool call by looking it up in
@@ -53,4 +60,7 @@ class ToolRegistry:
         never be able to reach an account tool even via a crafted
         request, regardless of what the model itself would or wouldn't
         attempt."""
-        raise NotImplementedError
+        for spec in self.available_tools():
+            if spec.schema["function"]["name"] == name:
+                return spec.handler(**arguments)
+        raise ValueError(f"Unknown or unavailable tool for this session: {name}")

@@ -49,6 +49,28 @@ def embed_text(text: str, model: str = DEFAULT_MODEL) -> list[float]:
     return res.data[0].embedding
 
 
+def semantic_search(admin: Client, query: str, limit: int = 10) -> list[dict]:
+    """Plan 1.4/1.5's hybrid search, minus availability-joining and
+    accession redaction — those differ by caller (routers/search.py's
+    public endpoint vs core/tools/catalog.py's chat tool), so each caller
+    applies them itself. Returns raw book rows in rank order."""
+    query_embedding = embed_text(query)
+    ranked = admin.rpc("hybrid_search_books", {
+        "query_embedding": query_embedding,
+        "query_text": query,
+        "match_count": limit,
+    }).execute().data
+
+    book_ids = [row["book_id"] for row in ranked]
+    if not book_ids:
+        return []
+
+    books_res = admin.table("books").select("*").in_("id", book_ids).execute().data
+    by_id = {b["id"]: b for b in books_res}
+    # rpc() returns rank order, but a plain .in_() fetch doesn't preserve it.
+    return [by_id[bid] for bid in book_ids if bid in by_id]
+
+
 def reembed_books(admin: Client, force_all: bool = False) -> int:
     """Plan 1.6's re-embedding job. Skips books whose catalog row hasn't
     changed since they were last embedded (unless force_all, or the
