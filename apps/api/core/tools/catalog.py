@@ -8,7 +8,7 @@ no LLM involved, and that must keep working on its own.
 
 import numpy as np
 
-from core.embeddings import embed_text, semantic_search
+from core.embeddings import embed_text, semantic_search, translate_query_to_english
 from core.supabase import get_admin_client
 from routers.books import _apply_real_availability, _redact_accession
 from schemas.book import Book
@@ -37,23 +37,34 @@ def _parse_vector(value) -> np.ndarray:
     return np.array(value)
 
 
-def search_catalog(query: str, limit: int = DEFAULT_LIMIT) -> list[Book]:
+def search_catalog(query: str, limit: int = DEFAULT_LIMIT, translate: bool = False) -> list[Book]:
     """Tool handler for `search_catalog`. Same pipeline as
     routers/search.py's POST /search/semantic, plus a relevance filter
     (see SIMILARITY_THRESHOLD above) that endpoint doesn't need. Accession
     numbers are always redacted here regardless of caller — plan 2.2
     forbids the chatbot from disclosing them unconditionally, unlike the
-    catalog page's librarian carve-out."""
+    catalog page's librarian carve-out.
+
+    `translate` (Phase 6, plan 6.3) — when true, the query is translated
+    to English *once* here and that translated string is used for every
+    embedding/search call below (semantic_search's hybrid RPC, and this
+    function's own separate relevance-check embedding), so nothing ends
+    up comparing an English book embedding against a non-English query
+    vector inconsistently. Defaults to False — purely additive, decided
+    by evals/run_eval.py's A/B, not a behavior change on its own.
+    """
     admin = get_admin_client()
-    ordered = semantic_search(admin, query, limit)
+    effective_query = translate_query_to_english(query) if translate else query
+
+    ordered = semantic_search(admin, effective_query, limit)
     if not ordered:
         return []
 
     book_ids = [b["id"] for b in ordered]
 
-    query_vec = _parse_vector(embed_text(query))
+    query_vec = _parse_vector(embed_text(effective_query))
     query_norm = np.linalg.norm(query_vec)
-    query_lower = query.strip().lower()
+    query_lower = effective_query.strip().lower()
 
     embeds = admin.table("book_embeddings").select("book_id, embedding").in_("book_id", book_ids).execute().data
     similarity_by_id = {}

@@ -9,7 +9,7 @@ cite the section").
 
 from pydantic import BaseModel
 
-from core.embeddings import embed_text
+from core.embeddings import embed_text, translate_query_to_english
 from core.supabase import get_admin_client
 
 DEFAULT_LIMIT = 5
@@ -27,12 +27,17 @@ class PolicyChunkResult(BaseModel):
     source_page: int | None = None
 
 
-def search_policy(query: str, limit: int = DEFAULT_LIMIT) -> list[PolicyChunkResult]:
+def search_policy(query: str, limit: int = DEFAULT_LIMIT, translate: bool = False) -> list[PolicyChunkResult]:
     """Tool handler for `search_policy`. Calls into policy_chunks via the
     search_policy_chunks RPC (migration 0015) — core/policy.py owns
-    ingestion/chunking, not lookup, so that logic isn't duplicated here."""
+    ingestion/chunking, not lookup, so that logic isn't duplicated here.
+
+    `translate` (Phase 6, plan 6.3) — same query-translation improvement
+    as core/tools/catalog.py's search_catalog; see its docstring for why
+    it's applied once, up front, rather than at each embedding call."""
     admin = get_admin_client()
-    query_embedding = embed_text(query)
+    effective_query = translate_query_to_english(query) if translate else query
+    query_embedding = embed_text(effective_query)
     rows = admin.rpc("search_policy_chunks", {
         "query_embedding": query_embedding,
         "match_count": limit,

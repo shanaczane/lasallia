@@ -1,0 +1,73 @@
+[
+  {"id": "cat-ai-en", "capability": "catalog", "language": "english", "group": "ai-intro", "query": "books about artificial intelligence", "expected_title": "Introduction to artificial intelligence"},
+  {"id": "cat-ai-tgl", "capability": "catalog", "language": "taglish", "group": "ai-intro", "query": "may libro ba kayo tungkol sa artificial intelligence?", "expected_title": "Introduction to artificial intelligence"},
+  {"id": "cat-ai-fil", "capability": "catalog", "language": "filipino", "group": "ai-intro", "query": "may aklat po ba kayo tungkol sa artificial intelligence?", "expected_title": "Introduction to artificial intelligence"},
+
+  {"id": "cat-cyber-en", "capability": "catalog", "language": "english", "group": "cybersecurity", "query": "do you have anything on cybersecurity", "expected_title": "Introduction to cybersecurity"},
+  {"id": "cat-cyber-tgl", "capability": "catalog", "language": "taglish", "group": "cybersecurity", "query": "meron ba kayong libro about cybersecurity?", "expected_title": "Introduction to cybersecurity"},
+  {"id": "cat-cyber-fil", "capability": "catalog", "language": "filipino", "group": "cybersecurity", "query": "mayroon po ba kayong aklat tungkol sa cybersecurity?", "expected_title": "Introduction to cybersecurity"},
+
+  {"id": "cat-cloud-en", "capability": "catalog", "language": "english", "group": "cloud-security", "query": "looking for a book on cloud security", "expected_title": "Cloud native security"},
+  {"id": "cat-cloud-tgl", "capability": "catalog", "language": "taglish", "group": "cloud-security", "query": "may libro ba kayo about cloud security?", "expected_title": "Cloud native security"},
+  {"id": "cat-cloud-fil", "capability": "catalog", "language": "filipino", "group": "cloud-security", "query": "hinahanap ko po sana ang librong tungkol sa cloud security", "expected_title": "Cloud native security"},
+
+  {"id": "cat-aigames-en", "capability": "catalog", "language": "english", "group": "ai-games", "query": "is there a book about AI in video games", "expected_title": "Artificial intelligence in games"},
+  {"id": "cat-aigames-tgl", "capability": "catalog", "language": "taglish", "group": "ai-games", "query": "meron ba kayong libro tungkol sa AI sa mga games", "expected_title": "Artificial intelligence in games"},
+  {"id": "cat-aigames-fil", "capability": "catalog", "language": "filipino", "group": "ai-games", "query": "mayroon po ba kayong aklat tungkol sa artificial intelligence sa mga laro?", "expected_title": "Artificial intelligence in games"},
+
+  {"id": "cat-matlab-en", "capability": "catalog", "language": "english", "group": "matlab", "query": "book about MATLAB for engineers", "expected_title": "MATLAB programming for engineers. Seventh edition"},
+  {"id": "cat-matlab-tgl", "capability": "catalog", "language": "taglish", "group": "matlab", "query": "may libro ba tungkol sa MATLAB para sa mga engineers", "expected_title": "MATLAB programming for engineers. Seventh edition"},
+  {"id": "cat-matlab-fil", "capability": "catalog", "language": "filipino", "group": "matlab", "query": "mayroon po ba kayong aklat tungkol sa MATLAB para sa mga inhinyero?", "expected_title": "MATLAB programming for engineers. Seventh edition"},
+
+  {"id": "cat-knuth-en", "capability": "catalog", "language": "english", "group": "art-of-programming", "query": "the art of computer programming", "expected_title": "The art of computer programming: volume 4b"},
+
+  {"id": "cat-marketing-en", "capability": "catalog", "language": "english", "group": "business-marketing", "query": "books on business marketing", "expected_title": "Business marketing"},
+  {"id": "cat-marketing-tgl", "capability": "catalog", "language": "taglish", "group": "business-marketing", "query": "may libro ba tungkol sa marketing ng business?", "expected_title": "Business marketing"},
+
+  {"id": "cat-tourism-en", "capability": "catalog", "language": "english", "group": "tourism-entrepreneurship", "query": "book about entrepreneurship in tourism and hospitality", "expected_title": "Entrepreneurship in tourism and hospitality industry"},
+  {"id": "cat-tourism-tgl", "capability": "catalog", "language": "taglish", "group": "tourism-entrepreneurship", "query": "may libro po ba tungkol sa entrepreneurship sa tourism at hospitality?", "expected_title": "Entrepreneurship in tourism and hospitality industry"},
+  {"id": "cat-tourism-fil", "capability": "catalog", "language": "filipino", "group": "tourism-entrepreneurship", "query": "may aklat po ba tungkol sa negosyo sa larangan ng turismo?", "expected_title": "Entrepreneurship in tourism and hospitality industry"},
+
+  {"id": "pol-genfine-en", "capability": "policy", "language": "english", "group": "general-fine", "query": "how much is the fine for a late book?", "expected_section_contains": "Loan Policies", "expected_answer_contains": ["5", "school day"]},
+  {"id": "pol-genfine-tgl", "capability": "policy", "language": "taglish", "group": "general-fine", "query": "magkano yung fine kapag late mag-return ng libro?", "expected_section_contains": "Loan Policies", "expected_answer_contains": ["5", "school day"]},
+  {"id": "pol-genfine-fil", "capability": "policy", "language": "filipino", "group": "general-fine", "query": "magkano po ang multa kapag naantala ang pagsauli ng libro?", "expected_section_contains": "Loan Policies", "expected_answer_contains": ["5", "school day"]},
+
+  {"id": "pol-hourlyfine-en", "capability": "policy", "language": "english", "group": "hourly-fine", "query": "what's the fine rate for a reserve book or the Bible per hour?", "expected_section_contains": "Loan Policies", "expected_answer_contains": ["2", "hour"]},
+  {"id": "pol-hourlyfine-tgl", "capability": "policy", "language": "taglish", "group": "hourly-fine", "query": "magkano po per hour yung fine ng reserve books?", "expected_section_contains": "Loan Policies", "expected_answer_contains": ["2", "hour"]},
+  {"id": "pol-hourlyfine-fil", "capability": "policy", "language": "filipino", "group": "hourly-fine", "query": "magkano po ang multa bawat oras para sa reserve books?", "expected_section_contains": "Loan Policies", "expected_answer_contains": ["2", "hour"]},
+
+  {"id": "pol-lostfine-en", "capability": "policy", "language": "english", "group": "lost-damaged", "query": "how much do I pay if I lose or damage a library book?", "expected_section_contains": "Loan Policies", "expected_answer_contains": ["50", "processing"]},
+  {"id": "pol-lostfine-tgl", "capability": "policy", "language": "taglish", "group": "lost-damaged", "query": "magkano babayaran ko kung nawala o nasira yung libro?", "expected_section_contains": "Loan Policies", "expected_answer_contains": ["50", "processing"]},
+  {"id": "pol-lostfine-fil", "capability": "policy", "language": "filipino", "group": "lost-damaged", "query": "magkano po ang babayaran ko kapag nawala o nasira ang aklat?", "expected_section_contains": "Loan Policies", "expected_answer_contains": ["50", "processing"]},
+
+  {"id": "pol-hours-en", "capability": "policy", "language": "english", "group": "hours-weekday", "query": "what time does the LRC open on weekdays?", "expected_section_contains": "Hours of Service", "expected_answer_contains": ["7"]},
+  {"id": "pol-hours-tgl", "capability": "policy", "language": "taglish", "group": "hours-weekday", "query": "anong oras magbukas yung library sa weekdays?", "expected_section_contains": "Hours of Service", "expected_answer_contains": ["7"]},
+  {"id": "pol-hours-fil", "capability": "policy", "language": "filipino", "group": "hours-weekday", "query": "anong oras po bumubukas ang aklatan tuwing Lunes hanggang Biyernes?", "expected_section_contains": "Hours of Service", "expected_answer_contains": ["7"]},
+
+  {"id": "pol-hourssat-en", "capability": "policy", "language": "english", "group": "hours-saturday", "query": "is the library open on Saturday, and what time?", "expected_section_contains": "Hours of Service", "expected_answer_contains": ["8", "Saturday"]},
+  {"id": "pol-hourssat-tgl", "capability": "policy", "language": "taglish", "group": "hours-saturday", "query": "bukas ba yung LRC tuwing Sabado, anong oras?", "expected_section_contains": "Hours of Service", "expected_answer_contains": ["8", "Saturday"]},
+
+  {"id": "pol-visitor-en", "capability": "policy", "language": "english", "group": "visitor-requirements", "query": "what do outside visitors need to bring to use the library?", "expected_answer_contains": ["referral", "ID"]},
+  {"id": "pol-visitor-tgl", "capability": "policy", "language": "taglish", "group": "visitor-requirements", "query": "ano po kailangan dalhin ng outside visitor para makapasok sa library?", "expected_answer_contains": ["referral", "ID"]},
+  {"id": "pol-visitor-fil", "capability": "policy", "language": "filipino", "query": "ano po ang kailangang dalhin ng panauhin mula sa labas upang makagamit ng aklatan?", "group": "visitor-requirements", "expected_answer_contains": ["referral", "ID"]},
+
+  {"id": "det-cloud-en", "capability": "book_details", "language": "english", "group": "cloud-security-details", "query": "what is Cloud native security about?", "expected_title": "Cloud native security", "expected_answer_contains": ["attack surface"]},
+  {"id": "det-cloud-tgl", "capability": "book_details", "language": "taglish", "group": "cloud-security-details", "query": "ano po ba yung tungkol sa librong Cloud native security?", "expected_title": "Cloud native security", "expected_answer_contains": ["attack surface"]},
+
+  {"id": "det-java-en", "capability": "book_details", "language": "english", "group": "job-ready-java-details", "query": "tell me about the book Job ready java", "expected_title": "Alan Galloway. Job ready java", "expected_answer_contains": ["Java"]},
+  {"id": "det-java-tgl", "capability": "book_details", "language": "taglish", "group": "job-ready-java-details", "query": "ano po tungkol dun sa librong Job ready java?", "expected_title": "Alan Galloway. Job ready java", "expected_answer_contains": ["Java"]},
+  {"id": "det-java-fil", "capability": "book_details", "language": "filipino", "group": "job-ready-java-details", "query": "ano po ba ang nilalaman ng aklat na Job ready java?", "expected_title": "Alan Galloway. Job ready java", "expected_answer_contains": ["Java"]},
+
+  {"id": "det-notincatalog-en", "capability": "book_details", "language": "english", "group": "not-in-catalog", "query": "do you have Harry Potter and the Philosopher's Stone?", "not_in_catalog": true, "expected_answer_contains": ["don't have", "no", "not"]},
+  {"id": "det-notincatalog-tgl", "capability": "book_details", "language": "taglish", "group": "not-in-catalog", "query": "meron ba kayong Harry Potter and the Philosopher's Stone?", "not_in_catalog": true, "expected_answer_contains": ["don't have", "no", "wala", "not"]},
+
+  {"id": "det-nodesc-en", "capability": "book_details", "language": "english", "group": "no-real-empty-description", "query": "what is 'the art of computer programming: volume 4b' about, in the model's own words if the catalog is silent", "note": "SKIPPED IN PRACTICE — all 185 seeded books have a non-null abstract, so the honest empty-description fallback (plan 3.3) can't be exercised against real, unmodified data right now. Left here as a documented gap, not answered by the runner.", "skip": true},
+
+  {"id": "acc-due-en", "capability": "account", "language": "english", "group": "my-due-date", "query": "when is my book due?", "requires_test_student": true, "expected_answer_contains": ["due"]},
+  {"id": "acc-due-tgl", "capability": "account", "language": "taglish", "group": "my-due-date", "query": "kailan po due yung libro ko?", "requires_test_student": true, "expected_answer_contains": ["due"]},
+
+  {"id": "acc-fines-en", "capability": "account", "language": "english", "group": "my-fines", "query": "do I have any unpaid fines?", "requires_test_student": true, "expected_answer_contains": ["no", "none", "don't have"]},
+  {"id": "acc-fines-tgl", "capability": "account", "language": "taglish", "group": "my-fines", "query": "may fine ba ako na hindi pa bayad?", "requires_test_student": true, "expected_answer_contains": ["no", "none", "wala", "don't have"]},
+
+  {"id": "acc-history-en", "capability": "account", "language": "english", "group": "my-history", "query": "what books have I borrowed and returned before?", "requires_test_student": true, "expected_answer_contains": ["returned"]}
+]

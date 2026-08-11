@@ -49,6 +49,34 @@ def embed_text(text: str, model: str = DEFAULT_MODEL) -> list[float]:
     return res.data[0].embedding
 
 
+TRANSLATE_MODEL = "gpt-4o-mini"
+
+_TRANSLATE_SYSTEM_PROMPT = (
+    "Translate the following library search query to English. "
+    "Keep book titles, author names, and call numbers as-is if unsure. "
+    "Reply with ONLY the translated query, nothing else — no quotes, no explanation."
+)
+
+
+def translate_query_to_english(query: str) -> str:
+    """Chatbot Phase 6 — the query-translation improvement (plan 6.3).
+    One cheap chat completion, not a full embedding-model swap: search
+    stays in English (book_embeddings/policy_chunks are English text),
+    only the query gets translated before it's embedded. The chat
+    model's actual reply to the student is unaffected — this only
+    touches the retrieval query, not the conversation."""
+    client = get_openai_client()
+    res = client.chat.completions.create(
+        model=TRANSLATE_MODEL,
+        messages=[
+            {"role": "system", "content": _TRANSLATE_SYSTEM_PROMPT},
+            {"role": "user", "content": query},
+        ],
+    )
+    translated = (res.choices[0].message.content or "").strip()
+    return translated or query
+
+
 def semantic_search(admin: Client, query: str, limit: int = 10) -> list[dict]:
     """Plan 1.4/1.5's hybrid search, minus availability-joining and
     accession redaction — those differ by caller (routers/search.py's
