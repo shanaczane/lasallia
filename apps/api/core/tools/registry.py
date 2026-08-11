@@ -15,7 +15,7 @@ Structural home of two of the chatbot plan's non-negotiable rules:
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from core.tools import catalog
+from core.tools import book_details, catalog
 from schemas.auth import UserProfile
 
 
@@ -46,12 +46,15 @@ class ToolRegistry:
         always included; account tools (Phase 5) are appended only when
         self.user is not None.
 
-        Only Phase 2's search_catalog is wired up so far — book_details
-        (Phase 3), policy (Phase 4), and account (Phase 5) tools stay out
-        of this list until those phases are actually built, per the
-        chatbot plan's "build one phase at a time."
+        Phases 2 and 3 are wired up (search_catalog, get_book_details) —
+        policy (Phase 4) and account (Phase 5) tools stay out of this
+        list until those phases are actually built, per the chatbot
+        plan's "build one phase at a time."
         """
-        return [ToolSpec(schema=catalog.TOOL_SCHEMA, handler=catalog.search_catalog)]
+        return [
+            ToolSpec(schema=catalog.TOOL_SCHEMA, handler=catalog.search_catalog),
+            ToolSpec(schema=book_details.TOOL_SCHEMA, handler=book_details.get_book_details),
+        ]
 
     def dispatch(self, name: str, arguments: dict[str, Any]) -> Any:
         """Executes the named tool call by looking it up in
