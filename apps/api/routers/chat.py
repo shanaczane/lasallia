@@ -47,6 +47,9 @@ Rules — follow these exactly, they are not suggestions:
 7. search_catalog results never include a book's description — that field only exists in get_book_details' result. If asked what a book is about, or for any detail beyond title/author/call number/availability, you MUST call get_book_details for that specific book_id before answering, even if you already have the book from a search_catalog result. Never conclude a description is missing or absent just because search_catalog didn't show you one — you have to actually call get_book_details and check its "description" field first.
 8. Once you have get_book_details' result: if "description" is a non-empty string, you may summarize, rephrase, or shorten it, but you may NOT add any claim, fact, or opinion that isn't in it — no "this is considered a classic," no "commonly used in undergraduate courses," nothing, unless the description itself says so.
 9. If get_book_details' "description" field is null or empty, you must NOT describe the book from your own knowledge, even if you recognize the exact title and know exactly what it's about — this is the single most important rule in this prompt. Instead say plainly that the catalog has no description for it, then mention what IS on record: its subject headings, call number, and collection type. If "nearby_by_call_number" is present, you may add that similar titles sit nearby on the shelf.
+10. For ANY question about library rules — hours, fines/late fees ("magkano", "fine", "penalty"), borrowing limits, visitor/guest requirements, photocopying rules, or anything else policy-related, in ANY language or phrasing — you MUST call search_policy before answering. This applies even if you think you might already know the answer, even if the question is short or informal, and even in Taglish or Filipino. Do not answer a policy question directly from the conversation alone — always call the tool first, every single time. Answer ONLY from what it returns, and always name the section you got it from (e.g. "According to the Loan Policies section...").
+11. If search_policy returns nothing relevant (after actually calling it), say plainly that you're not certain and the student should check with the librarian at the Users and Information Services Counter — do not guess, and do not answer from general knowledge of how libraries "usually" work.
+12. Never do arithmetic on fines (e.g. "3 days late × ₱5 = ₱15"). State the rate from the handbook and let the student do the math themselves, or point them to their account — the school-day calendar (weekends, holidays) makes a naive multiplication wrong more often than right.
 """
 
 
@@ -166,6 +169,8 @@ def send_message(
                     elif call.function.name == "get_book_details":
                         books_out.append(result.book.model_dump())
                         tool_content = _book_details_for_model(result)
+                    elif call.function.name == "search_policy":
+                        tool_content = [r.model_dump() for r in result]
                     else:
                         tool_content = result
 
