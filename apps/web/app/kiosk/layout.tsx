@@ -7,8 +7,10 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
-import { LogOut, Clock } from 'lucide-react'
+import Link from 'next/link'
+import { useRouter, usePathname } from 'next/navigation'
+import { LogOut, Clock, Search, MessageSquare } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { KioskSessionProvider, useKioskSession } from '@/components/kiosk/KioskSessionProvider'
 import { RfidListener } from '@/components/kiosk/RfidListener'
 import { useIdleTimeout } from '@/components/kiosk/useIdleTimeout'
@@ -16,8 +18,14 @@ import { useIdleTimeout } from '@/components/kiosk/useIdleTimeout'
 const IDLE_TIMEOUT_SECONDS = 90
 const WARNING_AT_SECONDS = 15
 
+const NAV_LINKS = [
+  { href: '/kiosk/catalog', label: 'Find a book', icon: Search },
+  { href: '/kiosk/assistant', label: 'Ask Lasallia', icon: MessageSquare },
+]
+
 function KioskShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
+  const pathname = usePathname()
   const { session, open, end } = useKioskSession()
   const previousSessionId = useRef<string | null>(null)
 
@@ -53,6 +61,27 @@ function KioskShell({ children }: { children: React.ReactNode }) {
 
       {session && (
         <>
+          <nav className="fixed top-4 left-4 z-50 flex items-center gap-1 p-1 rounded-full bg-white border border-ink-200 shadow-(--shadow-sm)">
+            {NAV_LINKS.map((link) => {
+              const active = pathname.startsWith(link.href)
+              const Icon = link.icon
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold transition-colors',
+                    active ? 'bg-green-700 text-white' : 'text-ink-600 hover:bg-ink-50'
+                  )}
+                  style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+                >
+                  <Icon size={14} />
+                  {link.label}
+                </Link>
+              )
+            })}
+          </nav>
+
           <button
             type="button"
             onClick={() => end()}

@@ -1,19 +1,14 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { fetchChatSessions, WEB_CHAT_SESSION_STORAGE_KEY, type ChatSessionSummary } from "@/lib/chat"
 
 interface ChatSidebarProps {
   open: boolean
   onClose?: () => void
 }
-
-const RECENT_SESSIONS = [
-  { id: "1", title: "Library hours & locations", time: "2d ago"  },
-  { id: "2", title: "Available CS textbooks",    time: "3d ago"  },
-  { id: "3", title: "Book renewal process",      time: "1w ago"  },
-  { id: "4", title: "How to access e-journals",  time: "2w ago"  },
-]
 
 const SUGGESTIONS = [
   "Find a book by topic",
@@ -23,7 +18,37 @@ const SUGGESTIONS = [
   "Contact the librarian",
 ]
 
+function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime()
+  const days = Math.floor(ms / 86_400_000)
+  if (days < 1) return "today"
+  if (days === 1) return "1d ago"
+  if (days < 7) return `${days}d ago`
+  const weeks = Math.floor(days / 7)
+  return `${weeks}w ago`
+}
+
+// Web-only "Recent Chats" (Chatbot Phase 7) — requires login, so this
+// simply renders nothing for a guest rather than an empty/broken list.
+// Not rendered at all on the kiosk assistant page (nothing to list —
+// kiosk history is gone the moment the session ends).
 export default function ChatSidebar({ open, onClose }: ChatSidebarProps) {
+  const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
+
+  useEffect(() => {
+    fetchChatSessions().then(setSessions).catch(() => setSessions([]))
+  }, [])
+
+  function startNewChat() {
+    sessionStorage.removeItem(WEB_CHAT_SESSION_STORAGE_KEY)
+    window.location.reload()
+  }
+
+  function openSession(id: string) {
+    sessionStorage.setItem(WEB_CHAT_SESSION_STORAGE_KEY, id)
+    window.location.reload()
+  }
+
   return (
     <aside
       className={cn(
@@ -47,6 +72,7 @@ export default function ChatSidebar({ open, onClose }: ChatSidebarProps) {
       >
         <button
           type="button"
+          onClick={startNewChat}
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border transition-colors hover:bg-ink-50"
           style={{
             fontFamily: "var(--font-body)",
@@ -63,37 +89,42 @@ export default function ChatSidebar({ open, onClose }: ChatSidebarProps) {
       {/* ── Scrollable body ── */}
       <div className="flex-1 overflow-y-auto px-3 py-2">
 
-        {/* RECENT CHATS — 11px, tracking 0.08em, uppercase, ink-400, mb-2, mt-6 */}
-        <p
-          className="mt-6 mb-2 uppercase font-semibold"
-          style={{ fontFamily: "var(--font-body)", fontSize: 11, letterSpacing: "0.08em", color: "var(--color-ink-400)" }}
-        >
-          Recent Chats
-        </p>
-        <ul className="space-y-0.5">
-          {RECENT_SESSIONS.map((s) => (
-            <li key={s.id}>
-              {/* px-3 py-2, title ink-900 14px, timestamp ink-400 12px, flex justify-between */}
-              <button
-                type="button"
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors hover:bg-ink-50 text-left gap-2"
-              >
-                <span
-                  className="truncate"
-                  style={{ fontFamily: "var(--font-body)", fontSize: 14, color: "var(--color-ink-900)" }}
-                >
-                  {s.title}
-                </span>
-                <span
-                  className="shrink-0"
-                  style={{ fontFamily: "var(--font-body)", fontSize: 12, color: "var(--color-ink-400)" }}
-                >
-                  {s.time}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        {sessions.length > 0 && (
+          <>
+            {/* RECENT CHATS — 11px, tracking 0.08em, uppercase, ink-400, mb-2, mt-6 */}
+            <p
+              className="mt-6 mb-2 uppercase font-semibold"
+              style={{ fontFamily: "var(--font-body)", fontSize: 11, letterSpacing: "0.08em", color: "var(--color-ink-400)" }}
+            >
+              Recent Chats
+            </p>
+            <ul className="space-y-0.5">
+              {sessions.map((s) => (
+                <li key={s.id}>
+                  {/* px-3 py-2, title ink-900 14px, timestamp ink-400 12px, flex justify-between */}
+                  <button
+                    type="button"
+                    onClick={() => openSession(s.id)}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors hover:bg-ink-50 text-left gap-2"
+                  >
+                    <span
+                      className="truncate"
+                      style={{ fontFamily: "var(--font-body)", fontSize: 14, color: "var(--color-ink-900)" }}
+                    >
+                      {s.last_message_preview ?? "New conversation"}
+                    </span>
+                    <span
+                      className="shrink-0"
+                      style={{ fontFamily: "var(--font-body)", fontSize: 12, color: "var(--color-ink-400)" }}
+                    >
+                      {relativeTime(s.started_at)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
 
         {/* SUGGESTIONS — same label style */}
         <p

@@ -9,7 +9,17 @@ import type { Book } from "@lasallia/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
+// Shared between ChatWindow (reads/writes on send) and ChatSidebar
+// (reads/writes on "New chat" / picking a past conversation) — web only,
+// kiosk never touches sessionStorage for chat (see ChatWindow's own note).
+export const WEB_CHAT_SESSION_STORAGE_KEY = "lasallia_chat_session_id"
+
 export type ChatStatus = "searching" | "writing"
+
+export type ChatMessage = {
+  role: "user" | "assistant"
+  content: string
+}
 
 export type ChatDone = {
   reply: string
@@ -23,10 +33,13 @@ export type ChatCallbacks = {
   onError: (message: string) => void
 }
 
+export type ChatSurface = "kiosk" | "web"
+
 export async function sendChatMessage(
   message: string,
   sessionId: string | null,
-  callbacks: ChatCallbacks
+  callbacks: ChatCallbacks,
+  surface: ChatSurface = "web"
 ): Promise<void> {
   const token = getToken()
   const headers: HeadersInit = { "Content-Type": "application/json" }
@@ -37,7 +50,7 @@ export async function sendChatMessage(
     res = await fetch(`${API_URL}/chat/message`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ message, session_id: sessionId }),
+      body: JSON.stringify({ message, session_id: sessionId, surface }),
     })
   } catch {
     callbacks.onError("Could not reach Lasallia — check your connection and try again.")
@@ -77,4 +90,36 @@ export async function sendChatMessage(
       else if (event === "error") callbacks.onError(data.detail ?? "Something went wrong.")
     }
   }
+}
+
+// Chatbot Phase 7 — web-only "Recent Chats." Requires login: there's no
+// persistent identity to list sessions by for a guest.
+export type ChatSessionSummary = {
+  id: string
+  started_at: string
+  last_message_preview: string | null
+}
+
+export async function fetchChatSessions(): Promise<ChatSessionSummary[]> {
+  const token = getToken()
+  if (!token) throw new Error("Not signed in")
+  const res = await fetch(`${API_URL}/chat/sessions`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error("Failed to load your recent chats")
+  return res.json()
+}
+
+// Hydrates a page on load/refresh (web), or loads a fresh empty history
+// for a brand-new kiosk session id. A guest-created web session is
+// fetchable by anyone with its exact id (no auth needed — the id itself
+// is the credential, matching this codebase's soft_holds/station_sessions
+// pattern); a logged-in student's session additionally requires their
+// token to match, enforced server-side.
+export async function fetchChatHistory(sessionId: string): Promise<ChatMessage[]> {
+  const token = getToken()
+  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
+  const res = await fetch(`${API_URL}/chat/sessions/${sessionId}`, { headers })
+  if (res.status === 404) return []
+  if (!res.ok) throw new Error("Failed to load this conversation")
+  const data = await res.json()
+  return data.messages
 }

@@ -16,10 +16,25 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
-    session_id: str | None = None  # None starts a new session (Phase 7)
+    session_id: str | None = None  # None starts a new session (web only — kiosk always sends one, its station session's id)
+    surface: Literal["kiosk", "web"] = "web"
 
 
 class ChatResponse(BaseModel):
     reply: str
     books: list[Book] | None = None
     session_id: str
+
+
+class ChatSessionSummary(BaseModel):
+    """One row in the web 'Recent Chats' list — enough to label it and
+    jump back in, not the full transcript (see GET /chat/sessions/{id}
+    for that)."""
+    id: str
+    started_at: str
+    last_message_preview: str | None = None
+
+
+class ChatHistoryResponse(BaseModel):
+    session_id: str
+    messages: list[ChatMessage]

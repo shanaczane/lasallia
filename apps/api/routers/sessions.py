@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase_auth.errors import AuthApiError
 
+from core import chat_sessions
 from core.deps import get_current_user
 from core.supabase import get_admin_client, get_client
 from schemas.auth import UserProfile
@@ -88,8 +89,9 @@ def open_session_from_token(user: UserProfile = Depends(get_current_user)):
 # (Phase 3) actually mean something, rather than a column nothing writes.
 @router.post("/{session_id}/end", status_code=status.HTTP_204_NO_CONTENT)
 def end_session(session_id: str):
+    admin = get_admin_client()
     res = (
-        get_admin_client()
+        admin
         .table("station_sessions")
         .update({"ended_at": datetime.now(timezone.utc).isoformat()})
         .eq("id", session_id)
@@ -98,3 +100,9 @@ def end_session(session_id: str):
     )
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found or already ended")
+
+    # Chatbot Phase 7: a kiosk chat session's id is this same station
+    # session's id (see migrations/0016's note on why), so ending one
+    # wipes the other's history in the same moment — best-effort, since
+    # the student may never have opened the assistant this visit.
+    chat_sessions.end_session(admin, session_id, surface="kiosk")

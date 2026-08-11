@@ -5,13 +5,21 @@ import ChatHeader from "./ChatHeader"
 import ChatInput from "./ChatInput"
 import ChatMessage, { type ChatMessageData } from "./ChatMessage"
 import TypingIndicator, { type TypingStatus } from "./TypingIndicator"
-import { sendChatMessage } from "@/lib/chat"
+import { sendChatMessage, fetchChatHistory, WEB_CHAT_SESSION_STORAGE_KEY, type ChatSurface } from "@/lib/chat"
 import type { BookCardData } from "./BookCard"
 import type { Book } from "@lasallia/types"
 
 interface ChatWindowProps {
   onMenuClick: () => void
   quickRepliesSlot?: (onSelect: (text: string) => void) => ReactNode
+  // Chatbot Phase 7 — surface governs history retention, not capability.
+  // Kiosk always supplies sessionId (the station session's own id, from
+  // KioskSessionProvider) since that IS the chat session for that visit.
+  // Web manages its own, kept in sessionStorage so a refresh can still
+  // find it (see WEB_CHAT_SESSION_STORAGE_KEY below); a brand-new tab/guest
+  // just starts fresh, same as today.
+  surface?: ChatSurface
+  sessionId?: string
 }
 
 const GREETING_TEXT = "Hi there! I'm Lasallia, your library assistant at De La Salle Lipa. I can help you find books and check availability. How can I help you today?"
@@ -30,19 +38,63 @@ function timestamp(): string {
   return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 }
 
-export default function ChatWindow({ onMenuClick, quickRepliesSlot }: ChatWindowProps) {
-  // Empty until mount, not [GREETING] — a timestamp computed at module
+function greeting(): ChatMessageData {
+  return { id: "greeting", role: "bot", content: GREETING_TEXT, timestamp: timestamp() }
+}
+
+export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "web", sessionId }: ChatWindowProps) {
+  // Empty until mount, not [greeting()] — a timestamp computed at module
   // load time runs once during SSR and again on the client, producing two
   // different strings and a hydration mismatch. Adding it in an effect
   // keeps the very first render (server and client) identical.
   const [messages, setMessages] = useState<ChatMessageData[]>([])
   const [typingStatus, setTypingStatus] = useState<TypingStatus | null>(null)
-  const sessionIdRef = useRef<string | null>(null)
+  const sessionIdRef = useRef<string | null>(sessionId ?? null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setMessages([{ id: "greeting", role: "bot", content: GREETING_TEXT, timestamp: timestamp() }])
-  }, [])
+    let cancelled = false
+
+    async function hydrate() {
+      // Kiosk: the id is fixed to this visit's station session — always
+      // try to load it (a student may have chatted earlier this same
+      // visit, navigated to catalog, and come back). Web: only if a
+      // prior tab/refresh left an id behind.
+      const existingId = surface === "kiosk" ? sessionId : sessionStorage.getItem(WEB_CHAT_SESSION_STORAGE_KEY)
+
+      if (!existingId) {
+        if (!cancelled) setMessages([greeting()])
+        return
+      }
+
+      sessionIdRef.current = existingId
+      try {
+        const history = await fetchChatHistory(existingId)
+        if (cancelled) return
+        if (history.length === 0) {
+          setMessages([greeting()])
+          return
+        }
+        setMessages(
+          history.map((m, i) => ({
+            id: `history-${i}`,
+            role: m.role === "assistant" ? "bot" : "user",
+            content: m.content,
+            timestamp: timestamp(),
+          }))
+        )
+      } catch {
+        if (!cancelled) setMessages([greeting()])
+      }
+    }
+
+    hydrate()
+    return () => { cancelled = true }
+    // Only re-hydrate if the underlying session identity actually
+    // changes (e.g. a kiosk swap to a new station session) — not on
+    // every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surface, sessionId])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -62,6 +114,7 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot }: ChatWindow
       onStatus: setTypingStatus,
       onDone: (result) => {
         sessionIdRef.current = result.session_id
+        if (surface === "web") sessionStorage.setItem(WEB_CHAT_SESSION_STORAGE_KEY, result.session_id)
         setTypingStatus(null)
         setMessages((prev) => [...prev, {
           id: String(Date.now() + 1),
@@ -80,7 +133,7 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot }: ChatWindow
           timestamp: timestamp(),
         }])
       },
-    })
+    }, surface)
   }
 
   return (

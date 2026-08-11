@@ -10,23 +10,32 @@
 # Streams status events over SSE (plan 2.4) so the frontend's
 # TypingIndicator can show "searching the catalog" vs "writing a reply"
 # instead of a generic dot animation — a tool call adds real latency a
-# student could otherwise read as a freeze. Session history (Phase 7)
-# isn't built yet, so session_id here is just an opaque id the frontend
-# echoes back; nothing is persisted server-side against it yet.
+# student could otherwise read as a freeze.
+#
+# Session history (Phase 7): a kiosk chat session's id IS its
+# station_sessions id (see migrations/0016 and core/chat_sessions.py's
+# own notes on why) — routers/sessions.py's end_session already wipes it
+# there. A web session gets its own id, persisted across visits. Either
+# way, prior turns are fetched here and replayed as plain messages so a
+# follow-up like "is it available?" resolves against what was already
+# said — this endpoint used to rebuild `messages` from scratch every
+# call, which is why multi-turn never actually worked before this phase.
 
 import json
-import secrets
+import uuid
 from typing import Any, Iterator
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
 
+from core import chat_sessions
 from core.config import OPENAI_API_KEY
-from core.deps import get_optional_user
+from core.deps import get_current_user, get_optional_user
+from core.supabase import get_admin_client
 from core.tools.registry import ToolRegistry
 from schemas.auth import UserProfile
-from schemas.chat import ChatRequest
+from schemas.chat import ChatHistoryResponse, ChatRequest, ChatSessionSummary
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -146,7 +155,13 @@ def send_message(
     user: UserProfile | None = Depends(get_optional_user),
 ):
     registry = ToolRegistry(user)
-    session_id = body.session_id or secrets.token_urlsafe(16)
+    admin = get_admin_client()
+
+    # Kiosk always sends the station session's id; web sends whatever it
+    # got back from a prior turn, or nothing on the first message.
+    session_id = body.session_id or str(uuid.uuid4())
+    chat_sessions.start_session(admin, session_id, user.id if user else None, body.surface)
+    prior_history = chat_sessions.get_history(admin, session_id)
 
     def stream() -> Iterator[str]:
         try:
@@ -155,10 +170,9 @@ def send_message(
             yield _sse("error", {"detail": str(e)})
             return
 
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": body.message},
-        ]
+        messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages += [{"role": m.role, "content": m.content} for m in prior_history]
+        messages.append({"role": "user", "content": body.message})
         tools = [spec.schema for spec in registry.available_tools()]
         books_out: list[dict] = []
         reply = ""
@@ -214,6 +228,64 @@ def send_message(
             final = client.chat.completions.create(model=CHAT_MODEL, messages=messages)
             reply = final.choices[0].message.content or ""
 
+        # Only a fully-completed turn gets saved — a mid-stream failure
+        # (network error, exhausted key) leaves history exactly as it was
+        # rather than persisting a half-turn with no reply to replay later.
+        chat_sessions.append_message(admin, session_id, "user", body.message)
+        chat_sessions.append_message(admin, session_id, "assistant", reply)
+
         yield _sse("done", {"reply": reply, "books": books_out, "session_id": session_id})
 
     return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+# ─── Session history (Phase 7) ──────────────────────────────────────────
+
+@router.get("/sessions", response_model=list[ChatSessionSummary])
+def list_sessions(user: UserProfile = Depends(get_current_user)):
+    """The web 'Recent Chats' list — a logged-in student's own past web
+    sessions. Not meaningful for a guest (no persistent identity to list
+    by) or for kiosk (sessions are gone the moment they end, and nothing
+    in the kiosk UI browses past visits anyway)."""
+    admin = get_admin_client()
+    rows = (
+        admin.table("chat_sessions")
+        .select("id, started_at")
+        .eq("student_id", user.id)
+        .eq("surface", "web")
+        .order("started_at", desc=True)
+        .execute()
+    ).data
+
+    summaries = []
+    for row in rows:
+        last = (
+            admin.table("chat_messages")
+            .select("content")
+            .eq("session_id", row["id"])
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        ).data
+        preview = last[0]["content"][:80] if last else None
+        summaries.append(ChatSessionSummary(id=row["id"], started_at=row["started_at"], last_message_preview=preview))
+    return summaries
+
+
+@router.get("/sessions/{session_id}", response_model=ChatHistoryResponse)
+def get_session_history(session_id: str, user: UserProfile | None = Depends(get_optional_user)):
+    """Hydrates a page on load/refresh. A guest-created session (no
+    student_id) is fetchable by anyone who has its exact id — the id
+    itself is the credential, same pattern soft_holds/station_sessions
+    already use — since a guest has no JWT to check ownership against.
+    A logged-in student's session requires the caller's JWT to match."""
+    admin = get_admin_client()
+    session_res = admin.table("chat_sessions").select("student_id").eq("id", session_id).execute()
+    if not session_res.data:
+        raise HTTPException(404, "Session not found")
+    owner_id = session_res.data[0]["student_id"]
+    if owner_id is not None and (user is None or user.id != owner_id):
+        raise HTTPException(403, "This isn't your conversation")
+
+    history = chat_sessions.get_history(admin, session_id)
+    return ChatHistoryResponse(session_id=session_id, messages=history)
