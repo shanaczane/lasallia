@@ -25,13 +25,14 @@ This keeps the system honest to the thesis title. Content-based is the recommend
 | 4 | **Co-borrow signals must be aggregated across ≥3 distinct students** before use. | Otherwise a student could infer what one specific classmate borrowed. This is a real privacy issue in a small library. |
 | 5 | **Availability affects rank, not eligibility.** | Recommending an on-loan book is fine — it can be reserved. Just rank available copies higher. |
 | 6 | **The system must degrade, never blank.** | A student with zero borrow history still sees something. See Phase 7. |
+| 7 | **Guests see recommendations, but never personalized ones.** The guest payload is identical for every guest. | A guest has no identity to personalize against. Serving the same list to everyone is also cacheable, which is why the guest path is cheap. |
 
 ### What this system does NOT do
 
 - No user-user collaborative filtering (data is too sparse, and it leaks more).
 - No deep learning / neural recommenders. Out of scope, unjustifiable for the dataset size.
 - No real-time model updates. Nightly rebuild is the cadence.
-- No recommendations for guests or unauthenticated kiosk sessions.
+- No *personalized* recommendations for guests — guests have no identity and no history. They get the non-personalized fallback set instead. See Rule 7.
 
 ---
 
@@ -254,23 +255,40 @@ create index on student_recommendations (student_id, rank);
 - Nightly. Order: similarities → co-occurrence → per-student recommendations.
 - Store **top 20** per student; the dashboard shows 6–10. The surplus is your buffer for real-time exclusions.
 
-### Endpoint
+### Endpoints
+
+Two endpoints, deliberately separate. Do **not** collapse these into one endpoint that behaves differently depending on whether a session exists — an endpoint whose auth semantics change silently is exactly where personalized data leaks to an unauthenticated caller.
 
 ```
-GET /recommendations/me?limit=8
+GET /recommendations/me?limit=8        → authenticated students only
+GET /recommendations/popular?limit=8   → public, guests and kiosk guest sessions
 ```
+
+**`/recommendations/me`**
 
 - **No `student_id` parameter in the signature.** Same rule as the chatbot account tools — the ID comes from the authenticated session, server-side. Non-negotiable.
 - At request time, re-apply exclusions against *live* borrow state (a student may have borrowed a recommended book since last night's job) and then trim to `limit`.
 - Return `generated_at` so the frontend can show staleness if needed.
 - Response includes enough book fields to render a card without a second call: title, author, cover, availability count.
+- Returns **401** if there is no authenticated session. It does not fall back to the guest payload.
+
+**`/recommendations/popular`**
+
+- Public. No auth required.
+- Returns the same payload for every caller — Phase 7 rung 3 (most-borrowed, last 12 months), topped up with rung 4 (recently added) if thin.
+- Precomputed once per nightly job into a single cached row; the endpoint does **no** per-request computation.
+- `Cache-Control: public, max-age=3600`. This is the one endpoint in Lasallia that can be cached at the edge, so take it.
+- Response shape is **identical** to `/recommendations/me` — same fields, same card contract — except `reason` is the generic rung label and `reason_book_id` is null. Identical shape means the frontend renders one component for both.
+- Rate limit by IP, not session. Kiosks share an IP, so set the limit generously (e.g. 120/min) or the second student at the borrowing station gets throttled.
 
 ### Acceptance criteria
 
-- [ ] Endpoint responds in **< 200ms** p95
+- [ ] Both endpoints respond in **< 200ms** p95
 - [ ] Passing another student's ID in any form is impossible — no such parameter exists
 - [ ] A book borrowed this morning does not appear in this afternoon's response, despite last night's job
-- [ ] Unauthenticated / guest requests return 401, not an empty list
+- [ ] `/recommendations/me` returns 401 for an unauthenticated caller — it never silently degrades to the guest list
+- [ ] `/recommendations/popular` returns byte-identical output for two different callers — write a test that asserts this
+- [ ] `/recommendations/popular` contains **no** `student_id`, `reason_book_id`, or any per-student field in its response
 
 ---
 
@@ -292,7 +310,16 @@ GET /recommendations/me?limit=8
 | Loading | Skeleton cards, same dimensions as real cards (no layout shift) |
 | Has recommendations | The list |
 | Cold start (no history) | Fallback set — see Phase 7, with subtitle *"Popular at the LRC"* |
+| **Guest** | Same fallback set, subtitle *"Popular at the LRC"*, plus a sign-in nudge. See below. |
 | Error | Hide the section entirely. Do not show an error card on a dashboard. |
+
+### Guest specifics
+
+- **Section header changes to "Popular at the LRC."** Never show "For You" to a guest — the system knows nothing about them and the label would be a lie.
+- **The card CTA changes.** A guest cannot reserve. On guest cards, hide **Reserve** and show **View** only. Do not render a Reserve button that opens a login wall — that is a dead end the student discovers only after tapping.
+- Below the row, one line: *"Sign in to get recommendations based on what you've borrowed."* One line, not a banner.
+- On the **kiosk**, remember the 90-second idle timeout. The section must render on first paint from cache — a guest standing at the kiosk will not wait through a spinner. If `/recommendations/popular` has not resolved within ~800ms, render nothing rather than a skeleton that outlives their attention.
+- The guest section must clear on session reset, same as everything else on the kiosk. It holds no personal data, but leaving stale UI behind after a timeout looks broken.
 
 ### Acceptance criteria
 
@@ -311,6 +338,7 @@ GET /recommendations/me?limit=8
 
 | # | Condition | Fallback |
 |---|---|---|
+| 0 | **Guest / no session** | Skip straight to rung 3. Rungs 1 and 2 are structurally unavailable — there is no identity and no program on file. |
 | 1 | Has borrow history | Normal recommendations (Phases 3–4) |
 | 2 | No borrows, but has a program/course on file | Most-borrowed books **among students in the same program**, subject to the ≥3-student privacy threshold |
 | 3 | No borrows, no program | Most-borrowed books library-wide, last 12 months |
@@ -322,9 +350,11 @@ GET /recommendations/me?limit=8
 ### Acceptance criteria
 
 - [ ] A brand-new student account with zero history renders a full section
+- [ ] A guest session renders a full section with the "Popular at the LRC" header and no Reserve buttons
 - [ ] Each rung has distinct, accurate subtitle copy
 - [ ] Rung 2 respects the ≥3-student aggregation rule
-- [ ] Test fixtures exist for a student at each rung
+- [ ] Test fixtures exist for a student at each rung, plus a guest fixture
+- [ ] A guest never reaches rung 1 or 2 — assert this in code, do not rely on the data happening to be empty
 
 ---
 
@@ -379,7 +409,9 @@ GET /recommendations/me?limit=8
 ```sql
 create table recommendation_events (
   id bigserial primary key,
-  student_id uuid not null,
+  student_id uuid,                       -- null for guests
+  session_id text,                       -- anonymous, for guest funnels only
+  is_guest boolean not null default false,
   book_id uuid not null,
   event_type text not null check (event_type in ('impression','click','reserve','dismiss')),
   rank smallint,
@@ -387,8 +419,10 @@ create table recommendation_events (
 );
 ```
 
+- `student_id` is **nullable** — guest events have no student. Do not invent a placeholder ID for guests.
+- `session_id` is an ephemeral anonymous token, never derived from anything identifying. It exists only so you can tell one guest's five impressions apart from five guests' one impression each.
 - Batch impressions — one insert per section render, not one per card.
-- Click-through rate on the For You section is a real number for your defense.
+- Click-through rate on the For You section is a real number for your defense. **Report guest and student CTR separately** — mixing them makes both numbers meaningless, since guests see a non-personalized list.
 
 ### Hardening
 
