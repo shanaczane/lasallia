@@ -11,6 +11,8 @@
 # neither, and would also make the reason string impossible to write
 # honestly.
 
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -80,31 +82,35 @@ def _collect_sources(admin: Client, student_id: str, now: datetime) -> dict[str,
         if existing is None or weight > existing.weight:
             sources[book_id] = _Source(book_id=book_id, weight=weight, verb=verb)
 
-    loans = (
-        admin.table("loans")
-        .select("book_copy_id, status, borrowed_at")
-        .eq("student_id", student_id)
-        .execute()
-    ).data
-    copy_ids = list({l["book_copy_id"] for l in loans})
-    copy_to_book: dict[str, str] = {}
-    if copy_ids:
-        copies = admin.table("book_copies").select("id, book_id").in_("id", copy_ids).execute().data
-        copy_to_book = {c["id"]: c["book_id"] for c in copies}
+    # book_copies embedded via the FK rather than a second round trip,
+    # and loans+reservations fired concurrently rather than sequentially
+    # — this whole path is on the hot request (Phase 5's <200ms budget),
+    # not just the nightly job, so every extra network round trip here
+    # is real latency a student waits on.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        loans_future = pool.submit(
+            lambda: admin.table("loans")
+            .select("status, borrowed_at, book_copies(book_id)")
+            .eq("student_id", student_id)
+            .execute()
+        )
+        reservations_future = pool.submit(
+            lambda: admin.table("reservations")
+            .select("book_id, status, requested_at")
+            .eq("user_id", student_id)
+            .execute()
+        )
+        loans = loans_future.result().data
+        reservations = reservations_future.result().data
 
     for l in loans:
         base_weight = LOAN_WEIGHTS.get(l["status"])
-        book_id = copy_to_book.get(l["book_copy_id"])
+        copy = l.get("book_copies")
+        book_id = copy.get("book_id") if copy else None
         if base_weight is None or book_id is None:
             continue
         consider(book_id, base_weight, l["borrowed_at"], "borrowed")
 
-    reservations = (
-        admin.table("reservations")
-        .select("book_id, status, requested_at")
-        .eq("user_id", student_id)
-        .execute()
-    ).data
     for r in reservations:
         if r["status"] not in ACTIVE_RESERVATION_STATUSES:
             continue
@@ -113,30 +119,38 @@ def _collect_sources(admin: Client, student_id: str, now: datetime) -> dict[str,
     return sources
 
 
-def _excluded_book_ids(admin: Client, student_id: str, source_book_ids: set[str]) -> set[str]:
-    """Plan's exclusion list, applied before ranking. Source books are
-    already the student's borrow/reservation history, so they're folded
-    straight in rather than re-derived — a book can't recommend past
-    what the student already has."""
-    excluded = set(source_book_ids)
+_non_borrowable_cache: tuple[float, set[str]] | None = None
+NON_BORROWABLE_CACHE_TTL_SECONDS = 300
 
-    reservations = (
-        admin.table("reservations")
-        .select("book_id, status")
-        .eq("user_id", student_id)
-        .execute()
-    ).data
-    excluded |= {r["book_id"] for r in reservations if r["status"] in ACTIVE_RESERVATION_STATUSES}
 
-    non_borrowable = (
+def _non_borrowable_book_ids(admin: Client) -> set[str]:
+    """Catalog-wide, not student-specific, and changes only when a
+    librarian edits a book's collection type — cached briefly so this
+    endpoint isn't paying a network round trip for near-static data on
+    every single request (Phase 5's <200ms budget)."""
+    global _non_borrowable_cache
+    now = time.monotonic()
+    if _non_borrowable_cache is not None and now - _non_borrowable_cache[0] < NON_BORROWABLE_CACHE_TTL_SECONDS:
+        return _non_borrowable_cache[1]
+
+    rows = (
         admin.table("books")
         .select("id")
         .in_("collection_type", list(NON_BORROWABLE_COLLECTION_TYPES))
         .execute()
     ).data
-    excluded |= {b["id"] for b in non_borrowable}
+    ids = {b["id"] for b in rows}
+    _non_borrowable_cache = (now, ids)
+    return ids
 
-    return excluded
+
+def _excluded_book_ids(admin: Client, student_id: str, source_book_ids: set[str]) -> set[str]:
+    """Plan's exclusion list, applied before ranking. `source_book_ids`
+    already covers "ever borrowed" and "active reservation" — every
+    active reservation became a source in _collect_sources, so there's
+    nothing left to re-derive there; only the catalog-wide
+    non-borrowable set needs adding."""
+    return set(source_book_ids) | _non_borrowable_book_ids(admin)
 
 
 def _build_reason(contributions: dict[str, float], titles: dict[str, str], verbs: dict[str, str]) -> tuple[str, str]:
@@ -152,6 +166,17 @@ def _build_reason(contributions: dict[str, float], titles: dict[str, str], verbs
         others = len(comparable) - 1
         reason = f"Because you {verb} {top_title} and {others} other{'s' if others != 1 else ''}"
     return reason, top_book_id
+
+
+def get_currently_excluded_book_ids(admin: Client, student_id: str) -> set[str]:
+    """Public entry point for Phase 5's live re-exclusion: the endpoint
+    re-checks this against last night's stored recommendations at
+    request time, so a book borrowed since the job last ran can't slip
+    through. Recomputes from current DB state — no caching — since the
+    whole point is catching what changed since the job ran."""
+    now = datetime.now(timezone.utc)
+    sources = _collect_sources(admin, student_id, now)
+    return _excluded_book_ids(admin, student_id, set(sources.keys()))
 
 
 def get_recommendations_for_student(admin: Client, student_id: str, limit: int = DEFAULT_LIMIT) -> list[Recommendation]:
