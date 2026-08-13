@@ -7,7 +7,6 @@ import {
   BookOpen,
   Clock,
   Bookmark,
-  Sparkles,
   Search,
   AlertTriangle,
 } from "lucide-react"
@@ -15,6 +14,7 @@ import { cn } from "@/lib/utils"
 import { getUser } from "@/lib/auth"
 import { fetchLoans, type Loan as ApiLoan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
+import { ForYouSection } from "@/components/ui/dashboard/ForYouSection"
 import type { Reservation } from "@lasallia/types"
 
 type BorrowStatus = "due_soon" | "overdue" | "active"
@@ -292,27 +292,8 @@ export default function StudentDashboard() {
           </div>
         </div>
 
-        {/* Picked for You — recommendation engine not built yet */}
-        <div className="w-full lg:w-80 shrink-0 flex flex-col gap-3">
-          <h2
-            className="text-ink-900 font-semibold"
-            style={{ fontSize: "var(--text-xl)", fontFamily: "var(--font-display)" }}
-          >
-            Picked for You
-          </h2>
-
-          <div className="bg-white rounded-(--radius) border border-ink-200 p-6 flex flex-col items-center text-center gap-2">
-            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100">
-              <Sparkles size={18} className="text-green-700" />
-            </div>
-            <p className="text-ink-700 font-semibold" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-              Recommendations coming soon
-            </p>
-            <p className="text-ink-400" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}>
-              We&apos;re building a personalized recommendation engine based on your borrowing history.
-            </p>
-          </div>
-        </div>
+        {/* For You — recommendations plan Phase 6 */}
+        <ForYouSection />
       </div>
     </div>
   )

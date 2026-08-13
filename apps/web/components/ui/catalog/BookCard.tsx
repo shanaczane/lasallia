@@ -21,6 +21,10 @@ type BookCardProps = {
   // (anywhere backed by /saved-books) should pass both.
   isSaved?: boolean
   onToggleSave?: (book: Book) => void
+  // Recommendations plan Phase 6 — "For You" cards show why a book was
+  // suggested, e.g. "Because you borrowed Clean Code". Omitted entirely
+  // by every other caller of this card.
+  reason?: string
 }
 
 // Deterministic color palette for books without cover images
@@ -36,7 +40,7 @@ function getCoverColor(book: Book): string {
   return COVER_COLORS[idx % COVER_COLORS.length]
 }
 
-export function BookCard({ book, href, className, showBookmark = false, isSaved, onToggleSave }: BookCardProps) {
+export function BookCard({ book, href, className, showBookmark = false, isSaved, onToggleSave, reason }: BookCardProps) {
   const [localSaved, setLocalSaved] = useState(false)
   const saved = isSaved ?? localSaved
   const toggleSaved = onToggleSave ? () => onToggleSave(book) : () => setLocalSaved((v) => !v)
@@ -150,6 +154,24 @@ export function BookCard({ book, href, className, showBookmark = false, isSaved,
           <div className="mt-auto pt-1.5">
             <AvailabilityPill status={book.status === 'misplaced' ? 'missing' : book.status} />
           </div>
+          {reason && (
+            // line-clamp wraps at word boundaries and clips whole lines,
+            // never mid-word — a hard `truncate` (nowrap + ellipsis)
+            // would cut a long reason off mid-word instead.
+            <p
+              className="text-ink-400 leading-snug mt-1"
+              style={{
+                fontSize: 'var(--text-2xs)',
+                fontFamily: 'var(--font-body)',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {reason}
+            </p>
+          )}
         </div>
       </Link>
     </div>

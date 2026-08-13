@@ -1,12 +1,20 @@
 import { Book } from './book'
 
-export type Recommendation = {
+// Matches apps/api/schemas/recommendation.py exactly (Phase 5 of the
+// recommendations build plan) — GET /recommendations/me's real response
+// shape, not a placeholder.
+export type RecommendationItem = {
   book: Book
-  similarity_score: number
-  reason?: string
+  rank: number
+  score: number
+  reason: string
+  reason_book_id: string
 }
 
-export type RecommendationResponse = {
-  recommendations: Recommendation[]
-  based_on: 'borrowing_history' | 'search_history' | 'interests' | 'program'
+export type RecommendationsResponse = {
+  recommendations: RecommendationItem[]
+  // null when the student has no stored recommendations at all (no
+  // borrow history yet) — distinct from an empty list after live
+  // exclusions removed everything that was stored.
+  generated_at: string | null
 }
