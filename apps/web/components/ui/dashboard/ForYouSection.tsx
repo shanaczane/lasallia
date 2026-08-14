@@ -11,6 +11,7 @@ import { useEffect, useState } from "react"
 import { Sparkles } from "lucide-react"
 import { BookCard } from "@/components/ui/catalog/BookCard"
 import { fetchRecommendations } from "@/lib/recommendations"
+import { logEvent, logImpressions } from "@/lib/recommendationEvents"
 import type { RecommendationItem, RecommendationsResponse } from "@lasallia/types"
 
 const SKELETON_COUNT = 4
@@ -81,6 +82,9 @@ export function ForYouSection() {
       .then((res) => {
         setItems(res.recommendations)
         setRung(res.rung)
+        // Phase 9 — one batched call for the whole rendered list, not
+        // one per card.
+        logImpressions(res.recommendations)
       })
       .catch(() => setFailed(true))
       .finally(() => setLoading(false))
@@ -114,9 +118,12 @@ export function ForYouSection() {
             <BookCard
               key={item.book.id}
               book={item.book}
-              href={`/student/catalog/${item.book.id}`}
+              // fromRec/rank let the detail page attribute a later
+              // reserve action back to this card (Phase 9).
+              href={`/student/catalog/${item.book.id}?fromRec=1&rank=${item.rank}`}
               reason={item.reason}
               className="w-[140px] lg:w-full shrink-0"
+              onClick={() => logEvent("click", item.book.id, item.rank)}
             />
           ))}
         </CardRow>

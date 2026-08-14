@@ -15,6 +15,7 @@
 
 import { use, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import {
   ArrowLeft, MapPin, Hash, Building2, Calendar,
   BookOpen, Tag, Bookmark, Bell, QrCode,
@@ -25,6 +26,7 @@ import { useBook, useBooks } from '@/lib/hooks/useBooks'
 import { useReservations } from '@/lib/hooks/useReservations'
 import { createReservation, cancelReservation } from '@/lib/reservations'
 import { fetchSavedBooks, saveBook, unsaveBook } from '@/lib/saved'
+import { logEvent } from '@/lib/recommendationEvents'
 import { BorrowModal } from '@/components/kiosk/BorrowModal'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 import { BookCard } from '@/components/ui/catalog'
@@ -72,11 +74,21 @@ function ActionPanel({
   const reserved = !!reservation
   const pct = totalCopies > 0 ? (availableCopies / totalCopies) * 100 : 0
 
+  // Recommendations plan Phase 9 — a reserve here can only be
+  // attributed back to a "For You" card via these two query params
+  // (components/ui/dashboard/ForYouSection.tsx sets them on the card's
+  // href), since the reserve action itself lives on a different page
+  // than the card that led here.
+  const searchParams = useSearchParams()
+  const fromRec = searchParams.get('fromRec') === '1'
+  const recRank = searchParams.get('rank')
+
   async function reserveBook() {
     setPending(true)
     setActionError('')
     try {
       await createReservation(book.id)
+      if (fromRec) logEvent('reserve', book.id, recRank ? Number(recRank) : undefined)
       onReservationChange()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to reserve this book')

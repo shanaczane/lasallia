@@ -7,7 +7,16 @@
 # median borrows/student = 1, hybrid isn't viable on this data yet), so
 # the order here is just similarities -> per-student recommendations.
 #
+#
 # Usage: venv/Scripts/python.exe jobs/rebuild_recommendations.py
+#
+# Phase 9 hardening note: nothing schedules this job yet (no cron/Edge
+# Function wired up anywhere in this codebase), so it's run by hand.
+# Deliberately no try/except around the body below — an unhandled
+# exception already exits non-zero with a full traceback on stderr,
+# which is exactly what "fail loudly" means for a job a person is
+# watching run. Add real alerting (see core/notify.py) once this is
+# actually on a schedule and has no one watching it fire.
 
 import sys
 import time

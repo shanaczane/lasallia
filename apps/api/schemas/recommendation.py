@@ -28,3 +28,17 @@ class RecommendationsResponse(BaseModel):
     # without parsing `reason` strings. Always "popular" for
     # GET /recommendations/popular.
     rung: Literal["personal", "program", "popular"] = "personal"
+
+
+# Phase 9 — click-through logging.
+class RecommendationEvent(BaseModel):
+    event_type: Literal["impression", "click", "reserve", "dismiss"]
+    book_id: str
+    rank: int | None = None
+
+
+class LogEventsRequest(BaseModel):
+    events: list[RecommendationEvent]
+    # Opaque client-generated token, guest attribution only — ignored for
+    # a logged-in caller, whose student_id comes from their session.
+    session_id: str | None = None

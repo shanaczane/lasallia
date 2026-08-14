@@ -25,6 +25,9 @@ type BookCardProps = {
   // suggested, e.g. "Because you borrowed Clean Code". Omitted entirely
   // by every other caller of this card.
   reason?: string
+  // Recommendations plan Phase 9 — fires before navigation, for
+  // click-through logging. Omitted entirely by every other caller.
+  onClick?: () => void
 }
 
 // Deterministic color palette for books without cover images
@@ -40,7 +43,7 @@ function getCoverColor(book: Book): string {
   return COVER_COLORS[idx % COVER_COLORS.length]
 }
 
-export function BookCard({ book, href, className, showBookmark = false, isSaved, onToggleSave, reason }: BookCardProps) {
+export function BookCard({ book, href, className, showBookmark = false, isSaved, onToggleSave, reason, onClick }: BookCardProps) {
   const [localSaved, setLocalSaved] = useState(false)
   const saved = isSaved ?? localSaved
   const toggleSaved = onToggleSave ? () => onToggleSave(book) : () => setLocalSaved((v) => !v)
@@ -72,6 +75,7 @@ export function BookCard({ book, href, className, showBookmark = false, isSaved,
 
       <Link
         href={destination}
+        onClick={onClick}
         className={cn(
           'group flex flex-col rounded-(--radius) overflow-hidden bg-white border border-ink-200',
           'shadow-(--shadow-sm) hover:shadow-(--shadow) transition-shadow duration-200',

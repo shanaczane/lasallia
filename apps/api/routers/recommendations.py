@@ -7,16 +7,23 @@
 # happened offline — see core/recommendations.py.
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from supabase import Client
 
-from core.deps import get_current_user, get_user_supabase
+from core.deps import get_current_user, get_optional_user, get_user_supabase
+from core.rate_limit import check_and_record
+from core.recommendation_events import log_events
 from core.recommendations import get_currently_excluded_book_ids
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
-from schemas.recommendation import RecommendationItem, RecommendationsResponse
+from schemas.recommendation import (
+    LogEventsRequest,
+    RecommendationItem,
+    RecommendationsResponse,
+)
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
@@ -26,6 +33,23 @@ router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 # existing for guests, just for a different role this time.
 DEFAULT_LIMIT = 8
 STORED_LIMIT = 20  # matches jobs/rebuild_recommendations.py's STORED_PER_STUDENT
+
+# Phase 9 — a stored rung-1/2 row this old is "stale personalization"
+# per the plan's hardening checklist: better to fall through to the
+# rung-3/4 floor than serve picks this out of date.
+STALE_AFTER_DAYS = 7
+
+# Phase 9 rate limits — Phase 5's own spec for /popular ("kiosks share
+# an IP, set the limit generously"); /events gets a tighter one since
+# it's a write, not a cached read.
+POPULAR_RATE_LIMIT = (120, 60)  # (max_requests, window_seconds)
+EVENTS_RATE_LIMIT = (60, 60)
+MAX_EVENTS_PER_BATCH = 50
+
+
+def _is_stale(generated_at_iso: str) -> bool:
+    generated_at = datetime.fromisoformat(generated_at_iso)
+    return datetime.now(timezone.utc) - generated_at > timedelta(days=STALE_AFTER_DAYS)
 
 
 @router.get("/me", response_model=RecommendationsResponse)
@@ -66,9 +90,11 @@ def get_my_recommendations(
 
     # Phase 7: no stored rung-1 recs at all, or live exclusions wiped out
     # every one that was stored — either way, fall through the ladder
-    # rather than handing back an empty section.
+    # rather than handing back an empty section. Phase 9: a job that
+    # hasn't run in a week is the same problem in slow motion — don't
+    # serve week-old "personalization" either.
     live = [row for row in stored if row["book"]["id"] not in excluded][:limit] if stored else []
-    if not live:
+    if not live or _is_stale(stored[0]["generated_at"]):
         return _fallback_response(get_admin_client(), user.id, limit)
 
     items = [
@@ -114,7 +140,7 @@ def _fallback_response(admin: Client, user_id: str, limit: int) -> Recommendatio
             .limit(limit)
             .execute()
         ).data
-        if rows:
+        if rows and not _is_stale(rows[0]["generated_at"]):
             return _rows_to_response(rows, rung="program")
 
     rows = (
@@ -131,13 +157,19 @@ def _fallback_response(admin: Client, user_id: str, limit: int) -> Recommendatio
 
 
 @router.get("/popular", response_model=RecommendationsResponse)
-def get_popular_recommendations_endpoint(response: Response, limit: int = DEFAULT_LIMIT):
+def get_popular_recommendations_endpoint(request: Request, response: Response, limit: int = DEFAULT_LIMIT):
     """Rung 0 — fully public, no auth dependency of any kind. This is
     what makes "a guest never reaches rung 1 or 2" true by construction:
     there is no code path from this handler into student_recommendations
     or program_recommendations at all. Byte-identical for every caller —
     reads the same precomputed rows jobs/rebuild_recommendations.py
     already wrote for GET /recommendations/me's own rung-3/4 fallback."""
+    # Keyed by IP, not session — this is the one endpoint in the plan
+    # explicitly public with no identity to key off. A kiosk's several
+    # students share an IP, hence the generous limit.
+    if not check_and_record(f"popular:{request.client.host}", *POPULAR_RATE_LIMIT):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many requests — try again shortly")
+
     limit = max(1, min(limit, STORED_LIMIT))
     admin = get_admin_client()
     rows = (
@@ -151,3 +183,40 @@ def get_popular_recommendations_endpoint(response: Response, limit: int = DEFAUL
     if not rows:
         return RecommendationsResponse(recommendations=[], generated_at=None, rung="popular")
     return _rows_to_response(rows, rung="popular")
+
+
+@router.post("/events", status_code=status.HTTP_204_NO_CONTENT)
+def log_recommendation_events(
+    body: LogEventsRequest,
+    user: UserProfile | None = Depends(get_optional_user),
+):
+    """Phase 9 — click-through logging. student_id/is_guest come from
+    the session, never the request body (same rule as every other tool/
+    endpoint in this app that could otherwise be pointed at someone
+    else's identity). A guest must supply their own opaque session_id —
+    there's no account to key a rate limit or funnel off otherwise."""
+    if len(body.events) > MAX_EVENTS_PER_BATCH:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Too many events in one batch (max {MAX_EVENTS_PER_BATCH})")
+
+    if user:
+        rate_key = f"events:{user.id}"
+    elif body.session_id:
+        rate_key = f"events:{body.session_id}"
+    else:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "session_id is required when not signed in")
+
+    if not check_and_record(rate_key, *EVENTS_RATE_LIMIT):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many requests — try again shortly")
+
+    rows = [
+        {
+            "student_id": user.id if user else None,
+            "session_id": None if user else body.session_id,
+            "is_guest": user is None,
+            "book_id": e.book_id,
+            "event_type": e.event_type,
+            "rank": e.rank,
+        }
+        for e in body.events
+    ]
+    log_events(get_admin_client(), rows)
