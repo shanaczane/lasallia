@@ -11,7 +11,7 @@ import { useEffect, useState } from "react"
 import { Sparkles } from "lucide-react"
 import { BookCard } from "@/components/ui/catalog/BookCard"
 import { fetchRecommendations } from "@/lib/recommendations"
-import type { RecommendationItem } from "@lasallia/types"
+import type { RecommendationItem, RecommendationsResponse } from "@lasallia/types"
 
 const SKELETON_COUNT = 4
 
@@ -56,8 +56,20 @@ function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
   )
 }
 
+// Recommendations plan Phase 7 — GET /recommendations/me now falls
+// through rungs 1 (personal) -> 2 (program) -> 3/4 (library-wide
+// popular) server-side, and reports which one actually produced the
+// response as `rung`. This is just the header/subtitle copy for each,
+// so the section never claims personalization it didn't do.
+const RUNG_COPY: Record<RecommendationsResponse["rung"], { title: string; subtitle: string }> = {
+  personal: { title: "For You", subtitle: "Based on what you've borrowed." },
+  program: { title: "For You", subtitle: "Popular in your program." },
+  popular: { title: "Popular at the LRC", subtitle: "Library-wide, not personalized yet." },
+}
+
 export function ForYouSection() {
   const [items, setItems] = useState<RecommendationItem[] | null>(null)
+  const [rung, setRung] = useState<RecommendationsResponse["rung"]>("personal")
   const [loading, setLoading] = useState(true)
   // Plan 6's error state: "Hide the section entirely. Do not show an
   // error card on a dashboard." — tracked separately from "loaded but
@@ -66,12 +78,17 @@ export function ForYouSection() {
 
   useEffect(() => {
     fetchRecommendations(8)
-      .then((res) => setItems(res.recommendations))
+      .then((res) => {
+        setItems(res.recommendations)
+        setRung(res.rung)
+      })
       .catch(() => setFailed(true))
       .finally(() => setLoading(false))
   }, [])
 
   if (failed) return null
+
+  const copy = RUNG_COPY[rung]
 
   return (
     <div className="w-full lg:w-80 shrink-0 flex flex-col gap-3">
@@ -80,10 +97,10 @@ export function ForYouSection() {
           className="text-ink-900 font-semibold"
           style={{ fontSize: "var(--text-xl)", fontFamily: "var(--font-display)" }}
         >
-          For You
+          {copy.title}
         </h2>
         <p className="text-ink-400" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}>
-          Based on what you&apos;ve borrowed.
+          {copy.subtitle}
         </p>
       </div>
 
@@ -104,12 +121,10 @@ export function ForYouSection() {
           ))}
         </CardRow>
       ) : (
-        // Cold start (no borrow history yet) and "had recommendations
-        // but live exclusions removed all of them" both land here for
-        // now — plan Phase 7's real fallback ladder (most-borrowed by
-        // program/library-wide) isn't built yet, so this is a plain
-        // honest placeholder rather than a "Popular at the LRC" claim
-        // this section can't actually back up until that phase exists.
+        // Only reachable now if the nightly job has never run at all for
+        // this account (brand-new, or popular_recommendations itself is
+        // empty) — /me's fallthrough (rungs 1-4) means a student with
+        // any stored data at all gets real items, not this placeholder.
         <EmptyState
           title="Nothing picked yet"
           subtitle="Borrow a book and we'll start recommending titles based on it."

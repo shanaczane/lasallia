@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 from schemas.book import Book
@@ -8,7 +10,9 @@ class RecommendationItem(BaseModel):
     rank: int
     score: float
     reason: str
-    reason_book_id: str
+    # None for rung 2-4 fallback items (Phase 7) — nothing a single book
+    # the student engaged with, unlike a personal (rung 1) recommendation.
+    reason_book_id: str | None = None
 
 
 class RecommendationsResponse(BaseModel):
@@ -19,3 +23,8 @@ class RecommendationsResponse(BaseModel):
     # keys off this being absent rather than an empty list alone, since
     # an empty list can also mean "had recommendations, all excluded live."
     generated_at: str | None = None
+    # Which rung of the Phase 7 fallback ladder actually produced this
+    # response — lets the frontend pick the right section header/subtitle
+    # without parsing `reason` strings. Always "popular" for
+    # GET /recommendations/popular.
+    rung: Literal["personal", "program", "popular"] = "personal"

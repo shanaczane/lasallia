@@ -24,3 +24,13 @@ export async function fetchRecommendations(limit = 8): Promise<RecommendationsRe
   if (!res.ok) return parseErrorOrThrow(res, "Failed to load recommendations")
   return res.json()
 }
+
+// Recommendations plan Phase 7, rung 0 — fully public, no auth. Same
+// response shape as fetchRecommendations, so callers that just want
+// "whatever's best available" can try one then the other without a
+// separate rendering path.
+export async function fetchPopularRecommendations(limit = 8): Promise<RecommendationsResponse> {
+  const res = await fetch(`${API_URL}/recommendations/popular?limit=${limit}`)
+  if (!res.ok) return parseErrorOrThrow(res, "Failed to load popular books")
+  return res.json()
+}

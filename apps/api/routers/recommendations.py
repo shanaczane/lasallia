@@ -7,12 +7,14 @@
 # happened offline — see core/recommendations.py.
 
 from concurrent.futures import ThreadPoolExecutor
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from supabase import Client
 
 from core.deps import get_current_user, get_user_supabase
 from core.recommendations import get_currently_excluded_book_ids
+from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.recommendation import RecommendationItem, RecommendationsResponse
 
@@ -62,12 +64,12 @@ def get_my_recommendations(
         stored = stored_future.result().data
         excluded = excluded_future.result()
 
-    if not stored:
-        return RecommendationsResponse(recommendations=[], generated_at=None)
-
-    live = [row for row in stored if row["book"]["id"] not in excluded][:limit]
+    # Phase 7: no stored rung-1 recs at all, or live exclusions wiped out
+    # every one that was stored — either way, fall through the ladder
+    # rather than handing back an empty section.
+    live = [row for row in stored if row["book"]["id"] not in excluded][:limit] if stored else []
     if not live:
-        return RecommendationsResponse(recommendations=[], generated_at=stored[0]["generated_at"])
+        return _fallback_response(get_admin_client(), user.id, limit)
 
     items = [
         RecommendationItem(
@@ -80,4 +82,72 @@ def get_my_recommendations(
         for row in live
     ]
 
-    return RecommendationsResponse(recommendations=items, generated_at=stored[0]["generated_at"])
+    return RecommendationsResponse(recommendations=items, generated_at=stored[0]["generated_at"], rung="personal")
+
+
+def _rows_to_response(rows: list[dict], rung: Literal["program", "popular"]) -> RecommendationsResponse:
+    items = [
+        RecommendationItem(book=r["book"], rank=r["rank"], score=0.0, reason=r["reason"], reason_book_id=None)
+        for r in rows
+    ]
+    return RecommendationsResponse(recommendations=items, generated_at=rows[0]["generated_at"], rung=rung)
+
+
+def _fallback_response(admin: Client, user_id: str, limit: int) -> RecommendationsResponse:
+    """Rung 2 then rung 3/4 (core/recommendations.py's docstrings) — a
+    student with no personal recommendations at all, or none left after
+    live exclusion, lands here. Public-read tables (migrations/0019), so
+    this could use the caller's own RLS-scoped client too, but the
+    program lookup just below already needs the admin client (no
+    self-select policy on `profiles` — same reason routers/sessions.py's
+    _insert_session looks up full_name via the admin client), so the
+    whole fallback path stays on one client for consistency."""
+    profile_res = admin.table("profiles").select("program").eq("id", user_id).execute()
+    program = profile_res.data[0]["program"] if profile_res.data else None
+
+    if program:
+        rows = (
+            admin.table("program_recommendations")
+            .select("rank, reason, generated_at, book:books!book_id(*)")
+            .eq("program", program)
+            .order("rank")
+            .limit(limit)
+            .execute()
+        ).data
+        if rows:
+            return _rows_to_response(rows, rung="program")
+
+    rows = (
+        admin.table("popular_recommendations")
+        .select("rank, reason, generated_at, book:books!book_id(*)")
+        .order("rank")
+        .limit(limit)
+        .execute()
+    ).data
+    if rows:
+        return _rows_to_response(rows, rung="popular")
+
+    return RecommendationsResponse(recommendations=[], generated_at=None, rung="popular")
+
+
+@router.get("/popular", response_model=RecommendationsResponse)
+def get_popular_recommendations_endpoint(response: Response, limit: int = DEFAULT_LIMIT):
+    """Rung 0 — fully public, no auth dependency of any kind. This is
+    what makes "a guest never reaches rung 1 or 2" true by construction:
+    there is no code path from this handler into student_recommendations
+    or program_recommendations at all. Byte-identical for every caller —
+    reads the same precomputed rows jobs/rebuild_recommendations.py
+    already wrote for GET /recommendations/me's own rung-3/4 fallback."""
+    limit = max(1, min(limit, STORED_LIMIT))
+    admin = get_admin_client()
+    rows = (
+        admin.table("popular_recommendations")
+        .select("rank, reason, generated_at, book:books!book_id(*)")
+        .order("rank")
+        .limit(limit)
+        .execute()
+    ).data
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    if not rows:
+        return RecommendationsResponse(recommendations=[], generated_at=None, rung="popular")
+    return _rows_to_response(rows, rung="popular")

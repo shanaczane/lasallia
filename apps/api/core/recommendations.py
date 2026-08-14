@@ -14,7 +14,7 @@
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from supabase import Client
 
@@ -31,6 +31,15 @@ RESERVATION_WEIGHT = 0.7
 RECENCY_HALF_LIFE_DAYS = 180
 DIVERSITY_CAP_PER_CATEGORY = 3
 DEFAULT_LIMIT = 10
+
+# Phase 7 — rungs 2-4 of the cold-start ladder.
+POPULAR_LOOKBACK_DAYS = 365
+POPULAR_REASON = "Popular at the LRC"
+RECENT_REASON = "Recently added"
+# Plan's "≥3-student aggregation rule" for rung 2 — below this, a
+# program's "most borrowed" list would just be reconstructable back to
+# one or two individual students' actual borrowing history.
+MIN_PROGRAM_STUDENTS = 3
 
 # Same set routers/reservations.py and routers/holds.py already use to
 # gate what can be borrowed at all — reused here rather than inventing a
@@ -51,7 +60,7 @@ COMPARABLE_CONTRIBUTION_RATIO = 0.7
 class Recommendation:
     book_id: str
     score: float
-    reason_book_id: str
+    reason_book_id: str | None
     reason: str
 
 
@@ -251,3 +260,89 @@ def get_recommendations_for_student(admin: Client, student_id: str, limit: int =
         results.append(Recommendation(book_id=candidate_id, score=score, reason_book_id=reason_book_id, reason=reason))
 
     return results
+
+
+def _borrow_counts(admin: Client, since_iso: str, program: str | None = None) -> tuple[dict[str, int], set[str]]:
+    """book_id -> borrow count since `since_iso`, plus the set of distinct
+    student_ids that contributed — both restricted to `program` when
+    given. Aggregated in Python since PostgREST has no GROUP BY, same
+    approach _collect_sources already uses for the per-student case."""
+    rows = (
+        admin.table("loans")
+        .select("student_id, book_copies(book_id), profiles(program)")
+        .gte("borrowed_at", since_iso)
+        .execute()
+    ).data
+
+    counts: dict[str, int] = {}
+    students: set[str] = set()
+    for row in rows:
+        if program is not None and (row.get("profiles") or {}).get("program") != program:
+            continue
+        book_id = (row.get("book_copies") or {}).get("book_id")
+        if not book_id:
+            continue
+        counts[book_id] = counts.get(book_id, 0) + 1
+        students.add(row["student_id"])
+    return counts, students
+
+
+def _fallback_recommendations(
+    admin: Client, counts: dict[str, int], limit: int, matched_reason: str = POPULAR_REASON
+) -> list[Recommendation]:
+    """Shared rung-2/3/4 assembly: rank by borrow count desc, top up with
+    recently-added books if thin. Used for both the global popular list
+    and a single program's list — `counts` and `matched_reason` are the
+    only things that differ between the two call sites, so a rung-2 card
+    says why it's actually there instead of reusing rung-3's generic
+    library-wide copy. No reason_book_id — unlike Phase 3's per-student
+    recs, nothing here traces back to one book the student engaged with."""
+    excluded = _non_borrowable_book_ids(admin)
+    ranked = sorted((bid for bid in counts if bid not in excluded), key=lambda b: (-counts[b], b))
+
+    results = [
+        Recommendation(book_id=bid, score=float(counts[bid]), reason_book_id=None, reason=matched_reason)
+        for bid in ranked[:limit]
+    ]
+
+    if len(results) < limit:
+        have = excluded | {r.book_id for r in results}
+        # Overfetch generously — some of these will land in `have` and
+        # get filtered out, and there's no cheap way to ask Postgres for
+        # "N rows not already in this set" through the fluent builder.
+        recent = (
+            admin.table("books")
+            .select("id")
+            .order("created_at", desc=True)
+            .limit((limit - len(results)) * 4 + 20)
+            .execute()
+        ).data
+        for b in recent:
+            if len(results) >= limit:
+                break
+            if b["id"] in have:
+                continue
+            results.append(Recommendation(book_id=b["id"], score=0.0, reason_book_id=None, reason=RECENT_REASON))
+            have.add(b["id"])
+
+    return results
+
+
+def get_popular_recommendations(admin: Client, limit: int = DEFAULT_LIMIT) -> list[Recommendation]:
+    """Rung 3 (+4 top-up) — library-wide, last 12 months. Backs both a
+    logged-in student's fallback (GET /recommendations/me) and the fully
+    public GET /recommendations/popular (rung 0, guests)."""
+    since = (datetime.now(timezone.utc) - timedelta(days=POPULAR_LOOKBACK_DAYS)).isoformat()
+    counts, _students = _borrow_counts(admin, since)
+    return _fallback_recommendations(admin, counts, limit)
+
+
+def get_program_recommendations(admin: Client, program: str, limit: int = DEFAULT_LIMIT) -> list[Recommendation]:
+    """Rung 2 — most-borrowed among students in the same program, gated
+    by MIN_PROGRAM_STUDENTS so a small program's aggregate can't be
+    reverse-engineered back to one or two students' actual history."""
+    since = (datetime.now(timezone.utc) - timedelta(days=POPULAR_LOOKBACK_DAYS)).isoformat()
+    counts, students = _borrow_counts(admin, since, program=program)
+    if len(students) < MIN_PROGRAM_STUDENTS:
+        return []
+    return _fallback_recommendations(admin, counts, limit, matched_reason=f"Popular among {program} students")

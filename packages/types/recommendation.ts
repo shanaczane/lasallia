@@ -8,7 +8,9 @@ export type RecommendationItem = {
   rank: number
   score: number
   reason: string
-  reason_book_id: string
+  // null for rung 2-4 fallback items (Phase 7) — nothing a single book
+  // the student engaged with, unlike a personal (rung 1) recommendation.
+  reason_book_id: string | null
 }
 
 export type RecommendationsResponse = {
@@ -17,4 +19,7 @@ export type RecommendationsResponse = {
   // borrow history yet) — distinct from an empty list after live
   // exclusions removed everything that was stored.
   generated_at: string | null
+  // Which rung of the Phase 7 fallback ladder produced this response —
+  // picks the section header/subtitle without parsing `reason` strings.
+  rung: "personal" | "program" | "popular"
 }
