@@ -1,15 +1,21 @@
 # apps/api/core/recommendations.py
 # Recommendations plan, Phase 3 — content-based recommendations for one
 # student. Reads book_similarities (Phase 2) and the student's own
-# borrow/reservation history; never touches other students' data, so
-# there's no cross-student signal here at all (that's Phase 4, gated on
-# Phase 1's decision — content-only for now).
+# borrow/reservation history.
 #
 # No averaging: a student who reads both poetry and networking should
 # get poetry AND networking recommendations, each traceable to the book
 # that caused it. Averaging into one profile vector would blur that into
 # neither, and would also make the reason string impossible to write
 # honestly.
+#
+# Phase 4 — collaborative re-ranking. book_cooccurrence IS a
+# cross-student signal, carefully gated: ≥3-student threshold enforced
+# before a row is ever written (core/cooccurrence.py), multiplicative
+# blend only (never introduces a candidate content similarity didn't
+# already surface), and with the table empty — today's real state, see
+# docs/data-audit.md — the blend is a provable no-op. Built ahead of
+# having enough co-occurring pairs to actually change anything.
 
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -17,6 +23,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from supabase import Client
+
+from core.cooccurrence import LIFT_CEILING
 
 # plan's source weighting table. Fulfilled/expired reservations are
 # deliberately absent here: fulfilled becomes a loan (already covered by
@@ -31,6 +39,11 @@ RESERVATION_WEIGHT = 0.7
 RECENCY_HALF_LIFE_DAYS = 180
 DIVERSITY_CAP_PER_CATEGORY = 3
 DEFAULT_LIMIT = 10
+
+# Phase 4 — collaborative re-ranking. Single tunable constant, not
+# scattered through the code; report this value in the thesis if it's
+# ever changed from the plan's starting point.
+COOCCURRENCE_ALPHA = 0.3
 
 # Phase 7 — rungs 2-4 of the cold-start ladder.
 POPULAR_LOOKBACK_DAYS = 365
@@ -217,6 +230,19 @@ def get_recommendations_for_student(admin: Client, student_id: str, limit: int =
     if not candidate_ids:
         return []
 
+    # Phase 4 — same shape as the neighbor_rows fetch above, just against
+    # book_cooccurrence instead. Empty today (no student has borrowed 2+
+    # books yet), so cooc_lookup is {} and every candidate falls through
+    # to the "no boost" branch below — the no-op property this phase was
+    # built around.
+    cooc_rows = (
+        admin.table("book_cooccurrence")
+        .select("book_id, neighbor_book_id, lift")
+        .in_("book_id", source_ids)
+        .execute()
+    ).data
+    cooc_lookup = {(r["book_id"], r["neighbor_book_id"]): r["lift"] for r in cooc_rows}
+
     needed_book_ids = set(candidate_ids) | set(source_ids)
     books = (
         admin.table("books")
@@ -231,8 +257,27 @@ def get_recommendations_for_student(admin: Client, student_id: str, limit: int =
     scored: list[tuple[str, float, str, str]] = []
     for candidate_id in candidate_ids:
         cand_contributions = contributions[candidate_id]
-        score = sum(cand_contributions.values())
+        content_score = sum(cand_contributions.values())
         reason, reason_book_id = _build_reason(cand_contributions, titles, verbs)
+
+        # Phase 4 blend — multiplicative and re-ranking only, checked
+        # against the same source book the reason string already credits
+        # (reason_book_id), so the boost's "why" never disagrees with the
+        # displayed reason. content_score=0 candidates can't reach here
+        # at all (they'd never have entered `contributions`), which is
+        # what makes "a candidate with content_score=0 cannot appear
+        # regardless of boost" true by construction, not a runtime check.
+        lift = cooc_lookup.get((reason_book_id, candidate_id))
+        if lift is not None:
+            # lift's own "no signal" baseline is 1.0, not 0 — anchoring
+            # the [0,1] boost range there means a negative-correlation
+            # pair (lift < 1) can only ever fail to help, never penalize.
+            normalized_boost = max(0.0, min((lift - 1) / (LIFT_CEILING - 1), 1.0))
+            score = content_score * (1 + COOCCURRENCE_ALPHA * normalized_boost)
+            reason = f"{reason} · popular with students who read it"
+        else:
+            score = content_score
+
         scored.append((candidate_id, score, reason_book_id, reason))
 
     # Deterministic order: score desc, then book_id as a stable tiebreak

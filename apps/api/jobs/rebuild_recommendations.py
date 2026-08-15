@@ -1,12 +1,14 @@
 # apps/api/jobs/rebuild_recommendations.py
 # Recommendations plan, Phase 5 — nightly job that computes and stores
-# every student's recommendations. Must run AFTER
-# jobs/rebuild_similarities.py in the schedule (this job only reads
-# book_similarities, it doesn't rebuild it) — Phase 4's co-occurrence
-# step is skipped per Phase 1's decision gate (docs/data-audit.md:
-# median borrows/student = 1, hybrid isn't viable on this data yet), so
-# the order here is just similarities -> per-student recommendations.
-#
+# every student's recommendations. This job only READS book_similarities
+# and book_cooccurrence, it doesn't rebuild either — the real order is:
+#   1. jobs/rebuild_similarities.py
+#   2. jobs/rebuild_cooccurrence.py
+#   3. jobs/rebuild_recommendations.py   <- this one
+# (Phase 4's co-occurrence step exists but stays empty until real
+# cross-student borrowing volume does — docs/data-audit.md's decision
+# gate was about trusting output computed from sparse data, not about
+# whether to build the code; see core/cooccurrence.py.)
 #
 # Usage: venv/Scripts/python.exe jobs/rebuild_recommendations.py
 #

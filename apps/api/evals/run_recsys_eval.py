@@ -7,20 +7,21 @@
 # what keeps this honest rather than a script nobody remembers to write
 # once there's finally data.
 #
-# Two arms from the plan are deliberately NOT built here:
-#   - Hybrid (alpha sweep): Phase 4 (co-occurrence) was never built —
-#     docs/data-audit.md found median borrows/student = 1, too sparse to
-#     trust a collaborative signal. Reported as a skipped row in the
-#     output table, never a fabricated number.
-#   - Content-only (embeddings): optional in the plan, and costs real
-#     OpenAI calls on every run. core/embeddings.py:embed_text already
-#     exists if this gets added later.
+# One arm from the plan is deliberately NOT built here: content-only via
+# embeddings (optional in the plan, and costs real OpenAI calls on every
+# run — core/embeddings.py:embed_text already exists if this gets added
+# later).
 #
-# Content-only (TF-IDF) here is a simplified offline replay of
+# Content-only (TF-IDF) and Hybrid here are simplified offline replays of
 # core/recommendations.py:get_recommendations_for_student — same
-# "sum of cosine similarity to every source book" aggregation, without
+# "sum of cosine similarity to every source book" aggregation and
+# "credit the top-contributing source book" boost lookup, without
 # recency decay (no meaningful "now" in a historical replay) or the
 # diversity cap (adds complexity without changing what this measures).
+# Hybrid's co-occurrence is computed from `train` only, via
+# core/cooccurrence.py:compute_lift_pairs — same train/test boundary
+# already applied to the Most-popular and Content-only arms, never
+# leaking held-out borrows into what an arm is scored on.
 #
 # No live server needed — pure offline computation against the DB +
 # sklearn, same invocation style as jobs/rebuild_similarities.py.
@@ -39,6 +40,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from supabase import Client
 
+from core.cooccurrence import LIFT_CEILING, compute_lift_pairs
 from core.recommendations import NON_BORROWABLE_COLLECTION_TYPES
 from core.similarities import build_feature_text
 from core.supabase import get_admin_client
@@ -48,6 +50,9 @@ RESULTS_PATH = Path(__file__).resolve().parent.parent.parent.parent / "docs" / "
 MIN_BORROWS = 5
 HOLDOUT_FRAC = 0.2
 K_VALUES = (5, 10)
+# Plan's exact sweep — "report the alpha sweep... showing you tuned it
+# rather than guessed is worth more than the score itself."
+HYBRID_ALPHAS = (0.0, 0.1, 0.3, 0.5)
 RANDOM_SEED = 42
 
 
@@ -158,6 +163,54 @@ def arm_content_tfidf(
     return recs
 
 
+def arm_hybrid(
+    train: dict[str, list[str]], book_ids: list[str], matrix: np.ndarray, alpha: float, k: int
+) -> dict[str, list[str]]:
+    """Layers Phase 4's blend on top of arm_content_tfidf's scores:
+    final_score = content_score * (1 + alpha * normalized_boost). At
+    alpha=0.0 this is byte-identical to arm_content_tfidf, same as the
+    plan's own acceptance criterion for the live scorer."""
+    idx = {b: i for i, b in enumerate(book_ids)}
+    sim = cosine_similarity(matrix)
+    lift_lookup = {
+        (r["book_id"], r["neighbor_book_id"]): r["lift"]
+        for r in compute_lift_pairs({sid: set(ids) for sid, ids in train.items()})
+    }
+
+    recs = {}
+    for student_id, train_ids in train.items():
+        sources = [(b, idx[b]) for b in train_ids if b in idx]
+        if not sources:
+            recs[student_id] = []
+            continue
+        source_book_ids = [b for b, _ in sources]
+        source_idxs = [i for _, i in sources]
+
+        content_scores = sim[source_idxs].sum(axis=0)
+        # Which source book each candidate is most similar to — same
+        # "credit the top-contributing source" simplification the live
+        # scorer uses, so a boost lookup only ever needs one lift value
+        # per candidate, not one per source.
+        best_source_of = sim[source_idxs].argmax(axis=0)
+        seen = set(source_idxs)
+
+        final_scores = content_scores.copy()
+        for cand_i in range(len(book_ids)):
+            if cand_i in seen or alpha == 0.0:
+                continue
+            top_source_book_id = source_book_ids[best_source_of[cand_i]]
+            lift = lift_lookup.get((top_source_book_id, book_ids[cand_i]))
+            if lift is None:
+                continue
+            normalized_boost = max(0.0, min((lift - 1) / (LIFT_CEILING - 1), 1.0))
+            final_scores[cand_i] = content_scores[cand_i] * (1 + alpha * normalized_boost)
+
+        ranked = np.argsort(final_scores)[::-1]
+        picked = [i for i in ranked if i not in seen][:k]
+        recs[student_id] = [book_ids[i] for i in picked]
+    return recs
+
+
 # ─── Metrics ─────────────────────────────────────────────────────────────
 
 def hit_rate_at_k(recs: dict[str, list[str]], test: dict[str, list[str]], k: int) -> float:
@@ -239,15 +292,16 @@ def write_report(n_students: int, n_total_loans: int, results: dict[str, dict[in
                 f"| {arm_name} | {k} | {m['hit_rate']:.2f} | {m['precision']:.2f} | "
                 f"{m['coverage']:.1%} | {m['diversity']:.2f} |"
             )
-    lines.append("| Hybrid (α sweep) | — | skipped — Phase 4 not built, see `docs/data-audit.md` | | | |")
     lines += [
         "",
         "## Notes",
         "",
-        "- Content-only (TF-IDF) is a simplified offline replay of the production scorer "
+        "- Content-only (TF-IDF) and Hybrid are simplified offline replays of the production scorer "
         "(`core/recommendations.py:get_recommendations_for_student`) — same summed-similarity "
-        "aggregation, without recency decay or the diversity cap (see this script's header comment "
-        "for why).",
+        "aggregation and top-source-book boost lookup, without recency decay or the diversity cap "
+        "(see this script's header comment for why).",
+        "- Hybrid's co-occurrence (`core/cooccurrence.py:compute_lift_pairs`) is computed from the "
+        "training split only, never the test split — same train/test boundary as every other arm.",
         "- Content-only (embeddings) was not run this pass — optional per the plan, and costs real "
         "OpenAI calls per run.",
         "",
@@ -281,6 +335,8 @@ def run_eval(admin: Client) -> None:
         "Most-popular": arm_most_popular(train, catalog_ids, max_k),
         "Content-only (TF-IDF)": arm_content_tfidf(train, book_ids, matrix, max_k),
     }
+    for alpha in HYBRID_ALPHAS:
+        arms[f"Hybrid (α={alpha})"] = arm_hybrid(train, book_ids, matrix, alpha, max_k)
 
     results = {
         arm_name: {
