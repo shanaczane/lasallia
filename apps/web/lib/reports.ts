@@ -62,6 +62,19 @@ export type ShelfListRow = {
   status: string
 }
 
+// Reports plan Phase 3 — one optional field per AI-summarized report.
+// null means no summary is available (no OPENAI_API_KEY configured, or
+// the call failed) — never a placeholder string.
+export type ReportSummaries = {
+  catalogue: string | null
+  circulation: string | null
+  top_patrons: string | null
+  borrowing_trends: string | null
+  library_stats: string | null
+  transactions: string | null
+  overdue: string | null
+}
+
 export type DateRangePreset = "week" | "month" | "semester" | "custom"
 
 export type ReportFilters = {
@@ -146,6 +159,13 @@ export async function fetchShelfList(filters: ReportFilters, floor?: string, ais
   if (floor) params.set("floor", floor)
   if (aisle) params.set("aisle", aisle)
   return getReport("shelf-list", params)
+}
+
+// Reports plan Phase 3 — deliberately not auto-fetched on every filter
+// change (see "Generate Insights" in reports/page.tsx); only called
+// when the librarian explicitly asks for it.
+export async function fetchReportSummaries(filters: ReportFilters): Promise<ReportSummaries> {
+  return getReport("summaries", filterParams(filters))
 }
 
 // Client-side CSV export (plan: "no new backend/library needed") —

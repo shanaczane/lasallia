@@ -6,6 +6,7 @@
 from fastapi import APIRouter, Depends
 
 from core.deps import require_librarian
+from core.report_summaries import summarize_many
 from core.reports import (
     ReportFilters,
     borrowing_trends,
@@ -19,7 +20,16 @@ from core.reports import (
 )
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
-from schemas.reports import Bucket, CatalogueSlice, LibraryStats, OverdueRow, ShelfListRow, TopPatron, TransactionStats
+from schemas.reports import (
+    Bucket,
+    CatalogueSlice,
+    LibraryStats,
+    OverdueRow,
+    ReportSummaries,
+    ShelfListRow,
+    TopPatron,
+    TransactionStats,
+)
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -101,3 +111,26 @@ def get_shelf_list(
     librarian: UserProfile = Depends(require_librarian),
 ):
     return shelf_list(get_admin_client(), filters, floor=floor, aisle=aisle)
+
+
+@router.get("/summaries", response_model=ReportSummaries)
+def get_summaries(
+    filters: ReportFilters = Depends(report_filters),
+    librarian: UserProfile = Depends(require_librarian),
+):
+    # Re-derives every payload server-side from the same filters, rather
+    # than trusting anything the frontend already has — the frontend did
+    # fetch these same 7 reports moments ago to render the page, but
+    # letting AI narrate client-supplied numbers would mean it could be
+    # asked to narrate fabricated ones just as convincingly as real ones.
+    admin = get_admin_client()
+    payloads = {
+        "catalogue": catalogue_report(admin, filters),
+        "circulation": circulation_summary(admin, filters),
+        "top_patrons": top_patrons(admin, filters),
+        "borrowing_trends": borrowing_trends(admin, filters),
+        "library_stats": library_stats(admin, filters),
+        "transactions": transaction_stats(admin, filters),
+        "overdue": overdue_rows(admin, filters),
+    }
+    return ReportSummaries(**summarize_many(payloads))

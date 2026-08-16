@@ -5,7 +5,7 @@
 // what feeds them changed.
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import {
   BarChart2,
   GripVertical,
@@ -18,6 +18,7 @@ import {
   BookMarked,
   ArrowUpDown,
   Download,
+  Sparkles,
 } from "lucide-react"
 import {
   DndContext,
@@ -48,6 +49,7 @@ import {
   fetchLibraryStats,
   fetchTransactionStats,
   fetchShelfList,
+  fetchReportSummaries,
   resolveDateRange,
   downloadCsv,
   type Bucket,
@@ -57,6 +59,7 @@ import {
   type LibraryStats,
   type TransactionStats,
   type ShelfListRow,
+  type ReportSummaries,
   type DateRangePreset,
   type ReportFilters,
 } from "@/lib/reports"
@@ -248,6 +251,19 @@ function FilterMismatchNote() {
   return (
     <p className="text-ink-400 italic mb-1" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
       Program/year level filters don&apos;t apply here — this is a book-level report, not a loan-level one.
+    </p>
+  )
+}
+
+// ─── Reports plan Phase 3 — AI summary line, shown only once generated ────────
+function SummaryNote({ text }: { text: string }) {
+  return (
+    <p
+      className="text-ink-700 bg-green-50 border border-green-100 rounded px-2.5 py-1.5 mb-2 flex items-start gap-1.5 text-left"
+      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+    >
+      <Sparkles size={11} className="text-green-700 mt-0.5 shrink-0" />
+      <span>{text}</span>
     </p>
   )
 }
@@ -907,16 +923,27 @@ export default function ReportsPage() {
   const [transactionStats, setTransactionStats] = useState<TransactionStats | null>(null)
   const [shelfListData, setShelfListData] = useState<ShelfListRow[]>([])
 
-  useEffect(() => {
+  // Reports plan Phase 3 — never auto-fetched. Cleared (not left stale)
+  // whenever any filter changes, so an AI sentence can never sit next to
+  // numbers it no longer describes.
+  const [summaries, setSummaries] = useState<ReportSummaries | null>(null)
+  const [summarizing, setSummarizing] = useState(false)
+
+  const currentFilters = useCallback((): ReportFilters => {
     const { dateFrom, dateTo } = resolveDateRange(dateRange, fromDate, toDate)
-    const filters: ReportFilters = {
+    return {
       dateFrom,
       dateTo,
       category: category === "All Categories" ? undefined : category,
       program: program === "All Programs" ? undefined : program,
       yearLevel: YEAR_LEVEL_LABELS[yearLevel],
     }
+  }, [dateRange, fromDate, toDate, category, program, yearLevel])
+
+  useEffect(() => {
+    const filters = currentFilters()
     setLoading(true)
+    setSummaries(null)
     Promise.all([
       fetchCatalogueReport(filters),
       fetchCirculationSummary(filters),
@@ -939,7 +966,18 @@ export default function ReportsPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [dateRange, fromDate, toDate, category, program, yearLevel])
+  }, [currentFilters])
+
+  async function handleGenerateInsights() {
+    setSummarizing(true)
+    try {
+      setSummaries(await fetchReportSummaries(currentFilters()))
+    } catch {
+      setSummaries(null)
+    } finally {
+      setSummarizing(false)
+    }
+  }
 
   const exportShelfListCsv = () => downloadCsv("shelf-list.csv", shelfListData.map((r) => ({
     accession_number: r.accession_number,
@@ -979,35 +1017,61 @@ export default function ReportsPage() {
       title: "Catalogue Overview",
       subtitle: "Collection by category",
       icon: <BookMarked size={16} />,
-      content: <DonutChart data={catalogueData} />,
+      content: (
+        <div className="flex flex-col gap-1 w-full">
+          {summaries?.catalogue && <SummaryNote text={summaries.catalogue} />}
+          <DonutChart data={catalogueData} />
+        </div>
+      ),
     },
     {
       id: "circulation",
       title: "Circulation Summary",
       subtitle: "Monthly borrows (last 6 months)",
       icon: <BarChart2 size={16} />,
-      content: <BarChartViz data={circulationData} />,
+      content: (
+        <div className="flex flex-col gap-1 w-full">
+          {summaries?.circulation && <SummaryNote text={summaries.circulation} />}
+          <BarChartViz data={circulationData} />
+        </div>
+      ),
     },
     {
       id: "patrons",
       title: "Top Patrons",
       subtitle: "Highest borrowers in range",
       icon: <Users size={16} />,
-      content: <TopPatronsList patrons={topPatronsData} />,
+      content: (
+        <div className="flex flex-col gap-1 w-full">
+          {summaries?.top_patrons && <SummaryNote text={summaries.top_patrons} />}
+          <TopPatronsList patrons={topPatronsData} />
+        </div>
+      ),
     },
     {
       id: "trends",
       title: "Borrowing Trends",
       subtitle: "Weekly activity (last 8 weeks)",
       icon: <TrendingUp size={16} />,
-      content: <LineChartViz data={trendData} />,
+      content: (
+        <div className="flex flex-col gap-1 w-full">
+          {summaries?.borrowing_trends && <SummaryNote text={summaries.borrowing_trends} />}
+          <LineChartViz data={trendData} />
+        </div>
+      ),
     },
     {
       id: "library-stats",
       title: "Library Statistics",
       subtitle: "Snapshot + transactions in range",
       icon: <BookMarked size={16} />,
-      content: <LibraryStatsCard stats={libraryStats} tx={transactionStats} />,
+      content: (
+        <div className="flex flex-col gap-1 w-full">
+          {summaries?.library_stats && <SummaryNote text={summaries.library_stats} />}
+          {summaries?.transactions && <SummaryNote text={summaries.transactions} />}
+          <LibraryStatsCard stats={libraryStats} tx={transactionStats} />
+        </div>
+      ),
     },
     {
       id: "shelf-list",
@@ -1180,6 +1244,26 @@ export default function ReportsPage() {
         ))}
       </div>
 
+      {/* ── AI insights – Reports plan Phase 3 ────────────── */}
+      {tab !== "weeding" && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleGenerateInsights}
+            disabled={summarizing || loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-green-700 text-green-700 hover:bg-green-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+          >
+            <Sparkles size={14} />
+            {summarizing ? "Generating…" : "Generate Insights"}
+          </button>
+          {summaries && !summarizing && (
+            <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+              AI summaries reflect the current filters — change a filter and regenerate to refresh them.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* ── Overview tab – Sprint 5.6.1 & 5.6.3 ──────────── */}
       {tab === "overview" && (
         <div className="flex flex-col gap-6">
@@ -1231,7 +1315,12 @@ export default function ReportsPage() {
       )}
 
       {/* ── Overdue Books tab – Sprint 5.6.4 ──────────────── */}
-      {tab === "overdue" && <OverdueTable rows={overdueRowsData} onExport={exportOverdueCsv} />}
+      {tab === "overdue" && (
+        <div className="flex flex-col gap-3">
+          {summaries?.overdue && <SummaryNote text={summaries.overdue} />}
+          <OverdueTable rows={overdueRowsData} onExport={exportOverdueCsv} />
+        </div>
+      )}
 
       {/* ── Weeding tab – Reports plan Phase 2 ────────────── */}
       {tab === "weeding" && <WeedingPanel />}

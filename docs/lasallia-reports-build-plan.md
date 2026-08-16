@@ -3,7 +3,7 @@
 **Audience:** Claude Code
 **Stack:** Next.js (frontend) + FastAPI (backend) + Supabase/Postgres
 **Surface:** Librarian dashboard only (`/librarian/reports`).
-**How to use this doc:** Build **one phase at a time**. Do not start a later phase until the current phase's acceptance criteria all pass. Only Phase 1 is designed so far — later phases are named but not yet specified; plan each one for real (grounded in the codebase at the time) before building it, the same way Phase 1 below was planned.
+**How to use this doc:** Build **one phase at a time**. Do not start a later phase until the current phase's acceptance criteria all pass. Phases 1 and 2 are built; Phase 3 is planned but not yet built. Plan each later phase for real (grounded in the codebase at the time) before building it, the same way Phase 1 was planned before it was built.
 
 ---
 
@@ -86,10 +86,96 @@ GET /reports/shelf-list?floor=&aisle=
 
 ---
 
-## Later phases (named, not yet specified)
+## Phase 2 — Weeding logs 
 
-- **Phase 2 — Weeding logs.** New `books` status/flag for archived/withdrawn, plus AI flagging of outdated/inactive titles (heuristic: low/zero borrow count over a lookback window + old `published_year`/`created_at`, narrated by AI rather than decided by it).
-- **Phase 3 — AI-generated report summaries.** Natural-language summaries of each report (reuses this codebase's existing OpenAI patterns — `gpt-4o-mini`, the lazy `OPENAI_API_KEY` check in `core/config.py`, the tool-calling shape in `core/tools/registry.py` if structured output is wanted).
-- **Wishlist & request monitoring** — not a phase of this plan. Needs its own separate feature plan (a student-facing "request a book" flow) before a report on it means anything.
+**Goal:** A way to flag old, rarely-borrowed books as weeding candidates, and let a librarian act on that — archive, restore, or dismiss — with every action logged.
 
-Plan each of these for real against the codebase's state at the time, the same way Phase 1 was grounded in what `reports/page.tsx` and `apps/api` actually looked like before writing it.
+### Scope decisions
+
+- **Reused, didn't reinvent, existing UI.** `apps/web/components/ui/catalog/DeleteBookModal.tsx` already had an "Archive (recommended)" vs "Permanently delete" choice, with copy already promising "hides from catalog... can be restored later" — but it was pure local-state, wired to nothing (a comment marked the whole catalog page's add/edit/archive/delete as waiting on a separate, unrelated "Sprint 9.1"). This phase wires **only** the Archive button to a real endpoint, matching the terminology and behavior the UI already promised.
+- **Permanent delete, Add, and Edit stay out of scope.** Real data destruction (delete) and full book CRUD (add/edit) belong to that separate "Sprint 9.1" backlog item, not this Reports plan. Left as the pre-existing local-only stubs.
+- **No dedicated "browse archived books" page.** Restore lives as an action directly in the Weeding log table instead of a new management screen — smaller surface, same capability.
+- **`books.status` not reused for "archived."** That column is already largely vestigial (`routers/books.py`'s `_apply_real_availability` overwrites it in-memory from `book_copies` on every read), and `'Archives'` is already a `collection_type` value with a different meaning (a physical section). A new nullable `archived_at timestamptz` avoids both collisions.
+
+### Backend
+
+**Migration `0022_weeding.sql`** — `books.archived_at` (nullable timestamp — archived vs not), `books.weeding_dismissed_at` (separate column: "keep this book, don't flag it again" is not the same state as "remove it from the catalog"), and an append-only `weeding_events` table (`book_id`, `event_type` in `archived`/`restored`/`dismissed`, `reason`, `performed_by`, `occurred_at`) — the actual "log" the phase is named after.
+
+**`apps/api/core/weeding.py` (new)**:
+- `find_weeding_candidates(admin) -> list[WeedingCandidateData]` — live heuristic scan, no precompute (a librarian-triggered report can tolerate live computation; it doesn't have Phase 5-of-the-recommendations-plan's student-facing latency budget). A book qualifies if it has ≤1 borrow in the last 24 months **and** is 5+ years old (by `published_year`, falling back to `created_at`). Thresholds are named constants (`WEEDING_LOOKBACK_MONTHS`, `WEEDING_MAX_BORROWS_IN_WINDOW`, `WEEDING_MIN_AGE_YEARS`) — a librarian policy call, not a technical one, kept in one place like the recommendations plan's `COOCCURRENCE_ALPHA`.
+- `narrate(candidate) -> str` — `gpt-4o-mini` restates the heuristic's own facts in one plain sentence; the system prompt requires restating *every* given fact and forbids adding anything not given. Falls back to the raw heuristic string (`heuristic_reason`) if `OPENAI_API_KEY` isn't set or the call fails for any reason — the feature works with zero AI involvement, same "must degrade, never blank" principle the recommendations plan states outright.
+- `archive_book` / `restore_book` / `dismiss_candidate` — each updates the relevant column and appends one `weeding_events` row.
+
+**`apps/api/routers/weeding.py` (new)** — `require_librarian` throughout:
+```
+GET  /weeding/candidates
+GET  /weeding/events
+POST /weeding/{book_id}/archive
+POST /weeding/{book_id}/restore
+POST /weeding/{book_id}/dismiss
+```
+
+**Archived books excluded from every catalog-facing read**, not just the report: `routers/books.py` (`GET /books`, `GET /books/{id}` — 404s for non-librarians, still viewable by librarians so they can restore), `core/embeddings.py`'s `semantic_search` (shared by public search and the chatbot's `search_catalog` tool), `core/tools/book_details.py` (both the direct lookup and the "nearby on shelf" neighbor pool), and `core/reports.py`'s catalogue/library-stats/shelf-list (the collection snapshots — archived titles are no longer part of the active collection anywhere). Historical loan-centric reports (circulation, top patrons, overdue) deliberately do **not** filter archived books out of past activity — a loan that happened before a title was archived is still a real historical event.
+
+### Frontend
+
+- **`apps/web/lib/weeding.ts` (new)** — fetch layer, same pattern as every other `lib/*.ts` file.
+- **`DeleteBookModal`'s Archive button, wired for real** in both `librarian/catalog/page.tsx` and `librarian/catalog/[bookId]/page.tsx` — local state only updates after the request actually succeeds, not optimistically before.
+- **New "Weeding" tab on the Reports page** (`WeedingPanel`, alongside Overview/Overdue Books): a card per candidate (title, author, category, published year, the AI-narrated reason, Keep/Archive buttons), and the Weeding Log table below it (book, action, who, when, with a Restore action on archived rows).
+
+### Verification
+
+- Migration applied and confirmed (`books.archived_at`/`weeding_dismissed_at`, `weeding_events` all queryable).
+- Heuristic run against real data: 38 candidates out of 185 books — plausible given the sparse real borrow history (`docs/data-audit.md`).
+- AI narration checked for fact-fidelity directly — caught it dropping the "published year" fact on the first pass (restated only the borrow count), tightened the prompt to require every given fact, re-verified fixed.
+- 403 confirmed for a non-librarian caller.
+- Full round trip verified directly: archiving a real book removed it from `GET /books` immediately, dropped it out of the candidate list, and logged the event with the acting librarian's name; restoring brought it back; dismissing removed it from future candidate scans without archiving it. Test data cleaned up afterward.
+- `tsc --noEmit` and `next build` both clean.
+- Not verified: actual browser click-through (no browser tool available this session) — the candidate cards, Keep/Archive buttons, and log table are unverified visually.
+
+---
+
+## Phase 3 — AI-generated report summaries (planned, not yet built)
+
+**Goal:** A one- or two-sentence, plain-English summary above each report — the same "AI narrates a deterministic result, never decides or computes it" boundary already held to by the chatbot, recommendations, and Phase 2's weeding narration.
+
+### Scope decisions
+
+- **Which reports get a summary:** Catalogue Overview, Circulation Summary, Top Patrons, Borrowing Trends, Library Statistics, Transaction Statistics, Overdue Books — seven narrative-friendly reports. **Not** Shelf List (a raw listing, nothing to narrate) and **not** Weeding Candidates (already has its own per-candidate AI narration from Phase 2 — a report-level summary on top would be redundant).
+- **On-demand, not automatic.** Firing 7 LLM calls every time a librarian nudges a filter dropdown is wasteful and slow. A single " Generate Insights" action computes all 7 at once; changing any filter afterward invalidates the shown summaries (cleared, not left stale next to numbers that no longer match them) rather than silently leaving old AI text next to new charts.
+- **Backend re-derives the data it narrates — never trusts client-supplied numbers.** The frontend already has all 7 report payloads in hand (it just rendered them), but summaries are computed from a fresh server-side call to the same `core/reports.py` functions, not from whatever the client sends. Trusting client-supplied figures would mean AI could narrate fabricated numbers as if authoritative — the same reasoning that keeps every other AI feature in this codebase grounded in a real, server-verified retrieval step first.
+- **Graceful, silent degradation.** No `OPENAI_API_KEY`, or any individual call fails: that report's summary is simply absent (`null`), no error surfaced, same "must degrade, never blank" principle as Phase 2's narration fallback — except here there's no deterministic-text fallback to substitute, since a "summary" isn't something the non-AI layer produces on its own, so the honest behavior is just showing nothing for that card.
+
+### Backend
+
+**`apps/api/core/report_summaries.py` (new)** — one generic function, not seven near-duplicate ones:
+- `summarize(report_name: str, payload: BaseModel | list[BaseModel]) -> str | None` — serializes whatever `core/reports.py` already returned for that report into compact text, sends it to `gpt-4o-mini` with a system prompt that forbids stating any number not present in the payload, returns `None` on missing key or any failure (mirrors `core/weeding.py`'s `narrate`'s try/except-and-fall-back shape, except there's no heuristic string to fall back to here).
+
+**`apps/api/schemas/reports.py` (extend)** — `ReportSummaries` model, one optional string field per summarized report (`catalogue`, `circulation`, `top_patrons`, `borrowing_trends`, `library_stats`, `transactions`, `overdue`).
+
+**`apps/api/routers/reports.py` (extend)** — `GET /reports/summaries`, same query params (`date_from`, `date_to`, `category`, `program`, `year_level`) and `report_filters` dependency as every other endpoint here. Internally calls the seven existing `core/reports.py` functions with those filters (recomputing, not reusing anything client-supplied) and narrates each — run concurrently (`ThreadPoolExecutor`, same pattern `core/recommendations.py` already uses for parallel Supabase calls) so seven sequential `gpt-4o-mini` round trips don't stack into multi-second latency.
+
+### Frontend
+
+- **`apps/web/lib/reports.ts` (extend)** — `fetchReportSummaries(filters) -> ReportSummaries`.
+- **`apps/web/app/librarian/reports/page.tsx`**: a "✨ Generate Insights" button near the filter bar. On click, fetches summaries for the current filters into new state; each card (and the Overdue tab) renders its one-line summary when present, nothing when `null`. The summaries state resets to empty whenever any filter changes, so a stale AI sentence can never sit next to numbers it no longer describes.
+
+### Not built this phase
+
+- Weeding Candidates keeps its own Phase 2 narration; not touched here.
+- No summary persistence/history — regenerated live each time, not stored (unlike Phase 2's `weeding_events`, there's no audit-trail reason to keep old summaries around).
+- No structured/tool-calling output — plain text summaries are enough for what this phase needs; `core/tools/registry.py`'s tool-calling shape stays an option for later if a future phase wants the AI to *select* which numbers to highlight rather than just narrate everything it's given.
+
+### Verification (planned)
+
+- Fact-fidelity check per report type, same method Phase 2's narration used: generate a summary against known real data, confirm every number it states is actually present in the source payload.
+- Confirm `GET /reports/summaries` returns `200` with all-`null` fields (not a `500`) when `OPENAI_API_KEY` is unset.
+- 403 for a non-librarian caller.
+- Confirm frontend clears shown summaries on any filter change, before the next "Generate Insights" click.
+- `tsc --noEmit` and `next build` clean.
+
+---
+
+## Wishlist & request monitoring
+
+Not a phase of this plan. Needs its own separate feature plan (a student-facing "request a book" flow) before a report on it means anything.

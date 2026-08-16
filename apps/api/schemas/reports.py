@@ -68,3 +68,20 @@ class ShelfListRow(BaseModel):
     floor: str | None = None
     aisle: str | None = None
     status: str
+
+
+# Reports plan, Phase 3 — one optional field per AI-summarized report.
+# None means no summary is available for that report right now (no
+# OPENAI_API_KEY configured, or the call failed) — never a placeholder
+# string. Shelf List has no field here (a raw listing isn't narrative-
+# worthy) and Weeding Candidates already has its own per-candidate
+# narration from Phase 2 — a report-level summary on top would be
+# redundant with that.
+class ReportSummaries(BaseModel):
+    catalogue: str | None = None
+    circulation: str | None = None
+    top_patrons: str | None = None
+    borrowing_trends: str | None = None
+    library_stats: str | None = None
+    transactions: str | None = None
+    overdue: str | None = None
