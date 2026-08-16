@@ -62,7 +62,10 @@ def _apply_real_availability(books: list[dict], copy_rows: list[dict]) -> list[d
 @router.get("", response_model=BookSearchResponse)
 def list_books(limit: int = DEFAULT_LIMIT, user: UserProfile | None = Depends(get_optional_user)):
     db = get_client()
-    res = db.table("books").select("*").order("title").limit(limit).execute()
+    # Reports plan Phase 2: an archived book is meant to disappear from
+    # every catalog view (student, guest, kiosk, librarian alike) — this
+    # is the one query every one of those surfaces shares.
+    res = db.table("books").select("*").is_("archived_at", "null").order("title").limit(limit).execute()
     books = res.data
 
     # book_copies has no public RLS policy (its only legitimate public-ish
@@ -84,6 +87,13 @@ def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)
     db = get_client()
     res = db.table("books").select("*").eq("id", book_id).execute()
     if not res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
+
+    # A librarian can still open an archived book directly (e.g. from the
+    # Weeding log, to restore it) — everyone else gets the same 404 as a
+    # book that doesn't exist, not a "this book is archived" message that
+    # would leak its existence.
+    if res.data[0].get("archived_at") and (user is None or user.role != "librarian"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
 
     admin = get_admin_client()

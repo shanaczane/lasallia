@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/catalog'
 import { useBooks } from '@/lib/hooks/useBooks'
 import { deriveCatalogOptions } from '@/lib/catalogOptions'
+import { archiveBook } from '@/lib/weeding'
 
 const PAGE_SIZE = 24
 import { LibrarianBookCard } from '@/components/ui/catalog/LibrarianBookCard'
@@ -245,9 +246,19 @@ function LibrarianCatalogContent() {
     showToast(`"${data.title.trim()}" updated.`)
   }
 
-  function handleArchive(book: Book) {
-    setBooks((prev) => prev.filter((b) => b.id !== book.id))
-    showToast(`"${book.title}" archived.`)
+  // Reports plan Phase 2 — the only one of these four actions wired to a
+  // real endpoint so far (add/edit/delete are still local-only, see the
+  // effect above). Local removal happens after the request succeeds, not
+  // before — an archive that actually failed shouldn't disappear from
+  // the librarian's own view.
+  async function handleArchive(book: Book) {
+    try {
+      await archiveBook(book.id)
+      setBooks((prev) => prev.filter((b) => b.id !== book.id))
+      showToast(`"${book.title}" archived.`)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not archive this book.')
+    }
   }
 
   function handleDelete(book: Book) {

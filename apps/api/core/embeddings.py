@@ -93,7 +93,11 @@ def semantic_search(admin: Client, query: str, limit: int = 10) -> list[dict]:
     if not book_ids:
         return []
 
-    books_res = admin.table("books").select("*").in_("id", book_ids).execute().data
+    # archived_at filter here (not in the RPC) means an archived book's
+    # id can still come back ranked from hybrid_search_books, it just
+    # won't be in by_id below — silently dropped from the results,
+    # same effect as never having matched at all.
+    books_res = admin.table("books").select("*").in_("id", book_ids).is_("archived_at", "null").execute().data
     by_id = {b["id"]: b for b in books_res}
     # rpc() returns rank order, but a plain .in_() fetch doesn't preserve it.
     return [by_id[bid] for bid in book_ids if bid in by_id]

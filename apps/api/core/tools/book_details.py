@@ -29,7 +29,7 @@ class BookDetailsResult(BaseModel):
 
 
 def _find_nearby_by_call_number(admin, book_id: str, limit: int = 3) -> list[dict]:
-    rows = admin.table("books").select("id, title, call_number").order("call_number").execute().data
+    rows = admin.table("books").select("id, title, call_number").is_("archived_at", "null").order("call_number").execute().data
     idx = next((i for i, r in enumerate(rows) if r["id"] == book_id), None)
     if idx is None:
         return []
@@ -47,6 +47,11 @@ def get_book_details(book_id: str) -> BookDetailsResult:
     if not res.data:
         raise ValueError(f"No book found with id {book_id}")
     raw = res.data[0]
+    # This tool has no notion of librarian-vs-student caller (unlike
+    # GET /books/{id}) — treated as not-found for everyone, same as
+    # search_catalog already never surfacing it in the first place.
+    if raw.get("archived_at"):
+        raise ValueError(f"No book found with id {book_id}")
 
     copies_res = admin.table("book_copies").select("book_id, status").eq("book_id", book_id).execute().data
     enriched = _apply_real_availability([dict(raw)], copies_res)[0]

@@ -60,10 +60,19 @@ import {
   type DateRangePreset,
   type ReportFilters,
 } from "@/lib/reports"
+import {
+  fetchWeedingCandidates,
+  fetchWeedingEvents,
+  archiveBook,
+  restoreBook,
+  dismissWeedingCandidate,
+  type WeedingCandidate,
+  type WeedingEvent,
+} from "@/lib/weeding"
 import type { Book, UserProfile } from "@lasallia/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type ReportTab = "overview" | "overdue"
+type ReportTab = "overview" | "overdue" | "weeding"
 type SortDir = "asc" | "desc" | null
 type SortKey = "patron" | "book" | "due" | "days" | "program" | null
 type ShelfSortKey = "call_number" | "title" | "accession_number" | null
@@ -380,6 +389,212 @@ function ShelfListTable({ rows, onExport }: { rows: ShelfListRow[]; onExport: ()
           </table>
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Weeding tab — Reports plan Phase 2 ────────────────────────────────────────
+// A deterministic heuristic (low/zero borrows + old) decides what's a
+// candidate; AI only narrates that finding in plain English (candidate.reason).
+// The librarian makes every real decision — Archive or Keep — nothing here
+// removes a book on its own.
+function WeedingPanel() {
+  const [candidates, setCandidates] = useState<WeedingCandidate[]>([])
+  const [events, setEvents] = useState<WeedingEvent[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+
+  function showToast(msg: string) {
+    setToast(msg)
+    setTimeout(() => setToast(null), 3000)
+  }
+
+  function load() {
+    setLoading(true)
+    Promise.all([fetchWeedingCandidates(), fetchWeedingEvents()])
+      .then(([c, e]) => { setCandidates(c); setEvents(e) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function handleArchive(c: WeedingCandidate) {
+    setBusyId(c.book_id)
+    try {
+      await archiveBook(c.book_id, c.reason)
+      showToast(`"${c.title}" archived.`)
+      load()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Could not archive this book.")
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleDismiss(c: WeedingCandidate) {
+    setBusyId(c.book_id)
+    try {
+      await dismissWeedingCandidate(c.book_id)
+      showToast(`"${c.title}" kept — won't be flagged again.`)
+      load()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Could not dismiss this candidate.")
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleRestore(bookId: string, title: string | null) {
+    setBusyId(bookId)
+    try {
+      await restoreBook(bookId)
+      showToast(`"${title ?? "Book"}" restored to the catalog.`)
+      load()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Could not restore this book.")
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {toast && (
+        <div
+          className="fixed bottom-6 right-6 z-50 bg-ink-900 text-white px-4 py-2.5 rounded-(--radius) shadow-lg"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          {toast}
+        </div>
+      )}
+
+      {/* Candidates */}
+      <div className="flex flex-col gap-3">
+        <div>
+          <h2
+            className="text-ink-900 font-semibold"
+            style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}
+          >
+            Weeding Candidates
+          </h2>
+          <p className="text-ink-400 mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            Flagged by a fixed rule — low or zero borrows over 2 years, and old. AI only explains the finding; you decide.
+          </p>
+        </div>
+
+        {loading ? (
+          <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>Loading…</p>
+        ) : candidates.length === 0 ? (
+          <div className="rounded border border-ink-200 bg-white py-8 flex items-center justify-center text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            No weeding candidates right now.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {candidates.map((c) => (
+              <div
+                key={c.book_id}
+                className="rounded border border-ink-200 bg-white p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3"
+                style={{ boxShadow: "var(--shadow)" }}
+              >
+                <div className="min-w-0">
+                  <p className="text-ink-900 font-semibold truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                    {c.title}
+                  </p>
+                  <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                    {c.author} · {c.category}{c.published_year ? ` · ${c.published_year}` : ""}
+                  </p>
+                  <p className="text-ink-600 mt-1.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+                    {c.reason}
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => handleDismiss(c)}
+                    disabled={busyId === c.book_id}
+                    className="px-3 py-1.5 rounded border border-ink-200 text-ink-700 hover:bg-ink-50 disabled:opacity-40 transition-colors"
+                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                  >
+                    Keep
+                  </button>
+                  <button
+                    onClick={() => handleArchive(c)}
+                    disabled={busyId === c.book_id}
+                    className="px-3 py-1.5 rounded bg-gold-500 text-white hover:bg-gold-600 disabled:opacity-40 transition-colors font-medium"
+                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                  >
+                    Archive
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Log */}
+      <div className="flex flex-col gap-3">
+        <h2
+          className="text-ink-900 font-semibold"
+          style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}
+        >
+          Weeding Log
+        </h2>
+        {events.length === 0 ? (
+          <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            No weeding actions recorded yet.
+          </p>
+        ) : (
+          <div className="rounded border border-ink-200 bg-white overflow-x-auto" style={{ boxShadow: "var(--shadow)" }}>
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-ink-200 bg-ink-50">
+                  {["Book", "Action", "By", "When", ""].map((label) => (
+                    <th
+                      key={label}
+                      className="text-left py-2.5 px-4 text-ink-500 font-semibold"
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                    >
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {events.map((e) => (
+                  <tr key={e.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
+                    <td className="py-2.5 px-4 text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                      {e.book_title ?? "—"}
+                    </td>
+                    <td className="py-2.5 px-4 text-ink-700 capitalize" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                      {e.event_type}
+                    </td>
+                    <td className="py-2.5 px-4 text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                      {e.performed_by_name ?? "—"}
+                    </td>
+                    <td className="py-2.5 px-4 text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                      {new Date(e.occurred_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
+                    </td>
+                    <td className="py-2.5 px-4">
+                      {e.event_type === "archived" && (
+                        <button
+                          onClick={() => handleRestore(e.book_id, e.book_title)}
+                          disabled={busyId === e.book_id}
+                          className="text-green-700 hover:underline disabled:opacity-40 font-medium"
+                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                        >
+                          Restore
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -939,6 +1154,7 @@ export default function ReportsPage() {
         {([
           { key: "overview", label: "Overview" },
           { key: "overdue",  label: "Overdue Books" },
+          { key: "weeding",  label: "Weeding" },
         ] as { key: ReportTab; label: string }[]).map((t) => (
           <button
             key={t.key}
@@ -1016,6 +1232,9 @@ export default function ReportsPage() {
 
       {/* ── Overdue Books tab – Sprint 5.6.4 ──────────────── */}
       {tab === "overdue" && <OverdueTable rows={overdueRowsData} onExport={exportOverdueCsv} />}
+
+      {/* ── Weeding tab – Reports plan Phase 2 ────────────── */}
+      {tab === "weeding" && <WeedingPanel />}
     </div>
   )
 }

@@ -17,6 +17,7 @@ import { CopyManagementTable, type BookCopy, type CopyStatus } from '@/component
 import { BookFormModal, type BookFormData } from '@/components/ui/catalog/BookFormModal'
 import { DeleteBookModal } from '@/components/ui/catalog/DeleteBookModal'
 import { useRouter } from 'next/navigation'
+import { archiveBook } from '@/lib/weeding'
 
 // ─── Cover color helper ───────────────────────────────────────────────────────
 
@@ -114,6 +115,7 @@ export default function LibrarianBookDetailPage({
   const [editOpen,   setEditOpen]   = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [copies, setCopies] = useState<BookCopy[]>([])
+  const [archiveError, setArchiveError] = useState('')
 
   // Per-copy tracking isn't backed by a real table yet — this regenerates
   // placeholder copy rows from total_copies/available_copies once the real
@@ -177,8 +179,16 @@ export default function LibrarianBookDetailPage({
     setEditOpen(false)
   }
 
-  function handleArchive(_book: Book) {
-    router.push('/librarian/catalog')
+  // Reports plan Phase 2 — the only one of these actions wired to a real
+  // endpoint so far (edit/delete stay local-only, see the copies effect
+  // above). Only navigates away once the archive actually succeeds.
+  async function handleArchive(book: Book) {
+    try {
+      await archiveBook(book.id)
+      router.push('/librarian/catalog')
+    } catch (err) {
+      setArchiveError(err instanceof Error ? err.message : 'Could not archive this book.')
+    }
   }
 
   function handleDelete(_book: Book) {
@@ -201,6 +211,18 @@ export default function LibrarianBookDetailPage({
         <ArrowLeft size={15} />
         Back to Catalog
       </Link>
+
+      {archiveError && (
+        <div
+          className="mb-6 px-4 py-3 rounded-(--radius) border border-danger bg-danger-bg text-danger flex items-center justify-between gap-3"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+        >
+          {archiveError}
+          <button type="button" onClick={() => setArchiveError('')} className="font-semibold hover:underline shrink-0">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* ── Hero ── */}
       <div className="flex flex-col sm:flex-row gap-5 sm:gap-7 mb-8">

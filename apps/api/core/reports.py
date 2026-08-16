@@ -99,7 +99,7 @@ def catalogue_report(admin: Client, filters: ReportFilters) -> list[CatalogueSli
     """Ports deriveCatalogue. Book-centric — only the category filter
     applies (a date/program/year_level filter has no meaning against the
     static catalog)."""
-    query = admin.table("books").select("category, total_copies")
+    query = admin.table("books").select("category, total_copies").is_("archived_at", "null")
     if filters.category:
         query = query.eq("category", filters.category)
     books = query.execute().data
@@ -223,7 +223,7 @@ def library_stats(admin: Client, filters: ReportFilters) -> LibraryStats:
     are catalog snapshots — only the category filter applies.
     active_borrowers/overdue_count are loan-centric — the full filter set
     applies."""
-    books_query = admin.table("books").select("id, category")
+    books_query = admin.table("books").select("id, category").is_("archived_at", "null")
     if filters.category:
         books_query = books_query.eq("category", filters.category)
     books = books_query.execute().data
@@ -299,7 +299,7 @@ def shelf_list(admin: Client, filters: ReportFilters, floor: str | None = None, 
     copies has 3 separate labels on 3 separate shelves. Ordered by call
     number, then accession number, matching how a librarian would
     actually walk the stacks."""
-    books_query = admin.table("books").select("id, title, author, call_number, category, shelf_location, floor, aisle")
+    books_query = admin.table("books").select("id, title, author, call_number, category, shelf_location, floor, aisle").is_("archived_at", "null")
     if filters.category:
         books_query = books_query.eq("category", filters.category)
     if floor:
