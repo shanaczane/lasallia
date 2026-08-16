@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 
 from supabase import Client
 
@@ -7,6 +7,13 @@ from supabase import Client
 # migrations/0010_phase4_returns.sql.
 DEFAULT_OPEN_TIME = time(8, 0)
 DEFAULT_CLOSE_TIME = time(17, 0)
+
+# Fine-rate constants (build plan 4.4) — hourly-rate collection types get
+# charged for open library hours elapsed; everything else is general
+# circulation, charged per school day.
+HOURLY_FINE_COLLECTION_TYPES = {"Reserve", "Story book", "Bible"}
+DAILY_FINE_RATE = 5.0
+HOURLY_FINE_RATE = 2.0
 
 
 def _parse_time(value: str) -> time:
@@ -67,3 +74,22 @@ def count_library_hours(db: Client, start: datetime, end: datetime) -> float:
         hours = (datetime.combine(d, close_time) - datetime.combine(d, open_time)).total_seconds() / 3600
         total += max(hours, 0.0)
     return total
+
+
+def compute_fine(db: Client, due_date_iso: str, collection_type: str) -> tuple[int, float]:
+    """Returns (days_overdue, fine_amount) for an open loan, as of now.
+    days_overdue is always day-based (for display); fine_amount uses
+    whichever rate applies to the collection type. Shared by
+    routers/loans.py (live previews at the return counter) and
+    core/reports.py (the Overdue report) — one implementation, so the
+    two can't quietly drift apart on what "overdue" or "owed" means."""
+    due_date = datetime.fromisoformat(due_date_iso)
+    now = datetime.now(timezone.utc)
+    days_overdue = count_school_days(db, due_date, now)
+    if days_overdue == 0:
+        return 0, 0.0
+    if collection_type in HOURLY_FINE_COLLECTION_TYPES:
+        fine = round(count_library_hours(db, due_date, now) * HOURLY_FINE_RATE, 2)
+    else:
+        fine = round(days_overdue * DAILY_FINE_RATE, 2)
+    return days_overdue, fine

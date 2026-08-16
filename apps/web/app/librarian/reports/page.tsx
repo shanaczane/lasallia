@@ -1,7 +1,11 @@
 // Sprint 5.6 – Reports Screen
+// Reports plan Phase 1 — real filterable backend replacing the old
+// client-side derive* functions (moved to apps/api/core/reports.py).
+// Chart components below keep their exact original prop shapes; only
+// what feeds them changed.
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import {
   BarChart2,
   GripVertical,
@@ -13,6 +17,7 @@ import {
   Users,
   BookMarked,
   ArrowUpDown,
+  Download,
 } from "lucide-react"
 import {
   DndContext,
@@ -33,134 +38,44 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { cn } from "@/lib/utils"
 import { fetchBooks } from "@/lib/books"
-import { fetchLoans, type Loan } from "@/lib/kiosk"
 import { fetchPatrons } from "@/lib/users"
+import {
+  fetchCatalogueReport,
+  fetchCirculationSummary,
+  fetchBorrowingTrends,
+  fetchTopPatrons,
+  fetchOverdueReport,
+  fetchLibraryStats,
+  fetchTransactionStats,
+  fetchShelfList,
+  resolveDateRange,
+  downloadCsv,
+  type Bucket,
+  type CatalogueSlice,
+  type TopPatron,
+  type OverdueRow,
+  type LibraryStats,
+  type TransactionStats,
+  type ShelfListRow,
+  type DateRangePreset,
+  type ReportFilters,
+} from "@/lib/reports"
 import type { Book, UserProfile } from "@lasallia/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ReportTab = "overview" | "overdue"
 type SortDir = "asc" | "desc" | null
 type SortKey = "patron" | "book" | "due" | "days" | "program" | null
-type Bucket = { label: string; value: number }
-type CatalogueSlice = { label: string; value: number; color: string }
-type TopPatron = { id: string; name: string; program: string; count: number }
-type OverdueRow = {
-  id: string
-  patron: string
-  patronEmail: string
-  program: string
-  year: string
-  book: string
-  author: string
-  dueDate: string
-  daysOverdue: number
-  fine: number
+type ShelfSortKey = "call_number" | "title" | "accession_number" | null
+
+const YEAR_LEVEL_LABELS: Record<string, number> = {
+  "1st Year": 1,
+  "2nd Year": 2,
+  "3rd Year": 3,
+  "4th Year": 4,
 }
 
-const CATALOGUE_COLORS = ["#006F3C", "#00874A", "#B8923D", "#4A6FA5", "#8B5CF6", "#DDDFD7"]
-
-// ─── Derivation from real data ─────────────────────────────────────────────────
-
-function deriveCatalogue(books: Book[]): CatalogueSlice[] {
-  const byCategory = new Map<string, number>()
-  for (const b of books) {
-    const key = b.category || "Uncategorized"
-    byCategory.set(key, (byCategory.get(key) ?? 0) + (b.total_copies ?? 1))
-  }
-  return [...byCategory.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([label, value], i) => ({ label, value, color: CATALOGUE_COLORS[i % CATALOGUE_COLORS.length] }))
-}
-
-function deriveMonthlyCirculation(loans: Loan[], months = 6): Bucket[] {
-  const now = new Date()
-  const buckets: Bucket[] = []
-  for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    buckets.push({ label: d.toLocaleDateString("en-US", { month: "short" }), value: 0 })
-  }
-  for (const loan of loans) {
-    const d = new Date(loan.borrowed_at)
-    const monthsAgo = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth())
-    if (monthsAgo >= 0 && monthsAgo < months) {
-      buckets[months - 1 - monthsAgo].value += 1
-    }
-  }
-  return buckets
-}
-
-function deriveWeeklyTrend(loans: Loan[], weeks = 8): Bucket[] {
-  const now = new Date()
-  const startOfThisWeek = new Date(now)
-  startOfThisWeek.setDate(now.getDate() - now.getDay())
-  startOfThisWeek.setHours(0, 0, 0, 0)
-
-  const buckets: Bucket[] = []
-  const starts: Date[] = []
-  for (let i = weeks - 1; i >= 0; i--) {
-    const start = new Date(startOfThisWeek)
-    start.setDate(start.getDate() - i * 7)
-    starts.push(start)
-    buckets.push({ label: start.toLocaleDateString("en-US", { month: "short", day: "numeric" }), value: 0 })
-  }
-  for (const loan of loans) {
-    const d = new Date(loan.borrowed_at)
-    for (let i = starts.length - 1; i >= 0; i--) {
-      if (d >= starts[i]) {
-        buckets[i].value += 1
-        break
-      }
-    }
-  }
-  return buckets
-}
-
-function deriveTopPatrons(loans: Loan[], patrons: UserProfile[], limit = 5): TopPatron[] {
-  const patronsById = new Map(patrons.map((p) => [p.id, p]))
-  const counts = new Map<string, number>()
-  for (const loan of loans) {
-    counts.set(loan.student_id, (counts.get(loan.student_id) ?? 0) + 1)
-  }
-  return [...counts.entries()]
-    .map(([id, count]) => ({
-      id,
-      name: patronsById.get(id)?.full_name ?? "Unknown patron",
-      program: patronsById.get(id)?.program ?? "—",
-      count,
-    }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, limit)
-}
-
-function deriveOverdueRows(loans: Loan[], patrons: UserProfile[]): OverdueRow[] {
-  const patronsById = new Map(patrons.map((p) => [p.id, p]))
-  return loans
-    .filter((l) => l.status === "overdue")
-    .map((l) => {
-      const patron = patronsById.get(l.student_id)
-      return {
-        id: l.id,
-        patron: patron?.full_name ?? l.profiles?.full_name ?? "Unknown patron",
-        patronEmail: patron?.email ?? "—",
-        program: patron?.program ?? "—",
-        year: patron?.year_level ? `${patron.year_level}${yearSuffix(patron.year_level)} Year` : "—",
-        book: l.books?.title ?? "Unknown title",
-        author: l.books?.author ?? "—",
-        dueDate: l.due_date,
-        daysOverdue: l.days_overdue ?? 0,
-        fine: l.preview_fine_amount ?? 0,
-      }
-    })
-}
-
-function yearSuffix(n: number): string {
-  if (n === 1) return "st"
-  if (n === 2) return "nd"
-  if (n === 3) return "rd"
-  return "th"
-}
-
-// ─── Inline chart components — all data-driven via props now ──────────────────
+// ─── Inline chart components — all data-driven via props, unchanged shapes ────
 function DonutChart({ data }: { data: CatalogueSlice[] }) {
   const total = data.reduce((s, d) => s + d.value, 0)
   const r = 58
@@ -240,6 +155,9 @@ function BarChartViz({ data }: { data: Bucket[] }) {
 }
 
 function LineChartViz({ data }: { data: Bucket[] }) {
+  if (data.length === 0) {
+    return <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>No activity in this range yet.</p>
+  }
   const max = Math.max(1, ...data.map((d) => d.value))
   const W = 280; const H = 100; const padX = 12; const padY = 14
   const pts = data.map((d, i) => ({
@@ -316,6 +234,156 @@ function TopPatronsList({ patrons }: { patrons: TopPatron[] }) {
   )
 }
 
+// ─── New: filter-mismatch note for book-level reports ─────────────────────────
+function FilterMismatchNote() {
+  return (
+    <p className="text-ink-400 italic mb-1" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+      Program/year level filters don&apos;t apply here — this is a book-level report, not a loan-level one.
+    </p>
+  )
+}
+
+// ─── New: Library Statistics + Transaction Statistics card content ────────────
+function LibraryStatsCard({ stats, tx }: { stats: LibraryStats | null; tx: TransactionStats | null }) {
+  if (!stats) {
+    return <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>Loading…</p>
+  }
+  const tiles = [
+    { label: "Total Titles", value: stats.total_titles.toLocaleString() },
+    { label: "Total Copies", value: stats.total_copies.toLocaleString() },
+    { label: "Active Borrowers", value: stats.active_borrowers.toLocaleString() },
+    { label: "Overdue", value: stats.overdue_count.toLocaleString() },
+    { label: "Utilization", value: `${Math.round(stats.utilization_rate * 100)}%` },
+    { label: "Top Category", value: stats.most_active_category ?? "—" },
+  ]
+  return (
+    <div className="flex flex-col gap-3 w-full">
+      <div className="grid grid-cols-3 gap-2">
+        {tiles.map((t) => (
+          <div key={t.label} className="rounded bg-ink-50 px-2.5 py-2 min-w-0">
+            <p className="text-ink-900 font-bold truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-lg)" }}>{t.value}</p>
+            <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>{t.label}</p>
+          </div>
+        ))}
+      </div>
+      {tx && (
+        <div className="pt-2 border-t border-ink-100">
+          <p
+            className="text-ink-400 uppercase font-semibold mb-1.5"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)" }}
+          >
+            Transactions (period)
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <p className="text-ink-900 font-bold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-lg)" }}>{tx.total_transactions}</p>
+              <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>Total</p>
+            </div>
+            <div>
+              <p className="text-ink-900 font-bold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-lg)" }}>{tx.loan_count}</p>
+              <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>Loans</p>
+            </div>
+            <div>
+              <p className="text-ink-900 font-bold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-lg)" }}>{tx.reservation_count}</p>
+              <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>Reservations</p>
+            </div>
+          </div>
+          {tx.average_loan_duration_days != null && (
+            <p className="text-ink-500 mt-1.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+              Avg. loan duration: {tx.average_loan_duration_days} day{tx.average_loan_duration_days === 1 ? "" : "s"}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── New: Shelf List card content — plain sortable table, not a chart ─────────
+function ShelfListTable({ rows, onExport }: { rows: ShelfListRow[]; onExport: () => void }) {
+  const [sortKey, setSortKey] = useState<ShelfSortKey>("call_number")
+  const [sortDir, setSortDir] = useState<SortDir>("asc")
+
+  const handleSort = (key: ShelfSortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : d === "desc" ? null : "asc"))
+      if (sortDir === "desc") setSortKey(null)
+    } else {
+      setSortKey(key)
+      setSortDir("asc")
+    }
+  }
+
+  const sorted = [...rows].sort((a, b) => {
+    if (!sortKey || !sortDir) return 0
+    const va = a[sortKey] ?? ""
+    const vb = b[sortKey] ?? ""
+    return sortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va)
+  })
+
+  const SortIcon = ({ k }: { k: ShelfSortKey }) => {
+    if (sortKey !== k || !sortDir) return <ChevronsUpDown size={12} className="text-ink-300" />
+    return sortDir === "asc" ? <ChevronUp size={12} className="text-green-600" /> : <ChevronDown size={12} className="text-green-600" />
+  }
+
+  return (
+    <div className="flex flex-col gap-2 w-full">
+      <div className="flex items-center justify-between">
+        <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+          {rows.length} {rows.length === 1 ? "copy" : "copies"}
+        </p>
+        <button
+          onClick={onExport}
+          disabled={rows.length === 0}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-ink-200 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+        >
+          <Download size={12} /> Export CSV
+        </button>
+      </div>
+      {rows.length === 0 ? (
+        <div className="rounded border border-ink-200 bg-white py-8 flex items-center justify-center text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+          No books match this filter.
+        </div>
+      ) : (
+        <div className="rounded border border-ink-200 max-h-80 overflow-y-auto">
+          <table className="w-full">
+            <thead className="sticky top-0 bg-ink-50">
+              <tr className="border-b border-ink-200">
+                {([
+                  { label: "Call #", key: "call_number" as ShelfSortKey },
+                  { label: "Title", key: "title" as ShelfSortKey },
+                  { label: "Accession", key: "accession_number" as ShelfSortKey },
+                  { label: "Status", key: null },
+                ]).map((col) => (
+                  <th
+                    key={col.label}
+                    className={cn("text-left py-2 px-3 text-ink-500 font-semibold select-none", col.key ? "cursor-pointer hover:text-ink-800" : "")}
+                    onClick={() => col.key && handleSort(col.key)}
+                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                  >
+                    <span className="flex items-center gap-1">{col.label}{col.key && <SortIcon k={col.key} />}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((row) => (
+                <tr key={row.accession_number} className="border-b border-ink-100 hover:bg-ink-50">
+                  <td className="py-2 px-3 text-ink-700 whitespace-nowrap" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)" }}>{row.call_number}</td>
+                  <td className="py-2 px-3 text-ink-900 font-medium truncate max-w-40" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>{row.title}</td>
+                  <td className="py-2 px-3 text-ink-500 whitespace-nowrap" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)" }}>{row.accession_number}</td>
+                  <td className="py-2 px-3 text-ink-500 whitespace-nowrap" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>{row.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Draggable report card ────────────────────────────────────────────────────
 interface CardDef {
   id: string
@@ -378,7 +446,7 @@ function SortableCard({ card }: { card: CardDef }) {
 }
 
 // ─── Overdue table ────────────────────────────────────────────────────────────
-function OverdueTable({ rows }: { rows: OverdueRow[] }) {
+function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => void }) {
   const [sortKey, setSortKey] = useState<SortKey>(null)
   const [sortDir, setSortDir] = useState<SortDir>(null)
 
@@ -439,12 +507,22 @@ function OverdueTable({ rows }: { rows: OverdueRow[] }) {
         ))}
       </div>
 
-      <p
-        className="text-ink-500"
-        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-      >
-        {sorted.length} overdue {sorted.length === 1 ? "book" : "books"} as of today
-      </p>
+      <div className="flex items-center justify-between">
+        <p
+          className="text-ink-500"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          {sorted.length} overdue {sorted.length === 1 ? "book" : "books"} as of today
+        </p>
+        <button
+          onClick={onExport}
+          disabled={rows.length === 0}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-ink-200 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+        >
+          <Download size={12} /> Export CSV
+        </button>
+      </div>
 
       {/* Table */}
       {sorted.length === 0 ? (
@@ -584,45 +662,102 @@ function OverdueTable({ rows }: { rows: OverdueRow[] }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ReportsPage() {
   const [tab, setTab] = useState<ReportTab>("overview")
+
+  // Only used to populate the Category/Program filter dropdown option
+  // lists — the reports themselves come from the backend now.
   const [books, setBooks] = useState<Book[]>([])
-  const [loans, setLoans] = useState<Loan[]>([])
   const [patrons, setPatrons] = useState<UserProfile[]>([])
 
   useEffect(() => {
-    Promise.all([fetchBooks(), fetchLoans(), fetchPatrons()])
-      .then(([b, l, p]) => { setBooks(b); setLoans(l); setPatrons(p) })
+    Promise.all([fetchBooks(), fetchPatrons()])
+      .then(([b, p]) => { setBooks(b); setPatrons(p) })
       .catch(() => {})
   }, [])
 
-  // Filter state – Sprint 5.6.2 (not yet wired to the data below — these
-  // controls were inert placeholders before this pass too; leaving them as
-  // UI-only rather than half-wiring a filter that only touches some charts)
-  const [dateRange, setDateRange]   = useState<"week" | "month" | "semester" | "custom">("month")
+  // Filter state – Sprint 5.6.2, now actually wired (Reports plan Phase 1)
+  const [dateRange, setDateRange]   = useState<DateRangePreset>("month")
   const [fromDate, setFromDate]     = useState("")
   const [toDate, setToDate]         = useState("")
   const [category, setCategory]     = useState("All Categories")
   const [program, setProgram]       = useState("All Programs")
   const [yearLevel, setYearLevel]   = useState("All Year Levels")
 
-  const catalogueData = useMemo(() => deriveCatalogue(books), [books])
-  const circulationData = useMemo(() => deriveMonthlyCirculation(loans), [loans])
-  const trendData = useMemo(() => deriveWeeklyTrend(loans), [loans])
-  const topPatrons = useMemo(() => deriveTopPatrons(loans, patrons), [loans, patrons])
-  const overdueRows = useMemo(() => deriveOverdueRows(loans, patrons), [loans, patrons])
+  const [loading, setLoading] = useState(true)
+  const [catalogueData, setCatalogueData] = useState<CatalogueSlice[]>([])
+  const [circulationData, setCirculationData] = useState<Bucket[]>([])
+  const [trendData, setTrendData] = useState<Bucket[]>([])
+  const [topPatronsData, setTopPatronsData] = useState<TopPatron[]>([])
+  const [overdueRowsData, setOverdueRowsData] = useState<OverdueRow[]>([])
+  const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null)
+  const [transactionStats, setTransactionStats] = useState<TransactionStats | null>(null)
+  const [shelfListData, setShelfListData] = useState<ShelfListRow[]>([])
 
-  const activeBorrowers = useMemo(
-    () => new Set(loans.filter((l) => l.status !== "returned").map((l) => l.student_id)).size,
-    [loans]
-  )
+  useEffect(() => {
+    const { dateFrom, dateTo } = resolveDateRange(dateRange, fromDate, toDate)
+    const filters: ReportFilters = {
+      dateFrom,
+      dateTo,
+      category: category === "All Categories" ? undefined : category,
+      program: program === "All Programs" ? undefined : program,
+      yearLevel: YEAR_LEVEL_LABELS[yearLevel],
+    }
+    setLoading(true)
+    Promise.all([
+      fetchCatalogueReport(filters),
+      fetchCirculationSummary(filters),
+      fetchBorrowingTrends(filters),
+      fetchTopPatrons(filters),
+      fetchOverdueReport(filters),
+      fetchLibraryStats(filters),
+      fetchTransactionStats(filters),
+      fetchShelfList(filters),
+    ])
+      .then(([cat, circ, trend, topP, overdue, libStats, txStats, shelf]) => {
+        setCatalogueData(cat)
+        setCirculationData(circ)
+        setTrendData(trend)
+        setTopPatronsData(topP)
+        setOverdueRowsData(overdue)
+        setLibraryStats(libStats)
+        setTransactionStats(txStats)
+        setShelfListData(shelf)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [dateRange, fromDate, toDate, category, program, yearLevel])
+
+  const exportShelfListCsv = () => downloadCsv("shelf-list.csv", shelfListData.map((r) => ({
+    accession_number: r.accession_number,
+    call_number: r.call_number,
+    title: r.title,
+    author: r.author,
+    category: r.category,
+    shelf_location: r.shelf_location ?? "",
+    status: r.status,
+  })))
+
+  const exportOverdueCsv = () => downloadCsv("overdue.csv", overdueRowsData.map((r) => ({
+    patron: r.patron,
+    email: r.patronEmail,
+    program: r.program,
+    year: r.year,
+    book: r.book,
+    author: r.author,
+    due_date: r.dueDate,
+    days_overdue: r.daysOverdue,
+    fine: r.fine,
+  })))
+
+  const showBookLevelNote = program !== "All Programs" || yearLevel !== "All Year Levels"
 
   const quickStats = [
-    { label: "Total Titles",     value: books.length.toLocaleString(), icon: <BookMarked size={18} />, color: "text-green-700", bg: "bg-green-50" },
-    { label: "Books Circulated", value: loans.length.toLocaleString(), icon: <TrendingUp size={18} />,  color: "text-blue-700",  bg: "bg-blue-50"  },
-    { label: "Active Borrowers", value: activeBorrowers.toLocaleString(), icon: <Users size={18} />,     color: "text-amber-700", bg: "bg-amber-50" },
-    { label: "Overdue Books",    value: overdueRows.length.toLocaleString(), icon: <AlertTriangle size={18} />, color: "text-red-700", bg: "bg-red-50" },
+    { label: "Total Titles",     value: (libraryStats?.total_titles ?? 0).toLocaleString(), icon: <BookMarked size={18} />, color: "text-green-700", bg: "bg-green-50" },
+    { label: "Books Circulated", value: (transactionStats?.loan_count ?? 0).toLocaleString(), icon: <TrendingUp size={18} />,  color: "text-blue-700",  bg: "bg-blue-50"  },
+    { label: "Active Borrowers", value: (libraryStats?.active_borrowers ?? 0).toLocaleString(), icon: <Users size={18} />,     color: "text-amber-700", bg: "bg-amber-50" },
+    { label: "Overdue Books",    value: overdueRowsData.length.toLocaleString(), icon: <AlertTriangle size={18} />, color: "text-red-700", bg: "bg-red-50" },
   ]
 
-  // DnD card order – Sprint 5.6.1
+  // DnD card order – Sprint 5.6.1, extended with Reports plan Phase 1's two new cards
   const cardDefs: CardDef[] = [
     {
       id: "catalogue",
@@ -641,9 +776,9 @@ export default function ReportsPage() {
     {
       id: "patrons",
       title: "Top Patrons",
-      subtitle: "Highest borrowers all-time",
+      subtitle: "Highest borrowers in range",
       icon: <Users size={16} />,
-      content: <TopPatronsList patrons={topPatrons} />,
+      content: <TopPatronsList patrons={topPatronsData} />,
     },
     {
       id: "trends",
@@ -652,9 +787,28 @@ export default function ReportsPage() {
       icon: <TrendingUp size={16} />,
       content: <LineChartViz data={trendData} />,
     },
+    {
+      id: "library-stats",
+      title: "Library Statistics",
+      subtitle: "Snapshot + transactions in range",
+      icon: <BookMarked size={16} />,
+      content: <LibraryStatsCard stats={libraryStats} tx={transactionStats} />,
+    },
+    {
+      id: "shelf-list",
+      title: "Shelf List",
+      subtitle: "Physical copies, call-number order",
+      icon: <BarChart2 size={16} />,
+      content: (
+        <div className="flex flex-col gap-1 w-full">
+          {showBookLevelNote && <FilterMismatchNote />}
+          <ShelfListTable rows={shelfListData} onExport={exportShelfListCsv} />
+        </div>
+      ),
+    },
   ]
 
-  const [cardOrder, setCardOrder] = useState<string[]>(["catalogue", "circulation", "patrons", "trends"])
+  const [cardOrder, setCardOrder] = useState<string[]>(["catalogue", "circulation", "patrons", "trends", "library-stats", "shelf-list"])
   const cards = cardOrder.map((id) => cardDefs.find((c) => c.id === id)!).filter(Boolean)
 
   const sensors = useSensors(
@@ -692,7 +846,7 @@ export default function ReportsPage() {
             className="text-ink-400 mt-0.5"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
           >
-            {today}
+            {today}{loading ? " · Loading…" : ""}
           </p>
         </div>
       </div>
@@ -798,12 +952,12 @@ export default function ReportsPage() {
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
           >
             {t.label}
-            {t.key === "overdue" && overdueRows.length > 0 && (
+            {t.key === "overdue" && overdueRowsData.length > 0 && (
               <span
                 className="ml-2 px-1.5 py-0.5 rounded-full bg-red-100 text-red-700"
                 style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
               >
-                {overdueRows.length}
+                {overdueRowsData.length}
               </span>
             )}
           </button>
@@ -861,7 +1015,7 @@ export default function ReportsPage() {
       )}
 
       {/* ── Overdue Books tab – Sprint 5.6.4 ──────────────── */}
-      {tab === "overdue" && <OverdueTable rows={overdueRows} />}
+      {tab === "overdue" && <OverdueTable rows={overdueRowsData} onExport={exportOverdueCsv} />}
     </div>
   )
 }

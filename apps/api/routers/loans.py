@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
-from core.calendar import count_library_hours, count_school_days
+from core.calendar import compute_fine
 from core.deps import get_current_user, get_user_supabase, require_librarian
 from core.notify import notify
 from core.supabase import get_admin_client
@@ -14,12 +14,6 @@ router = APIRouter(prefix="/loans", tags=["loans"])
 
 BORROW_PERIOD_DAYS = 14
 MAX_ATTEMPTS = 3
-
-# Phase 4 — hourly-rate collection types (build plan 4.4). Everything else
-# is general circulation, charged per school day.
-HOURLY_FINE_COLLECTION_TYPES = {"Reserve", "Story book", "Bible"}
-DAILY_FINE_RATE = 5.0
-HOURLY_FINE_RATE = 2.0
 DAMAGE_PROCESSING_FEE = 50.0
 
 # Reused by both the return endpoint's reservation routing and
@@ -37,21 +31,6 @@ def _flatten_loan(loan: dict) -> dict:
     loan["accession_number"] = copy["accession_number"] if copy else None
     return loan
 
-
-def _compute_fine(db: Client, due_date_iso: str, collection_type: str) -> tuple[int, float]:
-    """Returns (days_overdue, fine_amount) for an open loan, as of now.
-    days_overdue is always day-based (for display); fine_amount uses
-    whichever rate applies to the collection type."""
-    due_date = datetime.fromisoformat(due_date_iso)
-    now = datetime.now(timezone.utc)
-    days_overdue = count_school_days(db, due_date, now)
-    if days_overdue == 0:
-        return 0, 0.0
-    if collection_type in HOURLY_FINE_COLLECTION_TYPES:
-        fine = round(count_library_hours(db, due_date, now) * HOURLY_FINE_RATE, 2)
-    else:
-        fine = round(days_overdue * DAILY_FINE_RATE, 2)
-    return days_overdue, fine
 
 @router.get("", response_model=list[Loan])
 def list_loans(
@@ -104,13 +83,13 @@ def list_loans(
 
     # Fine preview for the still-open overdue rows (build plan's Reports
     # overdue table needs this) — reuses the same school-day-calendar-aware
-    # _compute_fine everything else already trusts, rather than a naive
+    # compute_fine everything else already trusts, rather than a naive
     # days*rate reimplemented in the frontend that could silently disagree
     # with it around weekends/holidays.
     for loan in loans:
         if loan["status"] == "overdue":
             collection_type = (loan["books"] or {}).get("collection_type") or "General"
-            days_overdue, preview_fine = _compute_fine(admin, loan["due_date"], collection_type)
+            days_overdue, preview_fine = compute_fine(admin, loan["due_date"], collection_type)
             loan["days_overdue"] = days_overdue
             loan["preview_fine_amount"] = preview_fine
 
@@ -215,7 +194,7 @@ def lookup_loan(
 
     book_res = admin.table("books").select("collection_type").eq("id", copy["book_id"]).execute()
     collection_type = book_res.data[0]["collection_type"] if book_res.data else "General"
-    days_overdue, preview_fine = _compute_fine(admin, loan["due_date"], collection_type)
+    days_overdue, preview_fine = compute_fine(admin, loan["due_date"], collection_type)
 
     return LoanLookupResult(**loan, days_overdue=days_overdue, preview_fine_amount=preview_fine)
 
@@ -251,7 +230,7 @@ def search_loans(
         if needle not in title and needle not in name:
             continue
         loan = _flatten_loan(raw)
-        days_overdue, preview_fine = _compute_fine(admin, loan["due_date"], book.get("collection_type") or "General")
+        days_overdue, preview_fine = compute_fine(admin, loan["due_date"], book.get("collection_type") or "General")
         results.append(LoanLookupResult(**loan, days_overdue=days_overdue, preview_fine_amount=preview_fine))
         if len(results) >= 20:
             break
@@ -282,7 +261,7 @@ def return_loan(
     book_res = admin.table("books").select("collection_type").eq("id", copy["book_id"]).execute()
     collection_type = book_res.data[0]["collection_type"] if book_res.data else "General"
 
-    _, overdue_fine = _compute_fine(admin, loan["due_date"], collection_type)
+    _, overdue_fine = compute_fine(admin, loan["due_date"], collection_type)
 
     # Damage not present in the student's own declaration is what gets
     # charged (build plan 4.3) — condition already declared at borrow
