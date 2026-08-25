@@ -12,7 +12,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Book } from '@lasallia/types'
 import {
-  FilterSidebar,
+  FilterPillBar,
   FilterSheet,
   QuickChipRow,
   AppliedChips,
@@ -158,7 +158,7 @@ function LibrarianCatalogContent() {
     if (!loading && !error) setBooks(fetchedBooks)
   }, [loading, error, fetchedBooks])
 
-  const { filters, setFilter, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
+  const { filters, setFilter, setFilters, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
 
   const { genres, subjects, floors } = useMemo(() => deriveCatalogOptions(books), [books])
 
@@ -271,11 +271,8 @@ function LibrarianCatalogContent() {
   return (
     <div className="flex" style={{ minHeight: 'calc(100vh - var(--height-nav))' }}>
 
-      {/* Filter sidebar (desktop only) */}
-      <FilterSidebar filters={filters} setFilter={setFilter} resetAll={resetAll} sections={sections} />
-
       {/* Main */}
-      <div className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex-1 min-w-0 px-5 sm:px-8 py-7">
 
         {/* Page header */}
         <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
@@ -308,82 +305,74 @@ function LibrarianCatalogContent() {
         {/* Stats */}
         <CatalogStats books={books} />
 
-        {/* Search + sort + mobile filter toggle — sticky so it stays reachable while scrolling */}
+        {/* Search + Sort + filter pills — sticky so they stay in view while scrolling */}
         <div
-          className="sticky z-40 bg-paper/95 backdrop-blur-sm border-b border-ink-100 py-3 -mt-3 flex items-center gap-2 mb-3"
+          className="sticky z-40 bg-paper/95 backdrop-blur-sm border-b border-ink-100 py-3 -mt-3 flex flex-col gap-3 mb-3"
           style={{ top: 'var(--height-nav)' }}
         >
-          {/* Search */}
-          <div className="flex-1 relative min-w-0">
-            <Search
-              size={15}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none"
-            />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search title, author, ISBN, call no…"
-              className={cn(
-                'w-full pl-9 pr-8 py-2 rounded-sm border bg-white text-ink-900',
-                'placeholder:text-ink-300 focus:outline-none transition-colors',
-                'border-ink-200 focus:border-green-700 hover:border-ink-300'
+          <div className="flex items-center gap-2">
+            {/* Search */}
+            <div className="flex-1 min-w-0 relative">
+              <Search
+                size={15}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none"
+              />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search title, author, ISBN, call no…"
+                className={cn(
+                  'w-full pl-9 pr-8 py-2 rounded-sm border bg-white text-ink-900',
+                  'placeholder:text-ink-300 focus:outline-none transition-colors',
+                  'border-ink-200 focus:border-green-700 hover:border-ink-300'
+                )}
+                style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700 transition-colors"
+                >
+                  <X size={13} />
+                </button>
               )}
-              style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700 transition-colors"
+            </div>
+
+            {/* Sort */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <ArrowUpDown size={13} className="text-ink-400 hidden sm:block" />
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as SortOption)}
+                className={cn(
+                  'bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2',
+                  'focus:outline-none focus:border-green-700 cursor-pointer',
+                  'hover:border-ink-300 transition-colors appearance-none pr-7'
+                )}
+                style={{
+                  fontSize: 'var(--text-sm-body)',
+                  fontFamily: 'var(--font-body)',
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 7px center',
+                }}
               >
-                <X size={13} />
-              </button>
-            )}
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* Sort — hide label on mobile */}
-          <div className="shrink-0 hidden sm:flex items-center gap-1.5">
-            <ArrowUpDown size={13} className="text-ink-400" />
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortOption)}
-              className={cn(
-                'bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2',
-                'focus:outline-none focus:border-green-700 cursor-pointer',
-                'hover:border-ink-300 transition-colors appearance-none pr-7'
-              )}
-              style={{
-                fontSize: 'var(--text-sm-body)',
-                fontFamily: 'var(--font-body)',
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-                backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'right 7px center',
-              }}
-            >
-              {SORT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Mobile sort — shown only on mobile */}
-        <div className="flex sm:hidden items-center gap-2 mb-3">
-          <ArrowUpDown size={13} className="text-ink-400 shrink-0" />
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortOption)}
-            className="flex-1 bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2 focus:outline-none focus:border-green-700 cursor-pointer hover:border-ink-300 transition-colors appearance-none"
-            style={{
-              fontSize: 'var(--text-sm-body)',
-              fontFamily: 'var(--font-body)',
-            }}
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+          <FilterPillBar
+            filters={filters}
+            onChange={setFilters}
+            genres={genres}
+            floors={floors}
+            subjects={subjects}
+          />
         </div>
 
         {/* Applied filter chips */}
