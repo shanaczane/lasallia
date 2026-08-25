@@ -288,7 +288,7 @@ export default function LibrarianDashboard() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2 bg-ink-50 rounded-sm(--radius-sm) p-3">
+              <div className="flex flex-col gap-2 bg-ink-50 rounded-(--radius-sm) p-3">
                 <DetailRow label="Book" value={lastReturn.books?.title ?? "Unknown title"} />
                 <DetailRow label="Borrower" value={lastReturn.profiles?.full_name ?? "Unknown"} />
                 <DetailRow label="Condition" value={lastReturn.condition_at_return ?? "—"} />
@@ -307,11 +307,11 @@ export default function LibrarianDashboard() {
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-ink-500" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
+    <div className="flex items-start justify-between gap-3">
+      <span className="text-ink-500 shrink-0" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
         {label}
       </span>
-      <span className="text-ink-900 font-medium" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+      <span className="text-ink-900 font-medium text-right" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
         {value}
       </span>
     </div>
