@@ -198,6 +198,7 @@ function LibrarianLayoutInner({
         userInitials={displayInitials}
         notificationCount={unreadCount}
         notificationsHref="/librarian/notifications"
+        homeHref="/librarian/dashboard"
         showNotifications={true}
         onMenuClick={() => setMenuOpen(true)}
       />
@@ -239,17 +240,23 @@ function LibrarianLayoutInner({
         style={{ width: "var(--width-side)" }}
       >
         <div className="flex items-center justify-between px-4 border-b border-ink-200" style={{ height: "var(--height-nav)" }}>
-          <div className="flex items-center gap-2.5">
+          <a href="/librarian/dashboard" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5">
             <div
-              className="flex items-center justify-center rounded-sm bg-green-700 text-white font-bold"
-              style={{ width: 32, height: 32, fontFamily: "var(--font-display)", fontSize: "1rem" }}
+              className="flex items-center justify-center rounded-full bg-white border border-ink-200 shrink-0"
+              style={{ width: 34, height: 34, boxShadow: "var(--shadow-sm)" }}
             >
-              L
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/DeLaSalleLipa_Seal.png"
+                alt="De La Salle Lipa"
+                className="object-contain"
+                style={{ width: 25, height: 25, mixBlendMode: "multiply" }}
+              />
             </div>
-            <p className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-              Smart Library
+            <p className="text-ink-900 font-bold" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-base)" }}>
+              Lasallia
             </p>
-          </div>
+          </a>
         </div>
         {renderSidebarContent(false)}
       </aside>

@@ -10,6 +10,8 @@ type TopNavProps = {
   notificationsHref?: string
   showNotifications?: boolean
   onMenuClick?: () => void
+  /** Where the logo lockup links to — defaults to each role's dashboard. */
+  homeHref?: string
 }
 
 export function TopNav({
@@ -19,38 +21,48 @@ export function TopNav({
   notificationsHref = "/student/notifications",
   showNotifications = true,
   onMenuClick,
+  homeHref = "/",
 }: TopNavProps) {
   return (
     <header
-      className="fixed top-0 left-0 right-0 flex items-center justify-between px-5 bg-white border-b border-ink-200 z-(--z-nav)"
-      style={{ height: "var(--height-nav)" }}
+      className="fixed top-0 left-0 right-0 flex items-center justify-between gap-3 px-4 sm:px-6 bg-white/95 backdrop-blur-sm border-b border-ink-200 z-(--z-nav)"
+      style={{ height: "var(--height-nav)", boxShadow: "var(--shadow-sm)" }}
     >
       {/* Left: hamburger (mobile only) + logo */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         <button
           onClick={onMenuClick}
-          className="flex md:hidden items-center justify-center w-8 h-8 rounded-sm text-ink-500 hover:bg-ink-100 hover:text-ink-900 transition-colors"
+          className="flex md:hidden items-center justify-center w-9 h-9 -ml-1 rounded-(--radius-sm) text-ink-500 hover:bg-ink-100 hover:text-ink-900 active:bg-ink-200 transition-colors shrink-0"
           aria-label="Open menu"
         >
           <Menu size={18} />
         </button>
 
-        <div className="flex items-center gap-2.5">
+        <a
+          href={homeHref}
+          className="group flex items-center gap-2.5 min-w-0 rounded-(--radius-sm) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-2"
+        >
           <div
-            className="flex items-center justify-center rounded-sm bg-green-700 text-white font-bold"
-            style={{ width: 32, height: 32, fontFamily: "var(--font-display)", fontSize: "1rem" }}
+            className="flex items-center justify-center rounded-full bg-white border border-ink-200 shrink-0 transition-shadow duration-200 group-hover:shadow-(--shadow)"
+            style={{ width: 40, height: 40, boxShadow: "var(--shadow-sm)" }}
           >
-            L
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/DeLaSalleLipa_Seal.png"
+              alt="De La Salle Lipa"
+              className="object-contain"
+              style={{ width: 30, height: 30, mixBlendMode: "multiply" }}
+            />
           </div>
-          <div className="leading-tight">
+          <div className="leading-tight min-w-0">
             <p
-              className="text-ink-900 font-semibold"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+              className="text-ink-900 font-bold truncate"
+              style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}
             >
-              Smart Library
+              Lasallia
             </p>
             <p
-              className="text-ink-400 uppercase hidden sm:block"
+              className="text-ink-400 uppercase hidden sm:block truncate"
               style={{
                 fontFamily: "var(--font-body)",
                 fontSize: "var(--text-2xs)",
@@ -60,24 +72,24 @@ export function TopNav({
               De La Salle Lipa · LRC
             </p>
           </div>
-        </div>
+        </a>
       </div>
 
       {/* Right side */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1 shrink-0">
 
         {/* Bell */}
         {showNotifications && (
           <a
             href={notificationsHref}
-            className="relative flex items-center justify-center w-8 h-8 rounded-sm text-ink-500 hover:bg-ink-100 hover:text-ink-900 transition-colors"
+            className="relative flex items-center justify-center w-9 h-9 rounded-full text-ink-500 hover:bg-ink-100 hover:text-ink-900 active:bg-ink-200 transition-colors"
             aria-label="Notifications"
           >
             <Bell size={17} />
             {notificationCount > 0 && (
               <span
-                className="absolute top-0.5 right-0.5 flex items-center justify-center rounded-full bg-green-700 text-white"
-                style={{ width: 14, height: 14, fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
+                className="absolute top-1 right-1 flex items-center justify-center rounded-full bg-green-700 text-white ring-2 ring-white font-semibold"
+                style={{ width: 15, height: 15, fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
               >
                 {notificationCount > 9 ? "9+" : notificationCount}
               </span>
@@ -85,16 +97,19 @@ export function TopNav({
           </a>
         )}
 
+        {/* Divider */}
+        <div className="w-px h-6 bg-ink-200 mx-1.5 hidden sm:block" aria-hidden="true" />
+
         {/* Avatar */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 py-1 pl-1 pr-1 sm:pr-2.5">
           <div
-            className="flex items-center justify-center rounded-full bg-green-200 text-green-800 font-semibold"
-            style={{ width: 30, height: 30, fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
+            className="flex items-center justify-center rounded-full bg-green-100 text-green-800 font-semibold ring-1 ring-green-200 shrink-0"
+            style={{ width: 32, height: 32, fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
           >
             {userInitials}
           </div>
           <span
-            className="text-ink-700 font-medium hidden sm:block"
+            className="text-ink-800 font-medium capitalize hidden sm:block truncate max-w-32"
             style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
           >
             {userName}
