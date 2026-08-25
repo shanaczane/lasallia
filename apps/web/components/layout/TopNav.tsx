@@ -1,6 +1,7 @@
 // apps/web/components/layout/TopNav.tsx
 "use client"
 
+import Link from "next/link"
 import { Bell, Menu } from "lucide-react"
 
 type TopNavProps = {
@@ -38,7 +39,7 @@ export function TopNav({
           <Menu size={18} />
         </button>
 
-        <a
+        <Link
           href={homeHref}
           className="group flex items-center gap-2.5 min-w-0 rounded-(--radius-sm) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-2"
         >
@@ -72,7 +73,7 @@ export function TopNav({
               De La Salle Lipa · LRC
             </p>
           </div>
-        </a>
+        </Link>
       </div>
 
       {/* Right side */}
@@ -80,7 +81,7 @@ export function TopNav({
 
         {/* Bell */}
         {showNotifications && (
-          <a
+          <Link
             href={notificationsHref}
             className="relative flex items-center justify-center w-9 h-9 rounded-full text-ink-500 hover:bg-ink-100 hover:text-ink-900 active:bg-ink-200 transition-colors"
             aria-label="Notifications"
@@ -94,7 +95,7 @@ export function TopNav({
                 {notificationCount > 9 ? "9+" : notificationCount}
               </span>
             )}
-          </a>
+          </Link>
         )}
 
         {/* Divider */}

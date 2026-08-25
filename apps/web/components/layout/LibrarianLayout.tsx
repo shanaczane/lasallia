@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useLayoutEffect } from "react"
 import { TopNav } from "./TopNav"
+import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { clearSession } from "@/lib/auth"
@@ -128,7 +129,7 @@ function LibrarianLayoutInner({
                 const isActive = pathname === item.href
                 return (
                   <li key={item.href}>
-                    <a
+                    <Link
                       href={item.href}
                       onClick={() => setMenuOpen(false)}
                       title={isCollapsed ? item.label : undefined}
@@ -163,7 +164,7 @@ function LibrarianLayoutInner({
                           )}
                         </>
                       )}
-                    </a>
+                    </Link>
                   </li>
                 )
               })}
@@ -240,7 +241,7 @@ function LibrarianLayoutInner({
         style={{ width: "var(--width-side)" }}
       >
         <div className="flex items-center justify-between px-4 border-b border-ink-200" style={{ height: "var(--height-nav)" }}>
-          <a href="/librarian/dashboard" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5">
+          <Link href="/librarian/dashboard" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5">
             <div
               className="flex items-center justify-center rounded-full bg-white border border-ink-200 shrink-0"
               style={{ width: 34, height: 34, boxShadow: "var(--shadow-sm)" }}
@@ -256,7 +257,7 @@ function LibrarianLayoutInner({
             <p className="text-ink-900 font-bold" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-base)" }}>
               Lasallia
             </p>
-          </a>
+          </Link>
         </div>
         {renderSidebarContent(false)}
       </aside>
