@@ -15,73 +15,14 @@ import { cn } from "@/lib/utils"
 import { fetchLoans, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
 import { fetchBooks } from "@/lib/books"
+import { buildFeed, timeLabel, TX_CONFIG } from "@/lib/activity"
 import type { Reservation } from "@lasallia/types"
 
-type TxType = "checkout" | "return" | "reserve"
-
-type FeedItem = {
-  id: string
-  time: string
-  timestamp: number
-  type: TxType
-  user: string
-  item: string
-}
-
-const TX_CONFIG: Record<TxType, { label: string; bg: string; text: string }> = {
-  checkout: { label: "Checkout", bg: "bg-info-bg", text: "text-info" },
-  return:   { label: "Return",   bg: "bg-success-bg", text: "text-success" },
-  reserve:  { label: "Reserve",  bg: "bg-warn-bg", text: "text-warn" },
-}
+// Dashboard only ever shows a short preview — the full, searchable history
+// lives on the Reports "Activity Log" tab (see "See all" link below).
+const ACTIVITY_PREVIEW_COUNT = 6
 
 const OVERDUE_FLAG_DAYS = 7
-
-function timeLabel(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })
-}
-
-// Merges loans + reservations into one feed — there's no single unified
-// "activity log" table, so this is derived client-side from the same real
-// rows the rest of the app already fetches, not a separate fake source.
-function buildFeed(loans: Loan[], reservations: Reservation[]): FeedItem[] {
-  const items: FeedItem[] = []
-
-  for (const loan of loans) {
-    const borrower = loan.profiles?.full_name ?? "Unknown patron"
-    const item = loan.books?.title ?? "Unknown title"
-    items.push({
-      id: `checkout-${loan.id}`,
-      time: timeLabel(loan.borrowed_at),
-      timestamp: new Date(loan.borrowed_at).getTime(),
-      type: "checkout",
-      user: borrower,
-      item,
-    })
-    if (loan.returned_at) {
-      items.push({
-        id: `return-${loan.id}`,
-        time: timeLabel(loan.returned_at),
-        timestamp: new Date(loan.returned_at).getTime(),
-        type: "return",
-        user: borrower,
-        item,
-      })
-    }
-  }
-
-  for (const r of reservations) {
-    items.push({
-      id: `reserve-${r.id}`,
-      time: timeLabel(r.requested_at),
-      timestamp: new Date(r.requested_at).getTime(),
-      type: "reserve",
-      user: r.profiles?.full_name ?? "Unknown patron",
-      item: r.books?.title ?? "Unknown title",
-    })
-  }
-
-  return items.sort((a, b) => b.timestamp - a.timestamp).slice(0, 20)
-}
 
 export default function LibrarianDashboard() {
   const [loans, setLoans] = useState<Loan[]>([])
@@ -112,7 +53,7 @@ export default function LibrarianDashboard() {
   const pendingReservations = reservations.filter((r) => r.status === "pending").length
   const readyReservations = reservations.filter((r) => r.status === "ready").length
 
-  const feed = buildFeed(loans, reservations)
+  const feed = buildFeed(loans, reservations).slice(0, ACTIVITY_PREVIEW_COUNT)
 
   const lastReturn = [...loans]
     .filter((l) => l.status === "returned" && l.returned_at)
@@ -196,6 +137,13 @@ export default function LibrarianDashboard() {
             >
               Recent Activity
             </h2>
+            <Link
+              href="/librarian/reports?tab=activity"
+              className="text-green-700 font-semibold hover:text-green-900 transition-colors"
+              style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+            >
+              See all →
+            </Link>
           </div>
 
           <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
@@ -213,7 +161,7 @@ export default function LibrarianDashboard() {
                   className="hidden sm:flex px-4 py-2.5 border-b border-ink-100 text-ink-400 uppercase font-semibold"
                   style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}
                 >
-                  <span className="w-20">Time</span>
+                  <span className="w-24">Date &amp; Time</span>
                   <span className="w-24">Type</span>
                   <span className="flex-1">User</span>
                   <span className="flex-1">Item</span>
@@ -225,10 +173,10 @@ export default function LibrarianDashboard() {
                     return (
                       <div key={tx.id} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-0 px-4 py-3">
 
-                        {/* Mobile: time + type on one row */}
+                        {/* Mobile: date/time + type on one row */}
                         <div className="flex items-center justify-between sm:hidden">
                           <span className="text-ink-500" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                            {tx.time}
+                            {tx.date} · {tx.time}
                           </span>
                           <span className={cn("flex items-center px-2 py-0.5 rounded-pill", cfg.bg)} style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
                             <span className={cn("font-medium", cfg.text)}>{cfg.label}</span>
@@ -236,8 +184,13 @@ export default function LibrarianDashboard() {
                         </div>
 
                         {/* Desktop columns */}
-                        <span className="hidden sm:block w-20 text-ink-500" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                          {tx.time}
+                        <span className="hidden sm:block w-24 leading-tight">
+                          <span className="block text-ink-400" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                            {tx.date}
+                          </span>
+                          <span className="block text-ink-500" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                            {tx.time}
+                          </span>
                         </span>
                         <span className="hidden sm:flex w-24">
                           <span className={cn("flex items-center px-2 py-0.5 rounded-pill", cfg.bg)} style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
