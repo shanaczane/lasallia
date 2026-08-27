@@ -765,7 +765,7 @@ function ActivityLogTable({ feed, onExport }: { feed: FeedItem[]; onExport: () =
           <table className="w-full min-w-150">
             <thead>
               <tr className="border-b border-ink-200 bg-ink-50">
-                {["Date & Time", "Type", "User", "Item"].map((label) => (
+                {["Date", "Time", "Type", "User", "Item"].map((label) => (
                   <th
                     key={label}
                     className="text-left py-2.5 px-4 text-ink-500 font-semibold select-none"
@@ -781,13 +781,11 @@ function ActivityLogTable({ feed, onExport }: { feed: FeedItem[]; onExport: () =
                 const cfg = TX_CONFIG[tx.type]
                 return (
                   <tr key={tx.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <p className="text-ink-900" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                        {tx.date}
-                      </p>
-                      <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-                        {tx.time}
-                      </p>
+                    <td className="py-3 px-4 whitespace-nowrap text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                      {tx.date}
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                      {tx.time}
                     </td>
                     <td className="py-3 px-4">
                       <span className={cn("inline-flex items-center px-2 py-0.5 rounded-pill", cfg.bg)} style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>

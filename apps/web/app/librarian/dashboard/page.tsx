@@ -158,12 +158,12 @@ export default function LibrarianDashboard() {
               <>
                 {/* Desktop table header */}
                 <div
-                  className="hidden sm:flex px-4 py-2.5 border-b border-ink-100 text-ink-400 uppercase font-semibold"
+                  className="hidden sm:flex items-center gap-4 px-4 py-2.5 border-b border-ink-100 text-ink-400 uppercase font-semibold"
                   style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}
                 >
                   <span className="w-24">Date &amp; Time</span>
                   <span className="w-24">Type</span>
-                  <span className="flex-1">User</span>
+                  <span className="w-40 shrink-0">User</span>
                   <span className="flex-1">Item</span>
                 </div>
 
@@ -171,7 +171,7 @@ export default function LibrarianDashboard() {
                   {feed.map((tx) => {
                     const cfg = TX_CONFIG[tx.type]
                     return (
-                      <div key={tx.id} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-0 px-4 py-3">
+                      <div key={tx.id} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 px-4 py-3">
 
                         {/* Mobile: date/time + type on one row */}
                         <div className="flex items-center justify-between sm:hidden">
@@ -185,10 +185,10 @@ export default function LibrarianDashboard() {
 
                         {/* Desktop columns */}
                         <span className="hidden sm:block w-24 leading-tight">
-                          <span className="block text-ink-400" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                          <span className="block text-ink-700" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
                             {tx.date}
                           </span>
-                          <span className="block text-ink-500" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                          <span className="block text-ink-400" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}>
                             {tx.time}
                           </span>
                         </span>
@@ -199,11 +199,11 @@ export default function LibrarianDashboard() {
                         </span>
 
                         {/* User + item */}
-                        <div className="flex flex-col sm:flex-row sm:flex-1 sm:items-center gap-0.5 sm:gap-0">
-                          <span className="text-ink-900 font-medium sm:flex-1 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                        <div className="flex flex-col sm:flex-row sm:flex-1 sm:items-center gap-0.5 sm:gap-4 min-w-0">
+                          <span className="text-ink-900 font-medium sm:w-40 sm:shrink-0 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
                             {tx.user}
                           </span>
-                          <span className="text-ink-500 sm:flex-1 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                          <span className="text-ink-500 sm:flex-1 min-w-0 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
                             {tx.item}
                           </span>
                         </div>
