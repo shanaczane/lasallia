@@ -68,11 +68,11 @@ export function buildFilterSections(source: {
   floors: string[]
 }): FilterSectionConfig[] {
   return [
-    { key: 'genre', label: 'Genre', type: 'radio', options: toOptions(source.genres) },
+    { key: 'genre', label: 'Program', type: 'radio', options: toOptions(source.genres) },
     { key: 'availability', label: 'Availability', type: 'radio', options: AVAILABILITY_OPTIONS },
     { key: 'format', label: 'Format', type: 'radio', options: FORMAT_OPTIONS },
     { key: 'floor', label: 'Floor location', type: 'radio', options: toOptions(source.floors) },
-    { key: 'subject', label: 'Subject', type: 'radio', options: toOptions(source.subjects) },
+    { key: 'subject', label: 'College', type: 'radio', options: toOptions(source.subjects) },
     { key: 'callNo', label: 'Call no. range', type: 'range' },
   ]
 }
