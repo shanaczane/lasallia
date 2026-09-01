@@ -41,11 +41,13 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { cn } from "@/lib/utils"
 import { fetchBooks } from "@/lib/books"
-import { fetchPatrons } from "@/lib/users"
+import { fetchPatrons, updatePatronStatus } from "@/lib/users"
 import { fetchLoans, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
 import { buildFeed, TX_CONFIG, type FeedItem, type TxType } from "@/lib/activity"
 import { Pagination } from "@/components/ui/catalog"
+import { PatronProfileModal } from "@/components/ui/patrons/PatronProfileModal"
+import { ConfirmStatusDialog } from "@/components/ui/patrons/ConfirmStatusDialog"
 import {
   fetchCatalogueReport,
   fetchCirculationSummary,
@@ -683,23 +685,46 @@ function SortableCard({ card }: { card: CardDef }) {
 }
 
 // ─── Activity log table ─────────────────────────────────────────────────────
-const ACTIVITY_PAGE_SIZE = 20
+const ACTIVITY_PAGE_SIZE = 10
 
-function ActivityLogTable({ feed, onExport }: { feed: FeedItem[]; onExport: () => void }) {
+function ActivityLogTable({
+  feed,
+  onExport,
+  patrons,
+  onSelectUser,
+  dateFrom,
+  dateTo,
+}: {
+  feed: FeedItem[]
+  onExport: () => void
+  patrons: UserProfile[]
+  onSelectUser: (patron: UserProfile) => void
+  /** ISO bounds from the page-level Date Range filter bar above the tabs —
+   *  this tab doesn't have its own date control, it just respects that one. */
+  dateFrom?: string
+  dateTo?: string
+}) {
   const [query, setQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState<TxType | "all">("all")
   const [page, setPage] = useState(1)
 
+  const fromTs = dateFrom ? new Date(dateFrom).getTime() : null
+  const toTs = dateTo ? new Date(dateTo).getTime() : null
+
   const filtered = feed.filter((tx) => {
     if (typeFilter !== "all" && tx.type !== typeFilter) return false
+    if (fromTs !== null && tx.timestamp < fromTs) return false
+    if (toTs !== null && tx.timestamp > toTs) return false
     if (!query.trim()) return true
     const q = query.toLowerCase()
     return tx.user.toLowerCase().includes(q) || tx.item.toLowerCase().includes(q)
   })
 
-  // Reset to page 1 whenever the search/type filter changes — adjusted
-  // during render rather than a setState-in-effect (react.dev/learn/you-might-not-need-an-effect).
-  const filterKey = `${query}|${typeFilter}`
+  const hasActiveFilters = !!query || typeFilter !== "all"
+
+  // Reset to page 1 whenever a filter changes — adjusted during render
+  // rather than a setState-in-effect (react.dev/learn/you-might-not-need-an-effect).
+  const filterKey = `${query}|${typeFilter}|${dateFrom}|${dateTo}`
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
   if (filterKey !== prevFilterKey) {
     setPrevFilterKey(filterKey)
@@ -711,7 +736,9 @@ function ActivityLogTable({ feed, onExport }: { feed: FeedItem[]; onExport: () =
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Search + type filter + export */}
+      {/* Search + type filter + export — no Date Range control here, this tab
+          respects the page-level Date Range filter bar above the tabs
+          instead of duplicating it (see `dateFrom`/`dateTo` props). */}
       <div className="flex flex-wrap items-center gap-2 justify-between">
         <div className="flex flex-1 min-w-0 items-center gap-2">
           <div className="relative flex-1 min-w-0 max-w-80">
@@ -739,20 +766,31 @@ function ActivityLogTable({ feed, onExport }: { feed: FeedItem[]; onExport: () =
             </select>
             <ArrowUpDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
           </div>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={() => { setQuery(""); setTypeFilter("all") }}
+              className="text-green-700 font-medium hover:text-green-900 underline underline-offset-2 transition-colors shrink-0"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+            >
+              Clear filters
+            </button>
+          )}
         </div>
         <button
           onClick={onExport}
           disabled={filtered.length === 0}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-ink-200 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
         >
-          <Download size={12} /> Export CSV
+          <Download size={14} /> Export CSV
         </button>
       </div>
 
       <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
         {filtered.length} {filtered.length === 1 ? "event" : "events"}
-        {(query || typeFilter !== "all") && " matching your filters"}
+        {hasActiveFilters && " matching your filters"}
       </p>
 
       {/* Table */}
@@ -779,6 +817,7 @@ function ActivityLogTable({ feed, onExport }: { feed: FeedItem[]; onExport: () =
             <tbody>
               {paged.map((tx) => {
                 const cfg = TX_CONFIG[tx.type]
+                const patron = tx.userId ? patrons.find((p) => p.id === tx.userId) : undefined
                 return (
                   <tr key={tx.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
                     <td className="py-3 px-4 whitespace-nowrap text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
@@ -793,9 +832,20 @@ function ActivityLogTable({ feed, onExport }: { feed: FeedItem[]; onExport: () =
                       </span>
                     </td>
                     <td className="py-3 px-4">
-                      <p className="text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                        {tx.user}
-                      </p>
+                      {patron ? (
+                        <button
+                          type="button"
+                          onClick={() => onSelectUser(patron)}
+                          className="text-ink-900 font-medium hover:text-green-700 hover:underline underline-offset-2 transition-colors text-left"
+                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                        >
+                          {tx.user}
+                        </button>
+                      ) : (
+                        <p className="text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                          {tx.user}
+                        </p>
+                      )}
                     </td>
                     <td className="py-3 px-4 max-w-80">
                       <p className="text-ink-700 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
@@ -1036,8 +1086,10 @@ function ReportsPageContent() {
     searchParams.get("tab") === "activity" ? "activity" : "overview"
   )
 
-  // Only used to populate the Category/Program filter dropdown option
-  // lists — the reports themselves come from the backend now.
+  // `books` only populates the Category/Program filter dropdown — the
+  // reports themselves come from the backend now. `patrons` does that too,
+  // but is also how the Activity Log tab resolves a feed row's user id back
+  // to a full profile for the click-to-view-account popup below.
   const [books, setBooks] = useState<Book[]>([])
   const [patrons, setPatrons] = useState<UserProfile[]>([])
 
@@ -1046,6 +1098,28 @@ function ReportsPageContent() {
       .then(([b, p]) => { setBooks(b); setPatrons(p) })
       .catch(() => {})
   }, [])
+
+  // Activity Log tab — click a user to view their account, same
+  // PatronProfileModal/ConfirmStatusDialog + real updatePatronStatus call
+  // the Patrons page uses (see app/librarian/patrons/page.tsx).
+  const [viewingPatron, setViewingPatron] = useState<UserProfile | null>(null)
+  const [confirmingStatus, setConfirmingStatus] = useState<UserProfile | null>(null)
+
+  async function handleToggleStatus(userId: string) {
+    const current = patrons.find((p) => p.id === userId)
+    const nextStatus = current?.status === "inactive" ? "active" : "inactive"
+
+    setPatrons((prev) => prev.map((p) => (p.id === userId ? { ...p, status: nextStatus } : p)))
+    setConfirmingStatus(null)
+    setViewingPatron((v) => (v && v.id === userId ? { ...v, status: nextStatus } : v))
+
+    try {
+      await updatePatronStatus(userId, nextStatus)
+    } catch {
+      // Revert on failure — the optimistic update above was wrong.
+      setPatrons((prev) => prev.map((p) => (p.id === userId ? { ...p, status: current?.status } : p)))
+    }
+  }
 
   // Activity Log tab — same real loans/reservations rows the dashboard's
   // "Recent Activity" preview uses (see lib/activity.ts), just unsliced and
@@ -1095,6 +1169,11 @@ function ReportsPageContent() {
       yearLevel: YEAR_LEVEL_LABELS[yearLevel],
     }
   }, [dateRange, fromDate, toDate, category, program, yearLevel])
+
+  // Just the date half of currentFilters(), for the Activity Log tab — it
+  // doesn't have its own Date Range control, it respects this same
+  // page-level filter bar instead of duplicating it.
+  const activeDateBounds = resolveDateRange(dateRange, fromDate, toDate)
 
   useEffect(() => {
     const filters = currentFilters()
@@ -1305,7 +1384,7 @@ function ReportsPageContent() {
             Date Range
           </label>
           <div className="flex items-center gap-1 p-0.5 rounded bg-ink-100">
-            {(["week", "month", "semester", "custom"] as const).map((r) => (
+            {(["all", "week", "month", "semester", "custom"] as const).map((r) => (
               <button
                 key={r}
                 onClick={() => setDateRange(r)}
@@ -1315,7 +1394,7 @@ function ReportsPageContent() {
                 )}
                 style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
               >
-                {r === "week" ? "This Week" : r === "month" ? "This Month" : r === "semester" ? "Semester" : "Custom"}
+                {r === "all" ? "All Time" : r === "week" ? "This Week" : r === "month" ? "This Month" : r === "semester" ? "Semester" : "Custom"}
               </button>
             ))}
           </div>
@@ -1481,7 +1560,14 @@ function ReportsPageContent() {
 
       {/* ── Activity Log tab ───────────────────────────────── */}
       {tab === "activity" && (
-        <ActivityLogTable feed={activityFeed} onExport={exportActivityCsv} />
+        <ActivityLogTable
+          feed={activityFeed}
+          onExport={exportActivityCsv}
+          patrons={patrons}
+          onSelectUser={setViewingPatron}
+          dateFrom={activeDateBounds.dateFrom}
+          dateTo={activeDateBounds.dateTo}
+        />
       )}
 
       {/* ── Overdue Books tab – Sprint 5.6.4 ──────────────── */}
@@ -1494,6 +1580,22 @@ function ReportsPageContent() {
 
       {/* ── Weeding tab – Reports plan Phase 2 ────────────── */}
       {tab === "weeding" && <WeedingPanel />}
+
+      {viewingPatron && (
+        <PatronProfileModal
+          patron={viewingPatron}
+          onClose={() => setViewingPatron(null)}
+          onToggleStatus={() => setConfirmingStatus(viewingPatron)}
+        />
+      )}
+
+      {confirmingStatus && (
+        <ConfirmStatusDialog
+          patron={confirmingStatus}
+          onClose={() => setConfirmingStatus(null)}
+          onConfirm={handleToggleStatus}
+        />
+      )}
     </div>
   )
 }
