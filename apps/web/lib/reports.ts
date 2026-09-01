@@ -75,7 +75,7 @@ export type ReportSummaries = {
   overdue: string | null
 }
 
-export type DateRangePreset = "week" | "month" | "semester" | "custom"
+export type DateRangePreset = "all" | "week" | "month" | "semester" | "custom"
 
 export type ReportFilters = {
   dateFrom?: string
@@ -86,9 +86,11 @@ export type ReportFilters = {
 }
 
 // Resolves the filter bar's quick-select into actual ISO from/to bounds.
-// "custom" passes the picked dates through as-is (empty string -> no
-// bound, same as not filtering that side at all).
+// "all" means unbounded on both ends (no filtering at all). "custom" passes
+// the picked dates through as-is (empty string -> no bound, same as not
+// filtering that side at all).
 export function resolveDateRange(preset: DateRangePreset, customFrom: string, customTo: string): { dateFrom?: string; dateTo?: string } {
+  if (preset === "all") return {}
   if (preset === "custom") {
     return {
       dateFrom: customFrom ? new Date(customFrom).toISOString() : undefined,
