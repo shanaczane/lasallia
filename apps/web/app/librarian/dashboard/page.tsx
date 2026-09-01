@@ -20,7 +20,7 @@ import type { Reservation } from "@lasallia/types"
 
 // Dashboard only ever shows a short preview — the full, searchable history
 // lives on the Reports "Activity Log" tab (see "See all" link below).
-const ACTIVITY_PREVIEW_COUNT = 6
+const ACTIVITY_PREVIEW_COUNT = 8
 
 const OVERDUE_FLAG_DAYS = 7
 
