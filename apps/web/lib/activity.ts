@@ -19,6 +19,7 @@ export type FeedItem = {
   timestamp: number
   type: TxType
   user: string
+  userId: string | null
   item: string
 }
 
@@ -61,6 +62,7 @@ export function buildFeed(loans: Loan[], reservations: Reservation[]): FeedItem[
       timestamp: new Date(loan.borrowed_at).getTime(),
       type: 'checkout',
       user: borrower,
+      userId: loan.student_id ?? null,
       item,
     })
     if (loan.returned_at) {
@@ -71,6 +73,7 @@ export function buildFeed(loans: Loan[], reservations: Reservation[]): FeedItem[
         timestamp: new Date(loan.returned_at).getTime(),
         type: 'return',
         user: borrower,
+        userId: loan.student_id ?? null,
         item,
       })
     }
@@ -84,6 +87,7 @@ export function buildFeed(loans: Loan[], reservations: Reservation[]): FeedItem[
       timestamp: new Date(r.requested_at).getTime(),
       type: 'reserve',
       user: r.profiles?.full_name ?? 'Unknown patron',
+      userId: r.profiles?.id ?? r.user_id ?? null,
       item: r.books?.title ?? 'Unknown title',
     })
   }
