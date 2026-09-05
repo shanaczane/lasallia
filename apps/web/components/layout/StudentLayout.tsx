@@ -11,7 +11,6 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
 import { cn } from "@/lib/utils"
-import { clearSession } from "@/lib/auth"
 import { fetchLoans } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
 import {
@@ -21,7 +20,6 @@ import {
   Bell,
   MessageSquare,
   Library,
-  LogOut,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react"
@@ -94,6 +92,7 @@ function StudentLayoutInner({
   const [collapsed, setCollapsed] = useState(false)
   const [displayName, setDisplayName] = useState(userName ?? "")
   const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
+  const [displayEmail, setDisplayEmail] = useState("")
 
   // Real counts, not the static placeholders these badges used to show —
   // hidden entirely (via `undefined` in the badge lookup below) when
@@ -119,6 +118,7 @@ function StudentLayoutInner({
         setDisplayName(user.full_name)
         setDisplayInitials(getInitials(user.full_name))
       }
+      if (user.email) setDisplayEmail(user.email)
     }
   }, [])
 
@@ -196,23 +196,6 @@ function StudentLayoutInner({
           </div>
         ))}
       </nav>
-
-      {/* Sign out */}
-      <div className={cn("border-t border-ink-100", isCollapsed ? "p-2" : "p-3")}>
-        <button
-          type="button"
-          onClick={() => { clearSession(); window.location.replace("/login") }}
-          title={isCollapsed ? "Sign out" : undefined}
-          className={cn(
-            "flex items-center rounded-sm text-ink-500 hover:bg-ink-50 hover:text-red-600 transition-colors",
-            isCollapsed ? "w-full justify-center p-2" : "w-full gap-2.5 px-3 py-2"
-          )}
-          style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-        >
-          <LogOut size={16} className="text-ink-400" />
-          {!isCollapsed && "Sign out"}
-        </button>
-      </div>
     </>
   )
 
@@ -220,6 +203,7 @@ function StudentLayoutInner({
     <div className="min-h-screen bg-paper">
       <TopNav
         userName={displayName}
+        userEmail={displayEmail}
         userInitials={displayInitials}
         notificationCount={unreadCount}
         notificationsHref="/student/notifications"

@@ -143,6 +143,7 @@ export function GuestLayout({
         userInitials={userInitials}
         notificationCount={0}
         showNotifications={false}
+        showSignOut={false}
         homeHref="/guest/dashboard"
         onMenuClick={() => setMenuOpen(true)}
       />
