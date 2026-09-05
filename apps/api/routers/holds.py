@@ -11,7 +11,7 @@ router = APIRouter(prefix="/holds", tags=["holds"])
 
 # Preview only — the real due date is fixed at loan confirmation (2.7: "the
 # due date starts at this moment"), not here.
-BORROW_PERIOD_DAYS = 14
+BORROW_PERIOD_DAYS = 7
 
 # 2.3: "'I'm getting the book' button extends the session to ~5 minutes."
 EXTEND_SECONDS = 300

@@ -9,7 +9,7 @@ from schemas.borrow import BorrowStatus, BorrowTransaction, CreateBorrowRequest
 
 router = APIRouter(prefix="/borrow", tags=["borrow"])
 
-BORROW_PERIOD_DAYS = 14
+BORROW_PERIOD_DAYS = 7
 
 @router.get("", response_model=list[BorrowTransaction])
 def list_borrows(

@@ -293,7 +293,9 @@ export default function StudentDashboard() {
         </div>
 
         {/* For You — recommendations plan Phase 6 */}
-        <ForYouSection />
+        <div className="order-first w-full lg:w-80 shrink-0">
+          <ForYouSection />
+        </div>
       </div>
     </div>
   )

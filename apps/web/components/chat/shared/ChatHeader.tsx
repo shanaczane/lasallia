@@ -1,12 +1,33 @@
 "use client"
 
-import { Menu, MoreVertical } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { Menu, MoreVertical, Trash2 } from "lucide-react"
 
 interface ChatHeaderProps {
   onMenuClick: () => void
+  canDelete: boolean
+  onDeleteChat: () => void
 }
 
-export default function ChatHeader({ onMenuClick }: ChatHeaderProps) {
+export default function ChatHeader({ onMenuClick, canDelete, onDeleteChat }: ChatHeaderProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false)
+    }
+    document.addEventListener("mousedown", handleClick)
+    document.addEventListener("keydown", handleEscape)
+    return () => {
+      document.removeEventListener("mousedown", handleClick)
+      document.removeEventListener("keydown", handleEscape)
+    }
+  }, [])
+
   return (
     // px-6 py-4, border-bottom ink-100
     <header
@@ -58,13 +79,36 @@ export default function ChatHeader({ onMenuClick }: ChatHeaderProps) {
         </p>
       </div>
 
-      <button
-        type="button"
-        className="shrink-0 flex items-center justify-center w-8 h-8 rounded-md text-ink-400 hover:bg-ink-100 transition-colors"
-        aria-label="More options"
-      >
-        <MoreVertical size={16} />
-      </button>
+      <div className="relative shrink-0" ref={menuRef}>
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          className="flex items-center justify-center w-8 h-8 rounded-md text-ink-400 hover:bg-ink-100 transition-colors"
+          aria-label="More options"
+          aria-expanded={menuOpen}
+        >
+          <MoreVertical size={16} />
+        </button>
+
+        {menuOpen && (
+          <div
+            className="absolute right-0 top-9 z-20 w-48 py-1.5 rounded-(--radius) bg-white border border-ink-200 shadow-(--shadow-lg)"
+            role="menu"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!canDelete}
+              onClick={() => { setMenuOpen(false); onDeleteChat() }}
+              className="flex items-center gap-2.5 w-full px-3 py-2 text-left transition-colors text-danger hover:bg-danger-bg disabled:text-ink-300 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            >
+              <Trash2 size={14} />
+              Delete this chat
+            </button>
+          </div>
+        )}
+      </div>
     </header>
   )
 }

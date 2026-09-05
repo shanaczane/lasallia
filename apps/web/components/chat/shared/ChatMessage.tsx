@@ -3,6 +3,7 @@
 import { Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import BookCard, { BookCardData } from "./BookCard"
+import { renderChatText } from "./formatChatText"
 
 export interface ChatMessageData {
   id: string
@@ -53,7 +54,7 @@ export default function ChatMessage({ role, content, timestamp, books, restricte
             border: isUser ? "none" : "1px solid var(--color-ink-100)",
           }}
         >
-          {content}
+          {isUser ? content : renderChatText(content)}
 
           {books?.map((b, i) => <BookCard key={i} {...b} />)}
 

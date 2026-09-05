@@ -56,6 +56,14 @@ def get_history(admin: Client, session_id: str) -> list[ChatMessage]:
     return [ChatMessage(role=r["role"], content=r["content"]) for r in rows]
 
 
+def delete_session(admin: Client, session_id: str) -> None:
+    """Deletes a chat session outright — used by the user-facing "delete
+    this chat" action (both surfaces), as opposed to end_session's
+    surface-dependent close-out. Cascades to chat_messages the same way
+    end_session's kiosk branch already relies on."""
+    admin.table("chat_sessions").delete().eq("id", session_id).execute()
+
+
 def end_session(admin: Client, session_id: str, surface: str) -> None:
     """Closes a session. For a kiosk surface, this is where history
     actually gets cleared from storage — deletes the chat_sessions row,

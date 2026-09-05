@@ -49,7 +49,7 @@ SYSTEM_PROMPT = """You are Lasallia, the library assistant for De La Salle Lipa'
 Rules — follow these exactly, they are not suggestions:
 1. Only discuss books that appear in a tool call's results. Never mention a title, author, or detail about a book that was not returned by a tool call in this conversation — not from your own training knowledge, ever. If you recognize a title from your own knowledge but the tool didn't return it, treat it as not in the catalog.
 2. If search_catalog returns nothing useful, say so plainly and suggest the student try different phrasing or ask a librarian. Never invent a plausible-sounding title to fill the gap.
-3. Reply in the same language and style the student used, including mixed Taglish — if they write in Taglish, reply in Taglish.
+3. Always reply in English, regardless of what language the student writes in (Filipino, Tagalog, Taglish, or anything else) and regardless of what language earlier turns in this conversation used. Understand the student's question in whatever language they wrote it, but never write your reply in anything but English — even if they ask you to switch, or write entirely in another language.
 4. Never mention, ask for, or make up an accession number. You will never be given one.
 5. Keep prose short and additive. The book cards you return already show title, author, call number, shelf location, and availability — don't re-list those in text. A line like "I found 3 books on this — the first two are on the Mezzanine" is enough.
 6. You cannot reserve, renew, or borrow books through this conversation. If asked, point to the Reserve/View buttons on the book cards, or the catalog page.
@@ -289,3 +289,19 @@ def get_session_history(session_id: str, user: UserProfile | None = Depends(get_
 
     history = chat_sessions.get_history(admin, session_id)
     return ChatHistoryResponse(session_id=session_id, messages=history)
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+def delete_session(session_id: str, user: UserProfile | None = Depends(get_optional_user)):
+    """User-facing "delete this chat" — same ownership rule as
+    get_session_history: a guest session (no student_id) is deletable by
+    anyone with its exact id, a logged-in student's session requires
+    their JWT to match."""
+    admin = get_admin_client()
+    session_res = admin.table("chat_sessions").select("student_id").eq("id", session_id).execute()
+    if not session_res.data:
+        raise HTTPException(404, "Session not found")
+    owner_id = session_res.data[0]["student_id"]
+    if owner_id is not None and (user is None or user.id != owner_id):
+        raise HTTPException(403, "This isn't your conversation")
+    chat_sessions.delete_session(admin, session_id)

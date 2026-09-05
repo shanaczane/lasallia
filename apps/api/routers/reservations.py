@@ -19,7 +19,7 @@ router = APIRouter(prefix="/reservations", tags=["reservations"])
 
 PICKUP_WINDOW_DAYS = 3
 BORROW_LIMIT = 3
-BORROW_PERIOD_DAYS = 14
+BORROW_PERIOD_DAYS = 7
 NON_BORROWABLE_COLLECTION_TYPES = {"Reference", "Thesis", "Capstone", "MTR", "Archives"}
 
 

@@ -369,7 +369,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
               Loan details
             </p>
             <p className="text-ink-700" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-              Due back <span className="font-semibold">{formatDate(hold.due_date_preview)}</span> (14-day loan, starting the moment you confirm)
+              Due back <span className="font-semibold">{formatDate(hold.due_date_preview)}</span> (7-day loan, starting the moment you confirm)
             </p>
           </div>
 
