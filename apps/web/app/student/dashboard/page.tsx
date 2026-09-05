@@ -166,7 +166,7 @@ export default function StudentDashboard() {
       <div className="flex flex-col lg:flex-row gap-6">
 
         {/* Currently Borrowed */}
-        <div className="flex-1 flex flex-col gap-3 min-w-0">
+        <div className="flex-2 flex flex-col gap-3 min-w-0">
 
           {/* Title row */}
           <div className="flex items-center">
@@ -293,7 +293,9 @@ export default function StudentDashboard() {
         </div>
 
         {/* For You — recommendations plan Phase 6 */}
-        <ForYouSection />
+        <div className="order-first flex-3 min-w-0">
+          <ForYouSection />
+        </div>
       </div>
     </div>
   )

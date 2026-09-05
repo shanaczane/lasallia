@@ -7,7 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from supabase import Client
 from schemas.auth import UserProfile, Role
 from core.config import SUPABASE_URL
-from core.supabase import get_user_client
+from core.supabase import get_admin_client, get_user_client
 
 bearer = HTTPBearer()
 optional_bearer = HTTPBearer(auto_error=False)
@@ -52,12 +52,28 @@ def get_current_user(
 ) -> UserProfile:
     payload = _decode_token(credentials.credentials)
     meta = payload.get("user_metadata", {})
-    role: Role = meta.get("role", "guest")
+
+    # Role/full_name come from the profiles table, not the JWT's
+    # user_metadata claim. That claim is only ever set at Supabase-user-
+    # creation time (e.g. evals/run_eval.py's admin.create_user call) and
+    # nothing ever patches it afterward — a real student signing in via
+    # Google OAuth has no such claim at all, so this silently resolved to
+    # the "guest" default here even though profiles.role correctly says
+    # "student", causing every role-gated endpoint (require_student,
+    # require_librarian, /recommendations/me's own check) to 403 a
+    # legitimate account. profiles is already the source of truth
+    # routers/auth.py's login/refresh use to build the role a client
+    # sees (_build_token_response) — this makes server-side authorization
+    # agree with that instead of trusting a claim nothing keeps in sync.
+    profile_res = get_admin_client().table("profiles").select("role, full_name").eq("id", payload["sub"]).execute()
+    profile = profile_res.data[0] if profile_res.data else {}
+    role: Role = profile.get("role") or meta.get("role", "guest")
+
     return UserProfile(
         id=payload["sub"],
         email=payload.get("email", ""),
         role=role,
-        full_name=meta.get("full_name"),
+        full_name=profile.get("full_name") or meta.get("full_name"),
     )
 
 def get_optional_user(

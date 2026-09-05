@@ -4,8 +4,9 @@ import { useState, useRef, useEffect, type ReactNode } from "react"
 import ChatHeader from "./ChatHeader"
 import ChatInput from "./ChatInput"
 import ChatMessage, { type ChatMessageData } from "./ChatMessage"
+import { DeleteChatModal } from "./DeleteChatModal"
 import TypingIndicator, { type TypingStatus } from "./TypingIndicator"
-import { sendChatMessage, fetchChatHistory, WEB_CHAT_SESSION_STORAGE_KEY, type ChatSurface } from "@/lib/chat"
+import { sendChatMessage, fetchChatHistory, deleteChatSession, WEB_CHAT_SESSION_STORAGE_KEY, type ChatSurface } from "@/lib/chat"
 import type { BookCardData } from "./BookCard"
 import type { Book } from "@lasallia/types"
 
@@ -49,6 +50,8 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
   // keeps the very first render (server and client) identical.
   const [messages, setMessages] = useState<ChatMessageData[]>([])
   const [typingStatus, setTypingStatus] = useState<TypingStatus | null>(null)
+  const [hasSession, setHasSession] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
   const sessionIdRef = useRef<string | null>(sessionId ?? null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -68,6 +71,7 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
       }
 
       sessionIdRef.current = existingId
+      setHasSession(true)
       try {
         const history = await fetchChatHistory(existingId)
         if (cancelled) return
@@ -114,6 +118,7 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
       onStatus: setTypingStatus,
       onDone: (result) => {
         sessionIdRef.current = result.session_id
+        setHasSession(true)
         if (surface === "web") sessionStorage.setItem(WEB_CHAT_SESSION_STORAGE_KEY, result.session_id)
         setTypingStatus(null)
         setMessages((prev) => [...prev, {
@@ -136,9 +141,29 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
     }, surface)
   }
 
+  async function confirmDeleteCurrentChat() {
+    setShowDeleteModal(false)
+    const id = sessionIdRef.current
+    if (!id) return
+    await deleteChatSession(id).catch(() => {})
+    sessionIdRef.current = null
+    setHasSession(false)
+    if (surface === "web") sessionStorage.removeItem(WEB_CHAT_SESSION_STORAGE_KEY)
+    setMessages([greeting()])
+  }
+
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-white">
-      <ChatHeader onMenuClick={onMenuClick} />
+      <ChatHeader
+        onMenuClick={onMenuClick}
+        canDelete={hasSession}
+        onDeleteChat={() => setShowDeleteModal(true)}
+      />
+      <DeleteChatModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={confirmDeleteCurrentChat}
+      />
 
       {/* Messages — scrollable area */}
       <div

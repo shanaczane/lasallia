@@ -693,6 +693,8 @@ board display, Pathfinder and bibliographies, new acquisitions on display, class
 reservation, discussion rooms, library clearance, general reference tools for
 school administrators, faculty,
 4.3.2.1. Loan Policies
+Borrowing limit: a student may borrow a maximum of three (3) books at a time from the General Circulation collection. Loan period: borrowed books are due back seven (7) days from the date they were borrowed.
+4.3.2.2. Loan Policies - Fines Table
 Type of Library books/materials
 Duration and No. of Titles
 Overdue/Fines Amount

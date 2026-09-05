@@ -123,3 +123,10 @@ export async function fetchChatHistory(sessionId: string): Promise<ChatMessage[]
   const data = await res.json()
   return data.messages
 }
+
+export async function deleteChatSession(sessionId: string): Promise<void> {
+  const token = getToken()
+  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
+  const res = await fetch(`${API_URL}/chat/sessions/${sessionId}`, { method: "DELETE", headers })
+  if (!res.ok && res.status !== 404) throw new Error("Failed to delete this conversation")
+}

@@ -12,7 +12,7 @@ from schemas.loan import ConfirmLoanRequest, Loan, LoanLookupResult, ReshelveReq
 
 router = APIRouter(prefix="/loans", tags=["loans"])
 
-BORROW_PERIOD_DAYS = 14
+BORROW_PERIOD_DAYS = 7
 MAX_ATTEMPTS = 3
 DAMAGE_PROCESSING_FEE = 50.0
 

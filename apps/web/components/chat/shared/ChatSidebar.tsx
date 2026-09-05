@@ -1,22 +1,15 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Plus } from "lucide-react"
+import { Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { fetchChatSessions, WEB_CHAT_SESSION_STORAGE_KEY, type ChatSessionSummary } from "@/lib/chat"
+import { DeleteChatModal } from "./DeleteChatModal"
+import { fetchChatSessions, deleteChatSession, WEB_CHAT_SESSION_STORAGE_KEY, type ChatSessionSummary } from "@/lib/chat"
 
 interface ChatSidebarProps {
   open: boolean
   onClose?: () => void
 }
-
-const SUGGESTIONS = [
-  "Find a book by topic",
-  "Check library hours",
-  "How to borrow a book",
-  "Shelf locations guide",
-  "Contact the librarian",
-]
 
 function relativeTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime()
@@ -34,6 +27,7 @@ function relativeTime(iso: string): string {
 // kiosk history is gone the moment the session ends).
 export default function ChatSidebar({ open, onClose }: ChatSidebarProps) {
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
 
   useEffect(() => {
     fetchChatSessions().then(setSessions).catch(() => setSessions([]))
@@ -47,6 +41,18 @@ export default function ChatSidebar({ open, onClose }: ChatSidebarProps) {
   function openSession(id: string) {
     sessionStorage.setItem(WEB_CHAT_SESSION_STORAGE_KEY, id)
     window.location.reload()
+  }
+
+  async function confirmDelete() {
+    const id = deleteTarget
+    setDeleteTarget(null)
+    if (!id) return
+    await deleteChatSession(id).catch(() => {})
+    setSessions((prev) => prev.filter((s) => s.id !== id))
+    if (sessionStorage.getItem(WEB_CHAT_SESSION_STORAGE_KEY) === id) {
+      sessionStorage.removeItem(WEB_CHAT_SESSION_STORAGE_KEY)
+      window.location.reload()
+    }
   }
 
   return (
@@ -100,12 +106,12 @@ export default function ChatSidebar({ open, onClose }: ChatSidebarProps) {
             </p>
             <ul className="space-y-0.5">
               {sessions.map((s) => (
-                <li key={s.id}>
+                <li key={s.id} className="group relative">
                   {/* px-3 py-2, title ink-900 14px, timestamp ink-400 12px, flex justify-between */}
                   <button
                     type="button"
                     onClick={() => openSession(s.id)}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors hover:bg-ink-50 text-left gap-2"
+                    className="w-full flex items-center justify-between px-3 py-2 pr-8 rounded-lg transition-colors hover:bg-ink-50 text-left gap-2"
                   >
                     <span
                       className="truncate"
@@ -120,34 +126,26 @@ export default function ChatSidebar({ open, onClose }: ChatSidebarProps) {
                       {relativeTime(s.started_at)}
                     </span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(s.id) }}
+                    aria-label="Delete this chat"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded-md text-ink-300 opacity-0 group-hover:opacity-100 hover:bg-danger-bg hover:text-danger transition-colors"
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 </li>
               ))}
             </ul>
           </>
         )}
-
-        {/* SUGGESTIONS — same label style */}
-        <p
-          className="mt-6 mb-2 uppercase font-semibold"
-          style={{ fontFamily: "var(--font-body)", fontSize: 11, letterSpacing: "0.08em", color: "var(--color-ink-400)" }}
-        >
-          Suggestions
-        </p>
-        <ul className="space-y-0.5">
-          {SUGGESTIONS.map((s) => (
-            <li key={s}>
-              {/* px-3 py-1.5, ink-500 text, 14px, hover:ink-100 bg */}
-              <button
-                type="button"
-                className="w-full text-left px-3 py-[6px] rounded-lg transition-colors hover:bg-ink-100"
-                style={{ fontFamily: "var(--font-body)", fontSize: 14, color: "var(--color-ink-500)" }}
-              >
-                {s}
-              </button>
-            </li>
-          ))}
-        </ul>
       </div>
+
+      <DeleteChatModal
+        isOpen={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
     </aside>
   )
 }
