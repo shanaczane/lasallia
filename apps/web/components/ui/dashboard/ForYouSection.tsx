@@ -31,11 +31,11 @@ function SkeletonCard() {
 }
 
 function CardRow({ children }: { children: React.ReactNode }) {
-  // Plan 6: horizontal scroll on mobile, grid on desktop — this sidebar
-  // column is narrow even on desktop (w-80 in the dashboard layout), so
-  // "grid" here means 2 columns, not a wide multi-column catalog grid.
+  // Horizontal scroll on mobile, grid on desktop — this column now takes
+  // the larger share of the dashboard row (student/dashboard/page.tsx),
+  // so the grid gets more columns than the old fixed w-80 sidebar did.
   return (
-    <div className="flex lg:grid lg:grid-cols-2 gap-3 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0">
+    <div className="flex lg:grid lg:grid-cols-3 gap-3 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0">
       {children}
     </div>
   )
@@ -95,7 +95,7 @@ export function ForYouSection() {
   const copy = RUNG_COPY[rung]
 
   return (
-    <div className="w-full lg:w-80 shrink-0 flex flex-col gap-3">
+    <div className="w-full flex flex-col gap-3">
       <div>
         <h2
           className="text-ink-900 font-semibold"
