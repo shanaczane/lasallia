@@ -78,6 +78,13 @@ function searchBooks(books: Book[], query: string): Book[] {
   )
 }
 
+// BookFormModal hands back keywords as one comma-separated string (plain
+// <input>, not a tag picker) — split it into the array Book.keywords wants.
+function parseKeywords(raw: string): string[] | undefined {
+  const list = raw.split(',').map((k) => k.trim()).filter(Boolean)
+  return list.length > 0 ? list : undefined
+}
+
 // ─── Toast ────────────────────────────────────────────────────────────────────
 
 function Toast({ message }: { message: string }) {
@@ -192,24 +199,43 @@ function LibrarianCatalogContent() {
   function handleAddSubmit(data: BookFormData) {
     const newBook: Book = {
       id:               `new-${Date.now()}`,
-      title:            data.title.trim(),
-      author:           data.author.trim(),
-      isbn:             data.isbn.trim() || undefined,
-      publisher:        data.publisher.trim() || undefined,
-      published_year:   data.published_year ? parseInt(data.published_year, 10) : undefined,
-      call_number:      data.call_number.trim(),
-      floor:            data.floor,
-      aisle:            data.aisle.trim(),
-      shelf_location:   `${data.floor} · ${data.aisle.trim()}`,
-      total_copies:     parseInt(data.total_copies, 10),
-      available_copies: parseInt(data.total_copies, 10),
-      category:         data.category.trim() || 'Uncategorised',
-      subject:          data.subject.trim() || undefined,
-      format:           data.format || undefined,
-      abstract:         data.abstract.trim() || undefined,
-      status:           'available',
-      created_at:       new Date().toISOString(),
-      updated_at:       new Date().toISOString(),
+      title:                  data.title.trim(),
+      subtitle:               data.subtitle.trim() || undefined,
+      alternate_title:        data.alternateTitle.trim() || undefined,
+      author:                 data.authors.join(', '),
+      isbn:                   data.isbn.trim() || undefined,
+      lccn:                   data.lccn.trim() || undefined,
+      issn:                   data.issn.trim() || undefined,
+      edition:                data.edition.trim() || undefined,
+      series_title:           data.seriesTitle.trim() || undefined,
+      series_volume:          data.seriesVolume.trim() || undefined,
+      place_of_publication:   data.placeOfPublication.trim() || undefined,
+      physical_extent:        data.physicalExtent.trim() || undefined,
+      physical_illustrations: data.physicalIllustrations.trim() || undefined,
+      physical_dimensions:    data.physicalDimensions.trim() || undefined,
+      accession_no:           data.accession_no.trim() || undefined,
+      publisher:              data.publisher.trim() || undefined,
+      published_year:         data.published_year ? parseInt(data.published_year, 10) : undefined,
+      call_number:            data.call_number.trim(),
+      floor:                  data.floor,
+      aisle:                  data.aisle.trim(),
+      shelf_location:         `${data.floor} · ${data.aisle.trim()}`,
+      total_copies:           parseInt(data.total_copies, 10),
+      available_copies:       parseInt(data.total_copies, 10),
+      category:               data.category.trim() || 'Uncategorised',
+      subject:                data.subject.trim() || undefined,
+      format:                 data.format || undefined,
+      keywords:               parseKeywords(data.keywords),
+      abstract:               data.abstract.trim() || undefined,
+      notes:                  data.notes.trim() || undefined,
+      purchase_price:         data.purchase_price ? Number(data.purchase_price) : undefined,
+      date_acquired:          data.date_acquired ? new Date(data.date_acquired).toISOString() : undefined,
+      circulation_type:       data.circulation_type.trim() || undefined,
+      vendor:                 data.vendor.trim() || undefined,
+      funding_source:         data.funding_source || undefined,
+      status:                 data.status || 'available',
+      created_at:             new Date().toISOString(),
+      updated_at:             new Date().toISOString(),
     }
     setBooks((prev) => [newBook, ...prev])
     setAddOpen(false)
@@ -223,21 +249,41 @@ function LibrarianCatalogContent() {
         b.id === editBook.id
           ? {
               ...b,
-              title:          data.title.trim(),
-              author:         data.author.trim(),
-              isbn:           data.isbn.trim() || undefined,
-              publisher:      data.publisher.trim() || undefined,
-              published_year: data.published_year ? parseInt(data.published_year, 10) : undefined,
-              call_number:    data.call_number.trim(),
-              floor:          data.floor,
-              aisle:          data.aisle.trim(),
-              shelf_location: `${data.floor} · ${data.aisle.trim()}`,
-              total_copies:   parseInt(data.total_copies, 10),
-              category:       data.category.trim() || b.category,
-              subject:        data.subject.trim() || undefined,
-              format:         data.format || undefined,
-              abstract:       data.abstract.trim() || undefined,
-              updated_at:     new Date().toISOString(),
+              title:                  data.title.trim(),
+              subtitle:               data.subtitle.trim() || undefined,
+              alternate_title:        data.alternateTitle.trim() || undefined,
+              author:                 data.authors.join(', '),
+              isbn:                   data.isbn.trim() || undefined,
+              lccn:                   data.lccn.trim() || undefined,
+              issn:                   data.issn.trim() || undefined,
+              edition:                data.edition.trim() || undefined,
+              series_title:           data.seriesTitle.trim() || undefined,
+              series_volume:          data.seriesVolume.trim() || undefined,
+              place_of_publication:   data.placeOfPublication.trim() || undefined,
+              physical_extent:        data.physicalExtent.trim() || undefined,
+              physical_illustrations: data.physicalIllustrations.trim() || undefined,
+              physical_dimensions:    data.physicalDimensions.trim() || undefined,
+              accession_no:           data.accession_no.trim() || undefined,
+              publisher:              data.publisher.trim() || undefined,
+              published_year:         data.published_year ? parseInt(data.published_year, 10) : undefined,
+              call_number:            data.call_number.trim(),
+              floor:                  data.floor,
+              aisle:                  data.aisle.trim(),
+              shelf_location:         `${data.floor} · ${data.aisle.trim()}`,
+              total_copies:           parseInt(data.total_copies, 10),
+              category:               data.category.trim() || b.category,
+              subject:                data.subject.trim() || undefined,
+              format:                 data.format || undefined,
+              keywords:               parseKeywords(data.keywords),
+              abstract:               data.abstract.trim() || undefined,
+              notes:                  data.notes.trim() || undefined,
+              purchase_price:         data.purchase_price ? Number(data.purchase_price) : undefined,
+              date_acquired:          data.date_acquired ? new Date(data.date_acquired).toISOString() : undefined,
+              circulation_type:       data.circulation_type.trim() || undefined,
+              vendor:                 data.vendor.trim() || undefined,
+              funding_source:         data.funding_source || undefined,
+              status:                 data.status || b.status,
+              updated_at:             new Date().toISOString(),
             }
           : b
       )
