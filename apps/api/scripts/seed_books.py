@@ -13,7 +13,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # so `core.*` r
 from excel_source import read_records
 from core.supabase import get_admin_client
 
-SOURCE_FILES = ["CITE.xlsx", "CBEAM.xlsx", "CEAS.xlsx", "CITHM.xlsx"]
+# filename -> college code. One Excel file per college; the code becomes
+# each book's `subject` (shown in the UI as "College"). Add an entry here
+# (and the matching .xlsx in data/) when a new college's collection is
+# onboarded — see scripts/backfill_college.py for tagging rows that were
+# already seeded before this mapping existed.
+SOURCE_FILES = {
+    "CITE.xlsx": "CITE",
+    "CBEAM.xlsx": "CBEAM",
+    "CEAS.xlsx": "CEAS",
+    "CITHM.xlsx": "CITHM",
+}
 BATCH_SIZE = 50
 
 import re
@@ -35,7 +45,7 @@ def split_publisher(place_of_publication: str | None) -> str | None:
     publisher = normalize_ws(publisher or place_of_publication)
     return publisher.rstrip(".,").strip() if publisher else None
 
-def to_book_row(record: dict) -> dict:
+def to_book_row(record: dict, college: str) -> dict:
     author = record["Author(s) Full Name"] or record["Author(s)"]
     year = record["Year"]
     return {
@@ -45,6 +55,7 @@ def to_book_row(record: dict) -> dict:
         "isbn": record["ISBN"] or None,
         "call_number": normalize_ws(record["Call No."]) or "",
         "category": record["program"],
+        "subject": college,
         "shelf_location": "Unassigned",
         "status": "available",
         "cover_url": record["Images"] or None,
@@ -61,13 +72,13 @@ def main(dry_run: bool = False) -> None:
     all_rows = []
     seen_accessions = set()
 
-    for fname in SOURCE_FILES:
+    for fname, college in SOURCE_FILES.items():
         path = data_dir / fname
         if not path.exists():
             print(f"SKIP: {fname} not found in {data_dir}")
             continue
         records = read_records(path)
-        rows = [to_book_row(r) for r in records]
+        rows = [to_book_row(r, college) for r in records]
 
         deduped = []
         for row in rows:

@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, Upload, ImageIcon, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { COLLEGES } from '@/lib/colleges'
 import type { Book, BookFormat } from '@lasallia/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -466,28 +467,38 @@ export function BookFormModal({ mode, book, isOpen, onClose, onSubmit }: BookFor
               </select>
             </Field>
 
-            <Field label="Category / Genre">
+            <Field label="Program">
               <input
                 type="text"
                 value={form.category}
                 onChange={(e) => set('category', e.target.value)}
-                placeholder="e.g. Computer Science"
+                placeholder="e.g. BS Computer Science"
                 className={inputClass}
                 style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
               />
             </Field>
           </div>
 
-          {/* Subject */}
-          <Field label="Subject Heading">
-            <input
-              type="text"
+          {/* College */}
+          <Field label="College">
+            <select
               value={form.subject}
               onChange={(e) => set('subject', e.target.value)}
-              placeholder="e.g. Software Engineering"
-              className={inputClass}
-              style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-            />
+              className={cn(inputClass, 'appearance-none cursor-pointer')}
+              style={{
+                fontSize: 'var(--text-sm-body)',
+                fontFamily: 'var(--font-body)',
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 10px center',
+                paddingRight: '2rem',
+              }}
+            >
+              <option value="">Select college…</option>
+              {COLLEGES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
           </Field>
 
           {/* Abstract */}

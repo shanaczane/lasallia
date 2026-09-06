@@ -18,7 +18,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import {
   ArrowLeft, MapPin, Hash, Building2, Calendar,
-  BookOpen, Tag, Bookmark, Bell, QrCode,
+  BookOpen, GraduationCap, Landmark, Bookmark, Bell, QrCode,
   CheckCircle2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -612,8 +612,8 @@ export default function StudentBookDetailPage({
             {[
               { icon: <Hash size={14} />,     label: 'Call Number',    value: book.call_number },
               { icon: <MapPin size={14} />,    label: 'Shelf Location', value: book.shelf_location },
-              { icon: <Tag size={14} />,       label: 'Category',       value: book.category },
-              { icon: <BookOpen size={14} />,  label: 'Subject',        value: book.subject },
+              { icon: <GraduationCap size={14} />, label: 'Program',  value: book.category },
+              { icon: <Landmark size={14} />,      label: 'College',  value: book.subject },
               { icon: <Building2 size={14} />, label: 'Publisher',      value: book.publisher },
               { icon: <Calendar size={14} />,  label: 'Year Published', value: book.published_year },
               { icon: <Hash size={14} />,      label: 'ISBN',           value: book.isbn },

@@ -1,8 +1,10 @@
 // apps/web/components/ui/catalog/FilterPillBar.tsx
 // Inline per-category filter dropdowns shown beside the search bar, matching
-// the "Genre: X ⌄ Availability ⌄ Format ⌄ Floor ⌄ Subject ⌄ Call no." pattern.
+// the "Program: X ⌄ Availability ⌄ Format ⌄ Floor ⌄ College ⌄ Call no." pattern.
 // Covers every field in CatalogFilters directly — no separate "more filters"
-// panel needed.
+// panel needed. "genre"/"subject" are the internal filter keys (unchanged,
+// mirror Book.category/Book.subject) — only their display labels changed to
+// Program/College to match how the LRC actually organizes its catalog.
 
 'use client'
 
@@ -102,7 +104,7 @@ export function FilterPillBar({
   }> = [
     {
       id: 'genre',
-      label: 'Genre',
+      label: 'Program',
       active: filters.genre !== 'all',
       valueLabel: filters.genre !== 'all' ? filters.genre : undefined,
       panel: (
@@ -178,7 +180,7 @@ export function FilterPillBar({
     },
     {
       id: 'subject',
-      label: 'Subject',
+      label: 'College',
       active: filters.subject !== 'all',
       valueLabel: filters.subject !== 'all' ? filters.subject : undefined,
       panel: (

@@ -8,11 +8,11 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  BookOpen,
+  GraduationCap,
   CircleDot,
   FileText,
   MapPin,
-  Tag,
+  Landmark,
   Hash,
   X,
 } from 'lucide-react'
@@ -32,11 +32,11 @@ export { DEFAULT_FILTERS } from './filterConfig'
 const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
 const SECTION_ICONS: Record<FilterSectionConfig['key'], React.ReactNode> = {
-  genre: <BookOpen size={16} />,
+  genre: <GraduationCap size={16} />,
   availability: <CircleDot size={16} />,
   format: <FileText size={16} />,
   floor: <MapPin size={16} />,
-  subject: <Tag size={16} />,
+  subject: <Landmark size={16} />,
   callNo: <Hash size={16} />,
 }
 

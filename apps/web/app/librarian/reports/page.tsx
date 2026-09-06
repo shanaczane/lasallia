@@ -5,7 +5,8 @@
 // what feeds them changed.
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { Suspense, useCallback, useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import {
   BarChart2,
   GripVertical,
@@ -19,6 +20,7 @@ import {
   ArrowUpDown,
   Download,
   Sparkles,
+  Search,
 } from "lucide-react"
 import {
   DndContext,
@@ -39,7 +41,13 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { cn } from "@/lib/utils"
 import { fetchBooks } from "@/lib/books"
-import { fetchPatrons } from "@/lib/users"
+import { fetchPatrons, updatePatronStatus } from "@/lib/users"
+import { fetchLoans, type Loan } from "@/lib/kiosk"
+import { fetchReservations } from "@/lib/reservations"
+import { buildFeed, TX_CONFIG, type FeedItem, type TxType } from "@/lib/activity"
+import { Pagination } from "@/components/ui/catalog"
+import { PatronProfileModal } from "@/components/ui/patrons/PatronProfileModal"
+import { ConfirmStatusDialog } from "@/components/ui/patrons/ConfirmStatusDialog"
 import {
   fetchCatalogueReport,
   fetchCirculationSummary,
@@ -72,10 +80,10 @@ import {
   type WeedingCandidate,
   type WeedingEvent,
 } from "@/lib/weeding"
-import type { Book, UserProfile } from "@lasallia/types"
+import type { Book, UserProfile, Reservation } from "@lasallia/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type ReportTab = "overview" | "overdue" | "weeding"
+type ReportTab = "overview" | "activity" | "overdue" | "weeding"
 type SortDir = "asc" | "desc" | null
 type SortKey = "patron" | "book" | "due" | "days" | "program" | null
 type ShelfSortKey = "call_number" | "title" | "accession_number" | null
@@ -676,6 +684,187 @@ function SortableCard({ card }: { card: CardDef }) {
   )
 }
 
+// ─── Activity log table ─────────────────────────────────────────────────────
+const ACTIVITY_PAGE_SIZE = 10
+
+function ActivityLogTable({
+  feed,
+  onExport,
+  patrons,
+  onSelectUser,
+  dateFrom,
+  dateTo,
+}: {
+  feed: FeedItem[]
+  onExport: () => void
+  patrons: UserProfile[]
+  onSelectUser: (patron: UserProfile) => void
+  /** ISO bounds from the page-level Date Range filter bar above the tabs —
+   *  this tab doesn't have its own date control, it just respects that one. */
+  dateFrom?: string
+  dateTo?: string
+}) {
+  const [query, setQuery] = useState("")
+  const [typeFilter, setTypeFilter] = useState<TxType | "all">("all")
+  const [page, setPage] = useState(1)
+
+  const fromTs = dateFrom ? new Date(dateFrom).getTime() : null
+  const toTs = dateTo ? new Date(dateTo).getTime() : null
+
+  const filtered = feed.filter((tx) => {
+    if (typeFilter !== "all" && tx.type !== typeFilter) return false
+    if (fromTs !== null && tx.timestamp < fromTs) return false
+    if (toTs !== null && tx.timestamp > toTs) return false
+    if (!query.trim()) return true
+    const q = query.toLowerCase()
+    return tx.user.toLowerCase().includes(q) || tx.item.toLowerCase().includes(q)
+  })
+
+  const hasActiveFilters = !!query || typeFilter !== "all"
+
+  // Reset to page 1 whenever a filter changes — adjusted during render
+  // rather than a setState-in-effect (react.dev/learn/you-might-not-need-an-effect).
+  const filterKey = `${query}|${typeFilter}|${dateFrom}|${dateTo}`
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey)
+    setPage(1)
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ACTIVITY_PAGE_SIZE))
+  const paged = filtered.slice((page - 1) * ACTIVITY_PAGE_SIZE, page * ACTIVITY_PAGE_SIZE)
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Search + type filter + export — no Date Range control here, this tab
+          respects the page-level Date Range filter bar above the tabs
+          instead of duplicating it (see `dateFrom`/`dateTo` props). */}
+      <div className="flex flex-wrap items-center gap-2 justify-between">
+        <div className="flex flex-1 min-w-0 items-center gap-2">
+          <div className="relative flex-1 min-w-0 max-w-80">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search patron or title…"
+              className="w-full pl-8 pr-3 py-1.5 rounded border border-ink-300 bg-white text-ink-800 placeholder:text-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            />
+          </div>
+          <div className="relative shrink-0">
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as TxType | "all")}
+              className="appearance-none pl-3 pr-8 py-1.5 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-ink-800"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            >
+              <option value="all">All Types</option>
+              <option value="checkout">Checkout</option>
+              <option value="return">Return</option>
+              <option value="reserve">Reserve</option>
+            </select>
+            <ArrowUpDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={() => { setQuery(""); setTypeFilter("all") }}
+              className="text-green-700 font-medium hover:text-green-900 underline underline-offset-2 transition-colors shrink-0"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+        <button
+          onClick={onExport}
+          disabled={filtered.length === 0}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          <Download size={14} /> Export CSV
+        </button>
+      </div>
+
+      <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+        {filtered.length} {filtered.length === 1 ? "event" : "events"}
+        {hasActiveFilters && " matching your filters"}
+      </p>
+
+      {/* Table */}
+      {paged.length === 0 ? (
+        <div className="rounded border border-ink-200 bg-white py-10 flex items-center justify-center text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+          No activity found.
+        </div>
+      ) : (
+        <div className="rounded border border-ink-200 bg-white overflow-x-auto" style={{ boxShadow: "var(--shadow)" }}>
+          <table className="w-full min-w-150">
+            <thead>
+              <tr className="border-b border-ink-200 bg-ink-50">
+                {["Date", "Time", "Type", "User", "Item"].map((label) => (
+                  <th
+                    key={label}
+                    className="text-left py-2.5 px-4 text-ink-500 font-semibold select-none"
+                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-micro)" }}
+                  >
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {paged.map((tx) => {
+                const cfg = TX_CONFIG[tx.type]
+                const patron = tx.userId ? patrons.find((p) => p.id === tx.userId) : undefined
+                return (
+                  <tr key={tx.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
+                    <td className="py-3 px-4 whitespace-nowrap text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                      {tx.date}
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                      {tx.time}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className={cn("inline-flex items-center px-2 py-0.5 rounded-pill", cfg.bg)} style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                        <span className={cn("font-medium", cfg.text)}>{cfg.label}</span>
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      {patron ? (
+                        <button
+                          type="button"
+                          onClick={() => onSelectUser(patron)}
+                          className="text-ink-900 font-medium hover:text-green-700 hover:underline underline-offset-2 transition-colors text-left"
+                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                        >
+                          {tx.user}
+                        </button>
+                      ) : (
+                        <p className="text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                          {tx.user}
+                        </p>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 max-w-80">
+                      <p className="text-ink-700 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                        {tx.item}
+                      </p>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+    </div>
+  )
+}
+
 // ─── Overdue table ────────────────────────────────────────────────────────────
 function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => void }) {
   const [sortKey, setSortKey] = useState<SortKey>(null)
@@ -891,11 +1080,16 @@ function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => 
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
-export default function ReportsPage() {
-  const [tab, setTab] = useState<ReportTab>("overview")
+function ReportsPageContent() {
+  const searchParams = useSearchParams()
+  const [tab, setTab] = useState<ReportTab>(() =>
+    searchParams.get("tab") === "activity" ? "activity" : "overview"
+  )
 
-  // Only used to populate the Category/Program filter dropdown option
-  // lists — the reports themselves come from the backend now.
+  // `books` only populates the Category/Program filter dropdown — the
+  // reports themselves come from the backend now. `patrons` does that too,
+  // but is also how the Activity Log tab resolves a feed row's user id back
+  // to a full profile for the click-to-view-account popup below.
   const [books, setBooks] = useState<Book[]>([])
   const [patrons, setPatrons] = useState<UserProfile[]>([])
 
@@ -904,6 +1098,42 @@ export default function ReportsPage() {
       .then(([b, p]) => { setBooks(b); setPatrons(p) })
       .catch(() => {})
   }, [])
+
+  // Activity Log tab — click a user to view their account, same
+  // PatronProfileModal/ConfirmStatusDialog + real updatePatronStatus call
+  // the Patrons page uses (see app/librarian/patrons/page.tsx).
+  const [viewingPatron, setViewingPatron] = useState<UserProfile | null>(null)
+  const [confirmingStatus, setConfirmingStatus] = useState<UserProfile | null>(null)
+
+  async function handleToggleStatus(userId: string) {
+    const current = patrons.find((p) => p.id === userId)
+    const nextStatus = current?.status === "inactive" ? "active" : "inactive"
+
+    setPatrons((prev) => prev.map((p) => (p.id === userId ? { ...p, status: nextStatus } : p)))
+    setConfirmingStatus(null)
+    setViewingPatron((v) => (v && v.id === userId ? { ...v, status: nextStatus } : v))
+
+    try {
+      await updatePatronStatus(userId, nextStatus)
+    } catch {
+      // Revert on failure — the optimistic update above was wrong.
+      setPatrons((prev) => prev.map((p) => (p.id === userId ? { ...p, status: current?.status } : p)))
+    }
+  }
+
+  // Activity Log tab — same real loans/reservations rows the dashboard's
+  // "Recent Activity" preview uses (see lib/activity.ts), just unsliced and
+  // with its own search/filter/pagination instead of a 6-row preview.
+  const [loans, setLoans] = useState<Loan[]>([])
+  const [reservations, setReservations] = useState<Reservation[]>([])
+
+  useEffect(() => {
+    Promise.all([fetchLoans(), fetchReservations()])
+      .then(([l, r]) => { setLoans(l); setReservations(r) })
+      .catch(() => {})
+  }, [])
+
+  const activityFeed = buildFeed(loans, reservations)
 
   // Filter state – Sprint 5.6.2, now actually wired (Reports plan Phase 1)
   const [dateRange, setDateRange]   = useState<DateRangePreset>("month")
@@ -939,6 +1169,11 @@ export default function ReportsPage() {
       yearLevel: YEAR_LEVEL_LABELS[yearLevel],
     }
   }, [dateRange, fromDate, toDate, category, program, yearLevel])
+
+  // Just the date half of currentFilters(), for the Activity Log tab — it
+  // doesn't have its own Date Range control, it respects this same
+  // page-level filter bar instead of duplicating it.
+  const activeDateBounds = resolveDateRange(dateRange, fromDate, toDate)
 
   useEffect(() => {
     const filters = currentFilters()
@@ -999,6 +1234,14 @@ export default function ReportsPage() {
     due_date: r.dueDate,
     days_overdue: r.daysOverdue,
     fine: r.fine,
+  })))
+
+  const exportActivityCsv = () => downloadCsv("activity-log.csv", activityFeed.map((tx) => ({
+    date: tx.date,
+    time: tx.time,
+    type: TX_CONFIG[tx.type].label,
+    user: tx.user,
+    item: tx.item,
   })))
 
   const showBookLevelNote = program !== "All Programs" || yearLevel !== "All Year Levels"
@@ -1141,7 +1384,7 @@ export default function ReportsPage() {
             Date Range
           </label>
           <div className="flex items-center gap-1 p-0.5 rounded bg-ink-100">
-            {(["week", "month", "semester", "custom"] as const).map((r) => (
+            {(["all", "week", "month", "semester", "custom"] as const).map((r) => (
               <button
                 key={r}
                 onClick={() => setDateRange(r)}
@@ -1151,7 +1394,7 @@ export default function ReportsPage() {
                 )}
                 style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
               >
-                {r === "week" ? "This Week" : r === "month" ? "This Month" : r === "semester" ? "Semester" : "Custom"}
+                {r === "all" ? "All Time" : r === "week" ? "This Week" : r === "month" ? "This Month" : r === "semester" ? "Semester" : "Custom"}
               </button>
             ))}
           </div>
@@ -1217,6 +1460,7 @@ export default function ReportsPage() {
       <div className="flex items-center gap-0 border-b border-ink-200">
         {([
           { key: "overview", label: "Overview" },
+          { key: "activity", label: "Activity Log" },
           { key: "overdue",  label: "Overdue Books" },
           { key: "weeding",  label: "Weeding" },
         ] as { key: ReportTab; label: string }[]).map((t) => (
@@ -1244,8 +1488,8 @@ export default function ReportsPage() {
         ))}
       </div>
 
-      {/* ── AI insights – Reports plan Phase 3 ────────────── */}
-      {tab !== "weeding" && (
+      {/* ── AI insights – Reports plan Phase 3 (not applicable to the raw activity log) ── */}
+      {tab !== "weeding" && tab !== "activity" && (
         <div className="flex items-center gap-3">
           <button
             onClick={handleGenerateInsights}
@@ -1314,6 +1558,18 @@ export default function ReportsPage() {
         </div>
       )}
 
+      {/* ── Activity Log tab ───────────────────────────────── */}
+      {tab === "activity" && (
+        <ActivityLogTable
+          feed={activityFeed}
+          onExport={exportActivityCsv}
+          patrons={patrons}
+          onSelectUser={setViewingPatron}
+          dateFrom={activeDateBounds.dateFrom}
+          dateTo={activeDateBounds.dateTo}
+        />
+      )}
+
       {/* ── Overdue Books tab – Sprint 5.6.4 ──────────────── */}
       {tab === "overdue" && (
         <div className="flex flex-col gap-3">
@@ -1324,6 +1580,30 @@ export default function ReportsPage() {
 
       {/* ── Weeding tab – Reports plan Phase 2 ────────────── */}
       {tab === "weeding" && <WeedingPanel />}
+
+      {viewingPatron && (
+        <PatronProfileModal
+          patron={viewingPatron}
+          onClose={() => setViewingPatron(null)}
+          onToggleStatus={() => setConfirmingStatus(viewingPatron)}
+        />
+      )}
+
+      {confirmingStatus && (
+        <ConfirmStatusDialog
+          patron={confirmingStatus}
+          onClose={() => setConfirmingStatus(null)}
+          onConfirm={handleToggleStatus}
+        />
+      )}
     </div>
+  )
+}
+
+export default function ReportsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ReportsPageContent />
+    </Suspense>
   )
 }

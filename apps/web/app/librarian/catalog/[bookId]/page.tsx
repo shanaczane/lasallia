@@ -7,7 +7,7 @@ import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft, MapPin, Hash, Building2, Calendar,
-  BookOpen, Tag, Copy, Pencil, Trash2,
+  BookOpen, GraduationCap, Landmark, Copy, Pencil, Trash2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useBook } from '@/lib/hooks/useBooks'
@@ -332,7 +332,7 @@ export default function LibrarianBookDetailPage({
                 className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-ink-100 text-ink-600 font-medium"
                 style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
               >
-                <Tag size={10} />
+                <GraduationCap size={10} />
                 {book.category}
               </span>
             )}
@@ -387,7 +387,7 @@ export default function LibrarianBookDetailPage({
             <MetaRow icon={<Calendar size={14} />} label="Year" value={book.published_year} />
           )}
           {book.subject && (
-            <MetaRow icon={<Tag size={14} />} label="Subject" value={book.subject} />
+            <MetaRow icon={<Landmark size={14} />} label="College" value={book.subject} />
           )}
         </div>
 

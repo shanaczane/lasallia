@@ -12,8 +12,8 @@ export type Book = {
   author: string
   isbn?: string
   call_number: string
-  category: string           // Dewey subject category / genre
-  subject?: string           // Subject heading
+  category: string           // Program the book supports, e.g. "BS Computer Science" (shown in the UI as "Program")
+  subject?: string           // College the program belongs to, e.g. "CITE" (shown in the UI as "College")
   shelf_location: string     // e.g. "Floor 2 · Aisle 4"
   floor?: string
   aisle?: string
