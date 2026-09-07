@@ -6,6 +6,8 @@ export type NotificationType =
   | 'reservation_confirmed'
   | 'reservation_cancelled'
   | 'return_confirmed'
+  | 'loan_confirmed'      // student-facing: a borrow just succeeded
+  | 'student_activity'    // librarian-facing: one row per librarian, for every student transaction
 
 export type Notification = {
   id: string
