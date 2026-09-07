@@ -5,6 +5,7 @@ from pydantic import BaseModel
 NotificationType = Literal[
     "due_reminder", "overdue", "reservation_confirmed",
     "reservation_cancelled", "return_confirmed",
+    "loan_confirmed", "student_activity",
 ]
 
 class Notification(BaseModel):
