@@ -7,7 +7,7 @@ import type { Notification, NotificationType } from "@lasallia/types"
 import { NotificationItemCard } from "./NotificationItemCard"
 import { Bell } from "lucide-react"
 
-type TabKey = "all" | "due_dates" | "reservations" | "recommendations"
+type TabKey = "all" | "due_dates" | "reservations" | "loans"
 
 type Tab = {
   key: TabKey
@@ -17,10 +17,10 @@ type Tab = {
 }
 
 const TABS: Tab[] = [
-  { key: "all",             label: "All",             shortLabel: "All" },
-  { key: "due_dates",       label: "Due Dates",       shortLabel: "Due Dates",      types: ["due_reminder", "overdue"] },
-  { key: "reservations",    label: "Reservations",    shortLabel: "Reservations",   types: ["reservation_confirmed", "reservation_cancelled"] },
-  { key: "recommendations", label: "Recommendations", shortLabel: "Recommendations",     types: ["return_confirmed"] },
+  { key: "all",          label: "All",          shortLabel: "All" },
+  { key: "due_dates",    label: "Due Dates",    shortLabel: "Due Dates",    types: ["due_reminder", "overdue"] },
+  { key: "reservations", label: "Reservations", shortLabel: "Reservations", types: ["reservation_confirmed", "reservation_cancelled"] },
+  { key: "loans",        label: "Loans",        shortLabel: "Loans",        types: ["loan_confirmed", "return_confirmed"] },
 ]
 
 function groupByDate(notifications: Notification[]): { label: string; items: Notification[] }[] {
@@ -77,7 +77,7 @@ export function NotificationFeed({
     all:             notifications.filter((n) => !n.is_read).length,
     due_dates:       notifications.filter((n) => !n.is_read && ["due_reminder", "overdue"].includes(n.type)).length,
     reservations:    notifications.filter((n) => !n.is_read && ["reservation_confirmed", "reservation_cancelled"].includes(n.type)).length,
-    recommendations: notifications.filter((n) => !n.is_read && ["return_confirmed"].includes(n.type)).length,
+    loans:           notifications.filter((n) => !n.is_read && ["loan_confirmed", "return_confirmed"].includes(n.type)).length,
   }
 
   const groups = groupByDate(filtered)
@@ -137,7 +137,7 @@ export function NotificationFeed({
               className="text-ink-500 mt-1"
               style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
             >
-              Updates on your reservations, due dates, and recommendations
+              Updates on your reservations, due dates, and loans
             </p>
           </div>
 
