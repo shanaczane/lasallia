@@ -1,7 +1,8 @@
 // Sprint 5.4 / 7.1 – Quick Scanner Interface, wired to the real borrow/return API
 "use client"
 
-import { useState, useRef, useEffect, useCallback } from "react"
+import { Suspense, useState, useRef, useEffect, useCallback } from "react"
+import { useSearchParams } from "next/navigation"
 import {
   ScanLine,
   Camera,
@@ -25,9 +26,11 @@ import { useBorrowTransactions } from "@/lib/hooks/useBorrowTransactions"
 import { createBorrow, returnBorrow } from "@/lib/borrow"
 import {
   lookupLoanByAccession,
+  listActiveLoans,
   searchLoans,
   confirmReturn,
   reshelveCopy,
+  type Loan as ActiveLoan,
   type LoanLookupResult,
   type ReturnCondition,
 } from "@/lib/returns"
@@ -798,6 +801,21 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
   const [notFound, setNotFound] = useState(false)
   const [notFoundMessage, setNotFoundMessage] = useState("")
 
+  // "Active Borrowers" — lets the librarian browse who currently has what
+  // instead of needing to already know an accession number. Selecting one
+  // still goes through the same lookupLoanByAccession verification as a
+  // manual scan (see handleFind below) — browsing is just a faster way to
+  // find the right copy, not a shortcut around confirming it.
+  const [activeLoans, setActiveLoans] = useState<ActiveLoan[]>([])
+  const [loadingActiveLoans, setLoadingActiveLoans] = useState(true)
+
+  useEffect(() => {
+    listActiveLoans()
+      .then(setActiveLoans)
+      .catch(() => {})
+      .finally(() => setLoadingActiveLoans(false))
+  }, [])
+
   const [condition, setCondition] = useState<ReturnCondition | null>(null)
   const [conditionNotes, setConditionNotes] = useState("")
   const [replacementCost, setReplacementCost] = useState("")
@@ -812,12 +830,14 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
     ? loan.preview_fine_amount + (isNewDamage ? (parseFloat(replacementCost) || 0) + 50 : 0)
     : 0
 
-  async function handleFind() {
-    if (!accessionInput.trim()) return
+  async function handleFind(overrideAccession?: string) {
+    const value = (overrideAccession ?? accessionInput).trim()
+    if (!value) return
+    setAccessionInput(value)
     setLoading(true)
     setNotFound(false)
     try {
-      const result = await lookupLoanByAccession(accessionInput.trim())
+      const result = await lookupLoanByAccession(value)
       setLoan(result)
     } catch (err) {
       setNotFoundMessage(err instanceof Error ? err.message : "No active loan found for that copy")
@@ -825,6 +845,14 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
     } finally {
       setLoading(false)
     }
+  }
+
+  // Selecting a row from the Active Borrowers list — same verification
+  // path as a manual scan (handleFind above), just pre-supplied with the
+  // accession number that row's own loan record already carries.
+  function selectFromActiveList(activeLoan: ActiveLoan) {
+    if (!activeLoan.accession_number) return
+    handleFind(activeLoan.accession_number)
   }
 
   async function handleSearch() {
@@ -869,6 +897,7 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
       const patron = loan.profiles?.full_name ?? "Unknown"
       const fine = result.fine_amount ?? 0
       setConfirmed({ title: loan.books?.title ?? "Unknown title", patron, fine })
+      setActiveLoans((prev) => prev.filter((l) => l.id !== loan.id))
       onSettled({
         title: loan.books?.title ?? "Unknown title",
         patron,
@@ -1097,7 +1126,14 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
   }
 
   return (
-    <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
+    <div className="flex flex-col gap-4">
+      <ActiveBorrowersList
+        loans={activeLoans}
+        loading={loadingActiveLoans}
+        onSelect={selectFromActiveList}
+      />
+
+      <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
       <div className="flex items-center gap-2">
         <ScanLine size={15} className="text-green-700" />
         <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
@@ -1119,7 +1155,7 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
           />
         </div>
         <button
-          onClick={handleFind}
+          onClick={() => handleFind()}
           disabled={!accessionInput.trim() || loading}
           className={cn(
             "px-4 py-2 rounded font-semibold transition-colors",
@@ -1178,6 +1214,88 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
               ))}
             </div>
           )}
+        </div>
+      )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Active Borrowers list ──────────────────────────────────────────────────
+// Browse who currently has what instead of needing to already know an
+// accession number — selecting one still runs the same lookupLoanByAccession
+// verification a manual scan does (see ReturnPanel.selectFromActiveList).
+function ActiveBorrowersList({
+  loans,
+  loading,
+  onSelect,
+}: {
+  loans: ActiveLoan[]
+  loading: boolean
+  onSelect: (loan: ActiveLoan) => void
+}) {
+  return (
+    <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <User size={15} className="text-green-700" />
+          <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            Active Borrowers
+          </span>
+        </div>
+        {loans.length > 0 && (
+          <span className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            {loans.length} book{loans.length === 1 ? "" : "s"} out
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          Loading…
+        </p>
+      ) : loans.length === 0 ? (
+        <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          No books are currently out.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
+          {loans.map((l) => {
+            const overdue = l.status === "overdue"
+            const canSelect = !!l.accession_number
+            return (
+              <button
+                key={l.id}
+                type="button"
+                onClick={() => onSelect(l)}
+                disabled={!canSelect}
+                title={canSelect ? undefined : "No accession number on file for this copy — search by title or borrower name instead"}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded border text-left transition-colors",
+                  canSelect ? "border-ink-200 hover:bg-ink-50 hover:border-ink-300" : "border-ink-100 opacity-50 cursor-not-allowed"
+                )}
+              >
+                <BorrowerAvatar name={l.profiles?.full_name ?? null} avatarUrl={l.profiles?.avatar_url ?? null} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-ink-900 font-medium truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                    {l.profiles?.full_name ?? "Unknown borrower"}
+                  </p>
+                  <p className="text-ink-400 truncate" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                    {l.books?.title ?? "Unknown title"}
+                  </p>
+                </div>
+                {overdue ? (
+                  <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 font-semibold shrink-0" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                    Overdue
+                  </span>
+                ) : (
+                  <span className="text-ink-400 shrink-0 whitespace-nowrap" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                    Due {formatDate(l.due_date)}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
@@ -1595,8 +1713,14 @@ function InHouseActiveList({ loans, onReturn }: { loans: InHouseLoan[]; onReturn
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
-export default function BorrowAndReturnPage() {
-  const [tab, setTab] = useState<Tab>("borrow")
+const VALID_TABS: Tab[] = ["borrow", "return", "reshelving", "guest"]
+
+function BorrowAndReturnPageContent() {
+  const searchParams = useSearchParams()
+  const [tab, setTab] = useState<Tab>(() => {
+    const requested = searchParams.get("tab")
+    return VALID_TABS.includes(requested as Tab) ? (requested as Tab) : "borrow"
+  })
   const [returnedThisSession, setReturnedThisSession] = useState<SessionRecord[]>([])
   const [reshelvedThisSession, setReshelvedThisSession] = useState<SessionRecord[]>([])
   const [activeInHouseLoans, setActiveInHouseLoans] = useState<InHouseLoan[]>([])
@@ -1714,5 +1838,13 @@ export default function BorrowAndReturnPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function BorrowAndReturnPage() {
+  return (
+    <Suspense fallback={null}>
+      <BorrowAndReturnPageContent />
+    </Suspense>
   )
 }
