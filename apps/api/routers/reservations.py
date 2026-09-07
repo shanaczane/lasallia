@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from core.deps import get_current_user, get_user_supabase
-from core.notify import notify
+from core.notify import notify, notify_librarians
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.loan import Loan
@@ -136,12 +136,23 @@ def create_reservation(
 
     current_loans = (
         admin.table("loans")
-        .select("id, due_date")
+        .select("id, due_date, book_copy_id")
         .eq("student_id", user.id)
         .in_("status", ["active", "overdue"])
         .execute()
     ).data
     now = datetime.now(timezone.utc)
+
+    # Can't reserve a title you're currently the one holding — book_copy_id
+    # is all a loan row has, so this is a copy -> book_id hop, same pattern
+    # loans.py's own list_loans uses for the same reason (book_copies has no
+    # RLS policy at all, so this second lookup needs the admin client too).
+    copy_ids = [loan["book_copy_id"] for loan in current_loans]
+    if copy_ids:
+        borrowed_copies = admin.table("book_copies").select("id, book_id").in_("id", copy_ids).execute().data
+        if any(c["book_id"] == body.book_id for c in borrowed_copies):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "You currently have this book borrowed — return it before reserving another copy")
+
     if any(datetime.fromisoformat(loan["due_date"]) < now for loan in current_loans):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You have an overdue book — please return it before reserving another")
     if len(current_loans) >= BORROW_LIMIT:
@@ -175,6 +186,15 @@ def create_reservation(
     }).execute()
     if not res.data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not create reservation")
+
+    book_title_res = admin.table("books").select("title").eq("id", body.book_id).execute()
+    book_title = book_title_res.data[0]["title"] if book_title_res.data else "A book"
+    notify_librarians(
+        "Book reserved",
+        f'{user.full_name or "A student"} reserved "{book_title}".',
+        link="/librarian/reservations",
+    )
+
     return res.data[0]
 
 @router.patch("/{reservation_id}", response_model=Reservation)
@@ -205,6 +225,19 @@ def update_reservation(
     # handoff as letting the pickup window expire.
     if row["status"] == "ready" and row["book_copy_id"]:
         _advance_or_release(get_admin_client(), row, now)
+
+    # Only notify on the student's own cancellation — a librarian cancelling
+    # a reservation on someone's behalf shouldn't notify librarians about
+    # their own action.
+    if user.role != "librarian":
+        admin = get_admin_client()
+        book_title_res = admin.table("books").select("title").eq("id", row["book_id"]).execute()
+        book_title = book_title_res.data[0]["title"] if book_title_res.data else "A book"
+        notify_librarians(
+            "Reservation cancelled",
+            f'{user.full_name or "A student"} cancelled their reservation for "{book_title}".',
+            link="/librarian/reservations",
+        )
 
     res = db.table("reservations").select("*, books(*), profiles(*)").eq("id", reservation_id).execute()
     return res.data[0]
@@ -297,5 +330,21 @@ def pickup_reservation(
     loan = loan_res.data[0]
     book_res = admin.table("books").select("*").eq("id", copy["book_id"]).execute()
     loan["books"] = book_res.data[0] if book_res.data else None
+
+    book_title = loan["books"]["title"] if loan["books"] else "A book"
+    due_label = datetime.fromisoformat(due_date).strftime("%B %d, %Y")
+    notify(
+        reservation["user_id"], "loan_confirmed",
+        "Book borrowed successfully",
+        f'You\'ve borrowed "{book_title}". It\'s due back on {due_label}.',
+        link="/student/library",
+    )
+    borrower_res = admin.table("profiles").select("full_name").eq("id", reservation["user_id"]).execute()
+    borrower_name = borrower_res.data[0]["full_name"] if borrower_res.data else "A student"
+    notify_librarians(
+        "Reserved book picked up",
+        f'{borrower_name} picked up "{book_title}", due {due_label}.',
+        link="/librarian/borrow-return",
+    )
 
     return loan
