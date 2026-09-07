@@ -5,7 +5,7 @@ from supabase import Client
 
 from core.calendar import compute_fine
 from core.deps import get_current_user, get_user_supabase, require_librarian
-from core.notify import notify
+from core.notify import notify, notify_librarians
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.loan import ConfirmLoanRequest, Loan, LoanLookupResult, ReshelveRequest, ReturnLoanRequest
@@ -51,14 +51,20 @@ def list_loans(
     admin = get_admin_client()
     copy_ids = list({loan["book_copy_id"] for loan in loans})
     books_by_copy_id: dict[str, dict | None] = {}
+    accession_by_copy_id: dict[str, str | None] = {}
     if copy_ids:
-        copies = admin.table("book_copies").select("id, book_id").in_("id", copy_ids).execute().data
+        copies = admin.table("book_copies").select("id, book_id, accession_number").in_("id", copy_ids).execute().data
         book_ids = list({c["book_id"] for c in copies})
         books = admin.table("books").select("*").in_("id", book_ids).execute().data if book_ids else []
         books_by_id = {b["id"]: b for b in books}
         books_by_copy_id = {c["id"]: books_by_id.get(c["book_id"]) for c in copies}
+        accession_by_copy_id = {c["id"]: c["accession_number"] for c in copies}
     for loan in loans:
         loan["books"] = books_by_copy_id.get(loan["book_copy_id"])
+        # Return flow's "browse active borrowers" list needs this to
+        # pre-fill the accession-number confirmation step (build plan's
+        # existing scan/type-to-verify step, not bypassed by browsing).
+        loan["accession_number"] = accession_by_copy_id.get(loan["book_copy_id"])
 
     # Borrower name/avatar — needed by the librarian dashboard's activity
     # feed. profiles_select_librarian (0008) already lets a librarian's own
@@ -159,6 +165,22 @@ def confirm_loan(body: ConfirmLoanRequest):
     loan = loan_res.data[0]
     book_res = db.table("books").select("*").eq("id", copy["book_id"]).execute()
     loan["books"] = book_res.data[0] if book_res.data else None
+
+    book_title = loan["books"]["title"] if loan["books"] else "A book"
+    due_label = datetime.fromisoformat(due_date).strftime("%B %d, %Y")
+    notify(
+        student_id, "loan_confirmed",
+        "Book borrowed successfully",
+        f'You\'ve borrowed "{book_title}". It\'s due back on {due_label}.',
+        link="/student/library",
+    )
+    borrower_res = db.table("profiles").select("full_name").eq("id", student_id).execute()
+    borrower_name = borrower_res.data[0]["full_name"] if borrower_res.data else "A student"
+    notify_librarians(
+        "Book checked out",
+        f'{borrower_name} checked out "{book_title}", due {due_label}.',
+        link="/librarian/borrow-return",
+    )
 
     return loan
 
@@ -304,6 +326,8 @@ def return_loan(
     book_full_res = admin.table("books").select("*").eq("id", copy["book_id"]).execute()
     book_title = book_full_res.data[0]["title"] if book_full_res.data else "A book"
 
+    needs_reshelving = not pending_res.data
+
     if pending_res.data:
         admin.table("book_copies").update({"status": "reserved"}).eq("id", copy["id"]).execute()
         admin.table("reservations").update({
@@ -327,6 +351,25 @@ def return_loan(
         f'"{book_title}" has been checked in.' + (f" A ₱{total_fine:.2f} fine was recorded." if total_fine > 0 else ""),
         link="/student/library",
     )
+    borrower_res = admin.table("profiles").select("full_name").eq("id", loan["student_id"]).execute()
+    borrower_name = borrower_res.data[0]["full_name"] if borrower_res.data else "A student"
+    fine_note = f" ₱{total_fine:.2f} fine recorded." if total_fine > 0 else ""
+
+    # Two different follow-up actions depending on where the copy went —
+    # each needs its own notification so whoever's on the desk knows which
+    # one applies, rather than one generic "returned" message either way.
+    if needs_reshelving:
+        notify_librarians(
+            "Book ready for reshelving",
+            f'{borrower_name} returned "{book_title}" — it needs to be walked back to the shelf.{fine_note}',
+            link="/librarian/borrow-return?tab=reshelving",
+        )
+    else:
+        notify_librarians(
+            "Book returned — held for next reservation",
+            f'{borrower_name} returned "{book_title}"; it\'s now on hold for the next reservation.{fine_note}',
+            link="/librarian/reservations",
+        )
 
     loan["books"] = book_full_res.data[0] if book_full_res.data else None
 
