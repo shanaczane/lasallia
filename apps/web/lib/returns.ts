@@ -55,6 +55,21 @@ export type LoanLookupResult = Loan & {
   preview_fine_amount: number
 }
 
+// Powers the Return tab's "Active Borrowers" list — the same GET /loans
+// every other librarian screen already uses (RLS: librarians see every
+// loan), just filtered down to what's still out. Browsing this list is a
+// shortcut to *finding* who has what; it still routes through
+// lookupLoanByAccession (same accession_number the row already carries)
+// rather than skipping that verification step.
+export async function listActiveLoans(): Promise<Loan[]> {
+  const res = await fetch(`${API_URL}/loans`, { headers: authHeaders() })
+  if (!res.ok) return parseErrorOrThrow(res, "Failed to load active loans")
+  const loans: Loan[] = await res.json()
+  return loans
+    .filter((l) => l.status === "active" || l.status === "overdue")
+    .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
+}
+
 export async function lookupLoanByAccession(accessionNumber: string): Promise<LoanLookupResult> {
   const res = await fetch(`${API_URL}/loans/lookup?accession_number=${encodeURIComponent(accessionNumber)}`, {
     headers: authHeaders(),
