@@ -3,21 +3,23 @@
 
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
-import { AlertCircle, Bookmark, Check, Bell } from "lucide-react"
+import { AlertCircle, Bookmark, Check, Bell, Users } from "lucide-react"
 import { fetchNotifications, markNotificationRead, markAllNotificationsRead } from "@/lib/notifications"
 import { useNotifications } from "@/components/ui/notifications/NotificationContext"
 import type { Notification, NotificationType } from "@lasallia/types"
 
-// The real notifications table only has these 5 event types (0001_core_schema.sql)
-// — no "system" category exists, since nothing in this codebase generates
-// system/backup-style events. Grouped into the same 3 display buckets the
-// librarian view used before, minus that invented 4th one.
-type LibCategory = "overdue" | "reservation" | "return"
+// Grouped into display buckets for the librarian view. "activity" covers
+// student_activity — one row per librarian for every student transaction
+// (checkout, return, reservation placed/cancelled) — everything else here
+// is librarian-actionable (overdue/reservation/return), "activity" is a
+// heads-up feed of what students are doing.
+type LibCategory = "overdue" | "reservation" | "return" | "activity"
 
 function categoryOf(type: NotificationType): LibCategory | null {
   if (type === "due_reminder" || type === "overdue") return "overdue"
   if (type === "reservation_confirmed" || type === "reservation_cancelled") return "reservation"
   if (type === "return_confirmed") return "return"
+  if (type === "student_activity") return "activity"
   return null
 }
 
@@ -25,12 +27,14 @@ const ICON_CONFIG: Record<LibCategory, { icon: React.ReactNode; bg: string }> = 
   overdue:     { icon: <AlertCircle size={16} className="text-danger" />, bg: "bg-danger-bg" },
   reservation: { icon: <Bookmark size={16} className="text-info" />,      bg: "bg-info-bg" },
   return:      { icon: <Check size={16} className="text-success" />,      bg: "bg-success-bg" },
+  activity:    { icon: <Users size={16} className="text-ink-600" />,      bg: "bg-ink-100" },
 }
 
 type TabKey = "all" | LibCategory
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "all", label: "All" },
+  { key: "activity", label: "Student Activity" },
   { key: "overdue", label: "Overdue" },
   { key: "reservation", label: "Reservations" },
   { key: "return", label: "Returns" },
@@ -82,6 +86,7 @@ export default function LibrarianNotificationsPage() {
     overdue: categorized.filter((x) => !x.n.is_read && x.category === "overdue").length,
     reservation: categorized.filter((x) => !x.n.is_read && x.category === "reservation").length,
     return: categorized.filter((x) => !x.n.is_read && x.category === "return").length,
+    activity: categorized.filter((x) => !x.n.is_read && x.category === "activity").length,
   }
 
   async function markRead(id: string) {
@@ -124,7 +129,7 @@ export default function LibrarianNotificationsPage() {
             className="text-ink-500 mt-1"
             style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
           >
-            Overdue items, reservation activity, and returns
+            Overdue items, reservation activity, returns, and student activity
           </p>
         </div>
 
