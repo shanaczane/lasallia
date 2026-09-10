@@ -1,67 +1,223 @@
 // apps/web/app/kiosk/catalog/page.tsx
-// Browse, kiosk-side. Reuses useBooks() and BookCard as-is — both are
-// already public/JWT-free, unlike reservations/My Library (see Phase 6
-// plan's Context on why those stay out of kiosk scope). A basic
-// title/author search; the student portal's fuller genre/floor/subject
-// filter sidebar is skipped this pass.
+// Browse, kiosk-side. Reuses the same filter sidebar/pill-bar/sheet the
+// student and guest catalogs already use (components/ui/catalog) — the
+// "filter sidebar is skipped this pass" note from the original build
+// plan no longer applies, brought in for UI consistency with the rest
+// of the app.
 
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Search, X, ArrowUpDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { Book } from '@lasallia/types'
+import {
+  FilterPillBar,
+  FilterSheet,
+  QuickChipRow,
+  AppliedChips,
+  BookGrid,
+  Pagination,
+  buildFilterSections,
+  filterBooksByCatalogFilters,
+  useCatalogFilters,
+} from '@/components/ui/catalog'
 import { useBooks } from '@/lib/hooks/useBooks'
-import { BookCard } from '@/components/ui/catalog'
+import { deriveCatalogOptions } from '@/lib/catalogOptions'
 import { useKioskSession } from '@/components/kiosk/KioskSessionProvider'
 
-export default function KioskCatalogPage() {
-  const { session } = useKioskSession()
-  const { books, loading, error } = useBooks()
-  const [query, setQuery] = useState('')
+const PAGE_SIZE = 24
 
-  const needle = query.trim().toLowerCase()
-  const filtered = needle
-    ? books.filter((b) => b.title.toLowerCase().includes(needle) || b.author.toLowerCase().includes(needle))
-    : books
+type SortOption = 'relevance' | 'title_asc' | 'title_desc' | 'year_desc' | 'year_asc'
+
+const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
+  { value: 'relevance',  label: 'Most relevant' },
+  { value: 'title_asc',  label: 'Title A–Z' },
+  { value: 'title_desc', label: 'Title Z–A' },
+  { value: 'year_desc',  label: 'Newest first' },
+  { value: 'year_asc',   label: 'Oldest first' },
+]
+
+function sortBooks(books: Book[], sort: SortOption): Book[] {
+  const s = [...books]
+  switch (sort) {
+    case 'title_asc':  return s.sort((a, b) => a.title.localeCompare(b.title))
+    case 'title_desc': return s.sort((a, b) => b.title.localeCompare(a.title))
+    case 'year_desc':  return s.sort((a, b) => (b.published_year ?? 0) - (a.published_year ?? 0))
+    case 'year_asc':   return s.sort((a, b) => (a.published_year ?? 0) - (b.published_year ?? 0))
+    default:           return s
+  }
+}
+
+function searchBooks(books: Book[], query: string): Book[] {
+  if (!query.trim()) return books
+  const q = query.toLowerCase()
+  return books.filter(
+    (book) =>
+      book.title.toLowerCase().includes(q) ||
+      book.author.toLowerCase().includes(q) ||
+      book.category.toLowerCase().includes(q) ||
+      (book.subject?.toLowerCase().includes(q) ?? false) ||
+      book.call_number.toLowerCase().includes(q)
+  )
+}
+
+function KioskCatalogContent() {
+  const { session, guestBrowsing } = useKioskSession()
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<SortOption>('relevance')
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const filtersButtonRef = useRef<HTMLButtonElement>(null)
+
+  const { filters, setFilter, setFilters, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
+  const { books, loading, error } = useBooks()
+
+  const { genres, subjects, floors } = useMemo(() => deriveCatalogOptions(books), [books])
+  const sections = useMemo(() => buildFilterSections({ genres, subjects, floors }), [genres, subjects, floors])
+
+  const results = useMemo(
+    () => sortBooks(filterBooksByCatalogFilters(searchBooks(books, query), filters), sort),
+    [books, query, filters, sort]
+  )
+
+  const [page, setPage] = useState(1)
+  useEffect(() => setPage(1), [query, filters, sort])
+  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE))
+  const pagedResults = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  function clearAll() {
+    setQuery('')
+    resetAll()
+  }
 
   return (
-    <div className="px-6 sm:px-10 py-10 max-w-6xl mx-auto">
-      <p className="text-ink-500" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-        Borrowing as {session?.student_first_name ?? '…'}
-      </p>
-      <h1
-        className="text-ink-900 font-semibold mt-1 mb-6"
-        style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-3xl)' }}
-      >
-        Find a book
-      </h1>
+    <div className="px-5 sm:px-8 py-7">
+      <div className="mb-5">
+        <p className="text-ink-500" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+          {session ? `Borrowing as ${session.student_first_name}` : guestBrowsing ? 'Browsing as guest' : '…'}
+        </p>
+        <h1
+          className="text-ink-900 font-semibold leading-tight mt-0.5"
+          style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-4xl)' }}
+        >
+          Find a book
+        </h1>
+      </div>
 
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search by title or author…"
-        className="w-full max-w-md h-12 px-4 mb-8 rounded-xl border-2 border-ink-200 outline-none focus-visible:border-green-700 transition-colors"
-        style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-base)' }}
+      <div className="flex flex-col gap-3 mb-5">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0 relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by title, author, subject…"
+              className={cn(
+                'w-full pl-9 pr-8 py-2 rounded-sm border bg-white text-ink-900',
+                'placeholder:text-ink-300 focus:outline-none transition-colors',
+                'border-ink-200 focus:border-green-700 hover:border-ink-300'
+              )}
+              style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700 transition-colors"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <ArrowUpDown size={13} className="text-ink-400 hidden sm:block" />
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortOption)}
+              className={cn(
+                'bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2',
+                'focus:outline-none focus:border-green-700 cursor-pointer',
+                'hover:border-ink-300 transition-colors appearance-none pr-7'
+              )}
+              style={{
+                fontSize: 'var(--text-sm-body)',
+                fontFamily: 'var(--font-body)',
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 7px center',
+              }}
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <FilterPillBar filters={filters} onChange={setFilters} genres={genres} floors={floors} subjects={subjects} />
+      </div>
+
+      <AppliedChips filters={filters} sections={sections} resetSection={resetSection} resetAll={resetAll} />
+
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-ink-500" style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}>
+          {query || hasActive ? (
+            <>
+              <span className="font-semibold text-ink-900">{results.length}</span>{' '}
+              {results.length === 1 ? 'result' : 'results'}
+              {query && <> for &ldquo;<span className="text-ink-700">{query}</span>&rdquo;</>}
+            </>
+          ) : (
+            <>Showing all <span className="font-semibold text-ink-900">{results.length}</span> titles</>
+          )}
+        </p>
+      </div>
+
+      <QuickChipRow
+        filters={filters}
+        activeCount={activeCount}
+        onOpenSheet={() => setSheetOpen(true)}
+        setFilter={setFilter}
+        filtersButtonRef={filtersButtonRef}
       />
 
       {error ? (
-        <p className="text-danger" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+        <p className="text-center py-12 text-danger" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
           {error}
         </p>
-      ) : loading ? (
-        <p className="text-ink-400" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-          Loading…
-        </p>
-      ) : filtered.length === 0 ? (
-        <p className="text-ink-400" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-          No books match &quot;{query}&quot;.
-        </p>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {filtered.map((book) => (
-            <BookCard key={book.id} book={book} href={`/kiosk/catalog/${book.id}`} />
-          ))}
-        </div>
+        <>
+          <BookGrid
+            books={pagedResults}
+            isLoading={loading}
+            hrefPrefix="/kiosk/catalog"
+            hasActiveFilters={hasActive || !!query}
+            onClearFilters={clearAll}
+          />
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+        </>
       )}
+
+      <FilterSheet
+        isOpen={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        sections={sections}
+        filters={filters}
+        setFilter={setFilter}
+        resetAll={resetAll}
+        resultCount={results.length}
+        triggerRef={filtersButtonRef}
+      />
     </div>
+  )
+}
+
+export default function KioskCatalogPage() {
+  return (
+    <Suspense fallback={null}>
+      <KioskCatalogContent />
+    </Suspense>
   )
 }

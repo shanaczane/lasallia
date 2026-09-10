@@ -1,55 +1,77 @@
 // apps/web/app/kiosk/layout.tsx
-// The shared walk-up terminal shell (build plan Phase 6): full-screen, no
-// app chrome. Wraps every /kiosk/* page in the session context, the
-// always-on RFID listener (so a new tap can interrupt an active session),
-// and the 90s idle timeout with its "Still here?" warning.
+// The shared walk-up terminal shell (build plan Phase 6): wraps every
+// /kiosk/* page in the session context, the always-on RFID listener (so
+// a new tap can interrupt an active session), and the 90s idle timeout
+// with its "Still here?" warning.
+//
+// UI shell matches StudentLayout/GuestLayout (TopNav + collapsible
+// sidebar) so the kiosk reads as the same product, not a bespoke
+// terminal — but only renders while a session (real OR guest) is
+// active, same privacy-driven gate the old pill-nav used: nothing
+// personal remains on screen after logout (build plan: "Session expires
+// at 90s idle and clears all personal data from the DOM").
 
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { LogOut, Clock, Search, MessageSquare } from 'lucide-react'
+import { Clock, Search, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { TopNav } from '@/components/layout/TopNav'
 import { KioskSessionProvider, useKioskSession } from '@/components/kiosk/KioskSessionProvider'
 import { RfidListener } from '@/components/kiosk/RfidListener'
 import { useIdleTimeout } from '@/components/kiosk/useIdleTimeout'
 
+const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect
+
 const IDLE_TIMEOUT_SECONDS = 90
 const WARNING_AT_SECONDS = 15
 
-const NAV_LINKS = [
-  { href: '/kiosk/catalog', label: 'Find a book', icon: Search },
-  { href: '/kiosk/assistant', label: 'Ask Lasallia', icon: MessageSquare },
+const kioskNav = [
+  { label: 'Find a book', icon: <Search size={16} />, href: '/kiosk/catalog' },
+  { label: 'Ask Lasallia', icon: <MessageSquare size={16} />, href: '/kiosk/assistant' },
 ]
 
 function KioskShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { session, open, end } = useKioskSession()
-  const previousSessionId = useRef<string | null>(null)
+  const { session, open, end, guestBrowsing, endGuest } = useKioskSession()
+  const previousActiveKey = useRef<string | null>(null)
+  const [collapsed, setCollapsed] = useState(false)
+
+  const active = !!session || guestBrowsing
 
   const { secondsLeft, reset } = useIdleTimeout({
-    enabled: !!session,
+    enabled: active,
     timeoutSeconds: IDLE_TIMEOUT_SECONDS,
-    onExpire: () => { end() },
+    onExpire: () => { session ? end() : endGuest() },
   })
 
-  // Route the screen to match whatever the session just did: a fresh open
-  // (idle -> tapped in) goes to the catalog; an end (timeout or Done/Log
-  // out) goes back to idle; a swap (a new tap interrupting an active
-  // session) resets to the catalog root rather than leaving the new
-  // student on whatever page the previous one was viewing.
+  useLayoutEffectSafe(() => {
+    if (localStorage.getItem('kiosk-sidebar-collapsed') === 'true') setCollapsed(true)
+  }, [])
+
   useEffect(() => {
-    const prev = previousSessionId.current
-    const current = session?.id ?? null
+    localStorage.setItem('kiosk-sidebar-collapsed', String(collapsed))
+  }, [collapsed])
+
+  // Route the screen to match whatever just happened: a fresh session
+  // (idle -> tapped in, or idle -> guest) goes to the catalog; an end
+  // (timeout, Done/Log out, or guest exit) goes back to idle; a swap (a
+  // new tap interrupting an active session, real or guest) resets to
+  // the catalog root rather than leaving whoever's there now on
+  // whatever page the previous person was viewing.
+  useEffect(() => {
+    const prev = previousActiveKey.current
+    const current = session?.id ?? (guestBrowsing ? 'guest' : null)
     if (current && current !== prev) {
       router.push('/kiosk/catalog')
     } else if (!current && prev) {
       router.replace('/kiosk')
     }
-    previousSessionId.current = current
-  }, [session?.id, router])
+    previousActiveKey.current = current
+  }, [session?.id, guestBrowsing, router])
 
   async function handleTap(uid: string) {
     await open({ authMethod: 'rfid', rfidUid: uid })
@@ -59,38 +81,55 @@ function KioskShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen w-full bg-paper relative">
       <RfidListener onTap={handleTap} />
 
-      {session && (
+      {active && (
         <>
-          <nav className="fixed top-4 left-4 z-50 flex items-center gap-1 p-1 rounded-full bg-white border border-ink-200 shadow-(--shadow-sm)">
-            {NAV_LINKS.map((link) => {
-              const active = pathname.startsWith(link.href)
-              const Icon = link.icon
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold transition-colors',
-                    active ? 'bg-green-700 text-white' : 'text-ink-600 hover:bg-ink-50'
-                  )}
-                  style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
-                >
-                  <Icon size={14} />
-                  {link.label}
-                </Link>
-              )
-            })}
-          </nav>
+          <TopNav
+            userName={session ? session.student_first_name : 'Guest'}
+            userInitials={session ? session.student_first_name.slice(0, 1).toUpperCase() : 'G'}
+            showNotifications={false}
+            showSignOut={true}
+            homeHref="/kiosk/catalog"
+            onSignOut={() => (session ? end() : endGuest())}
+            onMenuClick={() => {}}
+          />
 
-          <button
-            type="button"
-            onClick={() => end()}
-            className="fixed top-4 right-4 z-50 flex items-center gap-1.5 px-3 py-2 rounded-full bg-white border border-ink-200 text-ink-600 font-semibold shadow-(--shadow-sm) hover:bg-ink-50 transition-colors"
-            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+          <aside
+            className="hidden md:flex fixed left-0 bottom-0 flex-col bg-white border-r border-ink-200 overflow-y-auto transition-all duration-200"
+            style={{ top: 'var(--height-nav)', width: collapsed ? 56 : 'var(--width-side)' }}
           >
-            <LogOut size={14} />
-            Done / Log out
-          </button>
+            <div className={cn('shrink-0 flex border-b border-ink-100', collapsed ? 'justify-center p-2' : 'justify-end p-2')}>
+              <button
+                type="button"
+                onClick={() => setCollapsed((v) => !v)}
+                aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                className="flex items-center justify-center w-7 h-7 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors"
+              >
+                {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+              </button>
+            </div>
+            <nav className={cn('flex-1 py-4 flex flex-col gap-0.5', collapsed ? 'px-1' : 'px-3')}>
+              {kioskNav.map((item) => {
+                const isActive = pathname.startsWith(item.href)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    title={collapsed ? item.label : undefined}
+                    className={cn(
+                      'flex items-center transition-colors rounded-sm',
+                      collapsed ? 'justify-center p-2 mx-1' : 'gap-2.5 px-2 py-1.5',
+                      isActive ? 'bg-green-100 text-green-800 font-semibold' : 'text-ink-500 hover:bg-ink-50 hover:text-ink-900'
+                    )}
+                  >
+                    <span className={cn(isActive ? 'text-green-700' : 'text-ink-400')}>{item.icon}</span>
+                    {!collapsed && (
+                      <span style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}>{item.label}</span>
+                    )}
+                  </Link>
+                )
+              })}
+            </nav>
+          </aside>
 
           {secondsLeft <= WARNING_AT_SECONDS && (
             <div
@@ -119,7 +158,12 @@ function KioskShell({ children }: { children: React.ReactNode }) {
         </>
       )}
 
-      {children}
+      <main
+        className={cn('min-h-screen transition-all duration-200', active && (collapsed ? 'md:pl-14' : 'md:pl-(--width-side)'))}
+        style={active ? { paddingTop: 'var(--height-nav)' } : undefined}
+      >
+        {children}
+      </main>
     </div>
   )
 }

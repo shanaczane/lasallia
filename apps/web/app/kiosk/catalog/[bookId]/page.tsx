@@ -16,7 +16,7 @@ import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 
 export default function KioskBookDetailPage({ params }: { params: Promise<{ bookId: string }> }) {
   const { bookId } = use(params)
-  const { session } = useKioskSession()
+  const { session, guestBrowsing } = useKioskSession()
   const { book, loading, error } = useBook(bookId)
   const [showBorrow, setShowBorrow] = useState(false)
 
@@ -92,6 +92,15 @@ export default function KioskBookDetailPage({ params }: { params: Promise<{ book
             <QrCode size={16} />
             Borrow this book
           </button>
+        ) : isAvailable && guestBrowsing ? (
+          // Guest browsing has no station_sessions row to borrow with —
+          // same restriction as the real guest catalog (view only, no
+          // reserve/borrow), just worded for someone standing at the
+          // kiosk rather than linked to /login, which a guest has no
+          // DLSL credentials for anyway.
+          <p className="mt-4 text-ink-500" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+            Available — tap your school ID to borrow this book.
+          </p>
         ) : (
           <p className="mt-4 text-ink-500" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
             No copies available right now.
