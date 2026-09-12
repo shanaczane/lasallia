@@ -82,6 +82,7 @@ def _sweep_expired_reservations(admin: Client) -> None:
 
 @router.get("", response_model=list[Reservation])
 def list_reservations(
+    user_id: str | None = None,
     user: UserProfile = Depends(get_current_user),
     db: Client = Depends(get_user_supabase),
 ):
@@ -93,7 +94,14 @@ def list_reservations(
 
     # RLS scopes this automatically: students see only their own rows,
     # librarians see every reservation. No role branching needed here.
-    res = db.table("reservations").select("*, books(*), profiles(*)").order("requested_at", desc=True).execute()
+    # user_id narrows a librarian's already-full view to one patron (the
+    # Patrons profile modal) — a student passing anyone else's id here
+    # still only ever sees their own rows, since RLS scopes the query
+    # itself, not just this filter.
+    query = db.table("reservations").select("*, books(*), profiles(*)").order("requested_at", desc=True)
+    if user_id:
+        query = query.eq("user_id", user_id)
+    res = query.execute()
     reservations = res.data
 
     # queue_position needs to count *other* students' pending reservations

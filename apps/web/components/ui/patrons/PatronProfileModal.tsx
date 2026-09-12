@@ -1,14 +1,20 @@
 // apps/web/components/ui/patrons/PatronProfileModal.tsx
 // Sprint 5.5.2 — user profile view modal
 // Tabs: Active Loans · Reservations · History
+//
+// Backed by the real GET /loans?student_id= and GET /reservations?user_id=
+// endpoints (this patron's own rows only) instead of the Sprint 5.5 mock
+// data — every real account was showing "0" across all three tabs since
+// lib/mock/patrons.ts only ever had entries for four fake patron ids.
 
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { X, BookOpen, Bookmark, History, Mail, GraduationCap, UserX, UserCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { UserProfile } from "@lasallia/types"
-import { getPatronActivity } from "@/lib/mock/patrons"
+import type { UserProfile, Reservation, ReservationStatus } from "@lasallia/types"
+import { fetchLoans, type Loan } from "@/lib/kiosk"
+import { fetchReservations } from "@/lib/reservations"
 import { RoleBadge } from "./RoleBadge"
 import { AccountStatusPill } from "./AccountStatusPill"
 
@@ -20,17 +26,27 @@ type PatronProfileModalProps = {
   onToggleStatus: () => void
 }
 
+const DUE_SOON_DAYS = 3
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+}
+
 const LOAN_CFG = {
   active:   { label: "Active",   text: "text-success", bg: "bg-success-bg" },
   due_soon: { label: "Due Soon", text: "text-warn",    bg: "bg-warn-bg" },
   overdue:  { label: "Overdue",  text: "text-danger",  bg: "bg-danger-bg" },
 }
 
-const RES_CFG = {
+// Keyed by the real ReservationStatus values (pending/ready/fulfilled/
+// cancelled/expired) — same five the librarian Reservation Queue page
+// already uses, so a patron's status reads the same everywhere.
+const RES_CFG: Record<ReservationStatus, { label: string; text: string; bg: string }> = {
   pending:   { label: "Pending",   text: "text-warn",    bg: "bg-warn-bg" },
-  confirmed: { label: "Confirmed", text: "text-info",    bg: "bg-info-bg" },
-  cancelled: { label: "Cancelled", text: "text-ink-500", bg: "bg-ink-100" },
-  completed: { label: "Completed", text: "text-success", bg: "bg-success-bg" },
+  ready:     { label: "Ready",     text: "text-success", bg: "bg-success-bg" },
+  fulfilled: { label: "Picked Up", text: "text-ink-500", bg: "bg-ink-100" },
+  cancelled: { label: "Cancelled", text: "text-ink-400", bg: "bg-ink-100" },
+  expired:   { label: "Expired",   text: "text-ink-400", bg: "bg-ink-100" },
 }
 
 const HISTORY_CFG = {
@@ -40,8 +56,31 @@ const HISTORY_CFG = {
 
 export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronProfileModalProps) {
   const [tab, setTab] = useState<Tab>("loans")
-  const activity = getPatronActivity(patron.id)
   const isActive = patron.status !== "inactive"
+
+  const [loans, setLoans] = useState<Loan[]>([])
+  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [loadingActivity, setLoadingActivity] = useState(true)
+  // Captured once the fetch below resolves, not read live during render —
+  // Date.now() is an impure call the render path can't call directly.
+  const [now, setNow] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([fetchLoans(patron.id), fetchReservations(patron.id)])
+      .then(([l, r]) => {
+        if (cancelled) return
+        setLoans(l)
+        setReservations(r)
+        setNow(Date.now())
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingActivity(false) })
+    return () => { cancelled = true }
+  }, [patron.id])
+
+  const activeLoans = useMemo(() => loans.filter((l) => l.status === "active" || l.status === "overdue"), [loans])
+  const returnedLoans = useMemo(() => loans.filter((l) => l.status === "returned" && l.returned_at), [loans])
 
   const initials = patron.full_name
     .split(" ")
@@ -51,9 +90,9 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronPr
     .toUpperCase()
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode; count: number }[] = [
-    { key: "loans",        label: "Active Loans",  icon: <BookOpen size={14} />, count: activity.activeLoans.length },
-    { key: "reservations", label: "Reservations",  icon: <Bookmark size={14} />, count: activity.reservations.length },
-    { key: "history",      label: "History",       icon: <History size={14} />,  count: activity.history.length },
+    { key: "loans",        label: "Active Loans",  icon: <BookOpen size={14} />, count: activeLoans.length },
+    { key: "reservations", label: "Reservations",  icon: <Bookmark size={14} />, count: reservations.length },
+    { key: "history",      label: "History",       icon: <History size={14} />,  count: returnedLoans.length },
   ]
 
   return (
@@ -138,40 +177,56 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronPr
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {tab === "loans" && (
-            <ActivityList
-              empty="No active loans."
-              items={activity.activeLoans.map((l) => ({
-                key: l.bookId + l.borrowedDate,
-                title: l.title,
-                line1: `Borrowed ${l.borrowedDate}`,
-                line2: `Due ${l.dueDate}`,
-                cfg: LOAN_CFG[l.status],
-              }))}
-            />
-          )}
-          {tab === "reservations" && (
-            <ActivityList
-              empty="No reservations."
-              items={activity.reservations.map((r) => ({
-                key: r.bookId + r.requestedDate,
-                title: r.title,
-                line1: `Requested ${r.requestedDate}`,
-                cfg: RES_CFG[r.status],
-              }))}
-            />
-          )}
-          {tab === "history" && (
-            <ActivityList
-              empty="No borrowing history yet."
-              items={activity.history.map((h) => ({
-                key: h.bookId + h.borrowedDate,
-                title: h.title,
-                line1: `Borrowed ${h.borrowedDate}`,
-                line2: `Returned ${h.returnedDate}`,
-                cfg: HISTORY_CFG[h.status],
-              }))}
-            />
+          {loadingActivity ? (
+            <div className="flex items-center justify-center py-10 text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+              Loading…
+            </div>
+          ) : (
+            <>
+              {tab === "loans" && (
+                <ActivityList
+                  empty="No active loans."
+                  items={activeLoans.map((l) => {
+                    const daysLeft = (new Date(l.due_date).getTime() - (now ?? 0)) / 86_400_000
+                    const status = l.status === "overdue" || daysLeft < 0 ? "overdue" : daysLeft <= DUE_SOON_DAYS ? "due_soon" : "active"
+                    return {
+                      key: l.id,
+                      title: l.books?.title ?? "Unknown title",
+                      line1: `Borrowed ${formatDate(l.borrowed_at)}`,
+                      line2: `Due ${formatDate(l.due_date)}`,
+                      cfg: LOAN_CFG[status],
+                    }
+                  })}
+                />
+              )}
+              {tab === "reservations" && (
+                <ActivityList
+                  empty="No reservations."
+                  items={reservations.map((r) => ({
+                    key: r.id,
+                    title: r.books?.title ?? "Unknown title",
+                    line1: `Requested ${formatDate(r.requested_at)}`,
+                    line2: r.status === "ready" && r.pickup_by ? `Pickup by ${formatDate(r.pickup_by)}` : undefined,
+                    cfg: RES_CFG[r.status],
+                  }))}
+                />
+              )}
+              {tab === "history" && (
+                <ActivityList
+                  empty="No borrowing history yet."
+                  items={returnedLoans.map((l) => {
+                    const wasLate = new Date(l.returned_at!).getTime() > new Date(l.due_date).getTime()
+                    return {
+                      key: l.id,
+                      title: l.books?.title ?? "Unknown title",
+                      line1: `Borrowed ${formatDate(l.borrowed_at)}`,
+                      line2: `Returned ${formatDate(l.returned_at!)}`,
+                      cfg: HISTORY_CFG[wasLate ? "overdue_returned" : "returned"],
+                    }
+                  })}
+                />
+              )}
+            </>
           )}
         </div>
 

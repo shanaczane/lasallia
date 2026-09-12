@@ -19,8 +19,12 @@ async function parseErrorOrThrow(res: Response, fallback: string): Promise<never
   throw new Error(body.detail ?? fallback)
 }
 
-export async function fetchReservations(): Promise<Reservation[]> {
-  const res = await fetch(`${API_URL}/reservations`, { headers: authHeaders() })
+// userId (librarian-only, per RLS) narrows this to one patron's
+// reservations — used by the Patrons profile modal instead of fetching
+// every reservation.
+export async function fetchReservations(userId?: string): Promise<Reservation[]> {
+  const qs = userId ? `?user_id=${encodeURIComponent(userId)}` : ''
+  const res = await fetch(`${API_URL}/reservations${qs}`, { headers: authHeaders() })
   if (!res.ok) return parseErrorOrThrow(res, 'Failed to load reservations')
   return res.json()
 }

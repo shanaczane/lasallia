@@ -41,12 +41,19 @@ def _flatten_loan(loan: dict) -> dict:
 
 @router.get("", response_model=list[Loan])
 def list_loans(
+    student_id: str | None = None,
     user: UserProfile = Depends(get_current_user),
     db: Client = Depends(get_user_supabase),
 ):
     # RLS scopes this automatically (0009): students see only their own
-    # loans, librarians see every loan.
-    res = db.table("loans").select("*").order("borrowed_at", desc=True).execute()
+    # loans, librarians see every loan. student_id narrows a librarian's
+    # already-full view to one patron (the Patrons profile modal) — RLS
+    # already stops a student from passing someone else's id here, since
+    # their own query is scoped to their own rows regardless.
+    query = db.table("loans").select("*").order("borrowed_at", desc=True)
+    if student_id:
+        query = query.eq("student_id", student_id)
+    res = query.execute()
     loans = res.data
 
     # book_copies has no RLS policy for authenticated callers at all (see

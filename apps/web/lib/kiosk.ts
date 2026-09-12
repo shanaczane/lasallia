@@ -165,10 +165,13 @@ export type Loan = {
 // Authenticated, unlike the rest of this file — this is the student
 // reading their own history, not a kiosk-flow write. RLS (0009) scopes it:
 // students see their own loans, librarians see all.
-export async function fetchLoans(): Promise<Loan[]> {
+// studentId (librarian-only, per RLS) narrows this to one patron's loans —
+// used by the Patrons profile modal instead of fetching every loan.
+export async function fetchLoans(studentId?: string): Promise<Loan[]> {
   const token = getToken()
   if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/loans`, { headers: { Authorization: `Bearer ${token}` } })
+  const qs = studentId ? `?student_id=${encodeURIComponent(studentId)}` : ''
+  const res = await fetch(`${API_URL}/loans${qs}`, { headers: { Authorization: `Bearer ${token}` } })
   if (!res.ok) return parseErrorOrThrow(res, 'Failed to load your loans')
   return res.json()
 }
