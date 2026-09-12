@@ -23,7 +23,7 @@ from core.config import OPENAI_API_KEY
 # same as the recommendations plan's COOCCURRENCE_ALPHA.
 WEEDING_LOOKBACK_MONTHS = 24
 WEEDING_MAX_BORROWS_IN_WINDOW = 1  # 0 or 1 borrow in the window counts as "low"
-WEEDING_MIN_AGE_YEARS = 5.0  # by published_year, falling back to created_at if published_year is missing
+WEEDING_MIN_AGE_YEARS = 10.0  # by published_year, falling back to created_at if published_year is missing
 
 NARRATION_MODEL = "gpt-4o-mini"
 _NARRATION_SYSTEM_PROMPT = (

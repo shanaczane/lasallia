@@ -504,7 +504,7 @@ function WeedingPanel() {
             Weeding Candidates
           </h2>
           <p className="text-ink-400 mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-            Flagged by a fixed rule — low or zero borrows over 2 years, and old. AI only explains the finding; you decide.
+            Flagged by a fixed rule — low or zero borrows over 2 years, and at least 10 years old. AI only explains the finding; you decide.
           </p>
         </div>
 
