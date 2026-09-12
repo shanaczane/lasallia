@@ -55,9 +55,12 @@ export default function LibrarianDashboard() {
 
   const feed = buildFeed(loans, reservations).slice(0, ACTIVITY_PREVIEW_COUNT)
 
-  const lastReturn = [...loans]
+  // Latest first, top 2 — same "short preview, full history lives on the
+  // Activity Log" pattern as the Recent Activity feed above.
+  const recentReturns = [...loans]
     .filter((l) => l.status === "returned" && l.returned_at)
-    .sort((a, b) => new Date(b.returned_at!).getTime() - new Date(a.returned_at!).getTime())[0]
+    .sort((a, b) => new Date(b.returned_at!).getTime() - new Date(a.returned_at!).getTime())
+    .slice(0, 2)
 
   return (
     <div className="flex flex-col gap-5 px-4 py-5 sm:gap-6 sm:p-6">
@@ -216,36 +219,49 @@ export default function LibrarianDashboard() {
           </div>
         </div>
 
-        {/* Last Return */}
+        {/* Recent Returns — top 2, latest on top */}
         <div className="w-full lg:w-80 shrink-0 flex flex-col gap-3">
-          <h2
-            className="text-ink-900 font-semibold"
-            style={{ fontSize: "var(--text-xl)", fontFamily: "var(--font-display)" }}
-          >
-            Last Return
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2
+              className="text-ink-900 font-semibold"
+              style={{ fontSize: "var(--text-xl)", fontFamily: "var(--font-display)" }}
+            >
+              Recent Returns
+            </h2>
+            <Link
+              href="/librarian/reports?tab=activity"
+              className="text-green-700 font-semibold hover:text-green-900 transition-colors"
+              style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+            >
+              See more →
+            </Link>
+          </div>
 
-          {lastReturn ? (
-            <div className="bg-white rounded-(--radius) border border-ink-200 p-4 flex flex-col gap-4">
-              <div className="flex items-start gap-3">
-                <div className="flex items-center justify-center rounded-full bg-success-bg shrink-0" style={{ width: 36, height: 36 }}>
-                  <Check size={18} className="text-success" />
-                </div>
-                <div>
-                  <p className="text-ink-900 font-semibold" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                    Book Successfully Returned
-                  </p>
-                  <p className="text-ink-400" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                    {timeLabel(lastReturn.returned_at!)}
-                  </p>
-                </div>
-              </div>
+          {recentReturns.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {recentReturns.map((r) => (
+                <div key={r.id} className="bg-white rounded-(--radius) border border-ink-200 p-4 flex flex-col gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex items-center justify-center rounded-full bg-success-bg shrink-0" style={{ width: 36, height: 36 }}>
+                      <Check size={18} className="text-success" />
+                    </div>
+                    <div>
+                      <p className="text-ink-900 font-semibold" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                        Book Successfully Returned
+                      </p>
+                      <p className="text-ink-400" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
+                        {timeLabel(r.returned_at!)}
+                      </p>
+                    </div>
+                  </div>
 
-              <div className="flex flex-col gap-2 bg-ink-50 rounded-(--radius-sm) p-3">
-                <DetailRow label="Book" value={lastReturn.books?.title ?? "Unknown title"} />
-                <DetailRow label="Borrower" value={lastReturn.profiles?.full_name ?? "Unknown"} />
-                <DetailRow label="Condition" value={lastReturn.condition_at_return ?? "—"} />
-              </div>
+                  <div className="flex flex-col gap-2 bg-ink-50 rounded-(--radius-sm) p-3">
+                    <DetailRow label="Book" value={r.books?.title ?? "Unknown title"} />
+                    <DetailRow label="Borrower" value={r.profiles?.full_name ?? "Unknown"} />
+                    <DetailRow label="Condition" value={r.condition_at_return ?? "—"} />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="bg-white rounded-(--radius) border border-ink-200 p-6 flex items-center justify-center text-ink-400" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
