@@ -42,6 +42,18 @@ function bookAuthor(r: Reservation): string {
   return r.books?.author ?? ""
 }
 
+// Ready reservations sit on the hold shelf for a fixed pickup window
+// (PICKUP_WINDOW_DAYS server-side) before the sweep expires them and
+// hands the copy to the next person in line — surface that urgency
+// instead of a flat date so a librarian can see what's about to lapse.
+function pickupUrgency(pickupBy: string): { label: string; className: string } {
+  const diffDays = Math.ceil((new Date(pickupBy).getTime() - Date.now()) / 86_400_000)
+  if (diffDays <= 0) return { label: "Pickup window closes today", className: "text-danger font-semibold" }
+  if (diffDays === 1) return { label: "1 day left to pick up", className: "text-danger font-semibold" }
+  if (diffDays <= 2) return { label: `${diffDays} days left to pick up`, className: "text-warn font-semibold" }
+  return { label: `Pickup by ${formatDate(pickupBy)}`, className: "text-ink-400 font-medium" }
+}
+
 // ─── Status config ────────────────────────────────────────────────────────────
 // Becoming 'ready' is automatic now (Phase 4's return handler, or the
 // pickup-window expiry sweep in the API) — nothing here manually advances
@@ -80,6 +92,11 @@ interface RejectModalProps {
 }
 
 function RejectModal({ reservation, pending, onConfirm, onClose }: RejectModalProps) {
+  // A "ready" reservation already has a copy pulled and sitting on the
+  // hold shelf — cancelling it releases that specific copy (to the next
+  // person in line, or back toward reshelving), not just a queue spot.
+  const isReady = reservation.status === "ready"
+
   return (
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -95,10 +112,12 @@ function RejectModal({ reservation, pending, onConfirm, onClose }: RejectModalPr
 
         <div className="flex flex-col gap-1">
           <h3 className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>
-            Reject Reservation
+            {isReady ? "Cancel Hold" : "Reject Reservation"}
           </h3>
           <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-            Cancel this student&apos;s spot in the queue for this title?
+            {isReady
+              ? "This copy is on the hold shelf for this student — cancelling releases it to the next person in line, or back to reshelving."
+              : "Cancel this student's spot in the queue for this title?"}
           </p>
         </div>
 
@@ -126,7 +145,7 @@ function RejectModal({ reservation, pending, onConfirm, onClose }: RejectModalPr
             className="flex-1 min-w-[120px] px-4 py-2.5 rounded-(--radius) bg-danger text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
           >
-            {pending ? "Working…" : "Yes, Reject"}
+            {pending ? "Working…" : isReady ? "Yes, Cancel Hold" : "Yes, Reject"}
           </button>
         </div>
       </div>
@@ -193,6 +212,8 @@ interface ReservationRowProps {
 function ReservationRow({ reservation: r, isLast, onReject }: ReservationRowProps) {
   const cfg = STATUS_CONFIG[r.status]
   const isPending = r.status === "pending"
+  const isReady = r.status === "ready"
+  const canCancel = isPending || isReady
 
   return (
     <div
@@ -229,23 +250,29 @@ function ReservationRow({ reservation: r, isLast, onReject }: ReservationRowProp
             <span className="text-ink-300 mx-1">·</span>
             <span className="text-ink-400">{formatTime(r.requested_at)}</span>
           </span>
-          {r.status === "ready" && r.pickup_by && (
-            <span className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-              On hold shelf — pickup by <span className="text-ink-400 font-medium">{formatDate(r.pickup_by)}</span>
+          {isPending && typeof r.queue_position === "number" && (
+            <span className="text-ink-500 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+              #{r.queue_position} in line for this title
+            </span>
+          )}
+          {isReady && r.pickup_by && (
+            <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+              <span className="text-ink-400">On hold shelf — </span>
+              <span className={pickupUrgency(r.pickup_by).className}>{pickupUrgency(r.pickup_by).label}</span>
             </span>
           )}
         </div>
       </div>
 
       <div className="flex items-center gap-2 flex-shrink-0 pt-0.5">
-        {isPending && (
+        {canCancel && (
           <button
             onClick={() => onReject(r)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-(--radius) border border-danger/30 bg-white text-danger font-medium hover:bg-danger-bg transition-colors"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
           >
             <XCircle size={13} />
-            <span className="hidden sm:inline">Reject</span>
+            <span className="hidden sm:inline">{isReady ? "Cancel Hold" : "Reject"}</span>
           </button>
         )}
       </div>
@@ -347,8 +374,8 @@ export default function LibrarianReservationsPage() {
           Reservation Queue
         </h1>
         <p className="text-ink-500 mt-1" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-          Fulfillment is automatic — a copy is assigned the moment it's returned. Rejecting removes a student's
-          spot in the queue.
+          Fulfillment is automatic — a copy is assigned the moment it&apos;s returned. Rejecting a pending request
+          removes a student&apos;s spot in the queue; cancelling a ready hold frees that copy for the next person in line.
         </p>
       </div>
 
