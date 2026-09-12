@@ -51,6 +51,11 @@ class Loan(BaseModel):
     # fine_amount above, and an active loan has no fine yet.
     days_overdue: int | None = None
     preview_fine_amount: float | None = None
+    # Only set on the POST /{loan_id}/return response — tells the return
+    # UI which way the copy was just routed (build plan 4.6/4.7) so it can
+    # point the librarian at the right next step (Reshelving tab, vs. it's
+    # already held for the next reservation) without a second round trip.
+    needs_reshelving: bool | None = None
 
 # GET /loans/lookup and /loans/search — the librarian's return-lookup
 # screen (build plan 4.1/4.2). days_overdue/preview_fine_amount are
@@ -73,3 +78,17 @@ class ReturnLoanRequest(BaseModel):
 
 class ReshelveRequest(BaseModel):
     accession_number: str
+
+# GET /loans/reshelving-queue — the Reshelving tab's browse list, same
+# idea as the Return tab's "Active Borrowers": let the librarian pick a
+# copy that's physically in hand instead of needing to already know its
+# accession number. Covers both real returns and in-house guest returns,
+# since both route a copy through book_copies.status == 'for_reshelving'.
+class ReshelvingQueueItem(BaseModel):
+    id: str  # book_copies.id
+    accession_number: str | None = None
+    books: Book | None = None
+    # Best-effort — the most recent 'returned' loan on this copy, if any.
+    # None for a copy that's never had a real loan (e.g. newly added stock
+    # marked for_reshelving directly), which is rare but not impossible.
+    returned_at: str | None = None

@@ -55,6 +55,21 @@ export type LoanLookupResult = Loan & {
   preview_fine_amount: number
 }
 
+// Set on the POST /loans/{id}/return response only — tells the Return
+// tab which way the copy was just routed so it can point the librarian
+// at the right next step (Reshelving queue vs. already held for a
+// reservation) without a second request.
+export type ReturnedLoan = Loan & { needs_reshelving: boolean }
+
+// GET /loans/reshelving-queue — the Reshelving tab's browse list, same
+// idea as listActiveLoans/"Active Borrowers" above.
+export type ReshelvingQueueItem = {
+  id: string // book_copies.id
+  accession_number: string | null
+  books: Book | null
+  returned_at: string | null
+}
+
 // Powers the Return tab's "Active Borrowers" list — the same GET /loans
 // every other librarian screen already uses (RLS: librarians see every
 // loan), just filtered down to what's still out. Browsing this list is a
@@ -95,7 +110,7 @@ export async function confirmReturn(
     fineSettlement?: "paid" | "unsettled"
     receiptNumber?: string
   }
-): Promise<Loan> {
+): Promise<ReturnedLoan> {
   const res = await fetch(`${API_URL}/loans/${loanId}/return`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -118,5 +133,13 @@ export async function reshelveCopy(accessionNumber: string): Promise<{ id: strin
     body: JSON.stringify({ accession_number: accessionNumber }),
   })
   if (!res.ok) return parseErrorOrThrow(res, "Could not reshelve this copy")
+  return res.json()
+}
+
+// Powers the Reshelving tab's browse list — same "pick it instead of
+// typing an accession number" convenience listActiveLoans gives Return.
+export async function fetchReshelvingQueue(): Promise<ReshelvingQueueItem[]> {
+  const res = await fetch(`${API_URL}/loans/reshelving-queue`, { headers: authHeaders() })
+  if (!res.ok) return parseErrorOrThrow(res, "Failed to load the reshelving queue")
   return res.json()
 }

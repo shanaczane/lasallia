@@ -8,7 +8,14 @@ from core.deps import get_current_user, get_user_supabase, require_librarian
 from core.notify import notify, notify_librarians
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
-from schemas.loan import ConfirmLoanRequest, Loan, LoanLookupResult, ReshelveRequest, ReturnLoanRequest
+from schemas.loan import (
+    ConfirmLoanRequest,
+    Loan,
+    LoanLookupResult,
+    ReshelveRequest,
+    ReshelvingQueueItem,
+    ReturnLoanRequest,
+)
 
 router = APIRouter(prefix="/loans", tags=["loans"])
 
@@ -372,8 +379,53 @@ def return_loan(
         )
 
     loan["books"] = book_full_res.data[0] if book_full_res.data else None
+    loan["needs_reshelving"] = needs_reshelving
 
     return loan
+
+# Reshelving tab's browse list (mirrors the Return tab's "Active
+# Borrowers") — every copy currently parked at for_reshelving, whether it
+# got there through a real return or a guest in-house return, so the
+# librarian can pick one instead of needing to already know its accession
+# number. Most recently returned first.
+@router.get("/reshelving-queue", response_model=list[ReshelvingQueueItem])
+def reshelving_queue(librarian: UserProfile = Depends(require_librarian)):
+    admin = get_admin_client()
+    copies = admin.table("book_copies").select("id, accession_number, book_id").eq("status", "for_reshelving").execute().data
+    if not copies:
+        return []
+
+    book_ids = list({c["book_id"] for c in copies})
+    books = admin.table("books").select("*").in_("id", book_ids).execute().data
+    books_by_id = {b["id"]: b for b in books}
+
+    copy_ids = [c["id"] for c in copies]
+    returned_loans = (
+        admin.table("loans")
+        .select("book_copy_id, returned_at")
+        .in_("book_copy_id", copy_ids)
+        .eq("status", "returned")
+        .order("returned_at", desc=True)
+        .execute()
+        .data
+    )
+    # First row per copy is the most recent, since the query above is
+    # already ordered — later duplicates for the same copy are ignored.
+    returned_at_by_copy: dict[str, str] = {}
+    for row in returned_loans:
+        returned_at_by_copy.setdefault(row["book_copy_id"], row["returned_at"])
+
+    items = [
+        ReshelvingQueueItem(
+            id=c["id"],
+            accession_number=c["accession_number"],
+            books=books_by_id.get(c["book_id"]),
+            returned_at=returned_at_by_copy.get(c["id"]),
+        )
+        for c in copies
+    ]
+    items.sort(key=lambda i: i.returned_at or "", reverse=True)
+    return items
 
 # Reshelving mode (build plan 4.7) — a separate scan, after the book has
 # actually been walked back to the shelf. Only this transitions a copy to
@@ -384,7 +436,7 @@ def reshelve_copy(
     librarian: UserProfile = Depends(require_librarian),
 ):
     admin = get_admin_client()
-    copy_res = admin.table("book_copies").select("id, status").eq("accession_number", body.accession_number.strip()).execute()
+    copy_res = admin.table("book_copies").select("id, book_id, status").eq("accession_number", body.accession_number.strip()).execute()
     if not copy_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No copy with that accession number")
     copy = copy_res.data[0]
@@ -392,4 +444,16 @@ def reshelve_copy(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This copy isn't awaiting reshelving")
 
     admin.table("book_copies").update({"status": "available"}).eq("id", copy["id"]).execute()
+
+    # Closes the loop the same way checkout/return already do — every
+    # librarian's activity feed sees the copy actually made it back to the
+    # shelf, not just that it was returned to the desk.
+    book_res = admin.table("books").select("title").eq("id", copy["book_id"]).execute()
+    book_title = book_res.data[0]["title"] if book_res.data else "A book"
+    notify_librarians(
+        "Book reshelved",
+        f'"{book_title}" ({body.accession_number.strip()}) is back on the shelf and available.',
+        link="/librarian/borrow-return?tab=reshelving",
+    )
+
     return {"id": copy["id"], "status": "available"}

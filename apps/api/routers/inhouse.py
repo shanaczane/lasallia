@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.deps import require_librarian
+from core.notify import notify_librarians
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.inhouse import CreateInHouseLoanRequest, InHouseLoan
@@ -68,6 +69,14 @@ def create_in_house_loan(
     book_res = db.table("books").select("*").eq("id", copy["book_id"]).execute()
     loan["books"] = book_res.data[0] if book_res.data else None
     loan["accession_number"] = copy["accession_number"]
+
+    book_title = loan["books"]["title"] if loan["books"] else "An item"
+    notify_librarians(
+        "Guest checked out an item",
+        f'{body.guest_name.strip()} checked out "{book_title}" for in-house use.',
+        link="/librarian/borrow-return?tab=guest",
+    )
+
     return loan
 
 @router.post("/{loan_id}/return", response_model=InHouseLoan)
@@ -99,4 +108,12 @@ def return_in_house_loan(
     book_res = db.table("books").select("*").eq("id", copy["book_id"]).execute()
     loan["books"] = book_res.data[0] if book_res.data else None
     loan["accession_number"] = copy["accession_number"]
+
+    book_title = loan["books"]["title"] if loan["books"] else "An item"
+    notify_librarians(
+        "Book ready for reshelving",
+        f'{loan["guest_name"]} returned "{book_title}" (in-house) — it needs to be walked back to the shelf.',
+        link="/librarian/borrow-return?tab=reshelving",
+    )
+
     return loan
