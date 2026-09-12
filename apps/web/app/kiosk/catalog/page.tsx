@@ -3,7 +3,9 @@
 // student and guest catalogs already use (components/ui/catalog) — the
 // "filter sidebar is skipped this pass" note from the original build
 // plan no longer applies, brought in for UI consistency with the rest
-// of the app.
+// of the app. Layout (sticky search bar, header block, grid) matches
+// the guest/student catalog screens exactly; only the header subtitle
+// differs, since the kiosk needs to show who's borrowing.
 
 'use client'
 
@@ -91,115 +93,152 @@ function KioskCatalogContent() {
   }
 
   return (
-    <div className="px-5 sm:px-8 py-7">
-      <div className="mb-5">
-        <p className="text-ink-500" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-          {session ? `Borrowing as ${session.student_first_name}` : guestBrowsing ? 'Browsing as guest' : '…'}
-        </p>
-        <h1
-          className="text-ink-900 font-semibold leading-tight mt-0.5"
-          style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-4xl)' }}
-        >
-          Find a book
-        </h1>
-      </div>
+    <div className="flex" style={{ minHeight: 'calc(100vh - var(--height-nav))' }}>
 
-      <div className="flex flex-col gap-3 mb-5">
-        <div className="flex items-center gap-2">
-          <div className="flex-1 min-w-0 relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by title, author, subject…"
-              className={cn(
-                'w-full pl-9 pr-8 py-2 rounded-sm border bg-white text-ink-900',
-                'placeholder:text-ink-300 focus:outline-none transition-colors',
-                'border-ink-200 focus:border-green-700 hover:border-ink-300'
-              )}
-              style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700 transition-colors"
-              >
-                <X size={13} />
-              </button>
-            )}
-          </div>
+      {/* ── Main area ──────────────────────────────────────────────────── */}
+      <div className="flex-1 min-w-0 px-5 sm:px-8 py-7">
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <ArrowUpDown size={13} className="text-ink-400 hidden sm:block" />
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortOption)}
-              className={cn(
-                'bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2',
-                'focus:outline-none focus:border-green-700 cursor-pointer',
-                'hover:border-ink-300 transition-colors appearance-none pr-7'
-              )}
-              style={{
-                fontSize: 'var(--text-sm-body)',
-                fontFamily: 'var(--font-body)',
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-                backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'right 7px center',
-              }}
-            >
-              {SORT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
+        {/* Header */}
+        <div className="mb-5">
+          <h1
+            className="text-ink-900 font-semibold leading-tight mb-0.5"
+            style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-4xl)' }}
+          >
+            Find a{' '}
+            <span className="text-green-600 italic">book</span>
+          </h1>
+          <p
+            className="text-ink-400"
+            style={{ fontSize: 'var(--text-body)', fontFamily: 'var(--font-body)' }}
+          >
+            {session ? `Borrowing as ${session.student_first_name}` : guestBrowsing ? 'Browsing as guest' : '…'}
+          </p>
         </div>
 
-        <FilterPillBar filters={filters} onChange={setFilters} genres={genres} floors={floors} subjects={subjects} />
-      </div>
+        {/* ── Search + Sort + filter pills — sticky so they stay in view while scrolling ── */}
+        <div
+          className="sticky z-40 bg-paper/95 backdrop-blur-sm border-b border-ink-100 py-3 -mt-3 flex flex-col gap-3 mb-5"
+          style={{ top: 'var(--height-nav)' }}
+        >
+          <div className="flex items-center gap-2">
+            {/* Search input */}
+            <div className="flex-1 min-w-0 relative">
+              <Search
+                size={15}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none"
+              />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by title, author, subject…"
+                className={cn(
+                  'w-full pl-9 pr-8 py-2 rounded-sm border bg-white text-ink-900',
+                  'placeholder:text-ink-300 focus:outline-none transition-colors',
+                  'border-ink-200 focus:border-green-700 hover:border-ink-300'
+                )}
+                style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+              />
+              {query && (
+                <button
+                  type="button"
+                  suppressHydrationWarning
+                  onClick={() => setQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700 transition-colors"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
 
-      <AppliedChips filters={filters} sections={sections} resetSection={resetSection} resetAll={resetAll} />
+            {/* Sort — beside search bar */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <ArrowUpDown size={13} className="text-ink-400 hidden sm:block" />
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as SortOption)}
+                className={cn(
+                  'bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2',
+                  'focus:outline-none focus:border-green-700 cursor-pointer',
+                  'hover:border-ink-300 transition-colors appearance-none pr-7'
+                )}
+                style={{
+                  fontSize: 'var(--text-sm-body)',
+                  fontFamily: 'var(--font-body)',
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 7px center',
+                }}
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
 
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-ink-500" style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}>
-          {query || hasActive ? (
-            <>
-              <span className="font-semibold text-ink-900">{results.length}</span>{' '}
-              {results.length === 1 ? 'result' : 'results'}
-              {query && <> for &ldquo;<span className="text-ink-700">{query}</span>&rdquo;</>}
-            </>
-          ) : (
-            <>Showing all <span className="font-semibold text-ink-900">{results.length}</span> titles</>
-          )}
-        </p>
-      </div>
-
-      <QuickChipRow
-        filters={filters}
-        activeCount={activeCount}
-        onOpenSheet={() => setSheetOpen(true)}
-        setFilter={setFilter}
-        filtersButtonRef={filtersButtonRef}
-      />
-
-      {error ? (
-        <p className="text-center py-12 text-danger" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-          {error}
-        </p>
-      ) : (
-        <>
-          <BookGrid
-            books={pagedResults}
-            isLoading={loading}
-            hrefPrefix="/kiosk/catalog"
-            hasActiveFilters={hasActive || !!query}
-            onClearFilters={clearAll}
+          <FilterPillBar
+            filters={filters}
+            onChange={setFilters}
+            genres={genres}
+            floors={floors}
+            subjects={subjects}
           />
-          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
-        </>
-      )}
+        </div>
 
+        {/* Applied filter chips */}
+        <AppliedChips filters={filters} sections={sections} resetSection={resetSection} resetAll={resetAll} />
+
+        {/* Result count */}
+        <div className="flex items-center justify-between mb-3">
+          <p
+            className="text-ink-500"
+            style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+          >
+            {query || hasActive ? (
+              <>
+                <span className="font-semibold text-ink-900">{results.length}</span>{' '}
+                {results.length === 1 ? 'result' : 'results'}
+                {query && <> for &ldquo;<span className="text-ink-700">{query}</span>&rdquo;</>}
+              </>
+            ) : (
+              <>Showing all <span className="font-semibold text-ink-900">{results.length}</span> titles</>
+            )}
+          </p>
+        </div>
+
+        {/* Mobile quick-chip row (above results grid) */}
+        <QuickChipRow
+          filters={filters}
+          activeCount={activeCount}
+          onOpenSheet={() => setSheetOpen(true)}
+          setFilter={setFilter}
+          filtersButtonRef={filtersButtonRef}
+        />
+
+        {/* Grid */}
+        {error ? (
+          <p
+            className="text-center py-12 text-danger"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+          >
+            {error}
+          </p>
+        ) : (
+          <>
+            <BookGrid
+              books={pagedResults}
+              isLoading={loading}
+              hrefPrefix="/kiosk/catalog"
+              hasActiveFilters={hasActive || !!query}
+              onClearFilters={clearAll}
+            />
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+          </>
+        )}
+      </div>
+
+      {/* Mobile filter bottom sheet */}
       <FilterSheet
         isOpen={sheetOpen}
         onClose={() => setSheetOpen(false)}
