@@ -2,42 +2,65 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { AlertCircle, Bookmark, Check, Bell, Users } from "lucide-react"
+import { AlertCircle, Bookmark, BookOpen, RotateCcw, PackageCheck, Bell } from "lucide-react"
 import { fetchNotifications, markNotificationRead, markAllNotificationsRead } from "@/lib/notifications"
 import { useNotifications } from "@/components/ui/notifications/NotificationContext"
-import type { Notification, NotificationType } from "@lasallia/types"
+import type { Notification } from "@lasallia/types"
 
-// Grouped into display buckets for the librarian view. "activity" covers
-// student_activity — one row per librarian for every student transaction
-// (checkout, return, reservation placed/cancelled) — everything else here
-// is librarian-actionable (overdue/reservation/return), "activity" is a
-// heads-up feed of what students are doing.
-type LibCategory = "overdue" | "reservation" | "return" | "activity"
+// Every librarian-facing row core/notify.py inserts comes in as one type,
+// "student_activity" (notify_librarians loops one insert per librarian,
+// for every student/guest transaction — checkout, return, reshelving,
+// reservation placed/cancelled/picked up). The other NotificationType
+// values (due_reminder, overdue, reservation_confirmed/cancelled,
+// return_confirmed, loan_confirmed) are only ever written to a *student's*
+// user_id — see loans.py/reservations.py's notify() call sites — so they
+// can't actually reach this page today. Bucketing everything as one
+// generic "Student Activity" feed made three of five tabs permanently
+// empty; instead, sub-categorize student_activity rows by title keyword
+// (the titles notify_librarians() sends are a small fixed set) so the
+// tabs mirror the Borrow & Return page's own Borrow/Return/Reshelving
+// split. The student-facing types are still mapped, defensively, in case
+// this account ever legitimately receives one.
+type LibCategory = "borrow" | "return" | "reshelving" | "reservation" | "other"
 
-function categoryOf(type: NotificationType): LibCategory | null {
-  if (type === "due_reminder" || type === "overdue") return "overdue"
-  if (type === "reservation_confirmed" || type === "reservation_cancelled") return "reservation"
-  if (type === "return_confirmed") return "return"
-  if (type === "student_activity") return "activity"
-  return null
+function titleCategory(title: string): LibCategory {
+  const t = title.toLowerCase()
+  if (t.includes("reshelved")) return "reshelving"
+  if (t.includes("checked out") || t.includes("picked up")) return "borrow"
+  if (t.includes("reshelving")) return "return"
+  if (t.includes("reserv")) return "reservation"
+  return "other"
+}
+
+function categoryOf(n: Notification): LibCategory {
+  switch (n.type) {
+    case "loan_confirmed":          return "borrow"
+    case "return_confirmed":        return "return"
+    case "reservation_confirmed":
+    case "reservation_cancelled":   return "reservation"
+    case "student_activity":        return titleCategory(n.title)
+    default:                        return "other" // due_reminder / overdue
+  }
 }
 
 const ICON_CONFIG: Record<LibCategory, { icon: React.ReactNode; bg: string }> = {
-  overdue:     { icon: <AlertCircle size={16} className="text-danger" />, bg: "bg-danger-bg" },
-  reservation: { icon: <Bookmark size={16} className="text-info" />,      bg: "bg-info-bg" },
-  return:      { icon: <Check size={16} className="text-success" />,      bg: "bg-success-bg" },
-  activity:    { icon: <Users size={16} className="text-ink-600" />,      bg: "bg-ink-100" },
+  borrow:      { icon: <BookOpen size={16} className="text-info" />,      bg: "bg-info-bg" },
+  return:      { icon: <RotateCcw size={16} className="text-success" />,  bg: "bg-success-bg" },
+  reshelving:  { icon: <PackageCheck size={16} className="text-ink-600" />, bg: "bg-ink-100" },
+  reservation: { icon: <Bookmark size={16} className="text-warn" />,      bg: "bg-warn-bg" },
+  other:       { icon: <AlertCircle size={16} className="text-ink-500" />, bg: "bg-ink-100" },
 }
 
 type TabKey = "all" | LibCategory
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "activity", label: "Student Activity" },
-  { key: "overdue", label: "Overdue" },
+  { key: "borrow", label: "Borrow" },
+  { key: "return", label: "Return" },
+  { key: "reshelving", label: "Reshelving" },
   { key: "reservation", label: "Reservations" },
-  { key: "return", label: "Returns" },
 ]
 
 function groupByDate(items: Notification[]) {
@@ -60,6 +83,7 @@ function groupByDate(items: Notification[]) {
 }
 
 export default function LibrarianNotificationsPage() {
+  const router = useRouter()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabKey>("all")
@@ -72,9 +96,7 @@ export default function LibrarianNotificationsPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  const categorized = notifications
-    .map((n) => ({ n, category: categoryOf(n.type) }))
-    .filter((x): x is { n: Notification; category: LibCategory } => x.category !== null)
+  const categorized = notifications.map((n) => ({ n, category: categoryOf(n) }))
 
   const unreadCount = notifications.filter((n) => !n.is_read).length
 
@@ -83,10 +105,11 @@ export default function LibrarianNotificationsPage() {
 
   const tabCounts: Record<TabKey, number> = {
     all: categorized.filter((x) => !x.n.is_read).length,
-    overdue: categorized.filter((x) => !x.n.is_read && x.category === "overdue").length,
-    reservation: categorized.filter((x) => !x.n.is_read && x.category === "reservation").length,
+    borrow: categorized.filter((x) => !x.n.is_read && x.category === "borrow").length,
     return: categorized.filter((x) => !x.n.is_read && x.category === "return").length,
-    activity: categorized.filter((x) => !x.n.is_read && x.category === "activity").length,
+    reshelving: categorized.filter((x) => !x.n.is_read && x.category === "reshelving").length,
+    reservation: categorized.filter((x) => !x.n.is_read && x.category === "reservation").length,
+    other: categorized.filter((x) => !x.n.is_read && x.category === "other").length,
   }
 
   async function markRead(id: string) {
@@ -109,6 +132,16 @@ export default function LibrarianNotificationsPage() {
     }
   }
 
+  // Every notify()/notify_librarians() call already sets a link to the
+  // relevant screen (e.g. the Reshelving tab, or Reservations) — nothing
+  // used it before this, so a librarian had to read the message, then go
+  // find the screen themselves. Marking read is fire-and-forget, same as
+  // markRead already was; navigation doesn't wait on it.
+  function openNotification(n: Notification) {
+    markRead(n.id)
+    if (n.link) router.push(n.link)
+  }
+
   const groups = groupByDate(filtered.map((x) => x.n))
 
   if (loading) return null
@@ -129,7 +162,7 @@ export default function LibrarianNotificationsPage() {
             className="text-ink-500 mt-1"
             style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
           >
-            Overdue items, reservation activity, returns, and student activity
+            Checkouts, returns, reshelving, and reservation activity — click one to jump to that screen
           </p>
         </div>
 
@@ -204,12 +237,11 @@ export default function LibrarianNotificationsPage() {
 
                 <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
                   {items.map((n, i) => {
-                    const category = categoryOf(n.type) ?? "return"
-                    const cfg = ICON_CONFIG[category]
+                    const cfg = ICON_CONFIG[categoryOf(n)]
                     return (
                       <button
                         key={n.id}
-                        onClick={() => markRead(n.id)}
+                        onClick={() => openNotification(n)}
                         className={cn(
                           "w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-ink-50 transition-colors",
                           i < items.length - 1 && "border-b border-ink-100",
