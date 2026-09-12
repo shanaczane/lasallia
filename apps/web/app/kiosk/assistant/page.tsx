@@ -15,13 +15,14 @@ import ChatWindow from '@/components/chat/shared/ChatWindow'
 import { useKioskSession } from '@/components/kiosk/KioskSessionProvider'
 
 export default function KioskAssistantPage() {
-  const { session } = useKioskSession()
+  const { session, guestSessionId } = useKioskSession()
 
-  if (!session) return null
+  const sessionId = session ? session.id : guestSessionId
+  if (!sessionId) return null
 
   return (
     <div className="flex h-screen">
-      <ChatWindow onMenuClick={() => {}} surface="kiosk" sessionId={session.id} />
+      <ChatWindow onMenuClick={() => {}} surface="kiosk" sessionId={sessionId} />
     </div>
   )
 }

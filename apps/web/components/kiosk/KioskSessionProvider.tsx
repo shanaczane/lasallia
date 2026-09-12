@@ -17,6 +17,15 @@ type KioskSessionContextValue = {
   openError: string
   open: (auth: OpenAuth) => Promise<void>
   end: () => Promise<void>
+  // Guest browsing — local-only, no station_sessions row (the backend
+  // rejects a guest at POST /station-sessions on purpose; this never
+  // calls it). guestSessionId exists only to correlate chat turns for
+  // the one visit, discarded on endGuest() — never sent anywhere as an
+  // identity.
+  guestBrowsing: boolean
+  guestSessionId: string | null
+  startGuest: () => void
+  endGuest: () => void
 }
 
 const KioskSessionContext = createContext<KioskSessionContextValue | null>(null)
@@ -29,6 +38,8 @@ export function KioskSessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<StationSession | null>(null)
   const [opening, setOpening] = useState(false)
   const [openError, setOpenError] = useState('')
+  const [guestBrowsing, setGuestBrowsing] = useState(false)
+  const [guestSessionId, setGuestSessionId] = useState<string | null>(null)
 
   const open = useCallback(async (auth: OpenAuth) => {
     setOpening(true)
@@ -37,11 +48,14 @@ export function KioskSessionProvider({ children }: { children: ReactNode }) {
       const previous = session
       const next = await openSession(STATION_ID, auth)
       setSession(next)
-      // A new tap/login always wins — end whatever was open first (build
-      // plan: "Tapping a different ID immediately ends the previous
-      // session"). Fire-and-forget: the new session is already live for
-      // this screen regardless of whether the old row finishes closing.
+      // A real tap/login always wins over whatever was open before —
+      // ends a previous student session (build plan: "Tapping a
+      // different ID immediately ends the previous session") and, the
+      // same way, interrupts guest browsing with nothing to close
+      // server-side since it was never backed by a real session.
       if (previous) endSession(previous.id).catch(() => {})
+      setGuestBrowsing(false)
+      setGuestSessionId(null)
     } catch (err) {
       setOpenError(err instanceof Error ? err.message : 'Could not open a session')
     } finally {
@@ -56,8 +70,20 @@ export function KioskSessionProvider({ children }: { children: ReactNode }) {
     if (current) await endSession(current.id).catch(() => {})
   }, [session])
 
+  const startGuest = useCallback(() => {
+    setGuestBrowsing(true)
+    setGuestSessionId(crypto.randomUUID())
+  }, [])
+
+  const endGuest = useCallback(() => {
+    setGuestBrowsing(false)
+    setGuestSessionId(null)
+  }, [])
+
   return (
-    <KioskSessionContext.Provider value={{ session, opening, openError, open, end }}>
+    <KioskSessionContext.Provider
+      value={{ session, opening, openError, open, end, guestBrowsing, guestSessionId, startGuest, endGuest }}
+    >
       {children}
     </KioskSessionContext.Provider>
   )

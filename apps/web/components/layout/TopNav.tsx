@@ -19,6 +19,11 @@ type TopNavProps = {
   onMenuClick?: () => void
   /** Where the logo lockup links to — defaults to each role's dashboard. */
   homeHref?: string
+  /** Overrides the default clearSession()+redirect-to-/login sign-out —
+   * used by the kiosk, where "sign out" means ending a tap-based station
+   * session or a local guest-browsing session, neither of which is a
+   * real auth session with anything to clear or a /login page to visit. */
+  onSignOut?: () => void
 }
 
 export function TopNav({
@@ -31,6 +36,7 @@ export function TopNav({
   showSignOut = true,
   onMenuClick,
   homeHref = "/",
+  onSignOut,
 }: TopNavProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -47,6 +53,10 @@ export function TopNav({
   }, [menuOpen])
 
   function handleSignOut() {
+    if (onSignOut) {
+      onSignOut()
+      return
+    }
     clearSession()
     window.location.replace("/login")
   }
