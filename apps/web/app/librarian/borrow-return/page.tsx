@@ -21,6 +21,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Book, BorrowTransaction } from "@lasallia/types"
+import { Pagination } from "@/components/ui/catalog"
 import { useBooks } from "@/lib/hooks/useBooks"
 import { useBorrowTransactions } from "@/lib/hooks/useBorrowTransactions"
 import { createBorrow, returnBorrow } from "@/lib/borrow"
@@ -30,9 +31,11 @@ import {
   searchLoans,
   confirmReturn,
   reshelveCopy,
+  fetchReshelvingQueue,
   type Loan as ActiveLoan,
   type LoanLookupResult,
   type ReturnCondition,
+  type ReshelvingQueueItem,
 } from "@/lib/returns"
 import {
   fetchInHouseLoans,
@@ -790,7 +793,15 @@ function BorrowerAvatar({ name, avatarUrl }: { name: string | null; avatarUrl: s
   )
 }
 
-function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void }) {
+function ReturnPanel({
+  activeLoans,
+  loadingActiveLoans,
+  onSettled,
+}: {
+  activeLoans: ActiveLoan[]
+  loadingActiveLoans: boolean
+  onSettled: (record: SessionRecord) => void
+}) {
   const [accessionInput, setAccessionInput] = useState("")
   const [searchInput, setSearchInput] = useState("")
   const [searchOpen, setSearchOpen] = useState(false)
@@ -801,21 +812,6 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
   const [notFound, setNotFound] = useState(false)
   const [notFoundMessage, setNotFoundMessage] = useState("")
 
-  // "Active Borrowers" — lets the librarian browse who currently has what
-  // instead of needing to already know an accession number. Selecting one
-  // still goes through the same lookupLoanByAccession verification as a
-  // manual scan (see handleFind below) — browsing is just a faster way to
-  // find the right copy, not a shortcut around confirming it.
-  const [activeLoans, setActiveLoans] = useState<ActiveLoan[]>([])
-  const [loadingActiveLoans, setLoadingActiveLoans] = useState(true)
-
-  useEffect(() => {
-    listActiveLoans()
-      .then(setActiveLoans)
-      .catch(() => {})
-      .finally(() => setLoadingActiveLoans(false))
-  }, [])
-
   const [condition, setCondition] = useState<ReturnCondition | null>(null)
   const [conditionNotes, setConditionNotes] = useState("")
   const [replacementCost, setReplacementCost] = useState("")
@@ -823,7 +819,7 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
   const [receiptNumber, setReceiptNumber] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState("")
-  const [confirmed, setConfirmed] = useState<{ title: string; patron: string; fine: number } | null>(null)
+  const [confirmed, setConfirmed] = useState<{ title: string; patron: string; fine: number; needsReshelving: boolean } | null>(null)
 
   const isNewDamage = !!loan && loan.condition_at_borrow === "good" && (condition === "damaged" || condition === "incomplete")
   const previewTotal = loan
@@ -896,13 +892,16 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
       })
       const patron = loan.profiles?.full_name ?? "Unknown"
       const fine = result.fine_amount ?? 0
-      setConfirmed({ title: loan.books?.title ?? "Unknown title", patron, fine })
-      setActiveLoans((prev) => prev.filter((l) => l.id !== loan.id))
+      setConfirmed({ title: loan.books?.title ?? "Unknown title", patron, fine, needsReshelving: result.needs_reshelving })
+      const notes = [
+        fine > 0 ? `₱${fine.toFixed(2)} fine` : null,
+        result.needs_reshelving ? "→ needs reshelving" : "→ held for next reservation",
+      ].filter(Boolean)
       onSettled({
         title: loan.books?.title ?? "Unknown title",
         patron,
         time: new Date().toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
-        note: fine > 0 ? `₱${fine.toFixed(2)} fine` : undefined,
+        note: notes.join(" · ") || undefined,
       })
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Could not confirm this return")
@@ -938,6 +937,18 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
             </p>
           )}
         </div>
+        <p
+          className={cn(
+            "flex items-center gap-1.5 font-medium",
+            confirmed.needsReshelving ? "text-green-700" : "text-ink-500"
+          )}
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+        >
+          <PackageCheck size={13} />
+          {confirmed.needsReshelving
+            ? "This copy now needs reshelving — it&apos;ll show up in the Reshelving tab."
+            : "Held for the next reservation — no reshelving needed."}
+        </p>
         <button
           onClick={reset}
           className="flex items-center gap-1.5 px-4 py-2 rounded border border-ink-300 text-ink-600 hover:bg-white transition-colors font-medium"
@@ -1127,12 +1138,6 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
 
   return (
     <div className="flex flex-col gap-4">
-      <ActiveBorrowersList
-        loans={activeLoans}
-        loading={loadingActiveLoans}
-        onSelect={selectFromActiveList}
-      />
-
       <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
       <div className="flex items-center gap-2">
         <ScanLine size={15} className="text-green-700" />
@@ -1217,6 +1222,12 @@ function ReturnPanel({ onSettled }: { onSettled: (record: SessionRecord) => void
         </div>
       )}
       </div>
+
+      <ActiveBorrowersList
+        loans={activeLoans}
+        loading={loadingActiveLoans}
+        onSelect={selectFromActiveList}
+      />
     </div>
   )
 }
@@ -1234,6 +1245,12 @@ function ActiveBorrowersList({
   loading: boolean
   onSelect: (loan: ActiveLoan) => void
 }) {
+  const PAGE_SIZE = 5
+  const [page, setPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(loans.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const paged = loans.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
   return (
     <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
       <div className="flex items-center justify-between">
@@ -1259,51 +1276,155 @@ function ActiveBorrowersList({
           No books are currently out.
         </p>
       ) : (
-        <div className="flex flex-col gap-1 max-h-72 overflow-y-auto">
-          {loans.map((l) => {
-            const overdue = l.status === "overdue"
-            const canSelect = !!l.accession_number
-            return (
-              <button
-                key={l.id}
-                type="button"
-                onClick={() => onSelect(l)}
-                disabled={!canSelect}
-                title={canSelect ? undefined : "No accession number on file for this copy — search by title or borrower name instead"}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded border text-left transition-colors",
-                  canSelect ? "border-ink-200 hover:bg-ink-50 hover:border-ink-300" : "border-ink-100 opacity-50 cursor-not-allowed"
-                )}
-              >
-                <BorrowerAvatar name={l.profiles?.full_name ?? null} avatarUrl={l.profiles?.avatar_url ?? null} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-ink-900 font-medium truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                    {l.profiles?.full_name ?? "Unknown borrower"}
-                  </p>
-                  <p className="text-ink-400 truncate" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
-                    {l.books?.title ?? "Unknown title"}
-                  </p>
-                </div>
-                {overdue ? (
-                  <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 font-semibold shrink-0" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
-                    Overdue
-                  </span>
-                ) : (
-                  <span className="text-ink-400 shrink-0 whitespace-nowrap" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
-                    Due {formatDate(l.due_date)}
-                  </span>
-                )}
-              </button>
-            )
-          })}
+        <>
+          <div className="flex flex-col gap-1">
+            {paged.map((l) => {
+              const overdue = l.status === "overdue"
+              const canSelect = !!l.accession_number
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => onSelect(l)}
+                  disabled={!canSelect}
+                  title={canSelect ? undefined : "No accession number on file for this copy — search by title or borrower name instead"}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded border text-left transition-colors",
+                    canSelect ? "border-ink-200 hover:bg-ink-50 hover:border-ink-300" : "border-ink-100 opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <BorrowerAvatar name={l.profiles?.full_name ?? null} avatarUrl={l.profiles?.avatar_url ?? null} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-ink-900 font-medium truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                      {l.profiles?.full_name ?? "Unknown borrower"}
+                    </p>
+                    <p className="text-ink-400 truncate" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                      {l.books?.title ?? "Unknown title"}
+                    </p>
+                  </div>
+                  {overdue ? (
+                    <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 font-semibold shrink-0" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                      Overdue
+                    </span>
+                  ) : (
+                    <span className="text-ink-400 shrink-0 whitespace-nowrap" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                      Due {formatDate(l.due_date)}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+          <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── Reshelving queue ───────────────────────────────────────────────────────
+// Browse list of every copy currently parked at for_reshelving — same
+// "pick it instead of typing an accession number" convenience as the
+// Return tab's Active Borrowers. Selecting a row just pre-fills the
+// accession input below; confirming still requires the librarian to have
+// the physical copy in hand, per ReshelvingPanel's own instruction.
+function ReshelvingQueueList({
+  items,
+  loading,
+  onSelect,
+}: {
+  items: ReshelvingQueueItem[]
+  loading: boolean
+  onSelect: (item: ReshelvingQueueItem) => void
+}) {
+  const PAGE_SIZE = 5
+  const [page, setPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const paged = items.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+  return (
+    <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <PackageCheck size={15} className="text-green-700" />
+          <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            Awaiting Reshelving
+          </span>
         </div>
+        {items.length > 0 && (
+          <span className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            {items.length} book{items.length === 1 ? "" : "s"}
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          Loading…
+        </p>
+      ) : items.length === 0 ? (
+        <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          Nothing waiting to be reshelved right now.
+        </p>
+      ) : (
+        <>
+          <div className="flex flex-col gap-1">
+            {paged.map((item) => {
+              const canSelect = !!item.accession_number
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onSelect(item)}
+                  disabled={!canSelect}
+                  title={canSelect ? undefined : "No accession number on file for this copy"}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded border text-left transition-colors",
+                    canSelect ? "border-ink-200 hover:bg-ink-50 hover:border-ink-300" : "border-ink-100 opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <div
+                    className="shrink-0 rounded flex items-center justify-center text-white font-bold"
+                    style={{ width: 32, height: 44, background: item.books?.cover_color ?? "#2563EB", fontFamily: "var(--font-display)", fontSize: "0.9rem" }}
+                  >
+                    {item.books?.title?.[0] ?? "?"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-ink-900 font-medium truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                      {item.books?.title ?? "Unknown title"}
+                    </p>
+                    <p className="text-ink-400 truncate" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                      {item.accession_number ?? "no accession no."}
+                      {item.books?.call_number ? ` · ${item.books.call_number}` : ""}
+                    </p>
+                  </div>
+                  {item.returned_at && (
+                    <span className="text-ink-400 shrink-0 whitespace-nowrap" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                      Returned {formatDate(item.returned_at)}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+          <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+        </>
       )}
     </div>
   )
 }
 
 // ─── Reshelving mode (Phase 4.7) ───────────────────────────────────────────────
-function ReshelvingPanel({ onSettled }: { onSettled: (record: SessionRecord) => void }) {
+function ReshelvingPanel({
+  queue,
+  loadingQueue,
+  onSettled,
+}: {
+  queue: ReshelvingQueueItem[]
+  loadingQueue: boolean
+  onSettled: (record: SessionRecord) => void
+}) {
   const [accessionInput, setAccessionInput] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<"success" | "error" | null>(null)
@@ -1331,53 +1452,65 @@ function ReshelvingPanel({ onSettled }: { onSettled: (record: SessionRecord) => 
   }
 
   return (
-    <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
-      <div className="flex items-center gap-2">
-        <PackageCheck size={15} className="text-green-700" />
-        <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-          Reshelving Mode
-        </span>
-      </div>
-      <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-        Scan a copy only after it's physically back on the shelf — this is the only action that makes a copy
-        available again.
-      </p>
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Hash size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
-          <input
-            type="text"
-            placeholder="e.g. T45136"
-            value={accessionInput}
-            onChange={(e) => { setAccessionInput(e.target.value); setResult(null) }}
-            onKeyDown={(e) => e.key === "Enter" && handleConfirm()}
-            autoFocus
-            className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500"
-            style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
-          />
+    <div className="flex flex-col gap-4">
+      <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
+        <div className="flex items-center gap-2">
+          <ScanLine size={15} className="text-green-700" />
+          <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            Reshelving Mode
+          </span>
         </div>
-        <button
-          onClick={handleConfirm}
-          disabled={!accessionInput.trim() || submitting}
-          className={cn(
-            "px-4 py-2 rounded font-semibold transition-colors",
-            accessionInput.trim() ? "bg-green-700 text-white hover:bg-green-800" : "bg-ink-200 text-ink-400 cursor-not-allowed"
-          )}
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-        >
-          {submitting ? "…" : "Confirm"}
-        </button>
+        <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          Scan a copy only after it&apos;s physically back on the shelf — this is the only action that makes a copy
+          available again.
+        </p>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Hash size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
+            <input
+              type="text"
+              placeholder="e.g. T45136"
+              value={accessionInput}
+              onChange={(e) => { setAccessionInput(e.target.value); setResult(null) }}
+              onKeyDown={(e) => e.key === "Enter" && handleConfirm()}
+              autoFocus
+              className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500"
+              style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
+            />
+          </div>
+          <button
+            onClick={handleConfirm}
+            disabled={!accessionInput.trim() || submitting}
+            className={cn(
+              "px-4 py-2 rounded font-semibold transition-colors",
+              accessionInput.trim() ? "bg-green-700 text-white hover:bg-green-800" : "bg-ink-200 text-ink-400 cursor-not-allowed"
+            )}
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+          >
+            {submitting ? "…" : "Confirm"}
+          </button>
+        </div>
+        {result === "success" && (
+          <p className="flex items-center gap-1.5 text-green-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            <CheckCircle2 size={14} /> Copy is now available.
+          </p>
+        )}
+        {result === "error" && (
+          <p className="flex items-center gap-1.5 text-red-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            <AlertCircle size={14} /> {message}
+          </p>
+        )}
       </div>
-      {result === "success" && (
-        <p className="flex items-center gap-1.5 text-green-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-          <CheckCircle2 size={14} /> Copy is now available.
-        </p>
-      )}
-      {result === "error" && (
-        <p className="flex items-center gap-1.5 text-red-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-          <AlertCircle size={14} /> {message}
-        </p>
-      )}
+
+      <ReshelvingQueueList
+        items={queue}
+        loading={loadingQueue}
+        onSelect={(item) => {
+          if (!item.accession_number) return
+          setAccessionInput(item.accession_number)
+          setResult(null)
+        }}
+      />
     </div>
   )
 }
@@ -1735,6 +1868,41 @@ function BorrowAndReturnPageContent() {
     if (tab === "guest") loadInHouseLoans()
   }, [tab, loadInHouseLoans])
 
+  // "Ongoing" — what's currently out and what's currently waiting to go
+  // back on the shelf. Loaded once at the page level (not lazily per tab)
+  // so the tab switcher can show a live count on Return/Reshelving
+  // without making the librarian open each tab just to find out.
+  const [activeLoans, setActiveLoans] = useState<ActiveLoan[]>([])
+  const [loadingActiveLoans, setLoadingActiveLoans] = useState(true)
+  const loadActiveLoans = useCallback(() => {
+    listActiveLoans().then(setActiveLoans).catch(() => {}).finally(() => setLoadingActiveLoans(false))
+  }, [])
+
+  const [reshelvingQueue, setReshelvingQueue] = useState<ReshelvingQueueItem[]>([])
+  const [loadingReshelvingQueue, setLoadingReshelvingQueue] = useState(true)
+  const loadReshelvingQueue = useCallback(() => {
+    fetchReshelvingQueue().then(setReshelvingQueue).catch(() => {}).finally(() => setLoadingReshelvingQueue(false))
+  }, [])
+
+  useEffect(() => {
+    loadActiveLoans()
+    loadReshelvingQueue()
+  }, [loadActiveLoans, loadReshelvingQueue])
+
+  // A confirmed return can move a copy onto either list (out of Active
+  // Borrowers, and — usually — onto the Reshelving queue), so refresh
+  // both rather than guessing which one changed.
+  function handleReturned(record: SessionRecord) {
+    setReturnedThisSession((prev) => [record, ...prev])
+    loadActiveLoans()
+    loadReshelvingQueue()
+  }
+
+  function handleReshelved(record: SessionRecord) {
+    setReshelvedThisSession((prev) => [record, ...prev])
+    loadReshelvingQueue()
+  }
+
   const activeTransactions = transactions.filter((t) => t.status === "active")
   const todaysBorrows = transactions.filter((t) => isToday(t.borrowed_at)).map(toTxRecord)
 
@@ -1745,10 +1913,10 @@ function BorrowAndReturnPageContent() {
     day: "numeric",
   })
 
-  const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
+  const tabs: { key: Tab; label: string; icon: React.ReactNode; count?: number }[] = [
     { key: "borrow", label: "Borrow",  icon: <BookOpen size={14} /> },
-    { key: "return", label: "Return", icon: <RotateCcw size={14} /> },
-    { key: "reshelving", label: "Reshelving", icon: <PackageCheck size={14} /> },
+    { key: "return", label: "Return", icon: <RotateCcw size={14} />, count: activeLoans.length },
+    { key: "reshelving", label: "Reshelving", icon: <PackageCheck size={14} />, count: reshelvingQueue.length },
     { key: "guest", label: "Guest / In-House", icon: <UserPlus size={14} /> },
   ]
 
@@ -1771,7 +1939,8 @@ function BorrowAndReturnPageContent() {
           </p>
         </div>
 
-        {/* Tab switcher */}
+        {/* Tab switcher — Return/Reshelving carry a live count so the
+            librarian can see what's waiting without opening either tab */}
         <div className="flex items-center gap-1 p-1 rounded bg-ink-100 self-start">
           {tabs.map((t) => (
             <button
@@ -1785,6 +1954,17 @@ function BorrowAndReturnPageContent() {
             >
               {t.icon}
               {t.label}
+              {!!t.count && (
+                <span
+                  className={cn(
+                    "px-1.5 py-0.5 rounded-full font-semibold",
+                    tab === t.key ? "bg-green-100 text-green-800" : "bg-white text-ink-600"
+                  )}
+                  style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
+                >
+                  {t.count}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -1803,10 +1983,18 @@ function BorrowAndReturnPageContent() {
           />
         )}
         {tab === "return" && (
-          <ReturnPanel onSettled={(r) => setReturnedThisSession((prev) => [r, ...prev])} />
+          <ReturnPanel
+            activeLoans={activeLoans}
+            loadingActiveLoans={loadingActiveLoans}
+            onSettled={handleReturned}
+          />
         )}
         {tab === "reshelving" && (
-          <ReshelvingPanel onSettled={(r) => setReshelvedThisSession((prev) => [r, ...prev])} />
+          <ReshelvingPanel
+            queue={reshelvingQueue}
+            loadingQueue={loadingReshelvingQueue}
+            onSettled={handleReshelved}
+          />
         )}
         {tab === "guest" && <GuestPanel onSettled={loadInHouseLoans} />}
 
