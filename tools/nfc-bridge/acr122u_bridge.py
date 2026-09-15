@@ -41,21 +41,43 @@
 # card's UID" command; works for MIFARE Classic/Ultralight and most
 # ISO14443A cards, which is what DLSL-style ID cards use.
 
+import logging
 import sys
 import time
+from pathlib import Path
+
+# Logs to bridge.log next to this script, not just the console — running
+# hidden at Windows startup (see start_hidden.vbs) means there's no
+# console to read at all, and a bare print() would actually crash there
+# (sys.stdout is None under a windowless launch). The file is what lets
+# anyone check later whether it's working without needing a visible
+# terminal window on the kiosk screen.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(message)s",
+    handlers=[logging.FileHandler(Path(__file__).resolve().parent / "bridge.log", encoding="utf-8")],
+)
+log = logging.getLogger("acr122u_bridge")
+
+
+def announce(message: str) -> None:
+    log.info(message)
+    if sys.stdout is not None:
+        print(message)
+
 
 try:
     from smartcard.System import readers
     from smartcard.CardMonitoring import CardMonitor, CardObserver
     from smartcard.util import toHexString
 except ImportError:
-    print("Missing dependency: pyscard. Run: pip install -r requirements.txt")
+    announce("Missing dependency: pyscard. Run: pip install -r requirements.txt")
     sys.exit(1)
 
 try:
     import keyboard
 except ImportError:
-    print("Missing dependency: keyboard. Run: pip install -r requirements.txt")
+    announce("Missing dependency: keyboard. Run: pip install -r requirements.txt")
     sys.exit(1)
 
 GET_UID_APDU = [0xFF, 0xCA, 0x00, 0x00, 0x00]
@@ -79,15 +101,15 @@ class TapObserver(CardObserver):
             connection.connect()
             data, sw1, sw2 = connection.transmit(GET_UID_APDU)
         except Exception as e:
-            print(f"Couldn't read that card ({e}) — try tapping again.")
+            announce(f"Couldn't read that card ({e}) — try tapping again.")
             return
 
         if (sw1, sw2) != SUCCESS_SW:
-            print("Card detected but couldn't read a UID — try tapping again.")
+            announce("Card detected but couldn't read a UID — try tapping again.")
             return
 
         uid = toHexString(data).replace(" ", "").lower()
-        print(f"Tapped: {uid}")
+        announce(f"Tapped: {uid}")
         # A brief pause before typing — gives the browser a moment if
         # the tap coincided with a click/focus change.
         time.sleep(0.1)
@@ -98,19 +120,19 @@ class TapObserver(CardObserver):
 def main() -> None:
     available = readers()
     if not available:
-        print(
+        announce(
             "No PC/SC reader found. Check that the ACR122U is plugged in and its "
             "driver is installed (acs.com.hk), then run this again."
         )
         sys.exit(1)
     for r in available:
-        print(f"Using reader: {r}")
+        announce(f"Using reader: {r}")
 
     monitor = CardMonitor()
     observer = TapObserver()
     monitor.addObserver(observer)
 
-    print("Watching for taps... (Ctrl+C to stop)")
+    announce("Watching for taps... (Ctrl+C to stop)")
     try:
         while True:
             time.sleep(1)
@@ -118,7 +140,7 @@ def main() -> None:
         pass
     finally:
         monitor.deleteObserver(observer)
-        print("\nStopped.")
+        announce("Stopped.")
 
 
 if __name__ == "__main__":

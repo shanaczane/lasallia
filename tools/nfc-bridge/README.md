@@ -28,6 +28,28 @@ works exactly the same as it did with the borrowed reader.
 4. Leave that window open in the background. Tap a card — it should
    log in on the kiosk page automatically, the same as before.
 
+## Running it automatically (recommended for the real kiosk)
+
+Running `python acr122u_bridge.py` by hand every time isn't practical
+for a kiosk that's on all day. Set it to start automatically instead:
+
+1. Press `Win + R`, type `shell:startup`, press Enter — this opens your
+   Startup folder.
+2. Right-click `start_hidden.vbs` in this folder → **Create shortcut**.
+3. Drag that shortcut into the Startup folder window you opened in
+   step 1.
+
+From then on, the bridge starts automatically (with no visible window)
+every time the kiosk computer logs in — nobody needs to open a
+terminal. To check it's actually running, or to debug a problem, open
+`bridge.log` in this folder — it records the same messages that used
+to print to the terminal (reader found, each tap, any errors), since a
+hidden launch has no console to print to.
+
+To stop it, open Task Manager, find the `python.exe` (or `pythonw.exe`)
+process, and end it — or just remove the shortcut from the Startup
+folder and restart the computer.
+
 ## If it's not working
 
 - **"No PC/SC reader found"** — the driver isn't installed, or the
