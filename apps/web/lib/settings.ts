@@ -33,11 +33,12 @@ export type LibrarySettings = {
   reservation_hold_period_days: number
   max_active_reservations: number
 
-  // "HH:MM" (or "HH:MM:SS"). Saturday/Sunday are nullable — null on both
-  // means closed that day, and fines don't accrue for it (core/calendar.py
-  // reads these same fields). Weekday (Mon-Fri) is never closed.
-  weekday_open_time: string
-  weekday_close_time: string
+  // "HH:MM" (or "HH:MM:SS"). All three groups are nullable — null on
+  // both means closed that group entirely (weekday included, e.g. a
+  // semester break), and fines don't accrue for it (core/calendar.py
+  // reads these same fields).
+  weekday_open_time: string | null
+  weekday_close_time: string | null
   saturday_open_time: string | null
   saturday_close_time: string | null
   sunday_open_time: string | null

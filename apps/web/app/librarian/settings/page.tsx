@@ -7,14 +7,22 @@
 // reservations.py, core/calendar.py), and survives a restart because it
 // lives in the database, not this page's component state.
 //
-// Account (profile/password) is untouched — a per-librarian concern, not
-// a library-wide setting, and out of scope here.
+// Account tab shows the real signed-in librarian now (getUser(), cached
+// from login); Full Name saves via PATCH /auth/me (the header Save
+// button) and Change Password is its own action via POST
+// /auth/change-password (its own button below, not bundled into Save —
+// a wrong current password shouldn't also block a harmless name edit,
+// or vice versa). Email change still isn't wired — it needs Supabase
+// Auth's own confirm-by-email flow, a separate feature.
 "use client"
 
 import { useEffect, useState } from "react"
 import { AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { fetchLibrarySettings, updateLibrarySettings, type LibrarySettings, type UpdateLibrarySettings } from "@/lib/settings"
+import { changePassword, getUser, updateProfile, type UserProfile as AuthUser } from "@/lib/auth"
+
+const MIN_PASSWORD_LENGTH = 8
 
 type TabKey = "library" | "borrowing" | "account"
 
@@ -50,11 +58,11 @@ function draftError(d: Draft): string | null {
   if (typeof d.fine_per_day !== "number" || d.fine_per_day < 0) return "Fine per Day can't be negative."
   if (typeof d.max_fine_per_book !== "number" || d.max_fine_per_book <= 0) return "Maximum Fine per Book must be greater than 0."
 
-  if (!d.weekday_open_time || !d.weekday_close_time) return "Weekday hours can't be empty."
-  if (timeToMinutes(d.weekday_open_time) >= timeToMinutes(d.weekday_close_time)) {
-    return "Weekday closing time must be after opening time."
-  }
+  // All three groups — weekday included — can be marked Closed, so all
+  // three get the same check: either both times set (and in order), or
+  // both null. One rule, no special-cased "weekday is different."
   for (const [label, open, close] of [
+    ["Weekday", d.weekday_open_time, d.weekday_close_time],
     ["Saturday", d.saturday_open_time, d.saturday_close_time],
     ["Sunday", d.sunday_open_time, d.sunday_close_time],
   ] as const) {
@@ -70,7 +78,7 @@ function draftError(d: Draft): string | null {
 }
 
 function timeToMinutes(v: string): number {
-  const [h, m] = v.split(":").map(Number)
+  const [h, m] = shortTime(v).split(":").map(Number)
   return h * 60 + m
 }
 
@@ -113,7 +121,31 @@ export default function LibrarianSettingsPage() {
 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState("")
-  const [saved, setSaved] = useState(false)
+
+  // One shared confirmation toast for every save action on this page
+  // (library/borrowing settings, profile, password) — replaces each
+  // button's own "✓ Saved" label-and-color swap, which changed the
+  // button's size/position on every save and doubled up the same
+  // "it worked" signal three different ways across the page.
+  const [toast, setToast] = useState<string | null>(null)
+  function showToast(message: string) {
+    setToast(message)
+    setTimeout(() => setToast(null), 2500)
+  }
+
+  // Account tab — the real signed-in user, cached from login (no fetch
+  // needed; the same object every layout's nav would read). fullName is
+  // the editable draft; profile itself updates only after a successful save.
+  const [profile, setProfile] = useState<AuthUser | null>(null)
+  const [fullName, setFullName] = useState("")
+
+  // Change Password — deliberately separate state/button from the rest
+  // of the page (see the file header comment for why).
+  const [currentPassword, setCurrentPassword] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [passwordSaving, setPasswordSaving] = useState(false)
+  const [passwordError, setPasswordError] = useState("")
 
   useEffect(() => {
     fetchLibrarySettings()
@@ -123,6 +155,15 @@ export default function LibrarianSettingsPage() {
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load settings"))
       .finally(() => setLoading(false))
+
+    // getUser() only reads localStorage (nothing to await) but setState
+    // still needs to happen inside a callback here, not the effect body
+    // directly, same as the settings fetch above — one microtask tick.
+    Promise.resolve().then(() => {
+      const u = getUser()
+      setProfile(u)
+      setFullName(u?.full_name ?? "")
+    })
   }, [])
 
   function setField<K extends keyof Draft>(key: K, value: Draft[K]) {
@@ -132,13 +173,26 @@ export default function LibrarianSettingsPage() {
   const validationError = draft ? draftError(draft) : null
 
   async function handleSave() {
-    if (activeTab === "account" || !draft) {
-      // Account tab isn't wired to this API — same no-op confirmation
-      // flash it always showed, kept as-is since it's out of scope here.
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
+    if (activeTab === "account") {
+      if (!fullName.trim()) {
+        setSaveError("Full Name can't be empty.")
+        return
+      }
+      setSaving(true)
+      setSaveError("")
+      try {
+        const updated = await updateProfile(fullName.trim())
+        setProfile(updated)
+        setFullName(updated.full_name ?? "")
+        showToast("Profile updated.")
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : "Could not update your profile")
+      } finally {
+        setSaving(false)
+      }
       return
     }
+    if (!draft) return
     if (validationError) {
       setSaveError(validationError)
       return
@@ -150,12 +204,47 @@ export default function LibrarianSettingsPage() {
       const updated = await updateLibrarySettings(changes)
       setSettings(updated)
       setDraft(toDraft(updated))
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
+      showToast("Settings saved.")
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Could not save settings")
     } finally {
       setSaving(false)
+    }
+  }
+
+  const passwordValidationError = !currentPassword && !newPassword && !confirmPassword
+    ? null // untouched — don't nag before they've typed anything
+    : !currentPassword
+    ? "Enter your current password."
+    : newPassword.length < MIN_PASSWORD_LENGTH
+    ? `New password must be at least ${MIN_PASSWORD_LENGTH} characters.`
+    : newPassword !== confirmPassword
+    ? "New password and confirmation don't match."
+    : newPassword === currentPassword
+    ? "New password must be different from your current password."
+    : null
+
+  async function handleChangePassword() {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError("Fill in all three password fields.")
+      return
+    }
+    if (passwordValidationError) {
+      setPasswordError(passwordValidationError)
+      return
+    }
+    setPasswordSaving(true)
+    setPasswordError("")
+    try {
+      await changePassword(currentPassword, newPassword)
+      setCurrentPassword("")
+      setNewPassword("")
+      setConfirmPassword("")
+      showToast("Password updated.")
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : "Could not change your password")
+    } finally {
+      setPasswordSaving(false)
     }
   }
 
@@ -181,18 +270,26 @@ export default function LibrarianSettingsPage() {
 
         <button
           onClick={handleSave}
-          disabled={saving || loading || (activeTab !== "account" && (!draft || !!validationError))}
-          className={cn(
-            "self-start sm:self-auto px-4 py-2.5 rounded-(--radius) font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed",
-            saved
-              ? "bg-green-100 text-green-700 border border-green-300"
-              : "bg-green-700 text-white hover:bg-green-800"
-          )}
+          disabled={
+            saving ||
+            loading ||
+            (activeTab === "account" ? !fullName.trim() : !draft || !!validationError)
+          }
+          className="self-start sm:self-auto px-4 py-2.5 rounded-(--radius) font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed bg-green-700 text-white hover:bg-green-800"
           style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
         >
-          {saving ? "Saving…" : saved ? "✓ Saved" : "Save changes"}
+          {saving ? "Saving…" : "Save changes"}
         </button>
       </div>
+
+      {toast && (
+        <div
+          className="fixed bottom-6 right-6 z-50 bg-ink-900 text-white px-4 py-2.5 rounded-(--radius) shadow-lg"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          {toast}
+        </div>
+      )}
 
       {settings?.is_default && (
         <div
@@ -262,13 +359,18 @@ export default function LibrarianSettingsPage() {
                 </SettingsSection>
 
                 <SettingsSection title="Operating Hours">
-                  <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-3">
                     <HoursEditRow
                       day="Monday – Friday"
+                      closable
                       openValue={draft.weekday_open_time}
                       closeValue={draft.weekday_close_time}
                       onChangeOpen={(v) => setField("weekday_open_time", v)}
                       onChangeClose={(v) => setField("weekday_close_time", v)}
+                      onToggleClosed={(closed) => {
+                        setField("weekday_open_time", closed ? null : "07:30")
+                        setField("weekday_close_time", closed ? null : "18:00")
+                      }}
                     />
                     <HoursEditRow
                       day="Saturday"
@@ -280,6 +382,10 @@ export default function LibrarianSettingsPage() {
                       onToggleClosed={(closed) => {
                         setField("saturday_open_time", closed ? null : "08:00")
                         setField("saturday_close_time", closed ? null : "12:00")
+                      }}
+                      onCopyWeekday={() => {
+                        setField("saturday_open_time", draft.weekday_open_time)
+                        setField("saturday_close_time", draft.weekday_close_time)
                       }}
                     />
                     <HoursEditRow
@@ -293,10 +399,15 @@ export default function LibrarianSettingsPage() {
                         setField("sunday_open_time", closed ? null : "08:00")
                         setField("sunday_close_time", closed ? null : "12:00")
                       }}
+                      onCopyWeekday={() => {
+                        setField("sunday_open_time", draft.weekday_open_time)
+                        setField("sunday_close_time", draft.weekday_close_time)
+                      }}
                     />
                   </div>
                   <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
-                    Fines only accrue for hours the library is actually open, per this schedule.
+                    Overdue fines only accrue for hours the library is actually open, per this schedule — mark a
+                    day Closed (or shorten its hours) and no fine builds up during that time.
                   </p>
                 </SettingsSection>
               </>
@@ -329,18 +440,66 @@ export default function LibrarianSettingsPage() {
             {activeTab === "account" && (
               <>
                 <SettingsSection title="Profile">
-                  <Field label="Full Name" value="Maria L. Reyes" onChange={() => {}} />
-                  <Field label="Email" value="maria.reyes@dlsl.edu.ph" onChange={() => {}} type="email" />
-                  <Field label="Role" value="Librarian" onChange={() => {}} disabled />
+                  {profile ? (
+                    <>
+                      <Field label="Full Name" value={fullName} onChange={setFullName} />
+                      <Field label="Email" value={profile.email} onChange={() => {}} type="email" disabled />
+                      <Field
+                        label="Role"
+                        value={profile.role.charAt(0).toUpperCase() + profile.role.slice(1)}
+                        onChange={() => {}}
+                        disabled
+                      />
+                    </>
+                  ) : (
+                    <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                      Couldn&apos;t find your signed-in session — try reloading the page.
+                    </p>
+                  )}
                 </SettingsSection>
 
                 <SettingsSection title="Change Password">
-                  <Field label="Current Password" value="" onChange={() => {}} type="password" placeholder="Enter current password" />
-                  <Field label="New Password" value="" onChange={() => {}} type="password" placeholder="Enter new password" />
-                  <Field label="Confirm New Password" value="" onChange={() => {}} type="password" placeholder="Confirm new password" />
+                  <Field
+                    label="Current Password"
+                    value={currentPassword}
+                    onChange={setCurrentPassword}
+                    type="password"
+                    placeholder="Enter current password"
+                  />
+                  <Field
+                    label="New Password"
+                    value={newPassword}
+                    onChange={setNewPassword}
+                    type="password"
+                    placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+                  />
+                  <Field
+                    label="Confirm New Password"
+                    value={confirmPassword}
+                    onChange={setConfirmPassword}
+                    type="password"
+                    placeholder="Confirm new password"
+                  />
+
+                  {passwordError && (
+                    <p className="flex items-start gap-1.5 text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+                      <AlertCircle size={13} className="shrink-0 mt-0.5" />
+                      {passwordError}
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleChangePassword}
+                    disabled={passwordSaving || !currentPassword || !newPassword || !confirmPassword}
+                    className="self-start px-4 py-2 rounded-(--radius) font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-ink-900 text-white hover:bg-ink-700"
+                    style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+                  >
+                    {passwordSaving ? "Updating…" : "Update Password"}
+                  </button>
                 </SettingsSection>
                 <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
-                  Account profile/password editing isn&apos;t wired up yet — this tab is still a preview.
+                  Email changes aren&apos;t wired up yet — that needs Supabase&apos;s own confirm-by-email flow.
                 </p>
               </>
             )}
@@ -427,6 +586,7 @@ function HoursEditRow({
   onChangeClose,
   closable = false,
   onToggleClosed,
+  onCopyWeekday,
 }: {
   day: string
   openValue: string | null
@@ -435,55 +595,91 @@ function HoursEditRow({
   onChangeClose: (value: string) => void
   closable?: boolean
   onToggleClosed?: (closed: boolean) => void
+  /** "Same as Weekday" shortcut — only offered on closable (Sat/Sun) rows. */
+  onCopyWeekday?: () => void
 }) {
   const isClosed = closable && !openValue && !closeValue
   const timeInputClass = cn(
-    "px-2.5 py-1.5 rounded-sm border border-ink-200 text-ink-900 outline-none transition-colors",
-    "focus:border-green-700 focus:ring-1 focus:ring-green-700"
+    "px-2.5 py-2 rounded-sm border border-ink-200 text-ink-900 outline-none transition-colors",
+    "focus:border-green-700 focus:ring-1 focus:ring-green-700 hover:border-ink-300"
   )
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <span
-        className="text-ink-700 font-medium w-32 shrink-0"
-        style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-      >
-        {day}
-      </span>
-
-      {closable && (
-        <label
-          className="flex items-center gap-1.5 text-ink-500 shrink-0"
-          style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
-        >
-          <input
-            type="checkbox"
-            checked={isClosed}
-            onChange={(e) => onToggleClosed?.(e.target.checked)}
-          />
-          Closed
-        </label>
+    <div
+      className={cn(
+        "rounded-(--radius-sm) border p-3 flex flex-col gap-2.5 transition-colors",
+        isClosed ? "border-ink-100 bg-ink-50/60" : "border-ink-200 bg-white"
       )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span
+          className="text-ink-900 font-semibold"
+          style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+        >
+          {day}
+        </span>
 
-      {!isClosed && (
-        <div className="flex items-center gap-2">
-          <input
-            type="time"
-            value={shortTime(openValue)}
-            onChange={(e) => onChangeOpen(e.target.value)}
-            className={timeInputClass}
-            style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-          />
-          <span className="text-ink-400" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-            to
+        <div className="flex items-center gap-3">
+          {closable && !isClosed && onCopyWeekday && (
+            <button
+              type="button"
+              onClick={onCopyWeekday}
+              className="text-green-700 hover:text-green-900 font-medium underline-offset-2 hover:underline transition-colors"
+              style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
+            >
+              Same as Weekday
+            </button>
+          )}
+          {closable && (
+            <label
+              className="flex items-center gap-1.5 text-ink-500 cursor-pointer select-none"
+              style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
+            >
+              <input
+                type="checkbox"
+                checked={isClosed}
+                onChange={(e) => onToggleClosed?.(e.target.checked)}
+                className="accent-green-700"
+              />
+              Closed
+            </label>
+          )}
+        </div>
+      </div>
+
+      {isClosed ? (
+        <p className="text-ink-400" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}>
+          Closed — no fines accrue during this time.
+        </p>
+      ) : (
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-ink-400 uppercase font-semibold" style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)" }}>
+              Opens
+            </span>
+            <input
+              type="time"
+              value={shortTime(openValue)}
+              onChange={(e) => onChangeOpen(e.target.value)}
+              className={timeInputClass}
+              style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+            />
+          </label>
+          <span className="text-ink-300 pb-2" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+            –
           </span>
-          <input
-            type="time"
-            value={shortTime(closeValue)}
-            onChange={(e) => onChangeClose(e.target.value)}
-            className={timeInputClass}
-            style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-          />
+          <label className="flex flex-col gap-1">
+            <span className="text-ink-400 uppercase font-semibold" style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)" }}>
+              Closes
+            </span>
+            <input
+              type="time"
+              value={shortTime(closeValue)}
+              onChange={(e) => onChangeClose(e.target.value)}
+              className={timeInputClass}
+              style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+            />
+          </label>
         </div>
       )}
     </div>

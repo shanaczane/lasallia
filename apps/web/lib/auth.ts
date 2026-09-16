@@ -62,6 +62,53 @@ export function getUser(): UserProfile | null {
   return raw ? JSON.parse(raw) : null
 }
 
+// After a successful PATCH /auth/me, so getUser() reflects the change
+// immediately everywhere it's read — without this, the cached copy from
+// login would keep showing the old name until the next full sign-in.
+function setCachedUser(user: UserProfile): void {
+  localStorage.setItem("user", JSON.stringify(user))
+}
+
+function authHeaders(): HeadersInit {
+  const token = getToken()
+  if (!token) throw new Error("Not signed in")
+  return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+}
+
+// Settings' Account tab — self-service full name change. Email isn't
+// wired here: it needs Supabase Auth's own confirm-by-email flow, a
+// separate feature.
+export async function updateProfile(fullName: string): Promise<UserProfile> {
+  const res = await fetch(`${API_URL}/auth/me`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({ full_name: fullName }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? "Could not update your profile")
+  }
+  const user: UserProfile = await res.json()
+  setCachedUser(user)
+  return user
+}
+
+// Settings' Account tab — "Change Password". The API re-verifies
+// currentPassword by signing in with it before applying newPassword; a
+// wrong current password comes back as a normal thrown Error, same as
+// every other call here.
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const res = await fetch(`${API_URL}/auth/change-password`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? "Could not change your password")
+  }
+}
+
 export function clearSession(): void {
   localStorage.removeItem("access_token")
   localStorage.removeItem("refresh_token")

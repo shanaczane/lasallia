@@ -6,11 +6,14 @@
 -- table) used to be assumed open 8am-5pm regardless of what the library's
 -- real hours actually are. Now it falls back to whichever of these three
 -- groups the day's weekday belongs to; null open/close time on a group
--- means closed that day (Sunday, by default) — so no fine accrues for a
--- day the library was never open to begin with.
+-- means closed that day — so no fine accrues for it. All three groups
+-- are nullable, including weekday: a full closure (semester break, etc.)
+-- needs to be markable the same easy way Saturday/Sunday already are,
+-- not a special case. Defaulted open (matching the previous static
+-- display text) so turning this on doesn't silently close the library.
 alter table library_settings
-  add column if not exists weekday_open_time   time not null default '07:30',
-  add column if not exists weekday_close_time  time not null default '18:00',
+  add column if not exists weekday_open_time   time default '07:30',
+  add column if not exists weekday_close_time  time default '18:00',
   add column if not exists saturday_open_time  time default '08:00',
   add column if not exists saturday_close_time time default '12:00',
   add column if not exists sunday_open_time    time,
