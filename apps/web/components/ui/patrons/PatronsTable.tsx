@@ -51,7 +51,11 @@ export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTablePr
         </div>
       ) : (
         patrons.map((patron) => {
-          const initials = patron.full_name
+          // full_name is nullable — fall back to email for the initials
+          // (something to show in the avatar) and "No name on file" for
+          // the row text, rather than crash on a patron with none set.
+          const displayName = patron.full_name || "No name on file"
+          const initials = (patron.full_name || patron.email)
             .split(" ")
             .map((p) => p[0])
             .slice(0, 2)
@@ -75,7 +79,7 @@ export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTablePr
                       className="text-ink-900 font-semibold truncate group-hover:text-green-700 transition-colors"
                       style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
                     >
-                      {patron.full_name}
+                      {displayName}
                     </p>
                     <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
                       {patron.email}
@@ -114,7 +118,7 @@ export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTablePr
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-ink-900 font-semibold truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                      {patron.full_name}
+                      {displayName}
                     </p>
                     <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
                       {patron.program ?? patron.email}

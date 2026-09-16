@@ -10,11 +10,12 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { X, BookOpen, Bookmark, History, Mail, GraduationCap, UserX, UserCheck } from "lucide-react"
+import { X, BookOpen, Bookmark, History, Mail, GraduationCap, UserX, UserCheck, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UserProfile, Reservation, ReservationStatus } from "@lasallia/types"
 import { fetchLoans, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
+import { updatePatron } from "@/lib/users"
 import { RoleBadge } from "./RoleBadge"
 import { AccountStatusPill } from "./AccountStatusPill"
 
@@ -24,9 +25,14 @@ type PatronProfileModalProps = {
   patron: UserProfile
   onClose: () => void
   onToggleStatus: () => void
+  /** Fires after a successful Program/Year Level save, with the updated
+   * record, so the parent page's list/selection stay in sync — same
+   * reasoning handleToggleStatus already updates the parent's state. */
+  onUpdated: (patron: UserProfile) => void
 }
 
 const DUE_SOON_DAYS = 3
+const MAX_YEAR_LEVEL = 8 // matches routers/patrons.py's own ceiling
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
@@ -54,9 +60,58 @@ const HISTORY_CFG = {
   overdue_returned: { label: "Returned Late", text: "text-warn",    bg: "bg-warn-bg" },
 }
 
-export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronProfileModalProps) {
+export function PatronProfileModal({ patron, onClose, onToggleStatus, onUpdated }: PatronProfileModalProps) {
   const [tab, setTab] = useState<Tab>("loans")
   const isActive = patron.status !== "inactive"
+
+  // Academic/department info — Program (every real role except guest,
+  // who never has a persistent account) and Year Level (student only —
+  // a librarian or faculty account has no year to speak of). Every real
+  // account has these null today; nothing before this ever let a
+  // librarian set them, which is why the Patrons table showed "—" across
+  // the board, librarian row included. Component remounts per patron
+  // (see patrons/page.tsx: `{viewing && <PatronProfileModal patron={viewing}.../>}`
+  // unmounts on close), so a plain useState initializer is safe here.
+  const showProgram = patron.role !== "guest"
+  const showYearLevel = patron.role === "student"
+  const programLabel = patron.role === "librarian" ? "Department" : "Program"
+  const [program, setProgram] = useState(patron.program ?? "")
+  const [yearLevel, setYearLevel] = useState(patron.year_level ? String(patron.year_level) : "")
+  const [academicSaving, setAcademicSaving] = useState(false)
+  const [academicError, setAcademicError] = useState("")
+  const [toast, setToast] = useState<string | null>(null)
+
+  const academicDirty =
+    program.trim() !== (patron.program ?? "") || yearLevel !== (patron.year_level ? String(patron.year_level) : "")
+
+  const academicValidationError = (() => {
+    if (!showYearLevel || !yearLevel) return null
+    const n = Number(yearLevel)
+    if (!Number.isInteger(n) || n < 1 || n > MAX_YEAR_LEVEL) return `Year Level must be a whole number from 1 to ${MAX_YEAR_LEVEL}.`
+    return null
+  })()
+
+  async function handleSaveAcademicInfo() {
+    if (academicValidationError) {
+      setAcademicError(academicValidationError)
+      return
+    }
+    setAcademicSaving(true)
+    setAcademicError("")
+    try {
+      const updated = await updatePatron(patron.id, {
+        program: showProgram ? program.trim() || null : undefined,
+        year_level: showYearLevel ? (yearLevel ? Number(yearLevel) : null) : undefined,
+      })
+      onUpdated(updated)
+      setToast("Saved.")
+      setTimeout(() => setToast(null), 2000)
+    } catch (err) {
+      setAcademicError(err instanceof Error ? err.message : "Could not save this patron's info")
+    } finally {
+      setAcademicSaving(false)
+    }
+  }
 
   const [loans, setLoans] = useState<Loan[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
@@ -82,7 +137,13 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronPr
   const activeLoans = useMemo(() => loans.filter((l) => l.status === "active" || l.status === "overdue"), [loans])
   const returnedLoans = useMemo(() => loans.filter((l) => l.status === "returned" && l.returned_at), [loans])
 
-  const initials = patron.full_name
+  // full_name is nullable (a profile from Supabase Auth signup doesn't
+  // require one) — fall back rather than crash on a patron nobody's
+  // named yet. Initials still derive from the email (so there's always
+  // something to show in the avatar); the heading says so plainly
+  // instead of just repeating the email that's already shown below it.
+  const displayName = patron.full_name || "No name on file"
+  const initials = (patron.full_name || patron.email)
     .split(" ")
     .map((p) => p[0])
     .slice(0, 2)
@@ -115,7 +176,7 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronPr
                 className="text-ink-900 font-semibold truncate"
                 style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}
               >
-                {patron.full_name}
+                {displayName}
               </h2>
               <div className="flex items-center gap-1.5 text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
                 <Mail size={13} className="shrink-0" />
@@ -137,14 +198,72 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronPr
         <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 sm:py-3.5 border-b border-ink-100 shrink-0">
           <RoleBadge role={patron.role} />
           <AccountStatusPill status={patron.status ?? "active"} />
-          {patron.program && (
-            <span className="flex items-center gap-1 text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-              <GraduationCap size={13} className="text-ink-400" />
-              {patron.program}
-              {patron.year_level ? ` · Year ${patron.year_level}` : ""}
-            </span>
-          )}
         </div>
+
+        {/* Academic info — Program + Year Level, editable. Every real
+            account has these null until a librarian sets them here. */}
+        {(showProgram || showYearLevel) && (
+          <div className="flex flex-wrap items-end gap-3 px-4 sm:px-6 py-3 border-b border-ink-100 shrink-0">
+            <GraduationCap size={15} className="text-ink-400 mb-2.5 shrink-0" />
+            {showProgram && (
+              <label className="flex flex-col gap-1 min-w-0 flex-1">
+                <span className="text-ink-400 uppercase font-semibold" style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-section)" }}>
+                  {programLabel}
+                </span>
+                <input
+                  type="text"
+                  value={program}
+                  onChange={(e) => setProgram(e.target.value)}
+                  placeholder={patron.role === "librarian" ? "e.g. LRC Staff" : "e.g. BS Computer Science"}
+                  className="px-2.5 py-1.5 rounded-sm border border-ink-200 text-ink-900 outline-none transition-colors focus:border-green-700 focus:ring-1 focus:ring-green-700 hover:border-ink-300 min-w-0"
+                  style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+                />
+              </label>
+            )}
+            {showYearLevel && (
+              <label className="flex flex-col gap-1 w-28 shrink-0">
+                <span className="text-ink-400 uppercase font-semibold" style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-section)" }}>
+                  Year Level
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={MAX_YEAR_LEVEL}
+                  value={yearLevel}
+                  onChange={(e) => setYearLevel(e.target.value)}
+                  placeholder="1"
+                  className="px-2.5 py-1.5 rounded-sm border border-ink-200 text-ink-900 outline-none transition-colors focus:border-green-700 focus:ring-1 focus:ring-green-700 hover:border-ink-300"
+                  style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+                />
+              </label>
+            )}
+            <button
+              type="button"
+              onClick={handleSaveAcademicInfo}
+              disabled={academicSaving || !academicDirty || !!academicValidationError}
+              className="px-3 py-1.5 rounded-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-ink-900 text-white hover:bg-ink-700 shrink-0"
+              style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
+            >
+              {academicSaving ? "Saving…" : "Save"}
+            </button>
+
+            {academicError && (
+              <p className="flex items-center gap-1.5 text-danger w-full" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}>
+                <AlertCircle size={12} className="shrink-0" />
+                {academicError}
+              </p>
+            )}
+          </div>
+        )}
+
+        {toast && (
+          <div
+            className="fixed bottom-6 right-6 z-[10000] bg-ink-900 text-white px-4 py-2.5 rounded-(--radius) shadow-lg"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+          >
+            {toast}
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex px-4 sm:px-6 border-b border-ink-100 shrink-0 overflow-x-auto">

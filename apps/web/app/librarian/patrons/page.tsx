@@ -148,7 +148,7 @@ export default function PatronsPage() {
     return patrons.filter((p) => {
       const matchesQuery =
         !q ||
-        p.full_name.toLowerCase().includes(q) ||
+        (p.full_name ?? "").toLowerCase().includes(q) ||
         p.email.toLowerCase().includes(q) ||
         (p.program ?? "").toLowerCase().includes(q)
       const matchesRole = roleFilter === "all" || p.role === roleFilter
@@ -172,6 +172,14 @@ export default function PatronsPage() {
       // Revert on failure — the optimistic update above was wrong.
       setPatrons((prev) => prev.map((p) => (p.id === userId ? { ...p, status: current?.status } : p)))
     }
+  }
+
+  // PatronProfileModal's own Save (Program/Year Level) already hit the
+  // API itself — this just syncs the result back into the list and the
+  // still-open modal's own patron prop, same as handleToggleStatus does.
+  function handlePatronUpdated(updated: UserProfile) {
+    setPatrons((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+    setViewing((v) => (v && v.id === updated.id ? updated : v))
   }
 
   return (
@@ -209,6 +217,7 @@ export default function PatronsPage() {
           patron={viewing}
           onClose={() => setViewing(null)}
           onToggleStatus={() => setConfirmingStatus(viewing)}
+          onUpdated={handlePatronUpdated}
         />
       )}
 

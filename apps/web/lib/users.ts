@@ -23,15 +23,24 @@ export async function fetchPatrons(): Promise<UserProfile[]> {
   return res.json()
 }
 
-export async function updatePatronStatus(
-  userId: string,
-  status: "active" | "inactive"
-): Promise<UserProfile> {
+export type PatronUpdate = {
+  status?: "active" | "inactive"
+  program?: string | null
+  year_level?: number | null
+}
+
+export async function updatePatron(userId: string, changes: PatronUpdate): Promise<UserProfile> {
   const res = await fetch(`${API_URL}/users/${userId}`, {
     method: "PATCH",
     headers: authHeaders(),
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(changes),
   })
-  if (!res.ok) return parseErrorOrThrow(res, "Could not update this patron's status")
+  if (!res.ok) return parseErrorOrThrow(res, "Could not update this patron")
   return res.json()
+}
+
+// Thin wrapper kept for the existing deactivate/activate call site — same
+// endpoint, just the one field.
+export async function updatePatronStatus(userId: string, status: "active" | "inactive"): Promise<UserProfile> {
+  return updatePatron(userId, { status })
 }
