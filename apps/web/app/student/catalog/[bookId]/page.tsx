@@ -28,6 +28,7 @@ import { createReservation, cancelReservation } from '@/lib/reservations'
 import { fetchSavedBooks, saveBook, unsaveBook } from '@/lib/saved'
 import { fetchLoans, type Loan as ApiLoan } from '@/lib/kiosk'
 import { logEvent } from '@/lib/recommendationEvents'
+import { useStudentCounts } from '@/components/layout/StudentCountsContext'
 import { BorrowModal } from '@/components/kiosk/BorrowModal'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 import { BookCard } from '@/components/ui/catalog'
@@ -76,6 +77,7 @@ function ActionPanel({
   const [actionError, setActionError] = useState('')
   const reserved = !!reservation
   const pct = totalCopies > 0 ? (availableCopies / totalCopies) * 100 : 0
+  const { refreshReservationCount } = useStudentCounts()
 
   // Recommendations plan Phase 9 — a reserve here can only be
   // attributed back to a "For You" card via these two query params
@@ -93,6 +95,7 @@ function ActionPanel({
       await createReservation(book.id)
       if (fromRec) logEvent('reserve', book.id, recRank ? Number(recRank) : undefined)
       onReservationChange()
+      refreshReservationCount()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to reserve this book')
     } finally {
@@ -107,6 +110,7 @@ function ActionPanel({
     try {
       await cancelReservation(reservation.id)
       onReservationChange()
+      refreshReservationCount()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to cancel your reservation')
     } finally {
