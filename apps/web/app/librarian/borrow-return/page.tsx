@@ -64,6 +64,7 @@ interface BookResult {
   available: number
   total: number
   color: string
+  coverUrl?: string
   borrowedBy?: string
   borrowedByEmail?: string
   dueDate?: string
@@ -97,6 +98,7 @@ function toBookResult(book: Book, activeTx?: BorrowTransaction): BookResult {
     available: book.available_copies ?? 0,
     total: book.total_copies ?? 0,
     color: book.cover_color ?? "#2563EB",
+    coverUrl: book.cover_url,
     borrowedBy: activeTx?.profiles?.full_name ?? activeTx?.profiles?.email,
     borrowedByEmail: activeTx?.profiles?.email,
     dueDate: activeTx
@@ -212,18 +214,7 @@ function BookResultCard({
     <div className="rounded border border-green-200 bg-green-50 p-4 flex flex-col gap-3">
       {/* Book info */}
       <div className="flex items-start gap-3">
-        <div
-          className="shrink-0 rounded flex items-center justify-center text-white font-bold"
-          style={{
-            width: 48,
-            height: 66,
-            background: book.color,
-            fontFamily: "var(--font-display)",
-            fontSize: "1.25rem",
-          }}
-        >
-          {book.title[0]}
-        </div>
+        <BookCoverThumb title={book.title} author={book.author} coverUrl={book.coverUrl} coverColor={book.color} width={48} height={66} />
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-0.5">
@@ -781,6 +772,79 @@ function ConditionButtons({
   )
 }
 
+// ─── Book cover thumbnail ───────────────────────────────────────────────────
+// 160 of 185 real books have a real cover_url — every book "card" on this
+// page (Borrow's scan result, Return's found-loan card, the Reshelving
+// queue) was showing just a flat color square with the title's first
+// letter instead, completely ignoring it. Same real-cover-with-decorative-
+// fallback treatment components/ui/catalog/LibrarianBookCard.tsx already
+// uses, so a book reads the same whether you're looking it up in the
+// catalog or scanning it at the counter.
+const COVER_COLORS = [
+  "#1E3A5F", "#5C3D11", "#1B3A2D", "#4A1942",
+  "#2C3E50", "#1A1A2E", "#0F4C75", "#154360",
+  "#1B2631", "#2E4057", "#3B1F2B", "#1C3144",
+]
+
+function hashColor(seed: string): string {
+  const idx = seed.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0)
+  return COVER_COLORS[idx % COVER_COLORS.length]
+}
+
+function BookCoverThumb({
+  title,
+  author,
+  coverUrl,
+  coverColor,
+  width,
+  height,
+}: {
+  title: string
+  author?: string | null
+  coverUrl?: string | null
+  coverColor?: string | null
+  width: number
+  height: number
+}) {
+  const bg = coverColor || hashColor(title)
+  return (
+    <div
+      className="shrink-0 rounded-[3px] overflow-hidden relative"
+      style={{ width, height, background: bg }}
+    >
+      {coverUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={coverUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
+      ) : (
+        <div className="absolute inset-0 flex flex-col justify-between p-1.5">
+          <svg className="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <pattern id={`brt-cover-${title}`} width="12" height="12" patternUnits="userSpaceOnUse">
+                <path d="M 12 0 L 0 0 0 12" fill="none" stroke="white" strokeWidth="0.5" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#brt-cover-${title})`} />
+          </svg>
+          {author && (
+            <p
+              className="text-white/60 uppercase font-semibold z-10 leading-tight line-clamp-1"
+              style={{ fontSize: "0.45rem", letterSpacing: "0.06em", fontFamily: "var(--font-body)" }}
+            >
+              {author}
+            </p>
+          )}
+          <p
+            className="text-white font-semibold z-10 leading-snug line-clamp-3"
+            style={{ fontSize: "0.55rem", fontFamily: "var(--font-display)" }}
+          >
+            {title}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function BorrowerAvatar({ name, avatarUrl }: { name: string | null; avatarUrl: string | null }) {
   if (avatarUrl) {
     // eslint-disable-next-line @next/next/no-img-element
@@ -946,7 +1010,7 @@ function ReturnPanel({
         >
           <PackageCheck size={13} />
           {confirmed.needsReshelving
-            ? "This copy now needs reshelving — it&apos;ll show up in the Reshelving tab."
+            ? "This copy now needs reshelving — it'll show up in the Reshelving tab."
             : "Held for the next reservation — no reshelving needed."}
         </p>
         <button
@@ -988,12 +1052,14 @@ function ReturnPanel({
       <div className="rounded border border-green-200 bg-green-50 p-4 flex flex-col gap-3">
         {/* Book + accession */}
         <div className="flex items-start gap-3">
-          <div
-            className="shrink-0 rounded flex items-center justify-center text-white font-bold"
-            style={{ width: 48, height: 66, background: loan.books?.cover_color ?? "#2563EB", fontFamily: "var(--font-display)", fontSize: "1.25rem" }}
-          >
-            {loan.books?.title?.[0] ?? "?"}
-          </div>
+          <BookCoverThumb
+            title={loan.books?.title ?? "?"}
+            author={loan.books?.author}
+            coverUrl={loan.books?.cover_url}
+            coverColor={loan.books?.cover_color}
+            width={48}
+            height={66}
+          />
           <div className="flex-1 min-w-0">
             <p className="text-ink-900 font-semibold leading-snug" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}>
               {loan.books?.title ?? "Unknown title"}
@@ -1384,12 +1450,14 @@ function ReshelvingQueueList({
                     canSelect ? "border-ink-200 hover:bg-ink-50 hover:border-ink-300" : "border-ink-100 opacity-50 cursor-not-allowed"
                   )}
                 >
-                  <div
-                    className="shrink-0 rounded flex items-center justify-center text-white font-bold"
-                    style={{ width: 32, height: 44, background: item.books?.cover_color ?? "#2563EB", fontFamily: "var(--font-display)", fontSize: "0.9rem" }}
-                  >
-                    {item.books?.title?.[0] ?? "?"}
-                  </div>
+                  <BookCoverThumb
+                    title={item.books?.title ?? "?"}
+                    author={item.books?.author}
+                    coverUrl={item.books?.cover_url}
+                    coverColor={item.books?.cover_color}
+                    width={32}
+                    height={44}
+                  />
                   <div className="flex-1 min-w-0">
                     <p className="text-ink-900 font-medium truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
                       {item.books?.title ?? "Unknown title"}
