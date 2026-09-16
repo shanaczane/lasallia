@@ -127,6 +127,14 @@ function LibrarianLayoutInner({
             <ul className="flex flex-col gap-0.5">
               {section.items.map((item) => {
                 const isActive = pathname === item.href
+                // Notifications is the one nav item with a live count —
+                // same unreadCount the bell shows (StudentLayout already
+                // does this for its own Notifications item; this brings
+                // Librarian's in line), so the two never disagree. It
+                // only ever drops via an explicit mark-read/mark-all-read
+                // action (NotificationContext.markRead/markAllRead),
+                // never just by visiting this page or a re-render.
+                const badge = item.href === "/librarian/notifications" ? (unreadCount || undefined) : item.badge
                 return (
                   <li key={item.href}>
                     <Link
@@ -151,7 +159,7 @@ function LibrarianLayoutInner({
                           <span className="flex-1" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
                             {item.label}
                           </span>
-                          {item.badge !== undefined && (
+                          {badge !== undefined && (
                             <span
                               className={cn(
                                 "flex items-center justify-center rounded-full min-w-4.5 h-4.5 px-1",
@@ -159,7 +167,7 @@ function LibrarianLayoutInner({
                               )}
                               style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
                             >
-                              {item.badge}
+                              {badge}
                             </span>
                           )}
                         </>
