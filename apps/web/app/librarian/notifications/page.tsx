@@ -89,11 +89,21 @@ export default function LibrarianNotificationsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("all")
   const { refresh } = useNotifications()
 
+  // Polled every 20s (same interval as the sidebar bell's NotificationContext,
+  // and the same reason — no websocket/Realtime in this codebase, so a
+  // librarian who already has this page open otherwise never sees a
+  // student's transaction land here until they reload) — silent after the
+  // first load, so it doesn't flash back to the "Loading…" state.
   useEffect(() => {
-    fetchNotifications()
-      .then(setNotifications)
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    function load() {
+      fetchNotifications()
+        .then(setNotifications)
+        .catch(() => {})
+        .finally(() => setLoading(false))
+    }
+    load()
+    const id = setInterval(load, 20_000)
+    return () => clearInterval(id)
   }, [])
 
   const categorized = notifications.map((n) => ({ n, category: categoryOf(n) }))

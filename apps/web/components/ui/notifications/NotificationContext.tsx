@@ -26,6 +26,16 @@ export function useNotifications() {
 // ever be a guess about what's actually in the notifications table.
 // `initialUnread` is just the pre-fetch render (avoids a 0->N flash for
 // a returning user), immediately overwritten once the real count lands.
+//
+// Polled, not pushed — there's no websocket/Realtime subscription
+// anywhere in this codebase (every notify()/notify_librarians() call is a
+// plain synchronous DB insert, "no background job infra," same reality
+// core/notify.py's own comments describe). Without this, a librarian
+// with the app already open would only see a student's transaction after
+// their next full navigation or reload; this is what makes it show up on
+// its own instead.
+const POLL_INTERVAL_MS = 20_000
+
 export function NotificationProvider({
   children,
   initialUnread = 0,
@@ -41,7 +51,11 @@ export function NotificationProvider({
       .catch(() => {})
   }
 
-  useEffect(refresh, [])
+  useEffect(() => {
+    refresh()
+    const id = setInterval(refresh, POLL_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [])
 
   return (
     <NotificationContext.Provider

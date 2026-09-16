@@ -4,14 +4,12 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, status
 
 from core.config import FRONTEND_URL
+from core.notify import notify_librarians
+from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.hold import ClaimHoldRequest, ClaimHoldResponse, HoldDetail, HoldExtendResponse
 
 router = APIRouter(prefix="/holds", tags=["holds"])
-
-# Preview only — the real due date is fixed at loan confirmation (2.7: "the
-# due date starts at this moment"), not here.
-BORROW_PERIOD_DAYS = 7
 
 # 2.3: "'I'm getting the book' button extends the session to ~5 minutes."
 EXTEND_SECONDS = 300
@@ -21,12 +19,6 @@ EXTEND_SECONDS = 300
 # These collection types are for library use only and never leave the
 # building — matches the build plan's Part 1.3 list exactly.
 NON_BORROWABLE_COLLECTION_TYPES = {"Reference", "Thesis", "Capstone", "MTR", "Archives"}
-
-# Placeholder pending a real number from the LRC (open question #2 in the
-# build plan) — matches the display-only BORROW_LIMIT_PLACEHOLDER already
-# shown to students in apps/web/app/borrow/[token]/page.tsx and
-# apps/web/app/student/library/page.tsx. Change here once that's answered.
-BORROW_LIMIT = 3
 
 # Not behind auth: claiming happens the instant a student (already
 # identified via their open station_session) taps "Borrow this book" —
@@ -75,8 +67,9 @@ def claim_hold(body: ClaimHoldRequest):
     if any(loan["book_copies"]["book_id"] == body.book_id for loan in current_loans):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You already have a copy of this title checked out")
 
-    if len(current_loans) >= BORROW_LIMIT:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"You've reached your borrowing limit of {BORROW_LIMIT} books")
+    cfg = get_library_settings(db)
+    if len(current_loans) >= cfg["max_books_per_borrower"]:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"You've reached your borrowing limit of {cfg['max_books_per_borrower']} books")
 
     # Phase 4 closes the gap Phase 3 deferred here for lack of data: an
     # unsettled fine can exist on an already-returned loan, so this is a
@@ -142,7 +135,8 @@ def get_hold(token: str):
         .execute()
     )
 
-    due_preview = (datetime.now(timezone.utc) + timedelta(days=BORROW_PERIOD_DAYS)).isoformat()
+    cfg = get_library_settings(db)
+    due_preview = (datetime.now(timezone.utc) + timedelta(days=cfg["standard_loan_period_days"])).isoformat()
 
     return HoldDetail(
         token=token,
@@ -191,3 +185,16 @@ def report_missing(token: str):
 
     db.table("book_copies").update({"status": "missing"}).eq("id", hold["book_copy_id"]).execute()
     db.table("soft_holds").delete().eq("id", hold["id"]).execute()
+
+    copy_res = db.table("book_copies").select("book_id, accession_number").eq("id", hold["book_copy_id"]).execute()
+    book_title, accession = "A book", None
+    if copy_res.data:
+        accession = copy_res.data[0]["accession_number"]
+        book_res = db.table("books").select("title").eq("id", copy_res.data[0]["book_id"]).execute()
+        if book_res.data:
+            book_title = book_res.data[0]["title"]
+    notify_librarians(
+        "Copy reported missing",
+        f'A student couldn\'t find "{book_title}"{f" ({accession})" if accession else ""} on the shelf — it\'s now flagged missing.',
+        link="/librarian/catalog",
+    )
