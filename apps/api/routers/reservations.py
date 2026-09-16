@@ -343,7 +343,7 @@ def pickup_reservation(
     due_label = datetime.fromisoformat(due_date).strftime("%B %d, %Y")
     notify(
         reservation["user_id"], "loan_confirmed",
-        "Book borrowed successfully",
+        "Book successfully borrowed",
         f'You\'ve borrowed "{book_title}". It\'s due back on {due_label}.',
         link="/student/library",
     )
