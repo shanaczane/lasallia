@@ -5,6 +5,7 @@ from supabase import Client
 
 from core.deps import get_current_user, get_user_supabase
 from core.notify import notify, notify_librarians
+from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.loan import Loan
@@ -17,9 +18,6 @@ from schemas.reservation import (
 
 router = APIRouter(prefix="/reservations", tags=["reservations"])
 
-PICKUP_WINDOW_DAYS = 3
-BORROW_LIMIT = 3
-BORROW_PERIOD_DAYS = 7
 NON_BORROWABLE_COLLECTION_TYPES = {"Reference", "Thesis", "Capstone", "MTR", "Archives"}
 
 
@@ -38,11 +36,12 @@ def _advance_or_release(admin: Client, expired: dict, now: datetime) -> None:
         .execute()
     ).data
     if next_res:
+        hold_days = get_library_settings(admin)["reservation_hold_period_days"]
         admin.table("reservations").update({
             "book_copy_id": expired["book_copy_id"],
             "status": "ready",
             "confirmed_at": now.isoformat(),
-            "pickup_by": (now + timedelta(days=PICKUP_WINDOW_DAYS)).isoformat(),
+            "pickup_by": (now + timedelta(days=hold_days)).isoformat(),
         }).eq("id", next_res[0]["id"]).execute()
         book_res = admin.table("books").select("title").eq("id", expired["book_id"]).execute()
         book_title = book_res.data[0]["title"] if book_res.data else "A book"
@@ -131,6 +130,7 @@ def create_reservation(
     # claim_hold, duplicated rather than imported (matches this codebase's
     # existing convention for small per-router constants).
     admin = get_admin_client()
+    cfg = get_library_settings(admin)
 
     book_res = admin.table("books").select("collection_type").eq("id", body.book_id).execute()
     if not book_res.data:
@@ -163,8 +163,8 @@ def create_reservation(
 
     if any(datetime.fromisoformat(loan["due_date"]) < now for loan in current_loans):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You have an overdue book — please return it before reserving another")
-    if len(current_loans) >= BORROW_LIMIT:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"You've reached your borrowing limit of {BORROW_LIMIT} books")
+    if len(current_loans) >= cfg["max_books_per_borrower"]:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"You've reached your borrowing limit of {cfg['max_books_per_borrower']} books")
 
     unsettled = (
         admin.table("loans")
@@ -186,6 +186,22 @@ def create_reservation(
     )
     if existing.data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You already have a reservation for this title")
+
+    # Settings' "Maximum Active Reservations per User" — previously
+    # persisted nowhere and enforced nowhere; a student could queue up an
+    # unlimited number of titles at once.
+    active_reservations = (
+        admin.table("reservations")
+        .select("id", count="exact")
+        .eq("user_id", user.id)
+        .in_("status", ["pending", "ready"])
+        .execute()
+    )
+    if (active_reservations.count or 0) >= cfg["max_active_reservations"]:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"You've reached your limit of {cfg['max_active_reservations']} active reservations",
+        )
 
     res = db.table("reservations").insert({
         "user_id": user.id,
@@ -260,6 +276,7 @@ def pickup_reservation(
     user: UserProfile = Depends(get_current_user),
 ):
     admin = get_admin_client()
+    cfg = get_library_settings(admin)
 
     res_row = admin.table("reservations").select("*").eq("id", reservation_id).execute()
     if not res_row.data:
@@ -290,8 +307,8 @@ def pickup_reservation(
     ).data
     if any(datetime.fromisoformat(loan["due_date"]) < now for loan in current_loans):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You have an overdue book — please return it before borrowing another")
-    if len(current_loans) >= BORROW_LIMIT:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"You've reached your borrowing limit of {BORROW_LIMIT} books")
+    if len(current_loans) >= cfg["max_books_per_borrower"]:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"You've reached your borrowing limit of {cfg['max_books_per_borrower']} books")
     unsettled = (
         admin.table("loans")
         .select("id", count="exact")
@@ -315,7 +332,7 @@ def pickup_reservation(
     if submitted != actual:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That number belongs to a different book. Please check the label.")
 
-    due_date = (now + timedelta(days=BORROW_PERIOD_DAYS)).isoformat()
+    due_date = (now + timedelta(days=cfg["standard_loan_period_days"])).isoformat()
     loan_res = admin.table("loans").insert({
         "book_copy_id": copy["id"],
         "student_id": reservation["user_id"],

@@ -6,6 +6,7 @@ from supabase import Client
 from core.calendar import compute_fine
 from core.deps import get_current_user, get_user_supabase, require_librarian
 from core.notify import notify, notify_librarians
+from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.loan import (
@@ -19,13 +20,8 @@ from schemas.loan import (
 
 router = APIRouter(prefix="/loans", tags=["loans"])
 
-BORROW_PERIOD_DAYS = 7
 MAX_ATTEMPTS = 3
 DAMAGE_PROCESSING_FEE = 50.0
-
-# Reused by both the return endpoint's reservation routing and
-# reservations.py's own librarian-confirm action.
-PICKUP_WINDOW_DAYS = 3
 
 
 def _embed_book_and_borrower(db: Client, query):
@@ -157,7 +153,8 @@ def confirm_loan(body: ConfirmLoanRequest):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Station session not found")
     student_id = session_res.data[0]["student_id"]
 
-    due_date = (datetime.now(timezone.utc) + timedelta(days=BORROW_PERIOD_DAYS)).isoformat()
+    cfg = get_library_settings(db)
+    due_date = (datetime.now(timezone.utc) + timedelta(days=cfg["standard_loan_period_days"])).isoformat()
 
     loan_res = db.table("loans").insert({
         "book_copy_id": copy["id"],
@@ -348,7 +345,7 @@ def return_loan(
             "book_copy_id": copy["id"],
             "status": "ready",
             "confirmed_at": datetime.now(timezone.utc).isoformat(),
-            "pickup_by": (datetime.now(timezone.utc) + timedelta(days=PICKUP_WINDOW_DAYS)).isoformat(),
+            "pickup_by": (datetime.now(timezone.utc) + timedelta(days=get_library_settings(admin)["reservation_hold_period_days"])).isoformat(),
         }).eq("id", pending_res.data[0]["id"]).execute()
         notify(
             pending_res.data[0]["user_id"], "reservation_confirmed",

@@ -4,12 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from core.deps import get_current_user, get_user_supabase, require_librarian
+from core.settings import get_library_settings
+from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.borrow import BorrowStatus, BorrowTransaction, CreateBorrowRequest
 
 router = APIRouter(prefix="/borrow", tags=["borrow"])
-
-BORROW_PERIOD_DAYS = 7
 
 @router.get("", response_model=list[BorrowTransaction])
 def list_borrows(
@@ -47,7 +47,8 @@ def create_borrow(
     if available <= 0:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No copies available to borrow")
 
-    due_date = (datetime.now(timezone.utc) + timedelta(days=BORROW_PERIOD_DAYS)).isoformat()
+    cfg = get_library_settings(get_admin_client())
+    due_date = (datetime.now(timezone.utc) + timedelta(days=cfg["standard_loan_period_days"])).isoformat()
     tx_res = db.table("borrow_transactions").insert({
         "user_id": patron_id,
         "book_id": body.book_id,
