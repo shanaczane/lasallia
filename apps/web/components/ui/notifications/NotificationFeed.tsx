@@ -19,7 +19,7 @@ type Tab = {
 const TABS: Tab[] = [
   { key: "all",          label: "All",          shortLabel: "All" },
   { key: "due_dates",    label: "Due Dates",    shortLabel: "Due Dates",    types: ["due_reminder", "overdue"] },
-  { key: "reservations", label: "Reservations", shortLabel: "Reservations", types: ["reservation_confirmed", "reservation_cancelled"] },
+  { key: "reservations", label: "Reservations", shortLabel: "Reservations", types: ["reservation_placed", "reservation_queue_advanced", "reservation_confirmed", "reservation_cancelled"] },
   { key: "loans",        label: "Loans",        shortLabel: "Loans",        types: ["loan_confirmed", "return_confirmed"] },
 ]
 
@@ -76,7 +76,7 @@ export function NotificationFeed({
   const tabCounts: Record<TabKey, number> = {
     all:             notifications.filter((n) => !n.is_read).length,
     due_dates:       notifications.filter((n) => !n.is_read && ["due_reminder", "overdue"].includes(n.type)).length,
-    reservations:    notifications.filter((n) => !n.is_read && ["reservation_confirmed", "reservation_cancelled"].includes(n.type)).length,
+    reservations:    notifications.filter((n) => !n.is_read && ["reservation_placed", "reservation_queue_advanced", "reservation_confirmed", "reservation_cancelled"].includes(n.type)).length,
     loans:           notifications.filter((n) => !n.is_read && ["loan_confirmed", "return_confirmed"].includes(n.type)).length,
   }
 

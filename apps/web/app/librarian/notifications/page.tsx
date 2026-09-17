@@ -38,6 +38,8 @@ function categoryOf(n: Notification): LibCategory {
   switch (n.type) {
     case "loan_confirmed":          return "borrow"
     case "return_confirmed":        return "return"
+    case "reservation_placed":
+    case "reservation_queue_advanced":
     case "reservation_confirmed":
     case "reservation_cancelled":   return "reservation"
     case "student_activity":        return titleCategory(n.title)
