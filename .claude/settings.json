@@ -15,7 +15,13 @@
       "Bash(python -m py_compile routers/loans.py)",
       "Bash(python -m py_compile routers/sessions.py routers/patrons.py routers/loans.py schemas/session.py)",
       "Bash(python -m py_compile routers/sessions.py routers/patrons.py routers/loans.py routers/holds.py schemas/session.py schemas/loan.py core/loans.py)",
-      "Bash(python -m py_compile routers/loans.py schemas/loan.py)"
+      "Bash(python -m py_compile routers/loans.py schemas/loan.py)",
+      "Bash(./venv/Scripts/python.exe -c ' *)",
+      "Bash(./venv/Scripts/python.exe scripts/backfill_shelf_location.py --dry-run)",
+      "Bash(./venv/Scripts/python.exe scripts/backfill_shelf_location.py)",
+      "Bash(python -c ' *)",
+      "Bash(./venv/Scripts/python.exe -m py_compile routers/books.py schemas/book.py scripts/shelf_location.py scripts/seed_books.py scripts/backfill_shelf_location.py)",
+      "Bash(pnpm --filter web exec tsc --noEmit)"
     ]
   }
 }
