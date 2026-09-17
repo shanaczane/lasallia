@@ -530,11 +530,11 @@ function TransactionsTable({ tab, records }: { tab: Tab; records: TxRecord[] }) 
             {["Book", "Patron", "Email", "Time"].map((h) => (
               <th
                 key={h}
-                className="pb-2 text-left text-ink-400 font-semibold"
+                className="pb-2 text-left text-ink-400 font-semibold uppercase"
                 style={{
                   fontFamily: "var(--font-body)",
                   fontSize: "var(--text-2xs)",
-                  letterSpacing: "var(--tracking-micro)",
+                  letterSpacing: "var(--tracking-eyebrow)",
                 }}
               >
                 {h}
@@ -1366,20 +1366,25 @@ function ReshelvingPanel({
 }) {
   const [accessionInput, setAccessionInput] = useState("")
   const [submitting, setSubmitting] = useState(false)
-  const [result, setResult] = useState<"success" | "error" | null>(null)
+  const [result, setResult] = useState<"available" | "reserved" | "error" | null>(null)
   const [message, setMessage] = useState("")
 
   async function handleConfirm() {
     if (!accessionInput.trim()) return
     setSubmitting(true)
     try {
-      await reshelveCopy(accessionInput.trim())
-      setResult("success")
+      const { status: copyStatus } = await reshelveCopy(accessionInput.trim())
+      // A reservation can form while a copy sits in for_reshelving — the
+      // backend hands it straight to that hold instead of the open shelf,
+      // so this scan doesn't always mean "now available" (loans.py's
+      // reshelve_copy).
+      const held = copyStatus === "reserved"
+      setResult(held ? "reserved" : "available")
       onSettled({
         title: accessionInput.trim(),
         patron: "—",
         time: new Date().toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
-        note: "Now available",
+        note: held ? "Held for next reservation" : "Now available",
       })
       setAccessionInput("")
     } catch (err) {
@@ -1429,9 +1434,14 @@ function ReshelvingPanel({
             {submitting ? "…" : "Confirm"}
           </button>
         </div>
-        {result === "success" && (
+        {result === "available" && (
           <p className="flex items-center gap-1.5 text-green-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
             <CheckCircle2 size={14} /> Copy is now available.
+          </p>
+        )}
+        {result === "reserved" && (
+          <p className="flex items-center gap-1.5 text-amber-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            <CheckCircle2 size={14} /> Held for the next reservation — not on the open shelf.
           </p>
         )}
         {result === "error" && (

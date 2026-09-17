@@ -391,9 +391,9 @@ function ShelfListTable({ rows, onExport }: { rows: ShelfListRow[]; onExport: ()
                 ]).map((col) => (
                   <th
                     key={col.label}
-                    className={cn("text-left py-2 px-3 text-ink-500 font-semibold select-none", col.key ? "cursor-pointer hover:text-ink-800" : "")}
+                    className={cn("text-left py-2 px-3 text-ink-500 font-semibold uppercase select-none", col.key ? "cursor-pointer hover:text-ink-800" : "")}
                     onClick={() => col.key && handleSort(col.key)}
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}
                   >
                     <span className="flex items-center gap-1">{col.label}{col.key && <SortIcon k={col.key} />}</span>
                   </th>
@@ -577,8 +577,8 @@ function WeedingPanel() {
                   {["Book", "Action", "By", "When", ""].map((label) => (
                     <th
                       key={label}
-                      className="text-left py-2.5 px-4 text-ink-500 font-semibold"
-                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                      className="text-left py-2.5 px-4 text-ink-500 font-semibold uppercase"
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}
                     >
                       {label}
                     </th>
@@ -806,8 +806,8 @@ function ActivityLogTable({
                 {["Date", "Time", "Type", "User", "Item"].map((label) => (
                   <th
                     key={label}
-                    className="text-left py-2.5 px-4 text-ink-500 font-semibold select-none"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-micro)" }}
+                    className="text-left py-2.5 px-4 text-ink-500 font-semibold uppercase select-none"
+                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}
                   >
                     {label}
                   </th>
@@ -966,14 +966,14 @@ function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => 
                   <th
                     key={col.label}
                     className={cn(
-                      "text-left py-2.5 px-4 text-ink-500 font-semibold select-none",
+                      "text-left py-2.5 px-4 text-ink-500 font-semibold uppercase select-none",
                       col.key ? "cursor-pointer hover:text-ink-800 group" : ""
                     )}
                     onClick={() => col.key && handleSort(col.key)}
                     style={{
                       fontFamily: "var(--font-body)",
                       fontSize: "var(--text-2xs)",
-                      letterSpacing: "var(--tracking-micro)",
+                      letterSpacing: "var(--tracking-eyebrow)",
                     }}
                   >
                     <span className="flex items-center gap-1">
@@ -1082,9 +1082,10 @@ function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 function ReportsPageContent() {
   const searchParams = useSearchParams()
-  const [tab, setTab] = useState<ReportTab>(() =>
-    searchParams.get("tab") === "activity" ? "activity" : "overview"
-  )
+  const [tab, setTab] = useState<ReportTab>(() => {
+    const t = searchParams.get("tab")
+    return t === "activity" || t === "overdue" || t === "weeding" ? t : "overview"
+  })
 
   // `books` only populates the Category/Program filter dropdown — the
   // reports themselves come from the backend now. `patrons` does that too,
