@@ -159,25 +159,14 @@ export default function LibrarianDashboard() {
 
             {feed.length > 0 && (
               <>
-                {/* Desktop table header */}
-                <div
-                  className="hidden sm:flex items-center gap-4 px-4 py-2.5 border-b border-ink-100 text-ink-400 uppercase font-semibold"
-                  style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}
-                >
-                  <span className="w-24">Date &amp; Time</span>
-                  <span className="w-24">Type</span>
-                  <span className="w-40 shrink-0">User</span>
-                  <span className="flex-1">Item</span>
-                </div>
-
-                <div className="flex flex-col divide-y divide-ink-100">
+                {/* Mobile: stacked cards — a table forces horizontal scroll
+                    at phone width, so this stays a simple list instead. */}
+                <div className="flex flex-col divide-y divide-ink-100 sm:hidden">
                   {feed.map((tx) => {
                     const cfg = TX_CONFIG[tx.type]
                     return (
-                      <div key={tx.id} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 px-4 py-3">
-
-                        {/* Mobile: date/time + type on one row */}
-                        <div className="flex items-center justify-between sm:hidden">
+                      <div key={tx.id} className="flex flex-col gap-1.5 px-4 py-3">
+                        <div className="flex items-center justify-between">
                           <span className="text-ink-500" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
                             {tx.date} · {tx.time}
                           </span>
@@ -185,34 +174,82 @@ export default function LibrarianDashboard() {
                             <span className={cn("font-medium", cfg.text)}>{cfg.label}</span>
                           </span>
                         </div>
-
-                        {/* Desktop columns */}
-                        <span className="hidden sm:block w-24 leading-tight">
-                          <span className="block text-ink-700" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                            {tx.date}
-                          </span>
-                          <span className="block text-ink-400" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}>
-                            {tx.time}
-                          </span>
+                        <span className="text-ink-900 font-medium truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                          {tx.user}
                         </span>
-                        <span className="hidden sm:flex w-24">
-                          <span className={cn("flex items-center px-2 py-0.5 rounded-pill", cfg.bg)} style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                            <span className={cn("font-medium", cfg.text)}>{cfg.label}</span>
-                          </span>
+                        <span className="text-ink-500 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                          {tx.item}
                         </span>
-
-                        {/* User + item */}
-                        <div className="flex flex-col sm:flex-row sm:flex-1 sm:items-center gap-0.5 sm:gap-4 min-w-0">
-                          <span className="text-ink-900 font-medium sm:w-40 sm:shrink-0 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                            {tx.user}
-                          </span>
-                          <span className="text-ink-500 sm:flex-1 min-w-0 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                            {tx.item}
-                          </span>
-                        </div>
                       </div>
                     )
                   })}
+                </div>
+
+                {/* Desktop: a real <table> — the header and body used to be
+                    separate flex rows with matching fixed widths (w-24/w-40)
+                    that only lined up as long as no cell's content needed
+                    more room than its box, which the all-caps tracked-out
+                    header text didn't reliably fit.
+                    table-fixed + percentage <col> widths (rather than
+                    auto-layout with a min-w-* + overflow-x-auto escape
+                    hatch) so the table always spans exactly the container's
+                    width — no horizontal scrollbar at any size — and every
+                    column truncates its own content instead of pushing the
+                    table wider. */}
+                <div className="hidden sm:block">
+                  <table className="w-full table-fixed">
+                    <colgroup>
+                      <col style={{ width: "17%" }} />
+                      <col style={{ width: "13%" }} />
+                      <col style={{ width: "22%" }} />
+                      <col />
+                    </colgroup>
+                    <thead>
+                      <tr className="border-b border-ink-200 bg-ink-50">
+                        {["Date & Time", "Type", "User", "Item"].map((label) => (
+                          <th
+                            key={label}
+                            className="text-left py-2.5 px-4 text-ink-500 font-semibold uppercase select-none"
+                            style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)", fontFamily: "var(--font-body)" }}
+                          >
+                            {label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-ink-100">
+                      {feed.map((tx) => {
+                        const cfg = TX_CONFIG[tx.type]
+                        return (
+                          <tr key={tx.id} className="hover:bg-ink-50 transition-colors">
+                            <td className="py-3 px-4 align-top">
+                              <span className="block text-ink-700 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                                {tx.date}
+                              </span>
+                              <span className="block text-ink-400 truncate" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}>
+                                {tx.time}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 align-top">
+                              <span className={cn("inline-flex items-center px-2 py-0.5 rounded-pill", cfg.bg)} style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                                <span className={cn("font-medium", cfg.text)}>{cfg.label}</span>
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 align-top">
+                              <p className="text-ink-900 font-medium truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                                {tx.user}
+                              </p>
+                            </td>
+                            <td className="py-3 px-4 align-top">
+                              <p className="text-ink-500 truncate" title={tx.item} style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                                {tx.item}
+                              </p>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </>
             )}
