@@ -11,11 +11,17 @@ import {
   AlertCircle,
   Search,
   BookMarked,
-  ChevronDown,
+  X,
 } from "lucide-react"
 import { useReservations } from "@/lib/hooks/useReservations"
 import { cancelReservation } from "@/lib/reservations"
 import type { Reservation, ReservationStatus } from "@lasallia/types"
+
+// Same chevron-as-background-image treatment PatronsToolbar's role filter
+// uses, so every librarian list page's search+filter row reads as one
+// consistent component instead of each page inventing its own select style.
+const SELECT_CHEVRON =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatDate(iso: string): string {
@@ -382,7 +388,6 @@ export default function LibrarianReservationsPage() {
 
   return (
     <div className="flex flex-col w-full min-h-screen bg-paper">
-    <div className="w-full max-w-4xl mx-auto flex flex-col flex-1">
 
       <div className="px-4 sm:px-8 pt-6 pb-4">
         <h1 className="text-ink-900 font-semibold leading-tight" style={{ fontSize: "var(--text-3xl)", fontFamily: "var(--font-display)" }}>
@@ -403,31 +408,45 @@ export default function LibrarianReservationsPage() {
         </div>
       </div>
 
-      <div className="px-4 sm:px-8 py-3 flex flex-col sm:flex-row gap-2 border-b border-ink-100 bg-white">
-        <div className="relative flex-1">
+      <div className="px-4 sm:px-8 py-3 flex flex-row flex-wrap items-stretch gap-2">
+        <div className="flex-1 min-w-[160px] relative">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by student name, email, or book title…"
-            className="w-full pl-9 pr-4 py-2 rounded-(--radius) border border-ink-200 bg-white text-ink-900 placeholder:text-ink-300 focus:outline-none focus:border-green-600 transition-colors"
+            className="w-full pl-9 pr-8 py-2 rounded-sm border border-ink-200 bg-white text-ink-900 placeholder:text-ink-300 focus:outline-none focus:border-green-700 hover:border-ink-300 transition-colors"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700 transition-colors"
+            >
+              <X size={13} />
+            </button>
+          )}
         </div>
-        <div className="relative flex-shrink-0">
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-            className="appearance-none pl-3 pr-8 py-2 rounded-(--radius) border border-ink-200 bg-white text-ink-700 focus:outline-none focus:border-green-600 transition-colors cursor-pointer"
-            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-          >
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
-            <option value="pickup">Pickup date</option>
-          </select>
-          <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
-        </div>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+          aria-label="Sort by"
+          className="shrink-0 min-w-[128px] sm:min-w-[168px] appearance-none bg-white border border-ink-200 text-ink-700 rounded-sm pl-3 pr-7 py-2 focus:outline-none focus:border-green-700 hover:border-ink-300 cursor-pointer transition-colors"
+          style={{
+            fontFamily: "var(--font-body)",
+            fontSize: "var(--text-sm-body)",
+            backgroundImage: `url("${SELECT_CHEVRON}")`,
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "right 7px center",
+          }}
+        >
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="pickup">Pickup date</option>
+        </select>
       </div>
 
       <div className="flex-1 px-4 sm:px-8 py-4">
@@ -447,11 +466,19 @@ export default function LibrarianReservationsPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-1">
-            {search && (
-              <p className="text-ink-400 px-1 mb-2" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
-                Matching &ldquo;{search}&rdquo;
-              </p>
-            )}
+            <p
+              className="flex items-center gap-1.5 text-ink-500 px-1 mb-2"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            >
+              <BookMarked size={13} className="text-ink-400 shrink-0" />
+              <span className="font-semibold text-ink-900">{filtered.length}</span>
+              {filtered.length === 1 ? "reservation" : "reservations"}
+              {search && (
+                <>
+                  {" "}for &ldquo;<span className="text-ink-700">{search}</span>&rdquo;
+                </>
+              )}
+            </p>
             <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
               {filtered.map((r, i) => (
                 <ReservationRow key={r.id} reservation={r} isLast={i === filtered.length - 1} onReject={setRejectTarget} />
@@ -469,7 +496,6 @@ export default function LibrarianReservationsPage() {
           onClose={() => setRejectTarget(null)}
         />
       )}
-    </div>
     </div>
   )
 }
