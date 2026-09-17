@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-AuthMethod = Literal["manual_login", "rfid"]
+AuthMethod = Literal["manual_login", "rfid", "librarian_assisted"]
 
 class OpenSessionRequest(BaseModel):
     station_id: str
@@ -12,6 +12,9 @@ class OpenSessionRequest(BaseModel):
     password: str | None = None
     # rfid
     rfid_uid: str | None = None
+    # librarian_assisted — the librarian already found the student via
+    # GET /users?q=, so their own JWT is the credential, not the student's.
+    student_id: str | None = None
 
 class StationSession(BaseModel):
     id: str
