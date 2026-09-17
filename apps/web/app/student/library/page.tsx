@@ -534,7 +534,7 @@ function SavedCard({
   )
 }
 
-function SavedTab({ savedBooks, loading, onRemove }: { savedBooks: Book[]; loading: boolean; onRemove: (bookId: string) => void }) {
+function SavedTab({ savedBooks, loading, error, onRemove }: { savedBooks: Book[]; loading: boolean; error: string | null; onRemove: (bookId: string) => void }) {
   const [removingId, setRemovingId] = useState<string | null>(null)
 
   const { page, totalPages, pageItems, goTo } = usePagination(savedBooks, savedBooks.length)
@@ -549,6 +549,10 @@ function SavedTab({ savedBooks, loading, onRemove }: { savedBooks: Book[]; loadi
 
   if (loading) {
     return <EmptyState icon={<Bookmark size={28} />} message="Loading your saved books…" />
+  }
+
+  if (error) {
+    return <EmptyState icon={<Bookmark size={28} />} message={error} />
   }
 
   if (savedBooks.length === 0) {
@@ -689,7 +693,7 @@ function HistoryCard({ loan, status }: { loan: ApiLoan; status: HistoryStatus })
   )
 }
 
-function HistoryTab({ loans }: { loans: ApiLoan[] }) {
+function HistoryTab({ loans, loading, error }: { loans: ApiLoan[]; loading: boolean; error: string | null }) {
   const [filter, setFilter] = useState<HistoryFilter>("all")
 
   const entries = loans
@@ -714,6 +718,14 @@ function HistoryTab({ loans }: { loans: ApiLoan[] }) {
     { key: "returned",         label: "On Time" },
     { key: "overdue_returned", label: "Late" },
   ]
+
+  if (loading) {
+    return <EmptyState icon={<History size={28} />} message="Loading your history…" />
+  }
+
+  if (error) {
+    return <EmptyState icon={<History size={28} />} message={error} />
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -823,11 +835,12 @@ export default function MyLibraryPage() {
 
   const [savedBooks, setSavedBooks] = useState<Book[]>([])
   const [savedLoading, setSavedLoading] = useState(true)
+  const [savedError, setSavedError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchSavedBooks()
       .then((rows) => setSavedBooks(rows.map((r) => r.books).filter((b): b is Book => !!b)))
-      .catch(() => {})
+      .catch((err) => setSavedError(err.message ?? "Failed to load your saved books"))
       .finally(() => setSavedLoading(false))
   }, [])
 
@@ -903,8 +916,8 @@ export default function MyLibraryPage() {
       {/* Content */}
       <div className="flex-1 px-4 sm:px-8 py-5">
         {tab === "borrowed" && <BorrowedTab loans={loans} loading={loansLoading} error={loansError} />}
-        {tab === "saved"    && <SavedTab savedBooks={savedBooks} loading={savedLoading} onRemove={handleUnsave} />}
-        {tab === "history"  && <HistoryTab loans={loans} />}
+        {tab === "saved"    && <SavedTab savedBooks={savedBooks} loading={savedLoading} error={savedError} onRemove={handleUnsave} />}
+        {tab === "history"  && <HistoryTab loans={loans} loading={loansLoading} error={loansError} />}
       </div>
 
     </div>

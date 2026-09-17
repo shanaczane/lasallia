@@ -10,9 +10,8 @@ import { TopNav } from "./TopNav"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
+import { StudentCountsProvider, useStudentCounts } from "./StudentCountsContext"
 import { cn } from "@/lib/utils"
-import { fetchLoans } from "@/lib/kiosk"
-import { fetchReservations } from "@/lib/reservations"
 import {
   LayoutDashboard,
   BookOpen,
@@ -66,9 +65,11 @@ type StudentLayoutProps = {
 export function StudentLayout({ children, userName, userInitials, initialUnread = 0 }: StudentLayoutProps) {
   return (
     <NotificationProvider initialUnread={initialUnread}>
-      <StudentLayoutInner userName={userName} userInitials={userInitials}>
-        {children}
-      </StudentLayoutInner>
+      <StudentCountsProvider>
+        <StudentLayoutInner userName={userName} userInitials={userInitials}>
+          {children}
+        </StudentLayoutInner>
+      </StudentCountsProvider>
     </NotificationProvider>
   )
 }
@@ -87,27 +88,13 @@ function StudentLayoutInner({
   userInitials?: string
 }) {
   const { unreadCount } = useNotifications()
+  const { activeReservationCount, activeLoanCount } = useStudentCounts()
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [displayName, setDisplayName] = useState(userName ?? "")
   const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
   const [displayEmail, setDisplayEmail] = useState("")
-
-  // Real counts, not the static placeholders these badges used to show —
-  // hidden entirely (via `undefined` in the badge lookup below) when
-  // there's nothing actually happening, rather than always showing 0.
-  const [activeReservationCount, setActiveReservationCount] = useState(0)
-  const [activeLoanCount, setActiveLoanCount] = useState(0)
-
-  useEffect(() => {
-    fetchReservations()
-      .then((rows) => setActiveReservationCount(rows.filter((r) => r.status === "pending" || r.status === "ready").length))
-      .catch(() => {})
-    fetchLoans()
-      .then((rows) => setActiveLoanCount(rows.filter((l) => l.status !== "returned").length))
-      .catch(() => {})
-  }, [])
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("sidebar-collapsed") === "true") setCollapsed(true)

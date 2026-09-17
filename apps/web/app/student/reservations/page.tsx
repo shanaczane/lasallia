@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import { CheckCircle, Clock, XCircle, BookMarked, PackageCheck, AlertCircle } from "lucide-react"
 import { useReservations } from "@/lib/hooks/useReservations"
 import { cancelReservation, pickupReservation } from "@/lib/reservations"
+import { useStudentCounts } from "@/components/layout/StudentCountsContext"
 import type { Condition } from "@/lib/kiosk"
 import type { Reservation, ReservationStatus } from "@lasallia/types"
 
@@ -378,11 +379,12 @@ function PickupModal({ reservation, onConfirmed, onClose }: PickupModalProps) {
 interface CancelModalProps {
   reservation: Reservation
   pending: boolean
+  error: string
   onConfirm: () => void
   onClose: () => void
 }
 
-function CancelModal({ reservation, pending, onConfirm, onClose }: CancelModalProps) {
+function CancelModal({ reservation, pending, error, onConfirm, onClose }: CancelModalProps) {
   return (
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -425,6 +427,12 @@ function CancelModal({ reservation, pending, onConfirm, onClose }: CancelModalPr
           This action cannot be undone. The book will be made available to other students.
         </p>
 
+        {error && (
+          <p className="text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+            {error}
+          </p>
+        )}
+
         <div className="flex flex-wrap gap-2">
           <button
             onClick={onClose}
@@ -451,8 +459,10 @@ function CancelModal({ reservation, pending, onConfirm, onClose }: CancelModalPr
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ReservationsPage() {
   const { reservations, loading, error, refresh } = useReservations()
+  const { refreshReservationCount, refreshLoanCount } = useStudentCounts()
   const [cancelTarget, setCancelTarget] = useState<Reservation | null>(null)
   const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState("")
   const [pickupTarget, setPickupTarget] = useState<Reservation | null>(null)
   const [pickedUp, setPickedUp] = useState<{ title: string; dueDate: string } | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>("all")
@@ -460,12 +470,14 @@ export default function ReservationsPage() {
   async function handleCancelConfirm() {
     if (!cancelTarget) return
     setCancelling(true)
+    setCancelError("")
     try {
       await cancelReservation(cancelTarget.id)
       await refresh()
+      refreshReservationCount()
       setCancelTarget(null)
-    } catch {
-      // error surfaces via the page-level error state on next refresh; keep modal open
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : "Could not cancel this reservation")
     } finally {
       setCancelling(false)
     }
@@ -476,10 +488,12 @@ export default function ReservationsPage() {
     setPickupTarget(null)
     setPickedUp({ title, dueDate })
     await refresh()
+    refreshReservationCount()
+    refreshLoanCount()
   }
 
   const tabCounts: Record<TabKey, number> = {
-    all:       reservations.filter((r) => canCancel(r.status)).length,
+    all:       reservations.length,
     pending:   reservations.filter((r) => r.status === "pending").length,
     ready:     reservations.filter((r) => r.status === "ready").length,
     fulfilled: reservations.filter((r) => r.status === "fulfilled").length,
@@ -598,7 +612,7 @@ export default function ReservationsPage() {
                     <ReservationItemCard
                       key={r.id}
                       reservation={r}
-                      onCancel={() => setCancelTarget(r)}
+                      onCancel={() => { setCancelTarget(r); setCancelError("") }}
                       onPickup={() => setPickupTarget(r)}
                       isLast={i === items.length - 1}
                     />
@@ -614,6 +628,7 @@ export default function ReservationsPage() {
         <CancelModal
           reservation={cancelTarget}
           pending={cancelling}
+          error={cancelError}
           onConfirm={handleCancelConfirm}
           onClose={() => setCancelTarget(null)}
         />

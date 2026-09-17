@@ -26,7 +26,9 @@ import { useBook, useBooks } from '@/lib/hooks/useBooks'
 import { useReservations } from '@/lib/hooks/useReservations'
 import { createReservation, cancelReservation } from '@/lib/reservations'
 import { fetchSavedBooks, saveBook, unsaveBook } from '@/lib/saved'
+import { fetchLoans, type Loan as ApiLoan } from '@/lib/kiosk'
 import { logEvent } from '@/lib/recommendationEvents'
+import { useStudentCounts } from '@/components/layout/StudentCountsContext'
 import { BorrowModal } from '@/components/kiosk/BorrowModal'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 import { BookCard } from '@/components/ui/catalog'
@@ -60,6 +62,7 @@ function ActionPanel({
   onBorrow,
   reservation,
   onReservationChange,
+  loan,
 }: {
   book: Book
   isAvailable: boolean
@@ -68,11 +71,13 @@ function ActionPanel({
   onBorrow: () => void
   reservation: Reservation | undefined
   onReservationChange: () => void
+  loan: ApiLoan | undefined
 }) {
   const [pending, setPending] = useState(false)
   const [actionError, setActionError] = useState('')
   const reserved = !!reservation
   const pct = totalCopies > 0 ? (availableCopies / totalCopies) * 100 : 0
+  const { refreshReservationCount } = useStudentCounts()
 
   // Recommendations plan Phase 9 — a reserve here can only be
   // attributed back to a "For You" card via these two query params
@@ -90,6 +95,7 @@ function ActionPanel({
       await createReservation(book.id)
       if (fromRec) logEvent('reserve', book.id, recRank ? Number(recRank) : undefined)
       onReservationChange()
+      refreshReservationCount()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to reserve this book')
     } finally {
@@ -104,11 +110,28 @@ function ActionPanel({
     try {
       await cancelReservation(reservation.id)
       onReservationChange()
+      refreshReservationCount()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to cancel your reservation')
     } finally {
       setPending(false)
     }
+  }
+
+  // Hard rule: an active loan on this exact book always wins — never offer
+  // Borrow or Reserve for a title the student already has out.
+  if (loan) {
+    return (
+      <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
+        <CheckCircle2 size={16} className="text-green-600 shrink-0" />
+        <p
+          className="text-green-800 leading-snug"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+        >
+          <span className="font-semibold">You&apos;ve borrowed this book</span> — due back {formatDate(loan.due_date)}.
+        </p>
+      </div>
+    )
   }
 
   if (isAvailable) {
@@ -327,6 +350,18 @@ export default function StudentBookDetailPage({
   const { reservations, refresh: refreshReservations } = useReservations()
   const existingReservation = reservations.find(
     (r) => r.book_id === bookId && (r.status === 'pending' || r.status === 'ready')
+  )
+
+  const [loans, setLoans] = useState<ApiLoan[]>([])
+  useEffect(() => {
+    fetchLoans().then(setLoans).catch(() => {})
+  }, [])
+  // Explicit allow-list, not `status !== 'returned'` — loans.status is a
+  // closed DB enum ('active' | 'returned' | 'overdue', 0006_phase2_holds_and_loans.sql),
+  // but spelling out what counts as "still has it" keeps this correct even
+  // if a future status gets added that shouldn't count as active.
+  const activeLoan = loans.find(
+    (l) => l.books?.id === bookId && (l.status === 'active' || l.status === 'overdue')
   )
 
   const [savedBookIds, setSavedBookIds] = useState<Set<string>>(new Set())
@@ -577,6 +612,7 @@ export default function StudentBookDetailPage({
             onBorrow={() => setShowQR(true)}
             reservation={existingReservation}
             onReservationChange={refreshReservations}
+            loan={activeLoan}
           />
         </div>
 
