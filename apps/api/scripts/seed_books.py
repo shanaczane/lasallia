@@ -11,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # so `core.*` resolves
 
 from excel_source import read_records
+from shelf_location import classify_call_number
 from core.supabase import get_admin_client
 
 # filename -> college code. One Excel file per college; the code becomes
@@ -48,15 +49,18 @@ def split_publisher(place_of_publication: str | None) -> str | None:
 def to_book_row(record: dict, college: str) -> dict:
     author = record["Author(s) Full Name"] or record["Author(s)"]
     year = record["Year"]
+    call_number = normalize_ws(record["Call No."]) or ""
+    shelf = classify_call_number(call_number)
     return {
         "accession_no": normalize_ws(record["Book ID (Accession No.)"]),
         "title": normalize_ws(record["Title"]),
         "author": normalize_ws(author) or "Unknown",
         "isbn": record["ISBN"] or None,
-        "call_number": normalize_ws(record["Call No."]) or "",
+        "call_number": call_number,
         "category": record["program"],
         "subject": college,
-        "shelf_location": "Unassigned",
+        "shelf_location": shelf["shelf_location"],
+        "aisle": shelf["aisle"],
         "status": "available",
         "cover_url": record["Images"] or None,
         "abstract": record["Description"] or None,
