@@ -6,6 +6,7 @@ NotificationType = Literal[
     "due_reminder", "overdue", "reservation_confirmed",
     "reservation_cancelled", "return_confirmed",
     "loan_confirmed", "student_activity",
+    "reservation_placed", "reservation_queue_advanced",
 ]
 
 class Notification(BaseModel):

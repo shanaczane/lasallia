@@ -3,6 +3,8 @@
 export type NotificationType =
   | 'due_reminder'
   | 'overdue'
+  | 'reservation_placed'          // student-facing: just joined a title's queue
+  | 'reservation_queue_advanced'  // student-facing: now #1 in line, not ready yet
   | 'reservation_confirmed'
   | 'reservation_cancelled'
   | 'return_confirmed'

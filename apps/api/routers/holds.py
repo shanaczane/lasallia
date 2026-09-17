@@ -86,19 +86,47 @@ def claim_hold(body: ClaimHoldRequest):
 
     token = secrets.token_urlsafe(24)
 
-    res = db.rpc("claim_copy_for_book", {
-        "p_book_id": body.book_id,
-        "p_station_session_id": body.station_session_id,
-        "p_token": token,
-    }).execute()
+    # A student with a 'ready' reservation on this title already has a
+    # specific copy pulled and held for them — that copy's status is
+    # 'reserved', not 'available', so claim_copy_for_book below would
+    # never find it (by design, it only searches general circulation).
+    # Route them straight to their own held copy instead of running that
+    # search, so "Borrow this book" on the catalog page works the same way
+    # for a queued pickup as it does for a walk-in — no separate pickup
+    # flow needed.
+    ready_reservation = (
+        db.table("reservations")
+        .select("book_copy_id")
+        .eq("user_id", student_id)
+        .eq("book_id", body.book_id)
+        .eq("status", "ready")
+        .execute()
+    ).data
 
-    if not res.data:
-        raise HTTPException(status.HTTP_409_CONFLICT, "No copies available to borrow right now")
+    if ready_reservation and ready_reservation[0]["book_copy_id"]:
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=120)).isoformat()
+        db.table("soft_holds").upsert({
+            "book_copy_id": ready_reservation[0]["book_copy_id"],
+            "station_session_id": body.station_session_id,
+            "token": token,
+            "attempt_count": 0,
+            "expires_at": expires_at,
+        }, on_conflict="book_copy_id").execute()
+    else:
+        res = db.rpc("claim_copy_for_book", {
+            "p_book_id": body.book_id,
+            "p_station_session_id": body.station_session_id,
+            "p_token": token,
+        }).execute()
 
-    claimed = res.data[0]
+        if not res.data:
+            raise HTTPException(status.HTTP_409_CONFLICT, "No copies available to borrow right now")
+
+        expires_at = res.data[0]["expires_at"]
+
     return ClaimHoldResponse(
         token=token,
-        expires_at=claimed["expires_at"],
+        expires_at=expires_at,
         qr_url=f"{FRONTEND_URL}/borrow/{token}",
     )
 

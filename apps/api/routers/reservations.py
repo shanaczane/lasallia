@@ -1,17 +1,16 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from core.deps import get_current_user, get_user_supabase
 from core.notify import notify, notify_librarians
+from core.reservations import promote_next_reservation
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
-from schemas.loan import Loan
 from schemas.reservation import (
     CreateReservationRequest,
-    PickupReservationRequest,
     Reservation,
     UpdateReservationRequest,
 )
@@ -21,37 +20,14 @@ router = APIRouter(prefix="/reservations", tags=["reservations"])
 NON_BORROWABLE_COLLECTION_TYPES = {"Reference", "Thesis", "Capstone", "MTR", "Archives"}
 
 
-def _advance_or_release(admin: Client, expired: dict, now: datetime) -> None:
+def _advance_or_release(admin: Client, expired: dict) -> None:
     """A 'ready' reservation whose copy is no longer going to be picked up
     by that student — either its pickup_by passed, or they cancelled.
-    Hands the copy to the next pending reservation on the same title, or
+    Hands the copy to the next pending reservation on the same title (and
+    notifies whoever that leaves at the new front of the queue), or
     releases it back toward general circulation if nobody's waiting."""
-    next_res = (
-        admin.table("reservations")
-        .select("id, user_id")
-        .eq("book_id", expired["book_id"])
-        .eq("status", "pending")
-        .order("requested_at")
-        .limit(1)
-        .execute()
-    ).data
-    if next_res:
-        hold_days = get_library_settings(admin)["reservation_hold_period_days"]
-        admin.table("reservations").update({
-            "book_copy_id": expired["book_copy_id"],
-            "status": "ready",
-            "confirmed_at": now.isoformat(),
-            "pickup_by": (now + timedelta(days=hold_days)).isoformat(),
-        }).eq("id", next_res[0]["id"]).execute()
-        book_res = admin.table("books").select("title").eq("id", expired["book_id"]).execute()
-        book_title = book_res.data[0]["title"] if book_res.data else "A book"
-        notify(
-            next_res[0]["user_id"], "reservation_confirmed",
-            "Your reserved book is ready for pickup",
-            f'"{book_title}" is waiting for you at the LRC counter.',
-            link="/student/reservations",
-        )
-    elif expired.get("book_copy_id"):
+    promoted = promote_next_reservation(admin, expired["book_id"], expired["book_copy_id"])
+    if not promoted and expired.get("book_copy_id"):
         # available -> for_reshelving isn't legal, but reserved -> for_reshelving
         # is — same "never straight to available" rule Phase 4 already follows.
         admin.table("book_copies").update({"status": "for_reshelving"}).eq("id", expired["book_copy_id"]).execute()
@@ -67,7 +43,7 @@ def _sweep_expired_reservations(admin: Client) -> None:
         .execute()
     ).data
     for row in expired:
-        _advance_or_release(admin, row, now)
+        _advance_or_release(admin, row)
         admin.table("reservations").update({"status": "expired"}).eq("id", row["id"]).execute()
         book_res = admin.table("books").select("title").eq("id", row["book_id"]).execute()
         book_title = book_res.data[0]["title"] if book_res.data else "Your reservation"
@@ -203,6 +179,17 @@ def create_reservation(
             f"You've reached your limit of {cfg['max_active_reservations']} active reservations",
         )
 
+    # Counted before the insert below, so this is exactly how many pending
+    # reservations are already ahead of the one about to be created —
+    # i.e. this new reservation's own queue_position.
+    ahead_count = (
+        admin.table("reservations")
+        .select("id", count="exact")
+        .eq("book_id", body.book_id)
+        .eq("status", "pending")
+        .execute()
+    ).count or 0
+
     res = db.table("reservations").insert({
         "user_id": user.id,
         "book_id": body.book_id,
@@ -217,6 +204,18 @@ def create_reservation(
         "Book reserved",
         f'{user.full_name or "A student"} reserved "{book_title}".',
         link="/librarian/reservations",
+    )
+
+    queue_position = ahead_count + 1
+    notify(
+        user.id, "reservation_placed",
+        "Reservation confirmed",
+        (
+            f'You\'re first in line for "{book_title}" — we\'ll notify you the moment a copy is ready.'
+            if queue_position == 1
+            else f'You\'re #{queue_position} in line for "{book_title}" — we\'ll notify you when it\'s your turn.'
+        ),
+        link="/student/reservations",
     )
 
     return res.data[0]
@@ -248,7 +247,7 @@ def update_reservation(
     # Cancelling a 'ready' reservation frees a specific copy — same
     # handoff as letting the pickup window expire.
     if row["status"] == "ready" and row["book_copy_id"]:
-        _advance_or_release(get_admin_client(), row, now)
+        _advance_or_release(get_admin_client(), row)
 
     # Only notify on the student's own cancellation — a librarian cancelling
     # a reservation on someone's behalf shouldn't notify librarians about
@@ -266,110 +265,9 @@ def update_reservation(
     res = db.table("reservations").select("*, books(*), profiles(*)").eq("id", reservation_id).execute()
     return res.data[0]
 
-# Fulfillment (plan 5.3): type the accession number, confirm — the same
-# possession check as a normal borrow, just sourced from a reservation's
-# assigned copy instead of a soft_hold.
-@router.post("/{reservation_id}/pickup", response_model=Loan, status_code=status.HTTP_201_CREATED)
-def pickup_reservation(
-    reservation_id: str,
-    body: PickupReservationRequest,
-    user: UserProfile = Depends(get_current_user),
-):
-    admin = get_admin_client()
-    cfg = get_library_settings(admin)
-
-    res_row = admin.table("reservations").select("*").eq("id", reservation_id).execute()
-    if not res_row.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Reservation not found")
-    reservation = res_row.data[0]
-
-    if reservation["user_id"] != user.id and user.role != "librarian":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "This isn't your reservation")
-    if reservation["status"] != "ready":
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This reservation isn't ready for pickup")
-
-    now = datetime.now(timezone.utc)
-    if reservation["pickup_by"] and datetime.fromisoformat(reservation["pickup_by"]) < now:
-        # Stale page load — run the same one-row sweep rather than just
-        # erroring, so the student isn't dead-ended on a page they already had open.
-        _advance_or_release(admin, reservation, now)
-        admin.table("reservations").update({"status": "expired"}).eq("id", reservation["id"]).execute()
-        raise HTTPException(status.HTTP_410_GONE, "This reservation's pickup window has passed")
-
-    # Same account checks as borrowing (Phase 3), re-verified here since
-    # time has passed since the student joined the queue.
-    current_loans = (
-        admin.table("loans")
-        .select("id, due_date")
-        .eq("student_id", reservation["user_id"])
-        .in_("status", ["active", "overdue"])
-        .execute()
-    ).data
-    if any(datetime.fromisoformat(loan["due_date"]) < now for loan in current_loans):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You have an overdue book — please return it before borrowing another")
-    if len(current_loans) >= cfg["max_books_per_borrower"]:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"You've reached your borrowing limit of {cfg['max_books_per_borrower']} books")
-    unsettled = (
-        admin.table("loans")
-        .select("id", count="exact")
-        .eq("student_id", reservation["user_id"])
-        .eq("fine_status", "unsettled")
-        .execute()
-    )
-    if (unsettled.count or 0) > 0:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You have an unpaid fine — please settle it with the librarian")
-
-    copy_res = admin.table("book_copies").select("*").eq("id", reservation["book_copy_id"]).execute()
-    if not copy_res.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Copy not found")
-    copy = copy_res.data[0]
-
-    # Forgiving match (trim + case-insensitive), same as confirm_loan — but
-    # no 3-strikes lockout here, this flow has no attempt_count column
-    # (intentional scope trim, see the Phase 5 plan).
-    submitted = body.accession_number.strip().lower()
-    actual = (copy["accession_number"] or "").strip().lower()
-    if submitted != actual:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That number belongs to a different book. Please check the label.")
-
-    due_date = (now + timedelta(days=cfg["standard_loan_period_days"])).isoformat()
-    loan_res = admin.table("loans").insert({
-        "book_copy_id": copy["id"],
-        "student_id": reservation["user_id"],
-        "station_session_id": None,
-        "due_date": due_date,
-        "condition_at_borrow": body.condition,
-        "purpose": body.purpose,
-        "notes": body.notes,
-    }).execute()
-    if not loan_res.data:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not create the loan")
-
-    # reserved -> on_loan: legal per Phase 1's status-machine trigger.
-    admin.table("book_copies").update({"status": "on_loan"}).eq("id", copy["id"]).execute()
-    admin.table("reservations").update({
-        "status": "fulfilled",
-        "fulfilled_at": now.isoformat(),
-    }).eq("id", reservation["id"]).execute()
-
-    loan = loan_res.data[0]
-    book_res = admin.table("books").select("*").eq("id", copy["book_id"]).execute()
-    loan["books"] = book_res.data[0] if book_res.data else None
-
-    book_title = loan["books"]["title"] if loan["books"] else "A book"
-    due_label = datetime.fromisoformat(due_date).strftime("%B %d, %Y")
-    notify(
-        reservation["user_id"], "loan_confirmed",
-        "Book successfully borrowed",
-        f'You\'ve borrowed "{book_title}". It\'s due back on {due_label}.',
-        link="/student/library",
-    )
-    borrower_res = admin.table("profiles").select("full_name").eq("id", reservation["user_id"]).execute()
-    borrower_name = borrower_res.data[0]["full_name"] if borrower_res.data else "A student"
-    notify_librarians(
-        "Reserved book picked up",
-        f'{borrower_name} picked up "{book_title}", due {due_label}.',
-        link="/librarian/borrow-return",
-    )
-
-    return loan
+# Fulfillment no longer happens through this router at all — a 'ready'
+# reservation is claimed and confirmed through the exact same flow as a
+# walk-in borrow (holds.py's claim_hold routes a student with a ready
+# reservation straight to their own held copy; loans.py's confirm_loan
+# closes the reservation out once that loan is confirmed). There's
+# deliberately only one borrowing path now, not a separate "pickup" one.

@@ -6,6 +6,7 @@ from supabase import Client
 from core.calendar import compute_fine
 from core.deps import get_current_user, get_user_supabase, require_librarian
 from core.notify import notify, notify_librarians
+from core.reservations import promote_next_reservation
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
@@ -168,8 +169,19 @@ def confirm_loan(body: ConfirmLoanRequest):
     if not loan_res.data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not create the loan")
 
-    # available -> on_loan: legal per Phase 1's status-machine trigger.
+    # available -> on_loan, or reserved -> on_loan (a queued pickup claimed
+    # via holds.py's ready-reservation branch): both legal per Phase 1's
+    # status-machine trigger.
     db.table("book_copies").update({"status": "on_loan"}).eq("id", copy["id"]).execute()
+
+    # If this copy was being held for a reservation (a queued pickup, not a
+    # walk-in claim on a genuinely available copy), close that reservation
+    # out now — a copy can have at most one 'ready' reservation attached at
+    # a time, so this only ever touches the one it was actually held for.
+    db.table("reservations").update({
+        "status": "fulfilled",
+        "fulfilled_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("book_copy_id", copy["id"]).eq("status", "ready").eq("user_id", student_id).execute()
 
     db.table("soft_holds").delete().eq("id", hold["id"]).execute()
 
@@ -324,37 +336,14 @@ def return_loan(
     # reshelving — goes straight to 'ready' (Phase 5 made this automatic,
     # no librarian pre-approval step) with the specific copy linked so
     # pickup can verify it.
-    pending_res = (
-        admin.table("reservations")
-        .select("id, user_id")
-        .eq("book_id", copy["book_id"])
-        .eq("status", "pending")
-        .order("requested_at")
-        .limit(1)
-        .execute()
-    )
-
     book_full_res = admin.table("books").select("*").eq("id", copy["book_id"]).execute()
     book_title = book_full_res.data[0]["title"] if book_full_res.data else "A book"
 
-    needs_reshelving = not pending_res.data
-
-    if pending_res.data:
-        admin.table("book_copies").update({"status": "reserved"}).eq("id", copy["id"]).execute()
-        admin.table("reservations").update({
-            "book_copy_id": copy["id"],
-            "status": "ready",
-            "confirmed_at": datetime.now(timezone.utc).isoformat(),
-            "pickup_by": (datetime.now(timezone.utc) + timedelta(days=get_library_settings(admin)["reservation_hold_period_days"])).isoformat(),
-        }).eq("id", pending_res.data[0]["id"]).execute()
-        notify(
-            pending_res.data[0]["user_id"], "reservation_confirmed",
-            "Your reserved book is ready for pickup",
-            f'"{book_title}" is waiting for you at the LRC counter.',
-            link="/student/reservations",
-        )
-    else:
-        admin.table("book_copies").update({"status": "for_reshelving"}).eq("id", copy["id"]).execute()
+    promoted = promote_next_reservation(admin, copy["book_id"], copy["id"])
+    needs_reshelving = not promoted
+    admin.table("book_copies").update(
+        {"status": "reserved" if promoted else "for_reshelving"}
+    ).eq("id", copy["id"]).execute()
 
     notify(
         loan["student_id"], "return_confirmed",
@@ -447,17 +436,32 @@ def reshelve_copy(
     if copy["status"] != "for_reshelving":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This copy isn't awaiting reshelving")
 
-    admin.table("book_copies").update({"status": "available"}).eq("id", copy["id"]).execute()
+    # A reservation can form after a copy already landed in for_reshelving
+    # (the book shows as "borrowed" the whole time it sits here, so a
+    # student joining the queue is exactly the expected move) — re-check
+    # before opening this copy back up to anyone, so a walk-in can't grab
+    # it out from under someone who's been waiting in line.
+    promoted = promote_next_reservation(admin, copy["book_id"], copy["id"])
+    admin.table("book_copies").update(
+        {"status": "reserved" if promoted else "available"}
+    ).eq("id", copy["id"]).execute()
 
     # Closes the loop the same way checkout/return already do — every
     # librarian's activity feed sees the copy actually made it back to the
     # shelf, not just that it was returned to the desk.
     book_res = admin.table("books").select("title").eq("id", copy["book_id"]).execute()
     book_title = book_res.data[0]["title"] if book_res.data else "A book"
+    if promoted:
+        notify_librarians(
+            "Book reshelved — held for next reservation",
+            f'"{book_title}" ({body.accession_number.strip()}) is on hold for the next reservation instead of going back on the shelf.',
+            link="/librarian/reservations",
+        )
+        return {"id": copy["id"], "status": "reserved"}
+
     notify_librarians(
         "Book reshelved",
         f'"{book_title}" ({body.accession_number.strip()}) is back on the shelf and available.',
         link="/librarian/borrow-return?tab=reshelving",
     )
-
     return {"id": copy["id"], "status": "available"}

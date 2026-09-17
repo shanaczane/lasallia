@@ -4,7 +4,6 @@ from pydantic import BaseModel
 
 from schemas.auth import UserProfile
 from schemas.book import Book
-from schemas.loan import Condition
 
 ReservationStatus = Literal["pending", "ready", "fulfilled", "cancelled", "expired"]
 
@@ -29,9 +28,3 @@ class CreateReservationRequest(BaseModel):
 
 class UpdateReservationRequest(BaseModel):
     status: Literal["cancelled"]
-
-class PickupReservationRequest(BaseModel):
-    accession_number: str
-    condition: Condition
-    purpose: str | None = None
-    notes: str | None = None
