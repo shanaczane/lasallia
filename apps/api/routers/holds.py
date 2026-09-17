@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, status
 
 from core.config import FRONTEND_URL
+from core.loans import check_borrow_eligibility
 from core.notify import notify_librarians
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
@@ -13,12 +14,6 @@ router = APIRouter(prefix="/holds", tags=["holds"])
 
 # 2.3: "'I'm getting the book' button extends the session to ~5 minutes."
 EXTEND_SECONDS = 300
-
-# Phase 3 — Blocking checks (server-side, at claim time)
-
-# These collection types are for library use only and never leave the
-# building — matches the build plan's Part 1.3 list exactly.
-NON_BORROWABLE_COLLECTION_TYPES = {"Reference", "Thesis", "Capstone", "MTR", "Archives"}
 
 # Not behind auth: claiming happens the instant a student (already
 # identified via their open station_session) taps "Borrow this book" —
@@ -42,47 +37,7 @@ def claim_hold(body: ClaimHoldRequest):
         raise HTTPException(status.HTTP_410_GONE, "This session has ended — please sign in again")
     student_id = session["student_id"]
 
-    book_res = db.table("books").select("collection_type").eq("id", body.book_id).execute()
-    if not book_res.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
-    collection_type = book_res.data[0]["collection_type"]
-    if collection_type in NON_BORROWABLE_COLLECTION_TYPES:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            f"{collection_type} items are for library use only and can't be borrowed",
-        )
-
-    current_loans = (
-        db.table("loans")
-        .select("id, due_date, book_copies(book_id)")
-        .eq("student_id", student_id)
-        .in_("status", ["active", "overdue"])
-        .execute()
-    ).data
-
-    now = datetime.now(timezone.utc)
-    if any(datetime.fromisoformat(loan["due_date"]) < now for loan in current_loans):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You have an overdue book — please return it before borrowing another")
-
-    if any(loan["book_copies"]["book_id"] == body.book_id for loan in current_loans):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You already have a copy of this title checked out")
-
-    cfg = get_library_settings(db)
-    if len(current_loans) >= cfg["max_books_per_borrower"]:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"You've reached your borrowing limit of {cfg['max_books_per_borrower']} books")
-
-    # Phase 4 closes the gap Phase 3 deferred here for lack of data: an
-    # unsettled fine can exist on an already-returned loan, so this is a
-    # separate, status-unscoped query rather than reusing current_loans.
-    unsettled = (
-        db.table("loans")
-        .select("id", count="exact")
-        .eq("student_id", student_id)
-        .eq("fine_status", "unsettled")
-        .execute()
-    )
-    if (unsettled.count or 0) > 0:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You have an unpaid fine — please settle it with the librarian")
+    check_borrow_eligibility(db, student_id, body.book_id)
 
     token = secrets.token_urlsafe(24)
 

@@ -20,6 +20,19 @@ class ConfirmLoanRequest(BaseModel):
     purpose: str | None = None
     notes: str | None = None
 
+# Desk-side checkout (build plan Phase 1's `librarian_assisted` dual-auth,
+# now wired into borrowing): the librarian already has the physical book in
+# hand, so there's no walk-to-the-shelf gap for a soft_hold to cover —
+# station_session_id points at an 'rfid' session opened at the librarian's
+# own reader (routers/sessions.py), and accession_number identifies the
+# exact copy directly instead of the kiosk's auto-pick-then-verify dance.
+class LibrarianAssistedLoanRequest(BaseModel):
+    station_session_id: str
+    accession_number: str
+    condition: Condition
+    purpose: str | None = None
+    notes: str | None = None
+
 class Borrower(BaseModel):
     full_name: str | None = None
     avatar_url: str | None = None
@@ -42,6 +55,9 @@ class Loan(BaseModel):
     fine_amount: float | None = None
     fine_status: FineStatus | None = None
     receipt_number: str | None = None
+    # Set only for a desk-side librarian-assisted checkout (the librarian's
+    # profile id) — null for every ordinary self-service loan.
+    assisted_by: str | None = None
     books: Book | None = None
     profiles: Borrower | None = None
     # Populated by GET /loans only for status == "overdue" rows (the
