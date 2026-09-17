@@ -8,7 +8,7 @@ import {
   Users,
   Bookmark,
   AlertCircle,
-  Plus,
+  ScanLine,
   Check,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -84,13 +84,13 @@ export default function LibrarianDashboard() {
 
         <div className="flex gap-2">
           <Link
-            href="/librarian/catalog"
+            href="/librarian/borrow-return"
             className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors shadow-sm"
             style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
           >
-            <Plus size={15} />
-            <span className="hidden sm:inline">Add new book</span>
-            <span className="sm:hidden">Add</span>
+            <ScanLine size={15} />
+            <span className="hidden sm:inline">Borrow &amp; Return</span>
+            <span className="sm:hidden">Scan</span>
           </Link>
         </div>
       </div>
