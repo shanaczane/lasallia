@@ -174,14 +174,6 @@ export default function PatronsPage() {
     }
   }
 
-  // PatronProfileModal's own Save (Program/Year Level) already hit the
-  // API itself — this just syncs the result back into the list and the
-  // still-open modal's own patron prop, same as handleToggleStatus does.
-  function handlePatronUpdated(updated: UserProfile) {
-    setPatrons((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
-    setViewing((v) => (v && v.id === updated.id ? updated : v))
-  }
-
   return (
     <div className="p-4 sm:p-6 max-w-(--max-w-content) mx-auto flex flex-col gap-5">
       <div>
@@ -217,7 +209,6 @@ export default function PatronsPage() {
           patron={viewing}
           onClose={() => setViewing(null)}
           onToggleStatus={() => setConfirmingStatus(viewing)}
-          onUpdated={handlePatronUpdated}
         />
       )}
 

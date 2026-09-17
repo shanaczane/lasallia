@@ -186,11 +186,23 @@ export type Loan = {
 // students see their own loans, librarians see all.
 // studentId (librarian-only, per RLS) narrows this to one patron's loans —
 // used by the Patrons profile modal instead of fetching every loan.
-export async function fetchLoans(studentId?: string): Promise<Loan[]> {
+// dateFilters backs Borrow & Return's "Borrowed/Returned Today" lists —
+// the caller computes the local-day boundary (see todayRangeIso in
+// borrow-return/page.tsx) rather than this function guessing a timezone.
+export async function fetchLoans(
+  studentId?: string,
+  dateFilters?: { borrowedFrom?: string; borrowedTo?: string; returnedFrom?: string; returnedTo?: string }
+): Promise<Loan[]> {
   const token = getToken()
   if (!token) throw new Error('Not signed in')
-  const qs = studentId ? `?student_id=${encodeURIComponent(studentId)}` : ''
-  const res = await fetch(`${API_URL}/loans${qs}`, { headers: { Authorization: `Bearer ${token}` } })
+  const params = new URLSearchParams()
+  if (studentId) params.set('student_id', studentId)
+  if (dateFilters?.borrowedFrom) params.set('borrowed_from', dateFilters.borrowedFrom)
+  if (dateFilters?.borrowedTo) params.set('borrowed_to', dateFilters.borrowedTo)
+  if (dateFilters?.returnedFrom) params.set('returned_from', dateFilters.returnedFrom)
+  if (dateFilters?.returnedTo) params.set('returned_to', dateFilters.returnedTo)
+  const qs = params.toString()
+  const res = await fetch(`${API_URL}/loans${qs ? `?${qs}` : ''}`, { headers: { Authorization: `Bearer ${token}` } })
   if (!res.ok) return parseErrorOrThrow(res, 'Failed to load your loans')
   return res.json()
 }
@@ -214,6 +226,22 @@ export async function confirmLoan(params: {
     }),
   })
   if (!res.ok) return parseErrorOrThrow(res, 'Could not confirm this loan')
+  return res.json()
+}
+
+// Patrons > Fines tab: records that a fine left "unsettled" at return time
+// has since been paid at the desk — not a payment gateway, just marking
+// that the librarian already collected it in person. The loan is already
+// closed by this point, so only fine_status/receipt_number change.
+export async function settleFine(loanId: string, receiptNumber: string): Promise<Loan> {
+  const token = getToken()
+  if (!token) throw new Error('Not signed in')
+  const res = await fetch(`${API_URL}/loans/${loanId}/settle-fine`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ receipt_number: receiptNumber }),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not record this payment')
   return res.json()
 }
 

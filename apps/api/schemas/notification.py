@@ -7,6 +7,7 @@ NotificationType = Literal[
     "reservation_cancelled", "return_confirmed",
     "loan_confirmed", "student_activity",
     "reservation_placed", "reservation_queue_advanced",
+    "fine_settled",
 ]
 
 class Notification(BaseModel):

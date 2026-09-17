@@ -15,9 +15,11 @@ from schemas.loan import (
     LibrarianAssistedLoanRequest,
     Loan,
     LoanLookupResult,
+    ReshelvedItem,
     ReshelveRequest,
     ReshelvingQueueItem,
     ReturnLoanRequest,
+    SettleFineRequest,
 )
 
 router = APIRouter(prefix="/loans", tags=["loans"])
@@ -40,6 +42,13 @@ def _flatten_loan(loan: dict) -> dict:
 @router.get("", response_model=list[Loan])
 def list_loans(
     student_id: str | None = None,
+    # Day-scoped views (Borrow & Return's "Borrowed/Returned Today" lists) —
+    # the caller computes the local-day boundary and passes it as an ISO
+    # timestamp, rather than this endpoint guessing a timezone server-side.
+    borrowed_from: str | None = None,
+    borrowed_to: str | None = None,
+    returned_from: str | None = None,
+    returned_to: str | None = None,
     user: UserProfile = Depends(get_current_user),
     db: Client = Depends(get_user_supabase),
 ):
@@ -51,6 +60,14 @@ def list_loans(
     query = db.table("loans").select("*").order("borrowed_at", desc=True)
     if student_id:
         query = query.eq("student_id", student_id)
+    if borrowed_from:
+        query = query.gte("borrowed_at", borrowed_from)
+    if borrowed_to:
+        query = query.lt("borrowed_at", borrowed_to)
+    if returned_from:
+        query = query.gte("returned_at", returned_from)
+    if returned_to:
+        query = query.lt("returned_at", returned_to)
     res = query.execute()
     loans = res.data
 
@@ -397,6 +414,55 @@ def return_loan(
 
     return loan
 
+# Patrons > Fines tab: a fine left "unsettled" at return time can be paid
+# later, at the desk, with no book involved — the loan itself is already
+# closed, so this only ever touches fine_status/receipt_number, never the
+# copy or notifications tied to the return itself. Not a payment gateway:
+# this records that the librarian already collected payment in person,
+# same as return_loan's own fine_settlement field does at return time.
+@router.patch("/{loan_id}/settle-fine", response_model=Loan)
+def settle_fine(
+    loan_id: str,
+    body: SettleFineRequest,
+    librarian: UserProfile = Depends(require_librarian),
+):
+    admin = get_admin_client()
+
+    loan_res = admin.table("loans").select("*").eq("id", loan_id).execute()
+    if not loan_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Loan not found")
+    loan = loan_res.data[0]
+
+    if loan["status"] != "returned":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This loan hasn't been returned yet")
+    if loan["fine_status"] != "unsettled":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This loan has no unsettled fine to record")
+
+    receipt_number = body.receipt_number.strip()
+    if not receipt_number:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A receipt number is required")
+
+    update_res = admin.table("loans").update({
+        "fine_status": "paid",
+        "receipt_number": receipt_number,
+    }).eq("id", loan_id).execute()
+    loan = update_res.data[0]
+
+    copy_res = admin.table("book_copies").select("book_id").eq("id", loan["book_copy_id"]).execute()
+    book_id = copy_res.data[0]["book_id"] if copy_res.data else None
+    book_res = admin.table("books").select("*").eq("id", book_id).execute() if book_id else None
+    loan["books"] = book_res.data[0] if book_res and book_res.data else None
+
+    book_title = loan["books"]["title"] if loan["books"] else "A book"
+    notify(
+        loan["student_id"], "fine_settled",
+        "Fine settled",
+        f'Your ₱{loan["fine_amount"]:.2f} fine for "{book_title}" has been recorded as paid (receipt {receipt_number}).',
+        link="/student/library",
+    )
+
+    return loan
+
 # Reshelving tab's browse list (mirrors the Return tab's "Active
 # Borrowers") — every copy currently parked at for_reshelving, whether it
 # got there through a real return or a guest in-house return, so the
@@ -463,9 +529,13 @@ def reshelve_copy(
     # before opening this copy back up to anyone, so a walk-in can't grab
     # it out from under someone who's been waiting in line.
     promoted = promote_next_reservation(admin, copy["book_id"], copy["id"])
-    admin.table("book_copies").update(
-        {"status": "reserved" if promoted else "available"}
-    ).eq("id", copy["id"]).execute()
+    admin.table("book_copies").update({
+        "status": "reserved" if promoted else "available",
+        # Recorded regardless of which status it lands on — this is a log of
+        # the reshelving scan itself (Borrow & Return's "Reshelved Today"
+        # list), not of the copy's current shelf availability.
+        "reshelved_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", copy["id"]).execute()
 
     # Closes the loop the same way checkout/return already do — every
     # librarian's activity feed sees the copy actually made it back to the
@@ -486,3 +556,36 @@ def reshelve_copy(
         link="/librarian/borrow-return?tab=reshelving",
     )
     return {"id": copy["id"], "status": "available"}
+
+# Reshelving tab's "Reshelved Today" list — mirrors Borrow/Return's own
+# day-scoped views (GET /loans's borrowed_from/returned_from). Same
+# caller-computes-the-local-day-boundary convention as those.
+@router.get("/reshelved", response_model=list[ReshelvedItem])
+def reshelved_copies(
+    reshelved_from: str | None = None,
+    reshelved_to: str | None = None,
+    librarian: UserProfile = Depends(require_librarian),
+):
+    admin = get_admin_client()
+    query = admin.table("book_copies").select("id, accession_number, book_id, reshelved_at").not_.is_("reshelved_at", "null")
+    if reshelved_from:
+        query = query.gte("reshelved_at", reshelved_from)
+    if reshelved_to:
+        query = query.lt("reshelved_at", reshelved_to)
+    copies = query.order("reshelved_at", desc=True).execute().data
+    if not copies:
+        return []
+
+    book_ids = list({c["book_id"] for c in copies})
+    books = admin.table("books").select("*").in_("id", book_ids).execute().data
+    books_by_id = {b["id"]: b for b in books}
+
+    return [
+        ReshelvedItem(
+            id=c["id"],
+            accession_number=c["accession_number"],
+            books=books_by_id.get(c["book_id"]),
+            reshelved_at=c["reshelved_at"],
+        )
+        for c in copies
+    ]

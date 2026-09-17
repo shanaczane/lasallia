@@ -10,108 +10,93 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { X, BookOpen, Bookmark, History, Mail, GraduationCap, UserX, UserCheck, AlertCircle } from "lucide-react"
+import { X, BookOpen, Bookmark, History, Mail, UserX, UserCheck, ChevronDown, ChevronUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UserProfile, Reservation, ReservationStatus } from "@lasallia/types"
-import { fetchLoans, type Loan } from "@/lib/kiosk"
+import { fetchLoans, settleFine, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
-import { updatePatron } from "@/lib/users"
 import { RoleBadge } from "./RoleBadge"
 import { AccountStatusPill } from "./AccountStatusPill"
 
-type Tab = "loans" | "reservations" | "history"
+type Tab = "loans" | "reservations" | "history" | "fines"
 
 type PatronProfileModalProps = {
   patron: UserProfile
   onClose: () => void
   onToggleStatus: () => void
-  /** Fires after a successful Program/Year Level save, with the updated
-   * record, so the parent page's list/selection stay in sync — same
-   * reasoning handleToggleStatus already updates the parent's state. */
-  onUpdated: (patron: UserProfile) => void
 }
 
 const DUE_SOON_DAYS = 3
-const MAX_YEAR_LEVEL = 8 // matches routers/patrons.py's own ceiling
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
 }
 
+// Bordered rectangular tags rather than filled pills — reads as a formal
+// record label (ledger/registry style) instead of a casual chat badge.
 const LOAN_CFG = {
-  active:   { label: "Active",   text: "text-success", bg: "bg-success-bg" },
-  due_soon: { label: "Due Soon", text: "text-warn",    bg: "bg-warn-bg" },
-  overdue:  { label: "Overdue",  text: "text-danger",  bg: "bg-danger-bg" },
+  active:   { label: "Active",   text: "text-success", bg: "bg-success-bg", border: "border-success/30" },
+  due_soon: { label: "Due Soon", text: "text-warn",    bg: "bg-warn-bg",    border: "border-warn/30" },
+  overdue:  { label: "Overdue",  text: "text-danger",  bg: "bg-danger-bg",  border: "border-danger/30" },
 }
 
 // Keyed by the real ReservationStatus values (pending/ready/fulfilled/
 // cancelled/expired) — same five the librarian Reservation Queue page
 // already uses, so a patron's status reads the same everywhere.
-const RES_CFG: Record<ReservationStatus, { label: string; text: string; bg: string }> = {
-  pending:   { label: "Pending",   text: "text-warn",    bg: "bg-warn-bg" },
-  ready:     { label: "Ready",     text: "text-success", bg: "bg-success-bg" },
-  fulfilled: { label: "Picked Up", text: "text-ink-500", bg: "bg-ink-100" },
-  cancelled: { label: "Cancelled", text: "text-ink-400", bg: "bg-ink-100" },
-  expired:   { label: "Expired",   text: "text-ink-400", bg: "bg-ink-100" },
+const RES_CFG: Record<ReservationStatus, { label: string; text: string; bg: string; border: string }> = {
+  pending:   { label: "Pending",   text: "text-warn",    bg: "bg-warn-bg",    border: "border-warn/30" },
+  ready:     { label: "Ready",     text: "text-success", bg: "bg-success-bg", border: "border-success/30" },
+  fulfilled: { label: "Picked Up", text: "text-ink-500", bg: "bg-ink-100",    border: "border-ink-300" },
+  cancelled: { label: "Cancelled", text: "text-ink-400", bg: "bg-ink-100",    border: "border-ink-300" },
+  expired:   { label: "Expired",   text: "text-ink-400", bg: "bg-ink-100",    border: "border-ink-300" },
 }
 
 const HISTORY_CFG = {
-  returned:         { label: "Returned",      text: "text-success", bg: "bg-success-bg" },
-  overdue_returned: { label: "Returned Late", text: "text-warn",    bg: "bg-warn-bg" },
+  returned:         { label: "Returned",      text: "text-success", bg: "bg-success-bg", border: "border-success/30" },
+  overdue_returned: { label: "Returned Late", text: "text-warn",    bg: "bg-warn-bg",    border: "border-warn/30" },
 }
 
-export function PatronProfileModal({ patron, onClose, onToggleStatus, onUpdated }: PatronProfileModalProps) {
+type FineKind = "unsettled" | "accruing" | "paid"
+
+// unsettled: a returned loan whose fine was never marked Paid at the desk.
+// accruing: still out and already overdue — fine_amount doesn't exist yet
+// (only return_loan sets it), so this previews what it'll be if returned
+// today, same compute_fine the Reports overdue table already trusts.
+const FINE_CFG: Record<FineKind, { label: string; text: string; bg: string; border: string }> = {
+  unsettled: { label: "Unsettled", text: "text-danger",  bg: "bg-danger-bg",  border: "border-danger/30" },
+  accruing:  { label: "Accruing",  text: "text-warn",    bg: "bg-warn-bg",    border: "border-warn/30" },
+  paid:      { label: "Paid",      text: "text-success", bg: "bg-success-bg", border: "border-success/30" },
+}
+
+// Vocabularies the API stores (see schemas/loan.py's Condition/ReturnCondition)
+// spelled out for a librarian reading a fine's reason, not the raw enum value.
+const BORROW_CONDITION_LABEL: Record<string, string> = {
+  good: "Good",
+  minor_wear: "Minor wear",
+  already_damaged: "Already damaged",
+}
+const RETURN_CONDITION_LABEL: Record<string, string> = {
+  good: "Good",
+  fair: "Fair",
+  damaged: "Damaged",
+  incomplete: "Incomplete",
+}
+
+type FineEntry = {
+  loanId: string
+  title: string
+  amount: number
+  kind: FineKind
+  detail: string
+  /** Plain-language basis for the amount — only what's actually known
+   * (dates, declared vs. found condition), never a fabricated peso-exact
+   * overdue/damage split the frontend has no authoritative way to compute. */
+  reasonLines: string[]
+}
+
+export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronProfileModalProps) {
   const [tab, setTab] = useState<Tab>("loans")
   const isActive = patron.status !== "inactive"
-
-  // Academic/department info — Program (every real role except guest,
-  // who never has a persistent account) and Year Level (student only —
-  // a librarian or faculty account has no year to speak of). Every real
-  // account has these null today; nothing before this ever let a
-  // librarian set them, which is why the Patrons table showed "—" across
-  // the board, librarian row included. Component remounts per patron
-  // (see patrons/page.tsx: `{viewing && <PatronProfileModal patron={viewing}.../>}`
-  // unmounts on close), so a plain useState initializer is safe here.
-  const showProgram = patron.role !== "guest"
-  const showYearLevel = patron.role === "student"
-  const programLabel = patron.role === "librarian" ? "Department" : "Program"
-  const [program, setProgram] = useState(patron.program ?? "")
-  const [yearLevel, setYearLevel] = useState(patron.year_level ? String(patron.year_level) : "")
-  const [academicSaving, setAcademicSaving] = useState(false)
-  const [academicError, setAcademicError] = useState("")
-  const [toast, setToast] = useState<string | null>(null)
-
-  const academicDirty =
-    program.trim() !== (patron.program ?? "") || yearLevel !== (patron.year_level ? String(patron.year_level) : "")
-
-  const academicValidationError = (() => {
-    if (!showYearLevel || !yearLevel) return null
-    const n = Number(yearLevel)
-    if (!Number.isInteger(n) || n < 1 || n > MAX_YEAR_LEVEL) return `Year Level must be a whole number from 1 to ${MAX_YEAR_LEVEL}.`
-    return null
-  })()
-
-  async function handleSaveAcademicInfo() {
-    if (academicValidationError) {
-      setAcademicError(academicValidationError)
-      return
-    }
-    setAcademicSaving(true)
-    setAcademicError("")
-    try {
-      const updated = await updatePatron(patron.id, {
-        program: showProgram ? program.trim() || null : undefined,
-        year_level: showYearLevel ? (yearLevel ? Number(yearLevel) : null) : undefined,
-      })
-      onUpdated(updated)
-      setToast("Saved.")
-      setTimeout(() => setToast(null), 2000)
-    } catch (err) {
-      setAcademicError(err instanceof Error ? err.message : "Could not save this patron's info")
-    } finally {
-      setAcademicSaving(false)
-    }
-  }
 
   const [loans, setLoans] = useState<Loan[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
@@ -137,6 +122,79 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, onUpdated 
   const activeLoans = useMemo(() => loans.filter((l) => l.status === "active" || l.status === "overdue"), [loans])
   const returnedLoans = useMemo(() => loans.filter((l) => l.status === "returned" && l.returned_at), [loans])
 
+  const fineEntries = useMemo<FineEntry[]>(() => {
+    const entries: FineEntry[] = []
+    for (const l of loans) {
+      const title = l.books?.title ?? "Unknown title"
+      if (l.status === "returned" && (l.fine_amount ?? 0) > 0) {
+        const paid = l.fine_status === "paid"
+        const wasLateReturn = new Date(l.returned_at!).getTime() > new Date(l.due_date).getTime()
+        const isNewDamage =
+          l.condition_at_borrow === "good" && (l.condition_at_return === "damaged" || l.condition_at_return === "incomplete")
+
+        const reasonLines: string[] = [
+          `Borrowed ${formatDate(l.borrowed_at)} · Due ${formatDate(l.due_date)} · Returned ${formatDate(l.returned_at!)}.`,
+        ]
+        if (wasLateReturn) {
+          reasonLines.push("Returned after the due date — an overdue fine applies (computed against the library calendar).")
+        }
+        reasonLines.push(
+          `Condition declared at borrow: ${BORROW_CONDITION_LABEL[l.condition_at_borrow] ?? l.condition_at_borrow}` +
+            (l.condition_at_return
+              ? ` · Found at return: ${RETURN_CONDITION_LABEL[l.condition_at_return] ?? l.condition_at_return}.`
+              : ".")
+        )
+        if (isNewDamage) {
+          reasonLines.push("Damage found at return wasn't declared at borrow — a damage/replacement fee applies.")
+        }
+        reasonLines.push(
+          paid && l.receipt_number
+            ? `Settled — receipt ${l.receipt_number}.`
+            : "Not yet settled — payable in person at the circulation desk."
+        )
+
+        entries.push({
+          loanId: l.id,
+          title,
+          amount: l.fine_amount!,
+          kind: paid ? "paid" : "unsettled",
+          detail:
+            paid && l.receipt_number
+              ? `Returned ${formatDate(l.returned_at!)} · Receipt ${l.receipt_number}`
+              : `Returned ${formatDate(l.returned_at!)}`,
+          reasonLines,
+        })
+      } else if ((l.status === "active" || l.status === "overdue") && (l.preview_fine_amount ?? 0) > 0) {
+        const days = l.days_overdue ?? 0
+        entries.push({
+          loanId: l.id,
+          title,
+          amount: l.preview_fine_amount!,
+          kind: "accruing",
+          detail: `${days} day${days === 1 ? "" : "s"} overdue · not yet returned`,
+          reasonLines: [
+            `Due ${formatDate(l.due_date)} — ${days} day${days === 1 ? "" : "s"} overdue as of today.`,
+            "This is a preview only and increases daily (per the library calendar) until the book is returned.",
+          ],
+        })
+      }
+    }
+    return entries
+  }, [loans])
+
+  const outstandingFines = useMemo(
+    () => fineEntries.filter((e) => e.kind !== "paid").reduce((sum, e) => sum + e.amount, 0),
+    [fineEntries]
+  )
+
+  // Patched locally from the settle-fine response's own inputs rather than
+  // its response body — the endpoint doesn't return days_overdue/
+  // preview_fine_amount (GET /loans-only computed fields), so merging its
+  // full response back in would blank those out on the still-open modal.
+  function handleFineSettled(loanId: string, receiptNumber: string) {
+    setLoans((prev) => prev.map((l) => (l.id === loanId ? { ...l, fine_status: "paid", receipt_number: receiptNumber } : l)))
+  }
+
   // full_name is nullable (a profile from Supabase Auth signup doesn't
   // require one) — fall back rather than crash on a patron nobody's
   // named yet. Initials still derive from the email (so there's always
@@ -150,31 +208,38 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, onUpdated 
     .join("")
     .toUpperCase()
 
-  const tabs: { key: Tab; label: string; icon: React.ReactNode; count: number }[] = [
+  const tabs: { key: Tab; label: string; icon: React.ReactNode; count: number; warn?: boolean }[] = [
     { key: "loans",        label: "Active Loans",  icon: <BookOpen size={14} />, count: activeLoans.length },
     { key: "reservations", label: "Reservations",  icon: <Bookmark size={14} />, count: reservations.length },
     { key: "history",      label: "History",       icon: <History size={14} />,  count: returnedLoans.length },
+    { key: "fines",        label: "Fines",         icon: <span className="leading-none font-bold" style={{ fontSize: "14px" }}>₱</span>, count: fineEntries.length, warn: outstandingFines > 0 },
   ]
 
   return (
     <div className="fixed inset-0 z-(--z-modal) flex items-end sm:items-center justify-center sm:p-4">
       <div className="absolute inset-0 bg-ink-900/40" onClick={onClose} />
 
-      <div className="relative w-full sm:max-w-4xl h-[94vh] sm:h-[85vh] max-h-[900px] bg-white rounded-t-(--radius-lg) sm:rounded-(--radius-lg) shadow-(--shadow-lg) flex flex-col overflow-hidden">
+      <div className="relative w-full sm:max-w-6xl h-[92vh] sm:h-[86vh] max-h-[940px] bg-white rounded-t-(--radius-lg) sm:rounded-(--radius-lg) shadow-(--shadow-lg) flex flex-col overflow-hidden">
 
         {/* Header */}
         <div className="flex items-start justify-between gap-3 p-4 sm:p-6 border-b border-ink-100 shrink-0">
-          <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <div
-              className="flex items-center justify-center rounded-full bg-green-200 text-green-800 font-semibold shrink-0 w-11 h-11 sm:w-[52px] sm:h-[52px]"
+              className="flex items-center justify-center rounded-full bg-green-200 text-green-800 font-semibold shrink-0 w-12 h-12 sm:w-[60px] sm:h-[60px]"
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-lg)" }}
             >
               {initials}
             </div>
             <div className="min-w-0">
+              <p
+                className="text-ink-400 uppercase font-semibold"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-section)" }}
+              >
+                Patron Record
+              </p>
               <h2
                 className="text-ink-900 font-semibold truncate"
-                style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}
+                style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-2xl)" }}
               >
                 {displayName}
               </h2>
@@ -200,71 +265,6 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, onUpdated 
           <AccountStatusPill status={patron.status ?? "active"} />
         </div>
 
-        {/* Academic info — Program + Year Level, editable. Every real
-            account has these null until a librarian sets them here. */}
-        {(showProgram || showYearLevel) && (
-          <div className="flex flex-wrap items-end gap-3 px-4 sm:px-6 py-3 border-b border-ink-100 shrink-0">
-            <GraduationCap size={15} className="text-ink-400 mb-2.5 shrink-0" />
-            {showProgram && (
-              <label className="flex flex-col gap-1 min-w-0 flex-1">
-                <span className="text-ink-400 uppercase font-semibold" style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-section)" }}>
-                  {programLabel}
-                </span>
-                <input
-                  type="text"
-                  value={program}
-                  onChange={(e) => setProgram(e.target.value)}
-                  placeholder={patron.role === "librarian" ? "e.g. LRC Staff" : "e.g. BS Computer Science"}
-                  className="px-2.5 py-1.5 rounded-sm border border-ink-200 text-ink-900 outline-none transition-colors focus:border-green-700 focus:ring-1 focus:ring-green-700 hover:border-ink-300 min-w-0"
-                  style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-                />
-              </label>
-            )}
-            {showYearLevel && (
-              <label className="flex flex-col gap-1 w-28 shrink-0">
-                <span className="text-ink-400 uppercase font-semibold" style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-section)" }}>
-                  Year Level
-                </span>
-                <input
-                  type="number"
-                  min={1}
-                  max={MAX_YEAR_LEVEL}
-                  value={yearLevel}
-                  onChange={(e) => setYearLevel(e.target.value)}
-                  placeholder="1"
-                  className="px-2.5 py-1.5 rounded-sm border border-ink-200 text-ink-900 outline-none transition-colors focus:border-green-700 focus:ring-1 focus:ring-green-700 hover:border-ink-300"
-                  style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-                />
-              </label>
-            )}
-            <button
-              type="button"
-              onClick={handleSaveAcademicInfo}
-              disabled={academicSaving || !academicDirty || !!academicValidationError}
-              className="px-3 py-1.5 rounded-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-ink-900 text-white hover:bg-ink-700 shrink-0"
-              style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
-            >
-              {academicSaving ? "Saving…" : "Save"}
-            </button>
-
-            {academicError && (
-              <p className="flex items-center gap-1.5 text-danger w-full" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}>
-                <AlertCircle size={12} className="shrink-0" />
-                {academicError}
-              </p>
-            )}
-          </div>
-        )}
-
-        {toast && (
-          <div
-            className="fixed bottom-6 right-6 z-[10000] bg-ink-900 text-white px-4 py-2.5 rounded-(--radius) shadow-lg"
-            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-          >
-            {toast}
-          </div>
-        )}
-
         {/* Tabs */}
         <div className="flex px-4 sm:px-6 border-b border-ink-100 shrink-0 overflow-x-auto">
           {tabs.map((t) => (
@@ -284,7 +284,11 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, onUpdated 
               <span
                 className={cn(
                   "flex items-center justify-center rounded-full min-w-[18px] h-[18px] px-1 font-semibold",
-                  tab === t.key ? "bg-green-100 text-green-800" : "bg-ink-100 text-ink-500"
+                  tab === t.key
+                    ? "bg-green-100 text-green-800"
+                    : t.warn
+                      ? "bg-danger-bg text-danger"
+                      : "bg-ink-100 text-ink-500"
                 )}
                 style={{ fontSize: "var(--text-2xs)" }}
               >
@@ -345,6 +349,31 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, onUpdated 
                   })}
                 />
               )}
+              {tab === "fines" && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 rounded-sm border border-ink-200 bg-ink-50">
+                    <div>
+                      <p
+                        className="text-ink-400 uppercase font-semibold"
+                        style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-section)" }}
+                      >
+                        Outstanding
+                      </p>
+                      <p
+                        className={cn("font-semibold", outstandingFines > 0 ? "text-danger" : "text-ink-900")}
+                        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xl)" }}
+                      >
+                        ₱{outstandingFines.toFixed(2)}
+                      </p>
+                    </div>
+                    <p className="text-ink-500 max-w-sm" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+                      Fines are settled in person at the circulation desk — a librarian records the receipt number
+                      when the book is returned, under <span className="font-medium text-ink-700">Borrow &amp; Return</span>.
+                    </p>
+                  </div>
+                  <FinesList entries={fineEntries} onSettled={handleFineSettled} />
+                </div>
+              )}
             </>
           )}
         </div>
@@ -377,11 +406,166 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, onUpdated 
   )
 }
 
+function FinesList({
+  entries,
+  onSettled,
+}: {
+  entries: FineEntry[]
+  onSettled: (loanId: string, receiptNumber: string) => void
+}) {
+  if (entries.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 gap-2 text-ink-300">
+        <span className="leading-none font-bold" style={{ fontSize: "26px" }}>₱</span>
+        <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>No fines on record.</p>
+      </div>
+    )
+  }
+
+  return (
+    <ul className="flex flex-col gap-2.5">
+      {entries.map((e) => (
+        <FineRow key={e.loanId} entry={e} onSettled={onSettled} />
+      ))}
+    </ul>
+  )
+}
+
+// Librarian-side "we already collected this in person" record-keeping —
+// not a payment gateway. Only unsettled entries get the action; accruing
+// fines aren't final until the book is actually returned, and paid ones
+// already show their receipt number.
+function FineRow({
+  entry,
+  onSettled,
+}: {
+  entry: FineEntry
+  onSettled: (loanId: string, receiptNumber: string) => void
+}) {
+  const [settling, setSettling] = useState(false)
+  const [receiptNumber, setReceiptNumber] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState("")
+  const [showReason, setShowReason] = useState(false)
+
+  async function handleConfirm() {
+    const trimmed = receiptNumber.trim()
+    if (!trimmed) {
+      setError("A receipt number is required")
+      return
+    }
+    setSubmitting(true)
+    setError("")
+    try {
+      await settleFine(entry.loanId, trimmed)
+      onSettled(entry.loanId, trimmed)
+      setSettling(false)
+      setReceiptNumber("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not record this payment")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <li className="flex flex-col gap-2 px-4 py-3.5 rounded-sm border border-ink-200 bg-white">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <p className="text-ink-900 font-semibold truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            {entry.title}
+          </p>
+          <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+            {entry.detail}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            ₱{entry.amount.toFixed(2)}
+          </span>
+          <span
+            className={cn("px-2.5 py-1 rounded-sm border font-semibold", FINE_CFG[entry.kind].bg, FINE_CFG[entry.kind].text, FINE_CFG[entry.kind].border)}
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+          >
+            {FINE_CFG[entry.kind].label}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowReason((v) => !v)}
+            className="flex items-center gap-1 px-2 py-1 rounded-sm text-ink-500 hover:text-ink-800 hover:bg-ink-50 font-medium transition-colors"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+          >
+            Why this amount?
+            {showReason ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+          {entry.kind === "unsettled" && !settling && (
+            <button
+              type="button"
+              onClick={() => setSettling(true)}
+              className="px-2.5 py-1 rounded-sm border border-ink-300 text-ink-700 hover:bg-ink-50 font-medium transition-colors"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+            >
+              Record Payment
+            </button>
+          )}
+        </div>
+      </div>
+
+      {showReason && (
+        <ul className="flex flex-col gap-1 mt-1 pt-2 pl-3 border-t border-l-2 border-ink-200">
+          {entry.reasonLines.map((line, i) => (
+            <li key={i} className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+              {line}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {settling && (
+        <div className="flex items-center gap-2 pt-2 border-t border-ink-100">
+          <input
+            type="text"
+            placeholder="Receipt number, e.g. OR-2026-0001"
+            value={receiptNumber}
+            onChange={(e) => setReceiptNumber(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleConfirm()}
+            autoFocus
+            className="flex-1 px-2.5 py-1.5 rounded-sm border border-ink-200 focus:outline-none focus:ring-1 focus:ring-green-700 focus:border-green-700"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+          />
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={submitting || !receiptNumber.trim()}
+            className="px-3 py-1.5 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+          >
+            {submitting ? "Saving…" : "Confirm Paid"}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setSettling(false); setError(""); setReceiptNumber("") }}
+            className="px-2.5 py-1.5 text-ink-500 hover:text-ink-700 font-medium transition-colors"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {error && (
+        <p className="text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          {error}
+        </p>
+      )}
+    </li>
+  )
+}
+
 function ActivityList({
   items,
   empty,
 }: {
-  items: { key: string; title: string; line1: string; line2?: string; cfg: { label: string; text: string; bg: string } }[]
+  items: { key: string; title: string; line1: string; line2?: string; cfg: { label: string; text: string; bg: string; border: string } }[]
   empty: string
 }) {
   if (items.length === 0) {
@@ -398,7 +582,7 @@ function ActivityList({
       {items.map((item) => (
         <li
           key={item.key}
-          className="flex items-center justify-between gap-3 px-4 py-3.5 rounded-(--radius) border border-ink-100 bg-ink-50/40"
+          className="flex items-center justify-between gap-3 px-4 py-3.5 rounded-sm border border-ink-200 bg-white"
         >
           <div className="min-w-0">
             <p className="text-ink-900 font-semibold truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
@@ -409,7 +593,7 @@ function ActivityList({
             </p>
           </div>
           <span
-            className={cn("shrink-0 px-2.5 py-0.5 rounded-full font-semibold", item.cfg.bg, item.cfg.text)}
+            className={cn("shrink-0 px-2.5 py-1 rounded-sm border font-semibold", item.cfg.bg, item.cfg.text, item.cfg.border)}
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
           >
             {item.cfg.label}

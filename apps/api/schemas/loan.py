@@ -95,6 +95,13 @@ class ReturnLoanRequest(BaseModel):
 class ReshelveRequest(BaseModel):
     accession_number: str
 
+# PATCH /loans/{id}/settle-fine — records that a fine left "unsettled" at
+# return time has since been paid at the desk. Separate from ReturnLoanRequest
+# because the loan is already closed by this point; only fine_status/
+# receipt_number change.
+class SettleFineRequest(BaseModel):
+    receipt_number: str
+
 # GET /loans/reshelving-queue — the Reshelving tab's browse list, same
 # idea as the Return tab's "Active Borrowers": let the librarian pick a
 # copy that's physically in hand instead of needing to already know its
@@ -108,3 +115,14 @@ class ReshelvingQueueItem(BaseModel):
     # None for a copy that's never had a real loan (e.g. newly added stock
     # marked for_reshelving directly), which is rare but not impossible.
     returned_at: str | None = None
+
+# GET /loans/reshelved — the Reshelving tab's "Reshelved Today" list,
+# mirroring Borrow/Return's own day-scoped views. book_copies.reshelved_at
+# holds only the most recent reshelving scan per copy (not full history),
+# which is fine for this: a copy being reshelved twice in the same day
+# would mean it was borrowed and returned twice that same day too.
+class ReshelvedItem(BaseModel):
+    id: str  # book_copies.id
+    accession_number: str | None = None
+    books: Book | None = None
+    reshelved_at: str
