@@ -5,7 +5,16 @@
       "Bash(git *)",
       "Bash(mkdir *)",
       "Bash(ls *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(python -m py_compile core/loans.py routers/holds.py routers/loans.py schemas/loan.py)",
+      "Bash(pnpm --filter web exec tsc --noEmit -p apps/web/tsconfig.json)",
+      "Bash(pnpm --filter web exec tsc --noEmit -p tsconfig.json)",
+      "Bash(pnpm build:web)",
+      "Bash(python -c \"import ast; [ast.parse\\(open\\(f, encoding='utf-8'\\).read\\(\\)\\) for f in ['routers/holds.py','routers/loans.py','routers/sessions.py','core/loans.py','schemas/loan.py','schemas/session.py']]\")",
+      "Bash(python -c \"import fastapi\")",
+      "Bash(python -m py_compile routers/loans.py)",
+      "Bash(python -m py_compile routers/sessions.py routers/patrons.py routers/loans.py schemas/session.py)",
+      "Bash(python -m py_compile routers/sessions.py routers/patrons.py routers/loans.py routers/holds.py schemas/session.py schemas/loan.py core/loans.py)"
     ]
   }
 }
