@@ -143,3 +143,43 @@ export async function fetchReshelvingQueue(): Promise<ReshelvingQueueItem[]> {
   if (!res.ok) return parseErrorOrThrow(res, "Failed to load the reshelving queue")
   return res.json()
 }
+
+// GET /loans/reshelved — already-reshelved copies (book_copies.reshelved_at
+// set), distinct from fetchReshelvingQueue's still-awaiting-reshelving list.
+export type ReshelvedItem = {
+  id: string // book_copies.id
+  accession_number: string | null
+  books: Book | null
+  reshelved_at: string
+}
+
+// Borrow & Return's "Borrowed/Returned Today" lists — real data instead of
+// browser-memory state, so it survives a refresh and resets only when the
+// caller's own day-boundary does. The caller computes that boundary (see
+// todayRangeIso in borrow-return/page.tsx) rather than this guessing a
+// timezone server-side.
+export async function fetchLoansInRange(filters: {
+  borrowedFrom?: string
+  borrowedTo?: string
+  returnedFrom?: string
+  returnedTo?: string
+}): Promise<Loan[]> {
+  const params = new URLSearchParams()
+  if (filters.borrowedFrom) params.set("borrowed_from", filters.borrowedFrom)
+  if (filters.borrowedTo) params.set("borrowed_to", filters.borrowedTo)
+  if (filters.returnedFrom) params.set("returned_from", filters.returnedFrom)
+  if (filters.returnedTo) params.set("returned_to", filters.returnedTo)
+  const res = await fetch(`${API_URL}/loans?${params.toString()}`, { headers: authHeaders() })
+  if (!res.ok) return parseErrorOrThrow(res, "Failed to load loans")
+  return res.json()
+}
+
+// "Reshelved Today" — same day-boundary convention as fetchLoansInRange.
+export async function fetchReshelvedInRange(filters: { reshelvedFrom?: string; reshelvedTo?: string }): Promise<ReshelvedItem[]> {
+  const params = new URLSearchParams()
+  if (filters.reshelvedFrom) params.set("reshelved_from", filters.reshelvedFrom)
+  if (filters.reshelvedTo) params.set("reshelved_to", filters.reshelvedTo)
+  const res = await fetch(`${API_URL}/loans/reshelved?${params.toString()}`, { headers: authHeaders() })
+  if (!res.ok) return parseErrorOrThrow(res, "Failed to load reshelved copies")
+  return res.json()
+}

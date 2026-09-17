@@ -34,10 +34,13 @@ import {
   confirmReturn,
   reshelveCopy,
   fetchReshelvingQueue,
+  fetchLoansInRange,
+  fetchReshelvedInRange,
   type Loan as ActiveLoan,
   type LoanLookupResult,
   type ReturnCondition,
   type ReshelvingQueueItem,
+  type ReshelvedItem,
 } from "@/lib/returns"
 import {
   fetchInHouseLoans,
@@ -68,7 +71,7 @@ const BORROW_CONDITIONS: { value: Condition; label: string }[] = [
 // (apps/api's core/loans.py), so the two are indistinguishable afterward.
 type IdentifyMode = "tap" | "search"
 
-function AssistedBorrowPanel({ onSettled }: { onSettled: (record: SessionRecord) => void }) {
+function AssistedBorrowPanel({ onSettled }: { onSettled: () => void }) {
   const [mode, setMode] = useState<IdentifyMode>("tap")
 
   const [rfidInput, setRfidInput] = useState("")
@@ -153,11 +156,7 @@ function AssistedBorrowPanel({ onSettled }: { onSettled: (record: SessionRecord)
       })
       const title = loan.books?.title ?? "Unknown title"
       setConfirmed({ title, patron: session.student_first_name })
-      onSettled({
-        title,
-        patron: session.student_first_name,
-        time: new Date().toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
-      })
+      onSettled()
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Could not confirm this loan")
     } finally {
@@ -221,7 +220,7 @@ function AssistedBorrowPanel({ onSettled }: { onSettled: (record: SessionRecord)
 
       {!session ? (
         <div>
-          <div className="flex items-center gap-1 p-1 rounded bg-ink-100 self-start mb-2 w-fit">
+          <div className="flex items-center gap-1 p-1 rounded bg-ink-100 mb-2 w-fit mx-auto">
             {([
               { key: "tap", label: "Tap ID" },
               { key: "search", label: "No ID card?" },
@@ -432,6 +431,36 @@ function AssistedBorrowPanel({ onSettled }: { onSettled: (record: SessionRecord)
 
 type SessionRecord = { title: string; patron: string; time: string; note?: string }
 
+// The librarian's local calendar day, as a [from, to) ISO range — computed
+// fresh on every load rather than tracked client-side, so "today" rolls
+// over on its own at local midnight instead of needing to be reset.
+function todayRangeIso(): { from: string; to: string } {
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const startOfTomorrow = new Date(startOfToday)
+  startOfTomorrow.setDate(startOfTomorrow.getDate() + 1)
+  return { from: startOfToday.toISOString(), to: startOfTomorrow.toISOString() }
+}
+
+function loanToSessionRecord(loan: ActiveLoan, timeField: "borrowed_at" | "returned_at"): SessionRecord {
+  const timestamp = timeField === "returned_at" ? loan.returned_at! : loan.borrowed_at
+  const fine = loan.fine_amount ?? 0
+  return {
+    title: loan.books?.title ?? "Unknown title",
+    patron: loan.profiles?.full_name ?? "Unknown",
+    time: new Date(timestamp).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
+    note: fine > 0 ? `₱${fine.toFixed(2)} fine` : undefined,
+  }
+}
+
+function reshelvedToSessionRecord(item: ReshelvedItem): SessionRecord {
+  return {
+    title: item.books?.title ?? "Unknown title",
+    patron: "—",
+    time: new Date(item.reshelved_at).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
+  }
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
 }
@@ -564,7 +593,7 @@ function ReturnPanel({
 }: {
   activeLoans: ActiveLoan[]
   loadingActiveLoans: boolean
-  onSettled: (record: SessionRecord) => void
+  onSettled: () => void
 }) {
   const [accessionInput, setAccessionInput] = useState("")
   const [searchInput, setSearchInput] = useState("")
@@ -657,16 +686,7 @@ function ReturnPanel({
       const patron = loan.profiles?.full_name ?? "Unknown"
       const fine = result.fine_amount ?? 0
       setConfirmed({ title: loan.books?.title ?? "Unknown title", patron, fine, needsReshelving: result.needs_reshelving })
-      const notes = [
-        fine > 0 ? `₱${fine.toFixed(2)} fine` : null,
-        result.needs_reshelving ? "→ needs reshelving" : "→ held for next reservation",
-      ].filter(Boolean)
-      onSettled({
-        title: loan.books?.title ?? "Unknown title",
-        patron,
-        time: new Date().toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
-        note: notes.join(" · ") || undefined,
-      })
+      onSettled()
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Could not confirm this return")
     } finally {
@@ -1201,7 +1221,7 @@ function ReshelvingPanel({
 }: {
   queue: ReshelvingQueueItem[]
   loadingQueue: boolean
-  onSettled: (record: SessionRecord) => void
+  onSettled: () => void
 }) {
   const [accessionInput, setAccessionInput] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -1219,12 +1239,7 @@ function ReshelvingPanel({
       // reshelve_copy).
       const held = copyStatus === "reserved"
       setResult(held ? "reserved" : "available")
-      onSettled({
-        title: accessionInput.trim(),
-        patron: "—",
-        time: new Date().toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
-        note: held ? "Held for next reservation" : "Now available",
-      })
+      onSettled()
       setAccessionInput("")
     } catch (err) {
       setResult("error")
@@ -1311,7 +1326,7 @@ function SessionList({ tab, records }: { tab: "borrow" | "return" | "reshelving"
         style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
       >
         <AlertCircle size={20} className="text-ink-300" />
-        No {tab === "borrow" ? "borrows" : tab === "return" ? "returns" : "reshelves"} yet this session.
+        No {tab === "borrow" ? "borrows" : tab === "return" ? "returns" : "reshelves"} yet today.
       </div>
     )
   }
@@ -1667,14 +1682,40 @@ function BorrowAndReturnPageContent() {
     const requested = searchParams.get("tab")
     return VALID_TABS.includes(requested as Tab) ? (requested as Tab) : "borrow"
   })
-  const [borrowedThisSession, setBorrowedThisSession] = useState<SessionRecord[]>([])
-  const [returnedThisSession, setReturnedThisSession] = useState<SessionRecord[]>([])
-  const [reshelvedThisSession, setReshelvedThisSession] = useState<SessionRecord[]>([])
+  const [borrowedToday, setBorrowedToday] = useState<SessionRecord[]>([])
+  const [returnedToday, setReturnedToday] = useState<SessionRecord[]>([])
+  const [reshelvedToday, setReshelvedToday] = useState<SessionRecord[]>([])
   const [activeInHouseLoans, setActiveInHouseLoans] = useState<InHouseLoan[]>([])
 
-  function handleBorrowed(record: SessionRecord) {
-    setBorrowedThisSession((prev) => [record, ...prev])
-  }
+  // Real data (GET /loans, GET /loans/reshelved), not browser memory — this
+  // is what actually makes "Today" survive a refresh or a shift change,
+  // resetting only because tomorrow's todayRangeIso() genuinely excludes it.
+  const loadBorrowedToday = useCallback(() => {
+    const { from, to } = todayRangeIso()
+    fetchLoansInRange({ borrowedFrom: from, borrowedTo: to })
+      .then((loans) => setBorrowedToday(loans.map((l) => loanToSessionRecord(l, "borrowed_at"))))
+      .catch(() => {})
+  }, [])
+
+  const loadReturnedToday = useCallback(() => {
+    const { from, to } = todayRangeIso()
+    fetchLoansInRange({ returnedFrom: from, returnedTo: to })
+      .then((loans) => setReturnedToday(loans.map((l) => loanToSessionRecord(l, "returned_at"))))
+      .catch(() => {})
+  }, [])
+
+  const loadReshelvedToday = useCallback(() => {
+    const { from, to } = todayRangeIso()
+    fetchReshelvedInRange({ reshelvedFrom: from, reshelvedTo: to })
+      .then((items) => setReshelvedToday(items.map(reshelvedToSessionRecord)))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    loadBorrowedToday()
+    loadReturnedToday()
+    loadReshelvedToday()
+  }, [loadBorrowedToday, loadReturnedToday, loadReshelvedToday])
 
   const loadInHouseLoans = useCallback(() => {
     fetchInHouseLoans("active").then(setActiveInHouseLoans).catch(() => {})
@@ -1708,14 +1749,14 @@ function BorrowAndReturnPageContent() {
   // A confirmed return can move a copy onto either list (out of Active
   // Borrowers, and — usually — onto the Reshelving queue), so refresh
   // both rather than guessing which one changed.
-  function handleReturned(record: SessionRecord) {
-    setReturnedThisSession((prev) => [record, ...prev])
+  function handleReturned() {
+    loadReturnedToday()
     loadActiveLoans()
     loadReshelvingQueue()
   }
 
-  function handleReshelved(record: SessionRecord) {
-    setReshelvedThisSession((prev) => [record, ...prev])
+  function handleReshelved() {
+    loadReshelvedToday()
     loadReshelvingQueue()
   }
 
@@ -1786,7 +1827,7 @@ function BorrowAndReturnPageContent() {
       {/* ── Two-column layout ─────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl">
         {/* Left: scanner / lookup */}
-        {tab === "borrow" && <AssistedBorrowPanel onSettled={handleBorrowed} />}
+        {tab === "borrow" && <AssistedBorrowPanel onSettled={loadBorrowedToday} />}
         {tab === "return" && (
           <ReturnPanel
             activeLoans={activeLoans}
@@ -1819,19 +1860,19 @@ function BorrowAndReturnPageContent() {
                 className="text-ink-900 font-semibold"
                 style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
               >
-                {tab === "borrow" ? "Borrowed This Session" : tab === "return" ? "Returned This Session" : tab === "reshelving" ? "Reshelved This Session" : "Currently Out (In-House)"}
+                {tab === "borrow" ? "Borrowed Today" : tab === "return" ? "Returned Today" : tab === "reshelving" ? "Reshelved Today" : "Currently Out (In-House)"}
               </span>
             </div>
             <span
               className="text-ink-400"
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
             >
-              {(tab === "borrow" ? borrowedThisSession.length : tab === "return" ? returnedThisSession.length : tab === "reshelving" ? reshelvedThisSession.length : activeInHouseLoans.length)} records
+              {(tab === "borrow" ? borrowedToday.length : tab === "return" ? returnedToday.length : tab === "reshelving" ? reshelvedToday.length : activeInHouseLoans.length)} records
             </span>
           </div>
-          {tab === "borrow" && <SessionList tab="borrow" records={borrowedThisSession} />}
-          {tab === "return" && <SessionList tab="return" records={returnedThisSession} />}
-          {tab === "reshelving" && <SessionList tab="reshelving" records={reshelvedThisSession} />}
+          {tab === "borrow" && <SessionList tab="borrow" records={borrowedToday} />}
+          {tab === "return" && <SessionList tab="return" records={returnedToday} />}
+          {tab === "reshelving" && <SessionList tab="reshelving" records={reshelvedToday} />}
           {tab === "guest" && <InHouseActiveList loans={activeInHouseLoans} onReturn={loadInHouseLoans} />}
         </div>
       </div>
