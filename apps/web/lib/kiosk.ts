@@ -19,7 +19,7 @@ export type StationSession = {
   id: string
   student_id: string
   student_first_name: string
-  auth_method: 'manual_login' | 'rfid'
+  auth_method: 'manual_login' | 'rfid' | 'librarian_assisted'
   station_id: string
   started_at: string
   ended_at: string | null
@@ -39,20 +39,36 @@ export async function openSessionFromToken(): Promise<StationSession> {
 }
 
 // The physical/shared-terminal path (Phase 6) — an RFID tap or a manual
-// login typed at the kiosk itself. Not behind auth: this is what the
-// kiosk calls to find out who's standing in front of it in the first
-// place (mirrors apps/api/routers/sessions.py's open_session).
+// login typed at the kiosk itself. Not behind auth for those two: this is
+// what the kiosk calls to find out who's standing in front of it in the
+// first place (mirrors apps/api/routers/sessions.py's open_session).
+// librarian_assisted is the exception — the student supplies no credential
+// at all (the librarian found them via searchPatrons below), so the
+// caller's own librarian JWT is sent as the credential instead.
 export async function openSession(
   stationId: string,
-  auth: { authMethod: 'rfid'; rfidUid: string } | { authMethod: 'manual_login'; email: string; password: string }
+  auth:
+    | { authMethod: 'rfid'; rfidUid: string }
+    | { authMethod: 'manual_login'; email: string; password: string }
+    | { authMethod: 'librarian_assisted'; studentId: string }
 ): Promise<StationSession> {
   const body =
     auth.authMethod === 'rfid'
       ? { station_id: stationId, auth_method: 'rfid', rfid_uid: auth.rfidUid }
-      : { station_id: stationId, auth_method: 'manual_login', email: auth.email, password: auth.password }
+      : auth.authMethod === 'manual_login'
+        ? { station_id: stationId, auth_method: 'manual_login', email: auth.email, password: auth.password }
+        : { station_id: stationId, auth_method: 'librarian_assisted', student_id: auth.studentId }
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (auth.authMethod === 'librarian_assisted') {
+    const token = getToken()
+    if (!token) throw new Error('Not signed in')
+    headers.Authorization = `Bearer ${token}`
+  }
+
   const res = await fetch(`${API_URL}/station-sessions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   })
   if (!res.ok) return parseErrorOrThrow(res, 'Could not open a session')
@@ -156,6 +172,9 @@ export type Loan = {
   fine_status: FineStatus | null
   profiles: Borrower | null
   receipt_number: string | null
+  // Set only for a desk-side librarian-assisted checkout (the librarian's
+  // profile id) — null for every ordinary self-service loan.
+  assisted_by: string | null
   books: Book | null
   // Only set by GET /loans for status === 'overdue' rows.
   days_overdue: number | null
@@ -188,6 +207,35 @@ export async function confirmLoan(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       token: params.token,
+      accession_number: params.accessionNumber,
+      condition: params.condition,
+      purpose: params.purpose || undefined,
+      notes: params.notes || undefined,
+    }),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not confirm this loan')
+  return res.json()
+}
+
+// Desk-side checkout: the librarian already tapped the student's ID
+// (openSession above, auth_method 'rfid') and has the physical book in
+// hand — accession_number identifies the exact copy directly instead of
+// the kiosk's auto-pick-then-verify soft hold. Librarian-authenticated,
+// unlike the rest of this file.
+export async function createAssistedLoan(params: {
+  stationSessionId: string
+  accessionNumber: string
+  condition: Condition
+  purpose?: string
+  notes?: string
+}): Promise<Loan> {
+  const token = getToken()
+  if (!token) throw new Error('Not signed in')
+  const res = await fetch(`${API_URL}/loans/librarian-assisted`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      station_session_id: params.stationSessionId,
       accession_number: params.accessionNumber,
       condition: params.condition,
       purpose: params.purpose || undefined,

@@ -19,11 +19,28 @@ MAX_YEAR_LEVEL = 8  # generous ceiling — covers every real program length (4-6
 
 @router.get("", response_model=list[Patron])
 def list_patrons(
+    q: str | None = None,
+    role: str | None = None,
     librarian: UserProfile = Depends(require_librarian),
     db: Client = Depends(get_user_supabase),
 ):
-    res = db.table("profiles").select("*").order("full_name").execute()
-    return res.data
+    query = db.table("profiles").select("*")
+    if role:
+        query = query.eq("role", role)
+    patrons = query.order("full_name").execute().data
+
+    # Filtered in Python rather than a PostgREST ilike filter — same
+    # reasoning as loans.py's search_loans: avoids building a filter string
+    # out of caller-supplied text, and the patron list is small enough that
+    # this costs nothing. Used by the librarian-assisted borrow flow's
+    # student picker (?q=&role=student) as well as the Patrons screen.
+    needle = (q or "").strip().lower()
+    if needle:
+        patrons = [
+            p for p in patrons
+            if needle in (p.get("full_name") or "").lower() or needle in (p.get("email") or "").lower()
+        ]
+    return patrons
 
 @router.patch("/{user_id}", response_model=Patron)
 def update_patron(

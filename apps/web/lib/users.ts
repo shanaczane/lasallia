@@ -2,7 +2,7 @@
 // Fetch layer for /users — the librarian Patrons screen (build plan 5.5).
 
 import { getToken } from "@/lib/auth"
-import type { UserProfile } from "@lasallia/types"
+import type { UserProfile, UserRole } from "@lasallia/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
@@ -20,6 +20,17 @@ async function parseErrorOrThrow(res: Response, fallback: string): Promise<never
 export async function fetchPatrons(): Promise<UserProfile[]> {
   const res = await fetch(`${API_URL}/users`, { headers: authHeaders() })
   if (!res.ok) return parseErrorOrThrow(res, "Failed to load patrons")
+  return res.json()
+}
+
+// Librarian-assisted borrow's fallback student picker, when there's no ID
+// card to tap — searches by name or email, scoped to students only.
+export async function searchPatrons(q: string, role?: UserRole): Promise<UserProfile[]> {
+  const params = new URLSearchParams()
+  if (q.trim()) params.set("q", q.trim())
+  if (role) params.set("role", role)
+  const res = await fetch(`${API_URL}/users?${params.toString()}`, { headers: authHeaders() })
+  if (!res.ok) return parseErrorOrThrow(res, "Failed to search patrons")
   return res.json()
 }
 

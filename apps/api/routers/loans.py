@@ -1,17 +1,18 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from core.calendar import compute_fine
 from core.deps import get_current_user, get_user_supabase, require_librarian
+from core.loans import check_borrow_eligibility, create_loan_and_notify
 from core.notify import notify, notify_librarians
 from core.reservations import promote_next_reservation
-from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.loan import (
     ConfirmLoanRequest,
+    LibrarianAssistedLoanRequest,
     Loan,
     LoanLookupResult,
     ReshelveRequest,
@@ -154,58 +155,78 @@ def confirm_loan(body: ConfirmLoanRequest):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Station session not found")
     student_id = session_res.data[0]["student_id"]
 
-    cfg = get_library_settings(db)
-    due_date = (datetime.now(timezone.utc) + timedelta(days=cfg["standard_loan_period_days"])).isoformat()
-
-    loan_res = db.table("loans").insert({
-        "book_copy_id": copy["id"],
-        "student_id": student_id,
-        "station_session_id": hold["station_session_id"],
-        "due_date": due_date,
-        "condition_at_borrow": body.condition,
-        "purpose": body.purpose,
-        "notes": body.notes,
-    }).execute()
-    if not loan_res.data:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not create the loan")
-
-    # available -> on_loan, or reserved -> on_loan (a queued pickup claimed
-    # via holds.py's ready-reservation branch): both legal per Phase 1's
-    # status-machine trigger.
-    db.table("book_copies").update({"status": "on_loan"}).eq("id", copy["id"]).execute()
-
-    # If this copy was being held for a reservation (a queued pickup, not a
-    # walk-in claim on a genuinely available copy), close that reservation
-    # out now — a copy can have at most one 'ready' reservation attached at
-    # a time, so this only ever touches the one it was actually held for.
-    db.table("reservations").update({
-        "status": "fulfilled",
-        "fulfilled_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("book_copy_id", copy["id"]).eq("status", "ready").eq("user_id", student_id).execute()
+    loan = create_loan_and_notify(
+        db, student_id, copy["id"], copy["book_id"], hold["station_session_id"],
+        body.condition, body.purpose, body.notes,
+    )
 
     db.table("soft_holds").delete().eq("id", hold["id"]).execute()
 
-    loan = loan_res.data[0]
-    book_res = db.table("books").select("*").eq("id", copy["book_id"]).execute()
-    loan["books"] = book_res.data[0] if book_res.data else None
-
-    book_title = loan["books"]["title"] if loan["books"] else "A book"
-    due_label = datetime.fromisoformat(due_date).strftime("%B %d, %Y")
-    notify(
-        student_id, "loan_confirmed",
-        "Book successfully borrowed",
-        f'You\'ve borrowed "{book_title}". It\'s due back on {due_label}.',
-        link="/student/library",
-    )
-    borrower_res = db.table("profiles").select("full_name").eq("id", student_id).execute()
-    borrower_name = borrower_res.data[0]["full_name"] if borrower_res.data else "A student"
-    notify_librarians(
-        "Book checked out",
-        f'{borrower_name} checked out "{book_title}", due {due_label}.',
-        link="/librarian/borrow-return",
-    )
-
     return loan
+
+# Desk-side checkout (build plan Phase 1's `librarian_assisted` dual-auth,
+# finally wired into borrowing): the librarian already has the physical
+# book in hand, so there's no walk-to-the-shelf gap for a soft_hold to
+# cover. station_session_id must point at an 'rfid' session opened at the
+# librarian's own reader (routers/sessions.py already treats any rfid tap
+# identically regardless of who operates the reader), and accession_number
+# identifies the exact copy directly — no auto-pick, no separate "type it
+# again to confirm" step, since scanning it here already proves possession.
+@router.post("/librarian-assisted", response_model=Loan, status_code=status.HTTP_201_CREATED)
+def create_librarian_assisted_loan(
+    body: LibrarianAssistedLoanRequest,
+    librarian: UserProfile = Depends(require_librarian),
+):
+    admin = get_admin_client()
+
+    session_res = (
+        admin.table("station_sessions")
+        .select("student_id, auth_method, ended_at")
+        .eq("id", body.station_session_id)
+        .execute()
+    )
+    if not session_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "That session isn't valid — tap the student's ID again")
+    session = session_res.data[0]
+    if session["ended_at"] is not None:
+        raise HTTPException(status.HTTP_410_GONE, "That session has ended — tap the student's ID again")
+    if session["auth_method"] not in ("rfid", "librarian_assisted"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Librarian-assisted borrow requires an RFID tap or a librarian-selected student")
+    student_id = session["student_id"]
+
+    copy_res = (
+        admin.table("book_copies")
+        .select("id, book_id, status")
+        .eq("accession_number", body.accession_number.strip())
+        .execute()
+    )
+    if not copy_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No copy with that accession number")
+    copy = copy_res.data[0]
+
+    # A 'reserved' copy is borrowable only when it's this exact student's own
+    # ready pickup (holds.py's claim_hold gives the digital kiosk flow the
+    # same allowance) — anyone else's hold on it still blocks the checkout.
+    if copy["status"] == "reserved":
+        own_ready_reservation = (
+            admin.table("reservations")
+            .select("id")
+            .eq("book_copy_id", copy["id"])
+            .eq("status", "ready")
+            .eq("user_id", student_id)
+            .execute()
+        )
+        if not own_ready_reservation.data:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "This copy is on hold for another patron's reservation")
+    elif copy["status"] != "available":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"This copy isn't available to borrow (status: {copy['status']})")
+
+    check_borrow_eligibility(admin, student_id, copy["book_id"])
+
+    return create_loan_and_notify(
+        admin, student_id, copy["id"], copy["book_id"], body.station_session_id,
+        body.condition, body.purpose, body.notes, assisted_by=librarian.id,
+    )
 
 # Phase 4 — the librarian's primary return-lookup path (build plan 4.1):
 # scan or type the exact accession number, find the open loan on that

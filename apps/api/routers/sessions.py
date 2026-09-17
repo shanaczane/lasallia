@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from supabase_auth.errors import AuthApiError
 
 from core import chat_sessions
-from core.deps import get_current_user
+from core.deps import get_current_user, get_optional_user
 from core.supabase import get_admin_client, get_client
 from schemas.auth import UserProfile
 from schemas.session import OpenSessionRequest, StationSession
@@ -44,12 +44,16 @@ def _insert_session(student_id: str, auth_method: str, station_id: str) -> dict:
     session["student_first_name"] = full_name.split(" ")[0] or "there"
     return session
 
-# Not behind auth: this is what the kiosk calls to find out who's standing
-# in front of it. manual_login's own password check IS the credential;
-# rfid's UID lookup is the credential. Both converge on the same insert,
-# so the resulting row is identical downstream except for auth_method.
+# Not behind auth for manual_login/rfid: this is what the kiosk calls to
+# find out who's standing in front of it. manual_login's own password check
+# IS the credential; rfid's UID lookup is the credential. librarian_assisted
+# is the exception — there's no student-supplied credential at all (the
+# librarian already found them via GET /users?q=), so the caller's own
+# librarian JWT has to stand in for one instead. All three converge on the
+# same insert, so the resulting row is identical downstream except for
+# auth_method.
 @router.post("", response_model=StationSession, status_code=status.HTTP_201_CREATED)
-def open_session(body: OpenSessionRequest):
+def open_session(body: OpenSessionRequest, caller: UserProfile | None = Depends(get_optional_user)):
     if body.auth_method == "manual_login":
         if not body.email or not body.password:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "email and password are required for manual_login")
@@ -66,6 +70,13 @@ def open_session(body: OpenSessionRequest):
         if not profile_res.data:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown RFID tag")
         student_id = profile_res.data[0]["id"]
+
+    elif body.auth_method == "librarian_assisted":
+        if caller is None or caller.role != "librarian":
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only a librarian can open an assisted session")
+        if not body.student_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "student_id is required for librarian_assisted")
+        student_id = body.student_id
 
     else:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unsupported auth_method")
