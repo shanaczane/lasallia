@@ -43,15 +43,17 @@ function bookAuthor(r: Reservation): string {
 }
 
 // Ready reservations sit on the hold shelf for a fixed pickup window
-// (PICKUP_WINDOW_DAYS server-side) before the sweep expires them and
-// hands the copy to the next person in line — surface that urgency
-// instead of a flat date so a librarian can see what's about to lapse.
-function pickupUrgency(pickupBy: string): { label: string; className: string } {
+// (reservation_hold_period_days, Library Settings — 3 days by default)
+// before the sweep in reservations.py automatically expires them and
+// hands the copy to the next person in line. Surfaced as a badge right
+// next to the patron's name so a librarian can scan the whole list and
+// immediately see what's about to lapse, not just read it row by row.
+function pickupUrgency(pickupBy: string): { shortLabel: string; badgeClass: string } {
   const diffDays = Math.ceil((new Date(pickupBy).getTime() - Date.now()) / 86_400_000)
-  if (diffDays <= 0) return { label: "Pickup window closes today", className: "text-danger font-semibold" }
-  if (diffDays === 1) return { label: "1 day left to pick up", className: "text-danger font-semibold" }
-  if (diffDays <= 2) return { label: `${diffDays} days left to pick up`, className: "text-warn font-semibold" }
-  return { label: `Pickup by ${formatDate(pickupBy)}`, className: "text-ink-400 font-medium" }
+  if (diffDays <= 0) return { shortLabel: "Closes today", badgeClass: "bg-danger-bg text-danger" }
+  if (diffDays === 1) return { shortLabel: "1 day left", badgeClass: "bg-danger-bg text-danger" }
+  if (diffDays <= 2) return { shortLabel: `${diffDays} days left`, badgeClass: "bg-warn-bg text-warn" }
+  return { shortLabel: `${diffDays} days left`, badgeClass: "bg-ink-100 text-ink-500" }
 }
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -72,15 +74,19 @@ const STATUS_CONFIG: Record<
 // ─── Tab config ───────────────────────────────────────────────────────────────
 type TabKey = "all" | ReservationStatus
 
-type Tab = { key: TabKey; label: string; shortLabel: string }
+// showCount: only the tabs a librarian actually needs to act on carry a
+// count badge — pending requests and ready holds are "unread/ongoing"
+// work. All, picked up, expired, and cancelled are either a plain total or
+// closed history; a count there is just noise, not something to act on.
+type Tab = { key: TabKey; label: string; shortLabel: string; showCount: boolean }
 
 const TABS: Tab[] = [
-  { key: "all",       label: "All",       shortLabel: "All"       },
-  { key: "pending",   label: "Pending",   shortLabel: "Pending"   },
-  { key: "ready",     label: "Ready",     shortLabel: "Ready"     },
-  { key: "fulfilled", label: "Picked Up", shortLabel: "Picked Up" },
-  { key: "expired",   label: "Expired",   shortLabel: "Expired"   },
-  { key: "cancelled", label: "Cancelled", shortLabel: "Cancelled" },
+  { key: "all",       label: "All",       shortLabel: "All",       showCount: false },
+  { key: "pending",   label: "Pending",   shortLabel: "Pending",   showCount: true  },
+  { key: "ready",     label: "Ready",     shortLabel: "Ready",     showCount: true  },
+  { key: "fulfilled", label: "Picked Up", shortLabel: "Picked Up", showCount: false },
+  { key: "expired",   label: "Expired",   shortLabel: "Expired",   showCount: false },
+  { key: "cancelled", label: "Cancelled", shortLabel: "Cancelled", showCount: false },
 ]
 
 // ─── Reject Modal ──────────────────────────────────────────────────────────────
@@ -218,12 +224,12 @@ function ReservationRow({ reservation: r, isLast, onReject }: ReservationRowProp
   return (
     <div
       className={cn(
-        "flex items-start gap-3 px-4 sm:px-5 py-4 transition-colors hover:bg-ink-50",
+        "flex items-center gap-3 px-4 sm:px-5 py-4 transition-colors hover:bg-ink-50",
         r.status !== "pending" && r.status !== "ready" && "opacity-80",
         !isLast && "border-b border-ink-100"
       )}
     >
-      <div className={cn("mt-0.5 flex-shrink-0 flex items-center justify-center rounded-full size-7", cfg.iconBg, cfg.iconColor)}>
+      <div className={cn("flex-shrink-0 flex items-center justify-center rounded-full size-7", cfg.iconBg, cfg.iconColor)}>
         {cfg.icon}
       </div>
 
@@ -236,6 +242,15 @@ function ReservationRow({ reservation: r, isLast, onReject }: ReservationRowProp
             {patronEmail(r)}
           </span>
           <StatusBadge status={r.status} />
+          {isReady && r.pickup_by && (
+            <span
+              className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold whitespace-nowrap", pickupUrgency(r.pickup_by).badgeClass)}
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+            >
+              <Clock size={10} />
+              {pickupUrgency(r.pickup_by).shortLabel}
+            </span>
+          )}
         </div>
 
         <p className="text-ink-400 leading-relaxed" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
@@ -250,30 +265,29 @@ function ReservationRow({ reservation: r, isLast, onReject }: ReservationRowProp
             <span className="text-ink-300 mx-1">·</span>
             <span className="text-ink-400">{formatTime(r.requested_at)}</span>
           </span>
-          {isPending && typeof r.queue_position === "number" && (
-            <span className="text-ink-500 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-              #{r.queue_position} in line for this title
-            </span>
-          )}
           {isReady && r.pickup_by && (
-            <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-              <span className="text-ink-400">On hold shelf — </span>
-              <span className={pickupUrgency(r.pickup_by).className}>{pickupUrgency(r.pickup_by).label}</span>
+            <span className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+              On hold shelf — pickup by <span className="font-medium">{formatDate(r.pickup_by)}</span>
             </span>
           )}
         </div>
       </div>
 
-      <div className="flex items-center gap-2 flex-shrink-0 pt-0.5">
-        {canCancel && (
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {canCancel ? (
           <button
             onClick={() => onReject(r)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-(--radius) border border-danger/30 bg-white text-danger font-medium hover:bg-danger-bg transition-colors"
+            className="flex items-center justify-center gap-1.5 h-8 w-8 sm:w-auto sm:min-w-30 sm:px-3 rounded-(--radius) border border-danger/30 bg-white text-danger font-medium hover:bg-danger-bg transition-colors"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
           >
             <XCircle size={13} />
             <span className="hidden sm:inline">{isReady ? "Cancel Hold" : "Reject"}</span>
           </button>
+        ) : (
+          // Reserve the same footprint as the action button on rows where
+          // there's nothing to cancel, so the right edge of the list stays
+          // aligned instead of going ragged.
+          <div aria-hidden="true" className="invisible h-8 w-8 sm:w-auto sm:min-w-30 sm:px-3" />
         )}
       </div>
     </div>
@@ -284,7 +298,7 @@ function ReservationRow({ reservation: r, isLast, onReject }: ReservationRowProp
 export default function LibrarianReservationsPage() {
   const { reservations, loading, error, refresh } = useReservations()
   const [actionPending, setActionPending] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabKey>("all")
+  const [activeTab, setActiveTab] = useState<TabKey>("pending")
   const [search, setSearch] = useState("")
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "pickup">("newest")
 
@@ -351,7 +365,7 @@ export default function LibrarianReservationsPage() {
         style={{ fontSize: isMobile ? "var(--text-xs)" : "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
       >
         {isMobile ? tab.shortLabel : tab.label}
-        {count > 0 && (
+        {tab.showCount && count > 0 && (
           <span
             className={cn(
               "flex items-center justify-center rounded-full min-w-4 h-4 px-1 font-semibold flex-shrink-0",
@@ -368,6 +382,7 @@ export default function LibrarianReservationsPage() {
 
   return (
     <div className="flex flex-col w-full min-h-screen bg-paper">
+    <div className="w-full max-w-4xl mx-auto flex flex-col flex-1">
 
       <div className="px-4 sm:px-8 pt-6 pb-4">
         <h1 className="text-ink-900 font-semibold leading-tight" style={{ fontSize: "var(--text-3xl)", fontFamily: "var(--font-display)" }}>
@@ -432,10 +447,11 @@ export default function LibrarianReservationsPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-1">
-            <p className="text-ink-400 px-1 mb-2" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
-              {filtered.length} reservation{filtered.length !== 1 ? "s" : ""}
-              {search ? ` matching "${search}"` : ""}
-            </p>
+            {search && (
+              <p className="text-ink-400 px-1 mb-2" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+                Matching &ldquo;{search}&rdquo;
+              </p>
+            )}
             <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
               {filtered.map((r, i) => (
                 <ReservationRow key={r.id} reservation={r} isLast={i === filtered.length - 1} onReject={setRejectTarget} />
@@ -453,6 +469,7 @@ export default function LibrarianReservationsPage() {
           onClose={() => setRejectTarget(null)}
         />
       )}
+    </div>
     </div>
   )
 }
