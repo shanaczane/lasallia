@@ -14,7 +14,8 @@
       "Bash(python -c \"import fastapi\")",
       "Bash(python -m py_compile routers/loans.py)",
       "Bash(python -m py_compile routers/sessions.py routers/patrons.py routers/loans.py schemas/session.py)",
-      "Bash(python -m py_compile routers/sessions.py routers/patrons.py routers/loans.py routers/holds.py schemas/session.py schemas/loan.py core/loans.py)"
+      "Bash(python -m py_compile routers/sessions.py routers/patrons.py routers/loans.py routers/holds.py schemas/session.py schemas/loan.py core/loans.py)",
+      "Bash(python -m py_compile routers/loans.py schemas/loan.py)"
     ]
   }
 }
