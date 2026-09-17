@@ -17,6 +17,7 @@ class InHouseLoan(BaseModel):
     guest_id_number: str
     visitor_type: VisitorType
     fee_paid: bool
+    receipt_number: str | None = None
     purpose: Purpose
     checked_out_at: str
     returned_at: str | None = None
@@ -30,5 +31,6 @@ class CreateInHouseLoanRequest(BaseModel):
     guest_id_number: str
     visitor_type: VisitorType
     fee_paid: bool = False
+    receipt_number: str | None = None
     purpose: Purpose
     notes: str | None = None

@@ -46,6 +46,8 @@ def create_in_house_loan(
 
     if body.visitor_type == "non_nocei" and not body.fee_paid:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "The ₱50.00 visitor fee must be collected before checkout")
+    if body.fee_paid and not (body.receipt_number and body.receipt_number.strip()):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A receipt number is required to mark the fee as paid")
 
     loan_res = db.table("in_house_loans").insert({
         "book_copy_id": copy["id"],
@@ -54,6 +56,7 @@ def create_in_house_loan(
         "guest_id_number": body.guest_id_number.strip(),
         "visitor_type": body.visitor_type,
         "fee_paid": body.fee_paid,
+        "receipt_number": body.receipt_number.strip() if body.fee_paid and body.receipt_number else None,
         "purpose": body.purpose,
         "notes": body.notes,
     }).execute()

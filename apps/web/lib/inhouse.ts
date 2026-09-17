@@ -31,6 +31,7 @@ export type InHouseLoan = {
   guest_id_number: string
   visitor_type: VisitorType
   fee_paid: boolean
+  receipt_number: string | null
   purpose: Purpose
   checked_out_at: string
   returned_at: string | null
@@ -52,6 +53,7 @@ export async function createInHouseLoan(params: {
   guestIdNumber: string
   visitorType: VisitorType
   feePaid: boolean
+  receiptNumber?: string
   purpose: Purpose
   notes?: string
 }): Promise<InHouseLoan> {
@@ -64,6 +66,7 @@ export async function createInHouseLoan(params: {
       guest_id_number: params.guestIdNumber,
       visitor_type: params.visitorType,
       fee_paid: params.feePaid,
+      receipt_number: params.receiptNumber || undefined,
       purpose: params.purpose,
       notes: params.notes || undefined,
     }),
