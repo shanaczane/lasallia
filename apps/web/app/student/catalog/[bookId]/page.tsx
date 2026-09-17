@@ -19,7 +19,7 @@ import { useSearchParams } from 'next/navigation'
 import {
   ArrowLeft, MapPin, Hash, Building2, Calendar,
   BookOpen, GraduationCap, Landmark, Bookmark, Bell, QrCode,
-  CheckCircle2,
+  CheckCircle2, Clock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useBook, useBooks } from '@/lib/hooks/useBooks'
@@ -46,6 +46,28 @@ function getCoverColor(id: string, override?: string): string {
   if (override) return override
   const idx = id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
   return COVER_COLORS[idx % COVER_COLORS.length]
+}
+
+// A ready reservation sits on the hold shelf for a fixed pickup window
+// (reservation_hold_period_days, Library Settings — 3 days by default)
+// before it's automatically cancelled and handed to the next person in
+// line (reservations.py's expiry sweep) — same deadline math as the
+// librarian's own Reservation Queue page, plain inline text here to match
+// this panel's simpler, single-line style.
+function pickupUrgency(pickupBy: string): { shortLabel: string; textClass: string } {
+  const diffDays = Math.ceil((new Date(pickupBy).getTime() - Date.now()) / 86_400_000)
+  if (diffDays <= 0) return { shortLabel: 'Closes today', textClass: 'text-danger' }
+  if (diffDays === 1) return { shortLabel: '1 day left', textClass: 'text-danger' }
+  if (diffDays <= 2) return { shortLabel: `${diffDays} days left`, textClass: 'text-warn' }
+  return { shortLabel: `${diffDays} days left`, textClass: 'text-green-700' }
+}
+
+// Newly-catalogued copies get seeded with a literal 'Unassigned' shelf
+// location (scripts/seed_books.py) until a librarian assigns a real one —
+// showing that as-is reads as "go to Unassigned," which looks broken
+// rather than informative.
+function hasKnownShelfLocation(book: Book): boolean {
+  return !!book.shelf_location && book.shelf_location.trim().toLowerCase() !== 'unassigned'
 }
 
 // ─── Action panel — simplified borrowing logic ────────────────────────────────
@@ -151,7 +173,7 @@ function ActionPanel({
             <span className="font-semibold">
               {availableCopies} of {totalCopies} {totalCopies === 1 ? 'copy' : 'copies'}
             </span>{' '}
-            available — go to <span className="font-semibold">{book.shelf_location}</span> and show the QR code at the counter.
+            available —{hasKnownShelfLocation(book) && <> go to <span className="font-semibold">{book.shelf_location}</span> and</>} show the QR code at the counter.
           </p>
         </div>
         {/* Borrow button */}
@@ -171,39 +193,42 @@ function ActionPanel({
   // Not available — reserve / queue status
   if (reserved && reservation) {
     if (reservation.status === 'ready') {
+      // Ready reservations borrow through the exact same QR flow as a
+      // genuinely available book (onBorrow -> BorrowModal) rather than a
+      // separate "type the accession number on My Reservations" step —
+      // holds.py routes this student straight to their own held copy, so
+      // "Borrow this book" here only ever works for them, never anyone
+      // else browsing the same title.
+      // Same simple shape as the "not available" panel below: one icon,
+      // two lines of stacked text, one button pinned to the right. No
+      // separate cancel action here — it's already one tap away on My
+      // Reservations, and this panel exists to get the student to the
+      // shelf and borrowing, not to manage the reservation itself.
+      const urgency = reservation.pickup_by ? pickupUrgency(reservation.pickup_by) : null
       return (
-        <div className="flex flex-col gap-2">
-          <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex items-center gap-2.5 flex-1 min-w-0">
-              <CheckCircle2 size={16} className="text-green-600 shrink-0" />
-              <p
-                className="text-green-800 leading-snug"
-                style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
-              >
-                <span className="font-semibold">Ready for pickup</span>
-                {reservation.pickup_by && <> — bring your ID and pick it up by{' '}
-                  <span className="font-semibold">{formatDate(reservation.pickup_by)}</span></>}. Head to{' '}
-                <Link href="/student/reservations" className="underline underline-offset-2 hover:text-green-900">
-                  My Reservations
-                </Link>{' '}
-                to type the accession number and confirm.
+        <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1 flex items-center gap-3 min-w-0">
+            <CheckCircle2 size={18} className="text-green-600 shrink-0" />
+            <div className="text-green-800 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+              <p>
+                <span className="font-semibold text-green-900">Ready for pickup</span>
+                {urgency && <> · <span className={cn('font-semibold', urgency.textClass)}>{urgency.shortLabel}</span></>}
+              </p>
+              <p className="mt-0.5">
+                {hasKnownShelfLocation(book) ? <>Go to {book.shelf_location}</> : 'Show the QR code at the counter'}
+                {reservation.pickup_by && <> · Pick up by {formatDate(reservation.pickup_by)}</>}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={leaveQueue}
-              disabled={pending}
-              className="shrink-0 text-green-600 hover:text-green-800 underline underline-offset-2 transition-colors sm:ml-auto disabled:opacity-50"
-              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
-            >
-              {pending ? 'Cancelling…' : 'Cancel reservation'}
-            </button>
           </div>
-          {actionError && (
-            <p className="text-danger" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}>
-              {actionError}
-            </p>
-          )}
+          <button
+            type="button"
+            onClick={onBorrow}
+            className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-green-700 text-white font-semibold hover:bg-green-800 active:scale-95 transition-all"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+          >
+            <QrCode size={15} />
+            Borrow this book
+          </button>
         </div>
       )
     }

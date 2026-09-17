@@ -4,7 +4,6 @@
 
 import { Reservation } from '@lasallia/types'
 import { getToken } from '@/lib/auth'
-import type { Condition, Loan } from '@/lib/kiosk'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
@@ -49,25 +48,5 @@ export async function cancelReservation(id: string): Promise<Reservation> {
     body: JSON.stringify({ status: 'cancelled' }),
   })
   if (!res.ok) return parseErrorOrThrow(res, 'Failed to cancel reservation')
-  return res.json()
-}
-
-// Fulfillment (plan 5.3) — same possession check as a normal borrow,
-// sourced from a 'ready' reservation's assigned copy.
-export async function pickupReservation(
-  id: string,
-  params: { condition: Condition; accessionNumber: string; purpose?: string; notes?: string }
-): Promise<Loan> {
-  const res = await fetch(`${API_URL}/reservations/${id}/pickup`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({
-      accession_number: params.accessionNumber,
-      condition: params.condition,
-      purpose: params.purpose || undefined,
-      notes: params.notes || undefined,
-    }),
-  })
-  if (!res.ok) return parseErrorOrThrow(res, 'Could not confirm this pickup')
   return res.json()
 }
