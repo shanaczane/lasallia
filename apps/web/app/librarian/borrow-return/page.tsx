@@ -5,8 +5,6 @@ import { Suspense, useState, useRef, useEffect, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import {
   ScanLine,
-  Camera,
-  Keyboard,
   CheckCircle2,
   User,
   UserPlus,
@@ -51,7 +49,6 @@ import {
 // separate from "borrow", which is untouched and still runs on the older
 // borrow_transactions schema.
 type Tab = "borrow" | "return" | "reshelving" | "guest"
-type InputMode = "camera" | "usb"
 type ScanState = "idle" | "scanning" | "found" | "notfound" | "confirmed"
 
 interface BookResult {
@@ -124,71 +121,6 @@ function toTxRecord(tx: BorrowTransaction): TxRecord {
     patronEmail: tx.profiles?.email ?? "—",
     time: new Date(timestamp).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
   }
-}
-
-// ─── Camera placeholder ───────────────────────────────────────────────────────
-function CameraViewfinder({ scanning }: { scanning: boolean }) {
-  return (
-    <div
-      className="relative w-full rounded overflow-hidden bg-[#0d0d0d] flex items-center justify-center"
-      style={{ aspectRatio: "4/3", maxHeight: 240 }}
-    >
-      <div className="absolute inset-0 bg-black/50" />
-
-      {/* Corner frame */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="relative" style={{ width: "54%", height: "54%" }}>
-          {(["tl", "tr", "bl", "br"] as const).map((c) => (
-            <span
-              key={c}
-              className="absolute w-5 h-5 border-white"
-              style={{
-                borderTopWidth: c[0] === "t" ? 2 : 0,
-                borderBottomWidth: c[0] === "b" ? 2 : 0,
-                borderLeftWidth: c[1] === "l" ? 2 : 0,
-                borderRightWidth: c[1] === "r" ? 2 : 0,
-                top: c[0] === "t" ? 0 : "auto",
-                bottom: c[0] === "b" ? 0 : "auto",
-                left: c[1] === "l" ? 0 : "auto",
-                right: c[1] === "r" ? 0 : "auto",
-              }}
-            />
-          ))}
-
-          {scanning && (
-            <div
-              className="absolute left-0 right-0"
-              style={{
-                height: 2,
-                background: "linear-gradient(90deg, transparent, #00d26a, transparent)",
-                animation: "scanline 1.6s ease-in-out infinite",
-              }}
-            />
-          )}
-        </div>
-      </div>
-
-      {!scanning && (
-        <div className="relative z-10 flex flex-col items-center gap-2 text-white/25">
-          <Camera size={40} />
-        </div>
-      )}
-
-      <p
-        className="absolute bottom-3 text-white/60 text-center px-4 leading-snug"
-        style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
-      >
-        {scanning ? "Detecting barcode…" : "Point camera at QR code or barcode"}
-      </p>
-
-      <style>{`
-        @keyframes scanline {
-          0%, 100% { top: 8%; }
-          50%       { top: 86%; }
-        }
-      `}</style>
-    </div>
-  )
 }
 
 // ─── Book result card ─────────────────────────────────────────────────────────
@@ -301,6 +233,7 @@ function BookResultCard({
               value={patronEmail}
               onChange={(e) => setPatronEmail(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && canConfirm && onConfirm(patronEmail)}
+              autoFocus
               className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
               style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
             />
@@ -421,10 +354,8 @@ function ScannerPanel({
   activeTransactions: BorrowTransaction[]
   onSettled: () => void
 }) {
-  const [inputMode, setInputMode] = useState<InputMode>("camera")
   const [scanState, setScanState] = useState<ScanState>("idle")
-  const [usbValue, setUsbValue] = useState("")
-  const [cameraScanning, setCameraScanning] = useState(false)
+  const [scanInput, setScanInput] = useState("")
   const [matchedBook, setMatchedBook] = useState<Book | null>(null)
   const [matchedTx, setMatchedTx] = useState<BorrowTransaction | undefined>(undefined)
   const [submitting, setSubmitting] = useState(false)
@@ -452,23 +383,10 @@ function ScannerPanel({
     setScanState("found")
   }
 
-  const handleCameraStart = () => {
-    setCameraScanning(true)
+  const handleSubmit = () => {
+    if (!scanInput.trim()) return
     setScanState("scanning")
-    setTimeout(() => {
-      setCameraScanning(false)
-      const demo =
-        tab === "borrow"
-          ? books.find((b) => (b.available_copies ?? 0) > 0)
-          : activeTransactions[0]?.books
-      resolveMatch(demo)
-    }, 2200)
-  }
-
-  const handleUsbSubmit = () => {
-    if (!usbValue.trim()) return
-    setScanState("scanning")
-    setTimeout(() => resolveMatch(findBookByCode(books, usbValue)), 600)
+    setTimeout(() => resolveMatch(findBookByCode(books, scanInput)), 600)
   }
 
   const handleConfirm = async (patronEmail: string) => {
@@ -498,8 +416,7 @@ function ScannerPanel({
 
   const handleReset = () => {
     setScanState("idle")
-    setUsbValue("")
-    setCameraScanning(false)
+    setScanInput("")
     setMatchedBook(null)
     setMatchedTx(undefined)
     setSubmitError("")
@@ -509,112 +426,56 @@ function ScannerPanel({
   return (
     <div className="flex flex-col gap-4">
       {/* ── Scanner card ─────────────────────────────────── */}
-      {scanState !== "confirmed" && scanState !== "notfound" && (
-        <div className="rounded border border-ink-200 bg-white" style={{ boxShadow: "var(--shadow)" }}>
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-ink-100">
-            <div className="flex items-center gap-2">
-              <ScanLine size={15} className="text-green-700" />
-              <span
-                className="text-ink-900 font-semibold"
-                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-              >
-                Scan a Book
-              </span>
-            </div>
-
-            {/* Mode toggle */}
-            <div className="flex items-center gap-0.5 p-0.5 rounded bg-ink-100">
-              {(["camera", "usb"] as InputMode[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => { setInputMode(m); setScanState("idle"); setUsbValue("") }}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1 rounded transition-colors",
-                    inputMode === m ? "bg-white text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-700"
-                  )}
-                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-                >
-                  {m === "camera" ? <Camera size={11} /> : <Keyboard size={11} />}
-                  {m === "camera" ? "Camera" : "USB / Manual"}
-                </button>
-              ))}
-            </div>
+      {/* Only idle/scanning — once a book is found, showing this
+          alongside the result card was dead UI, and it also ate the
+          input's autoFocus on Cancel, since the node never actually
+          unmounted between found → idle.
+          Same card shape as Return/Reshelving/Guest below — a librarian
+          only ever has a USB/HID barcode reader at the desk, which just
+          types the code into whatever's focused and sends Enter, so
+          this is a plain input, not a device picker. */}
+      {(scanState === "idle" || scanState === "scanning") && (
+        <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
+          <div className="flex items-center gap-2">
+            <ScanLine size={15} className="text-green-700" />
+            <span
+              className="text-ink-900 font-semibold"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            >
+              Scan or Type ISBN / Accession No.
+            </span>
           </div>
-
-          <div className="p-4 flex flex-col gap-3">
-            {/* Camera mode */}
-            {inputMode === "camera" && (
-              <>
-                <CameraViewfinder scanning={cameraScanning} />
-                {scanState === "idle" && (
-                  <button
-                    onClick={handleCameraStart}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded bg-green-700 text-white hover:bg-green-800 font-semibold transition-colors"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                  >
-                    <Camera size={15} />
-                    Start Camera
-                  </button>
-                )}
-                {scanState === "scanning" && (
-                  <div
-                    className="flex items-center justify-center gap-2 py-2 text-ink-500"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                  >
-                    <span className="w-4 h-4 rounded-full border-2 border-green-600 border-t-transparent animate-spin" />
-                    Detecting barcode…
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* USB / Manual mode */}
-            {inputMode === "usb" && (
-              <div className="flex flex-col gap-2">
-                <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-                  Scan with USB barcode reader or type ISBN/accession no. manually
-                </p>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
-                    <input
-                      ref={inputRef}
-                      type="text"
-                      placeholder="ISBN or accession no.…"
-                      value={usbValue}
-                      onChange={(e) => setUsbValue(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleUsbSubmit()}
-                      autoFocus
-                      className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                    />
-                  </div>
-                  <button
-                    onClick={handleUsbSubmit}
-                    disabled={!usbValue.trim()}
-                    className={cn(
-                      "px-4 py-2 rounded font-semibold transition-colors",
-                      usbValue.trim()
-                        ? "bg-green-700 text-white hover:bg-green-800"
-                        : "bg-ink-200 text-ink-400 cursor-not-allowed"
-                    )}
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                  >
-                    Search
-                  </button>
-                </div>
-                {scanState === "scanning" && (
-                  <div
-                    className="flex items-center gap-2 text-ink-500"
-                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-                  >
-                    <span className="w-3 h-3 rounded-full border-2 border-green-600 border-t-transparent animate-spin" />
-                    Looking up book…
-                  </div>
-                )}
-              </div>
-            )}
+          <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            Scan with the barcode reader, or type the number and press Enter
+          </p>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Hash size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder="e.g. T45136"
+                value={scanInput}
+                onChange={(e) => setScanInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                autoFocus
+                className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
+              />
+            </div>
+            <button
+              onClick={handleSubmit}
+              disabled={!scanInput.trim()}
+              className={cn(
+                "px-4 py-2 rounded font-semibold transition-colors",
+                scanInput.trim()
+                  ? "bg-green-700 text-white hover:bg-green-800"
+                  : "bg-ink-200 text-ink-400 cursor-not-allowed"
+              )}
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            >
+              {scanState === "scanning" ? "Finding…" : "Find"}
+            </button>
           </div>
         </div>
       )}
@@ -1119,6 +980,11 @@ function ReturnPanel({
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
             />
           )}
+          {condition && condition !== "good" && !conditionNotes.trim() && (
+            <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+              Required to continue — briefly describe the condition.
+            </p>
+          )}
           {isNewDamage && (
             <div>
               <label className="text-ink-700" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
@@ -1159,14 +1025,19 @@ function ReturnPanel({
               ))}
             </div>
             {settlement === "paid" && (
-              <input
-                type="text"
-                placeholder="Receipt number"
-                value={receiptNumber}
-                onChange={(e) => setReceiptNumber(e.target.value)}
-                className="w-full px-3 py-2 rounded border border-ink-300 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
-                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-              />
+              <div>
+                <label className="block text-ink-700 mb-1" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                  Receipt number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. OR-2026-0001"
+                  value={receiptNumber}
+                  onChange={(e) => setReceiptNumber(e.target.value)}
+                  className="w-full px-3 py-2 rounded border border-ink-300 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                />
+              </div>
             )}
           </div>
         )}
@@ -1637,6 +1508,7 @@ function GuestPanel({ onSettled }: { onSettled: () => void }) {
   const [guestIdNumber, setGuestIdNumber] = useState("")
   const [visitorType, setVisitorType] = useState<VisitorType>("nocei")
   const [feePaid, setFeePaid] = useState(false)
+  const [receiptNumber, setReceiptNumber] = useState("")
   const [purpose, setPurpose] = useState<GuestPurpose>("library_use")
   const [notes, setNotes] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -1648,7 +1520,7 @@ function GuestPanel({ onSettled }: { onSettled: () => void }) {
     accessionInput.trim().length > 0 &&
     guestName.trim().length > 0 &&
     guestIdNumber.trim().length > 0 &&
-    (!requiresFee || feePaid) &&
+    (!requiresFee || (feePaid && receiptNumber.trim().length > 0)) &&
     !submitting
 
   function reset() {
@@ -1657,6 +1529,7 @@ function GuestPanel({ onSettled }: { onSettled: () => void }) {
     setGuestIdNumber("")
     setVisitorType("nocei")
     setFeePaid(false)
+    setReceiptNumber("")
     setPurpose("library_use")
     setNotes("")
     setSubmitError("")
@@ -1674,6 +1547,7 @@ function GuestPanel({ onSettled }: { onSettled: () => void }) {
         guestIdNumber: guestIdNumber.trim(),
         visitorType,
         feePaid,
+        receiptNumber: requiresFee ? receiptNumber.trim() : undefined,
         purpose,
         notes: notes || undefined,
       })
@@ -1739,6 +1613,7 @@ function GuestPanel({ onSettled }: { onSettled: () => void }) {
             placeholder="e.g. T45136"
             value={accessionInput}
             onChange={(e) => setAccessionInput(e.target.value)}
+            autoFocus
             className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
             style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
           />
@@ -1781,7 +1656,7 @@ function GuestPanel({ onSettled }: { onSettled: () => void }) {
             <button
               key={v.value}
               type="button"
-              onClick={() => { setVisitorType(v.value); if (v.value === "nocei") setFeePaid(false) }}
+              onClick={() => { setVisitorType(v.value); if (v.value === "nocei") { setFeePaid(false); setReceiptNumber("") } }}
               className={cn(
                 "px-3 py-1.5 rounded border font-medium transition-colors",
                 visitorType === v.value ? "bg-purple-700 border-purple-700 text-white" : "bg-white border-ink-300 text-ink-600 hover:border-ink-400"
@@ -1793,10 +1668,31 @@ function GuestPanel({ onSettled }: { onSettled: () => void }) {
           ))}
         </div>
         {requiresFee && (
-          <label className="flex items-center gap-2 mt-2 text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-            <input type="checkbox" checked={feePaid} onChange={(e) => setFeePaid(e.target.checked)} />
-            ₱50.00 visitor fee collected
-          </label>
+          <div className="mt-2 flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+              <input
+                type="checkbox"
+                checked={feePaid}
+                onChange={(e) => { setFeePaid(e.target.checked); if (!e.target.checked) setReceiptNumber("") }}
+              />
+              ₱50.00 visitor fee collected
+            </label>
+            {feePaid && (
+              <div>
+                <label className="block text-ink-700 mb-1" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+                  Receipt number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. OR-2026-0001"
+                  value={receiptNumber}
+                  onChange={(e) => setReceiptNumber(e.target.value)}
+                  className="w-full px-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                />
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -2066,15 +1962,25 @@ function BorrowAndReturnPageContent() {
         )}
         {tab === "guest" && <GuestPanel onSettled={loadInHouseLoans} />}
 
-        {/* Right: records — today's, for Borrow (old schema); this session's, for Return/Reshelving (new schema, no history endpoint yet); currently-out, for Guest */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2
-              className="text-ink-900 font-semibold"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}
-            >
-              {tab === "borrow" ? "Today's Borrows" : tab === "return" ? "Returned This Session" : tab === "reshelving" ? "Reshelved This Session" : "Currently Out (In-House)"}
-            </h2>
+        {/* Right: records — today's, for Borrow (old schema); this session's, for Return/Reshelving (new schema, no history endpoint yet); currently-out, for Guest.
+            Title + count live inside the card (matching ActiveBorrowersList/
+            ReshelvingQueueList's own header row) so this card's top edge lines
+            up with the left panel's, instead of sitting a heading's-height
+            lower than it. */}
+        <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {tab === "borrow" && <BookOpen size={15} className="text-green-700" />}
+              {tab === "return" && <RotateCcw size={15} className="text-green-700" />}
+              {tab === "reshelving" && <PackageCheck size={15} className="text-green-700" />}
+              {tab === "guest" && <UserPlus size={15} className="text-purple-700" />}
+              <span
+                className="text-ink-900 font-semibold"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+              >
+                {tab === "borrow" ? "Today's Borrows" : tab === "return" ? "Returned This Session" : tab === "reshelving" ? "Reshelved This Session" : "Currently Out (In-House)"}
+              </span>
+            </div>
             <span
               className="text-ink-400"
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
@@ -2082,15 +1988,10 @@ function BorrowAndReturnPageContent() {
               {(tab === "borrow" ? todaysBorrows.length : tab === "return" ? returnedThisSession.length : tab === "reshelving" ? reshelvedThisSession.length : activeInHouseLoans.length)} records
             </span>
           </div>
-          <div
-            className="rounded border border-ink-200 bg-white p-4"
-            style={{ boxShadow: "var(--shadow)" }}
-          >
-            {tab === "borrow" && <TransactionsTable tab={tab} records={todaysBorrows} />}
-            {tab === "return" && <SessionList tab="return" records={returnedThisSession} />}
-            {tab === "reshelving" && <SessionList tab="reshelving" records={reshelvedThisSession} />}
-            {tab === "guest" && <InHouseActiveList loans={activeInHouseLoans} onReturn={loadInHouseLoans} />}
-          </div>
+          {tab === "borrow" && <TransactionsTable tab={tab} records={todaysBorrows} />}
+          {tab === "return" && <SessionList tab="return" records={returnedThisSession} />}
+          {tab === "reshelving" && <SessionList tab="reshelving" records={reshelvedThisSession} />}
+          {tab === "guest" && <InHouseActiveList loans={activeInHouseLoans} onReturn={loadInHouseLoans} />}
         </div>
       </div>
     </div>
