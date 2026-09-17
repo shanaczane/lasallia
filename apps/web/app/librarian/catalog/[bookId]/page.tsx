@@ -13,11 +13,12 @@ import { cn } from '@/lib/utils'
 import { useBook } from '@/lib/hooks/useBooks'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 import type { Book } from '@lasallia/types'
-import { CopyManagementTable, type BookCopy, type CopyStatus } from '@/components/ui/catalog/CopyManagementTable'
+import { CopyManagementTable, type BookCopy as MockCopy, type CopyStatus } from '@/components/ui/catalog/CopyManagementTable'
 import { BookFormModal, type BookFormData } from '@/components/ui/catalog/BookFormModal'
 import { DeleteBookModal } from '@/components/ui/catalog/DeleteBookModal'
 import { useRouter } from 'next/navigation'
 import { archiveBook } from '@/lib/weeding'
+import { fetchBookCopies, markCopyFound, type BookCopy as RealCopy } from '@/lib/books'
 
 // ─── Cover color helper ───────────────────────────────────────────────────────
 
@@ -35,7 +36,7 @@ function getCoverColor(id: string, override?: string): string {
 
 // ─── Mock copy data ───────────────────────────────────────────────────────────
 
-function generateMockCopies(book: Book): BookCopy[] {
+function generateMockCopies(book: Book): MockCopy[] {
   const total = book.total_copies ?? 2
   const avail = book.available_copies ?? 1
   return Array.from({ length: total }, (_, i) => {
@@ -49,7 +50,7 @@ function generateMockCopies(book: Book): BookCopy[] {
       due_date:      isCheckedOut
         ? new Date(Date.now() + 5 * 86400000).toISOString()
         : undefined,
-    } satisfies BookCopy
+    } satisfies MockCopy
   })
 }
 
@@ -110,11 +111,11 @@ export default function LibrarianBookDetailPage({
   const { bookId } = use(params)
   const router = useRouter()
 
-  const { book, loading } = useBook(bookId)
+  const { book, loading, refetch } = useBook(bookId)
 
   const [editOpen,   setEditOpen]   = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [copies, setCopies] = useState<BookCopy[]>([])
+  const [copies, setCopies] = useState<MockCopy[]>([])
   const [archiveError, setArchiveError] = useState('')
 
   // Per-copy tracking isn't backed by a real table yet — this regenerates
@@ -123,6 +124,38 @@ export default function LibrarianBookDetailPage({
   useEffect(() => {
     if (book) setCopies(generateMockCopies(book))
   }, [book])
+
+  // Real book_copies rows flagged missing/lost/damaged — separate from the
+  // mock table above, which has no concept of these side-states at all.
+  const isMissing = book?.status === 'misplaced'
+  const [missingCopies, setMissingCopies] = useState<RealCopy[]>([])
+  const [resolvingCopyId, setResolvingCopyId] = useState<string | null>(null)
+  const [resolveError, setResolveError] = useState('')
+
+  useEffect(() => {
+    if (!book || !isMissing) { setMissingCopies([]); return }
+    let cancelled = false
+    fetchBookCopies(book.id)
+      .then((all) => {
+        if (!cancelled) setMissingCopies(all.filter((c) => ['missing', 'lost', 'damaged'].includes(c.status)))
+      })
+      .catch(() => { /* best-effort — the pill still shows the aggregate status either way */ })
+    return () => { cancelled = true }
+  }, [book, isMissing])
+
+  async function handleMarkFound(copyId: string) {
+    setResolvingCopyId(copyId)
+    setResolveError('')
+    try {
+      await markCopyFound(copyId)
+      setMissingCopies((prev) => prev.filter((c) => c.id !== copyId))
+      refetch()
+    } catch (err) {
+      setResolveError(err instanceof Error ? err.message : 'Could not mark this copy as found.')
+    } finally {
+      setResolvingCopyId(null)
+    }
+  }
 
   if (loading) {
     return (
@@ -171,7 +204,7 @@ export default function LibrarianBookDetailPage({
     )
   }
 
-  function handleAddCopy(copy: BookCopy) {
+  function handleAddCopy(copy: MockCopy) {
     setCopies((prev) => [...prev, copy])
   }
 
@@ -221,6 +254,47 @@ export default function LibrarianBookDetailPage({
           <button type="button" onClick={() => setArchiveError('')} className="font-semibold hover:underline shrink-0">
             Dismiss
           </button>
+        </div>
+      )}
+
+      {isMissing && missingCopies.length > 0 && (
+        <div
+          className="mb-6 rounded-(--radius) border border-[#DDD6FE] bg-[#EDE9FE] p-4"
+          style={{ fontFamily: 'var(--font-body)' }}
+        >
+          <p className="text-[#6D28D9] font-semibold mb-3" style={{ fontSize: 'var(--text-sm-body)' }}>
+            {missingCopies.length} {missingCopies.length === 1 ? 'copy' : 'copies'} reported missing
+          </p>
+          <div className="flex flex-col gap-2">
+            {missingCopies.map((copy) => (
+              <div
+                key={copy.id}
+                className="flex items-center justify-between gap-3 bg-white rounded-sm px-3 py-2 border border-[#DDD6FE]"
+              >
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)' }}>
+                  {copy.accession_number}
+                  <span className="text-ink-400 ml-2 capitalize" style={{ fontFamily: 'var(--font-body)' }}>
+                    {copy.status}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleMarkFound(copy.id)}
+                  disabled={resolvingCopyId === copy.id}
+                  className="px-3 py-1.5 rounded-sm bg-[#6D28D9] text-white font-semibold hover:bg-[#5B21B6] transition-colors disabled:opacity-50 shrink-0"
+                  style={{ fontSize: 'var(--text-xs)' }}
+                >
+                  {resolvingCopyId === copy.id ? 'Marking…' : 'Mark Found'}
+                </button>
+              </div>
+            ))}
+          </div>
+          {resolveError && (
+            <p className="text-danger mt-2" style={{ fontSize: 'var(--text-xs)' }}>{resolveError}</p>
+          )}
+          <p className="text-[#6D28D9]/70 mt-3" style={{ fontSize: 'var(--text-xs)' }}>
+            Marking a copy found sends it to the Reshelving Queue — scan it in Borrow &amp; Return once it&apos;s back on the shelf to make it available again.
+          </p>
         </div>
       )}
 

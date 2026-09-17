@@ -28,3 +28,41 @@ export async function fetchBook(id: string): Promise<Book | null> {
   if (!res.ok) throw new Error('Failed to load this book')
   return res.json()
 }
+
+// ── Librarian-only: real per-copy data (book_copies), not the mock rows
+// CopyManagementTable still generates from total_copies/available_copies.
+
+export type BookCopy = {
+  id: string
+  accession_number: string
+  status: string
+  shelf_location: string | null
+}
+
+function authHeaders(): HeadersInit {
+  const token = getToken()
+  if (!token) throw new Error('Not signed in')
+  return { Authorization: `Bearer ${token}` }
+}
+
+async function parseErrorOrThrow(res: Response, fallback: string): Promise<never> {
+  const body = await res.json().catch(() => ({}))
+  throw new Error(body.detail ?? fallback)
+}
+
+export async function fetchBookCopies(bookId: string): Promise<BookCopy[]> {
+  const res = await fetch(`${API_URL}/books/${bookId}/copies`, { headers: authHeaders() })
+  if (!res.ok) return parseErrorOrThrow(res, 'Failed to load copies for this book')
+  return res.json()
+}
+
+// Sends a missing/lost/damaged copy to for_reshelving — the status machine
+// (migration 0004) never allows a straight jump back to available. The
+// librarian finishes the transition via the existing Reshelving Queue scan.
+export async function markCopyFound(copyId: string): Promise<void> {
+  const res = await fetch(`${API_URL}/books/copies/${copyId}/mark-found`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not mark this copy as found')
+}

@@ -38,3 +38,9 @@ class BookSearchResponse(BaseModel):
     total: int
     page: int
     per_page: int
+
+class BookCopy(BaseModel):
+    id: str
+    accession_number: str
+    status: str
+    shelf_location: str | None = None

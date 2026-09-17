@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from core.deps import get_optional_user
+from core.deps import get_optional_user, require_librarian
 from core.supabase import get_admin_client, get_client
 from schemas.auth import UserProfile
-from schemas.book import Book, BookSearchResponse
+from schemas.book import Book, BookCopy, BookSearchResponse
 
 router = APIRouter(prefix="/books", tags=["books"])
 
@@ -130,3 +130,35 @@ def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)
     book = _redact_accession(book, user)
 
     return book[0]
+
+@router.get("/{book_id}/copies", response_model=list[BookCopy])
+def list_book_copies(book_id: str, librarian: UserProfile = Depends(require_librarian)):
+    admin = get_admin_client()
+    res = (
+        admin.table("book_copies")
+        .select("id, accession_number, status, shelf_location")
+        .eq("book_id", book_id)
+        .order("accession_number")
+        .execute()
+    )
+    return res.data
+
+# Reverse of holds.py's report_missing. Per the status machine enforced in
+# migration 0004, a side-state copy (lost/damaged/missing) can only exit
+# through for_reshelving — never straight back to available — same as a
+# real return. The librarian completes the transition through the existing
+# reshelving scan (POST /loans/reshelve) once the copy is actually back on
+# the shelf.
+@router.post("/copies/{copy_id}/mark-found", status_code=status.HTTP_204_NO_CONTENT)
+def mark_copy_found(copy_id: str, librarian: UserProfile = Depends(require_librarian)):
+    admin = get_admin_client()
+    copy_res = admin.table("book_copies").select("id, status").eq("id", copy_id).execute()
+    if not copy_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Copy not found")
+    copy = copy_res.data[0]
+    if copy["status"] not in ("missing", "lost", "damaged"):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"This copy is currently '{copy['status']}', not missing/lost/damaged",
+        )
+    admin.table("book_copies").update({"status": "for_reshelving"}).eq("id", copy_id).execute()

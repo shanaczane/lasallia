@@ -27,6 +27,7 @@ export function useBook(id: string) {
   const [book, setBook] = useState<Book | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -36,7 +37,7 @@ export function useBook(id: string) {
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load this book') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [id])
+  }, [id, reloadKey])
 
-  return { book, loading, error }
+  return { book, loading, error, refetch: () => setReloadKey((k) => k + 1) }
 }
