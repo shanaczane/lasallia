@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from core.accession import normalize_accession_number
 from core.deps import require_librarian
 from core.notify import notify_librarians
 from core.supabase import get_admin_client
@@ -37,7 +38,7 @@ def create_in_house_loan(
 ):
     db = get_admin_client()
 
-    copy_res = db.table("book_copies").select("*").eq("accession_number", body.accession_number.strip()).execute()
+    copy_res = db.table("book_copies").select("*").eq("accession_number", normalize_accession_number(body.accession_number)).execute()
     if not copy_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No copy with that accession number")
     copy = copy_res.data[0]
