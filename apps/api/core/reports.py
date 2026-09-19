@@ -64,8 +64,13 @@ def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
     aggregate-in-Python approach). Status is recomputed the same way
     routers/loans.py does: nothing writes 'overdue' back to the row on
     its own."""
+    # profiles!loans_student_id_fkey — migration 0028 added loans.assisted_by
+    # as a second FK to profiles, so a bare profiles(...) embed is now
+    # ambiguous and PostgREST rejects the whole query (this is what was
+    # blanking every report on the page, not just the ones that use this
+    # helper directly — Promise.all on the frontend fails closed).
     query = admin.table("loans").select(
-        "*, book_copies(book_id, books(*)), profiles(full_name, email, program, year_level)"
+        "*, book_copies(book_id, books(*)), profiles!loans_student_id_fkey(full_name, email, program, year_level)"
     )
     if filters.date_from:
         query = query.gte("borrowed_at", filters.date_from)

@@ -30,7 +30,12 @@ DAMAGE_PROCESSING_FEE = 50.0
 
 
 def _embed_book_and_borrower(db: Client, query):
-    return query.select("*, book_copies(book_id, accession_number, books(*)), profiles(full_name, avatar_url)")
+    # profiles!loans_student_id_fkey, not bare profiles(...) — migration
+    # 0028 added loans.assisted_by as a second FK to profiles, so an
+    # unqualified embed is ambiguous and PostgREST 400s the whole query.
+    # The borrower is always student_id; assisted_by is a separate,
+    # optional audit field nothing here reads back out.
+    return query.select("*, book_copies(book_id, accession_number, books(*)), profiles!loans_student_id_fkey(full_name, avatar_url)")
 
 
 def _flatten_loan(loan: dict) -> dict:
