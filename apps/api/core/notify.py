@@ -48,8 +48,10 @@ def _send_email(to_email: str, subject: str, body_text: str, link: str | None = 
 # Fire-and-forget insert used by write endpoints across loans.py/reservations.py
 # at the moment something actually happens to a user's loan or reservation —
 # not a queue, not retried, matching this codebase's existing "no background
-# job infra" reality. Due-date reminders (due_reminder/overdue) need a real
-# scheduler (cron/Edge Function) and aren't wired up by anything yet.
+# job infra" reality. Due-date reminders (due_reminder/overdue) are the one
+# exception: they're written by the daily Edge Function in
+# supabase/functions/loan-reminders, which inserts into notifications (and
+# emails) itself since it can't call this Python code.
 #
 # "Fire-and-forget" has to mean the caller is never affected by this failing
 # — every call site here runs inline, after the actual loan/reservation
