@@ -1,0 +1,8 @@
+# Only used for Edge Functions (`supabase functions deploy`). The database
+# is managed through apps/api/migrations, not this directory.
+project_id = "lasallia"
+
+# Called by pg_cron (supabase/cron/loan_reminders_schedule.sql) with the
+# service-role key, so the default JWT check is what we want.
+[functions.loan-reminders]
+verify_jwt = true

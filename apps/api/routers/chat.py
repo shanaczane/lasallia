@@ -22,6 +22,7 @@
 # call, which is why multi-turn never actually worked before this phase.
 
 import json
+import time
 import uuid
 from typing import Any, Iterator
 
@@ -29,7 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
 
-from core import chat_sessions
+from core import chat_sessions, rules
 from core.config import OPENAI_API_KEY
 from core.deps import get_current_user, get_optional_user
 from core.supabase import get_admin_client
@@ -149,13 +150,34 @@ def _loan_for_model(loan) -> dict:
 MAX_TOOL_ROUNDS = 4
 
 
+# A kiosk tap never produces a JWT — the station session IS the identity
+# (its id is the credential, the same way holds/loans already treat it). So a
+# kiosk chat whose session_id is a live, un-ended station session for a real
+# student is that student: account tools get registered and the chat is
+# stored under their id. A guest kiosk visit's id matches no row and stays
+# anonymous. Only ever consulted for surface == "kiosk" with no JWT.
+def _kiosk_session_user(admin, session_id: str | None) -> UserProfile | None:
+    if not session_id:
+        return None
+    try:
+        session = admin.table("station_sessions").select("student_id, ended_at").eq("id", session_id).execute().data
+        if not session or session[0]["ended_at"] is not None:
+            return None
+        profile = admin.table("profiles").select("id, email, role, full_name").eq("id", session[0]["student_id"]).execute().data
+    except Exception:
+        return None
+    return UserProfile(**profile[0]) if profile and profile[0]["role"] == "student" else None
+
+
 @router.post("/message")
 def send_message(
     body: ChatRequest,
     user: UserProfile | None = Depends(get_optional_user),
 ):
-    registry = ToolRegistry(user)
     admin = get_admin_client()
+    if user is None and body.surface == "kiosk":
+        user = _kiosk_session_user(admin, body.session_id)
+    registry = ToolRegistry(user)
 
     # Kiosk always sends the station session's id; web sends whatever it
     # got back from a prior turn, or nothing on the first message.
@@ -164,6 +186,20 @@ def send_message(
     prior_history = chat_sessions.get_history(admin, session_id)
 
     def stream() -> Iterator[str]:
+        started_at = time.perf_counter()
+
+        # Rule-based fast path (core/rules.py): a confident policy match is
+        # answered straight from policy_chunks with no OpenAI call. A miss
+        # falls through to the tool-calling path below, unchanged.
+        matched = rules.match_and_answer(body.message)
+        if matched:
+            intent, rule_reply = matched
+            chat_sessions.append_message(admin, session_id, "user", body.message)
+            chat_sessions.append_message(admin, session_id, "assistant", rule_reply)
+            rules.record("rule", started_at, intent)
+            yield _sse("done", {"reply": rule_reply, "books": [], "session_id": session_id})
+            return
+
         try:
             client = _get_client()
         except RuntimeError as e:
@@ -234,6 +270,7 @@ def send_message(
         chat_sessions.append_message(admin, session_id, "user", body.message)
         chat_sessions.append_message(admin, session_id, "assistant", reply)
 
+        rules.record("rag", started_at)
         yield _sse("done", {"reply": reply, "books": books_out, "session_id": session_id})
 
     return StreamingResponse(stream(), media_type="text/event-stream")

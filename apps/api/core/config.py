@@ -14,6 +14,11 @@ FRONTEND_ORIGIN_REGEX = os.getenv("FRONTEND_ORIGIN_REGEX", "")
 # search is actually called, until a real key is added.
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
+# Same lazy pattern as OPENAI_API_KEY — core/notify.py logs and skips the
+# email send (never raises) when this is empty, so the app keeps working
+# with in-app-only notifications until a real key is added.
+RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
+
 _missing = [
     name for name, val in {
         "SUPABASE_URL": SUPABASE_URL,

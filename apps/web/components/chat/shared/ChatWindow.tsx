@@ -53,7 +53,7 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
   const [hasSession, setHasSession] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const sessionIdRef = useRef<string | null>(sessionId ?? null)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const messagesRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -101,7 +101,10 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
   }, [surface, sessionId])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+    // Scrolls the message list only — scrollIntoView would also scroll the
+    // page itself (the kiosk shell adds its own top padding around this).
+    const list = messagesRef.current
+    list?.scrollTo({ top: list.scrollHeight, behavior: "smooth" })
   }, [messages, typingStatus])
 
   async function handleSend(text: string) {
@@ -167,6 +170,7 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
 
       {/* Messages — scrollable area */}
       <div
+        ref={messagesRef}
         className="flex-1 overflow-y-auto px-6 py-5 space-y-5"
         style={{ background: "var(--color-ink-50)" }}
       >
@@ -174,7 +178,6 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
           <ChatMessage key={m.id} {...m} />
         ))}
         {typingStatus && <TypingIndicator status={typingStatus} />}
-        <div ref={bottomRef} />
       </div>
 
       {/* Quick replies slot (optional) */}

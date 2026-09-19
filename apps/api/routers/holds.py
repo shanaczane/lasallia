@@ -4,16 +4,49 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, status
 
 from core.config import FRONTEND_URL
-from core.loans import check_borrow_eligibility
+from core.loans import (
+    COPY_BEING_BORROWED,
+    HOLD_GONE,
+    NO_COPIES,
+    SESSION_ENDED,
+    SESSION_INVALID,
+    check_borrow_eligibility,
+)
 from core.notify import notify_librarians
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
-from schemas.hold import ClaimHoldRequest, ClaimHoldResponse, HoldDetail, HoldExtendResponse
+from schemas.hold import BorrowEligibility, ClaimHoldRequest, ClaimHoldResponse, HoldDetail, HoldExtendResponse
 
 router = APIRouter(prefix="/holds", tags=["holds"])
 
 # 2.3: "'I'm getting the book' button extends the session to ~5 minutes."
 EXTEND_SECONDS = 300
+
+def _open_session_student(db, station_session_id: str) -> str:
+    session_res = db.table("station_sessions").select("student_id, ended_at").eq("id", station_session_id).execute()
+    if not session_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, SESSION_INVALID)
+    session = session_res.data[0]
+    if session["ended_at"] is not None:
+        raise HTTPException(status.HTTP_410_GONE, SESSION_ENDED)
+    return session["student_id"]
+
+
+def _availability_problem(db, book_id: str, station_session_id: str) -> str | None:
+    """Why a general-circulation copy can't be claimed right now, or None if
+    one can. The catalog counts a copy as available while it's merely soft-held
+    (the copy row stays 'available'), but claim_copy_for_book skips any copy
+    with a live hold — so 'available' on screen can still mean 'not claimable'."""
+    copies = db.table("book_copies").select("id").eq("book_id", book_id).eq("status", "available").execute().data
+    if not copies:
+        return NO_COPIES
+    copy_ids = [c["id"] for c in copies]
+    now = datetime.now(timezone.utc).isoformat()
+    held = db.table("soft_holds").select("book_copy_id, station_session_id").in_("book_copy_id", copy_ids).gt("expires_at", now).execute().data
+    if len({h["book_copy_id"] for h in held}) >= len(copy_ids) and any(h["station_session_id"] != station_session_id for h in held):
+        return COPY_BEING_BORROWED
+    return None
+
 
 # Not behind auth: claiming happens the instant a student (already
 # identified via their open station_session) taps "Borrow this book" —
@@ -29,13 +62,7 @@ def claim_hold(body: ClaimHoldRequest):
     # no concept of a student, so eligibility has to be decided here,
     # before it ever runs. Rejecting late would lock a copy away from
     # other students for a request that was always going to fail.
-    session_res = db.table("station_sessions").select("student_id, ended_at").eq("id", body.station_session_id).execute()
-    if not session_res.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Your session isn't valid — please sign in again")
-    session = session_res.data[0]
-    if session["ended_at"] is not None:
-        raise HTTPException(status.HTTP_410_GONE, "This session has ended — please sign in again")
-    student_id = session["student_id"]
+    student_id = _open_session_student(db, body.station_session_id)
 
     check_borrow_eligibility(db, student_id, body.book_id)
 
@@ -68,6 +95,16 @@ def claim_hold(body: ClaimHoldRequest):
             "expires_at": expires_at,
         }, on_conflict="book_copy_id").execute()
     else:
+        # A hold this same session left behind on this title (closed the
+        # popup, went back) would otherwise block its own new claim for up
+        # to 2 minutes — release it first.
+        own_copy_ids = [
+            c["id"] for c in
+            db.table("book_copies").select("id").eq("book_id", body.book_id).execute().data
+        ]
+        if own_copy_ids:
+            db.table("soft_holds").delete().eq("station_session_id", body.station_session_id).in_("book_copy_id", own_copy_ids).execute()
+
         res = db.rpc("claim_copy_for_book", {
             "p_book_id": body.book_id,
             "p_station_session_id": body.station_session_id,
@@ -75,7 +112,7 @@ def claim_hold(body: ClaimHoldRequest):
         }).execute()
 
         if not res.data:
-            raise HTTPException(status.HTTP_409_CONFLICT, "No copies available to borrow right now")
+            raise HTTPException(status.HTTP_409_CONFLICT, _availability_problem(db, body.book_id, body.station_session_id) or NO_COPIES)
 
         expires_at = res.data[0]["expires_at"]
 
@@ -85,17 +122,44 @@ def claim_hold(body: ClaimHoldRequest):
         qr_url=f"{FRONTEND_URL}/borrow/{token}",
     )
 
+# Pre-flight for the kiosk's Borrow button: the same checks claim_hold would run,
+# answered up front so a student who can't borrow sees why instead of a button
+# that fails. Session id is the credential, same as claim_hold. Must be declared
+# before /{token}, which would otherwise swallow the path.
+@router.get("/eligibility", response_model=BorrowEligibility)
+def borrow_eligibility(book_id: str, station_session_id: str):
+    db = get_admin_client()
+    student_id = _open_session_student(db, station_session_id)
+
+    try:
+        check_borrow_eligibility(db, student_id, book_id)
+    except HTTPException as e:
+        return BorrowEligibility(can_borrow=False, reason=str(e.detail))
+
+    # A ready reservation has its own pulled copy (see claim_hold), so the
+    # general-circulation availability check doesn't apply to it.
+    ready = (
+        db.table("reservations").select("id")
+        .eq("user_id", student_id).eq("book_id", book_id).eq("status", "ready")
+        .execute()
+    ).data
+    if ready:
+        return BorrowEligibility(can_borrow=True, reason=None)
+
+    problem = _availability_problem(db, book_id, station_session_id)
+    return BorrowEligibility(can_borrow=problem is None, reason=problem)
+
 @router.get("/{token}", response_model=HoldDetail)
 def get_hold(token: str):
     db = get_admin_client()
 
     hold_res = db.table("soft_holds").select("*, book_copies(book_id)").eq("token", token).execute()
     if not hold_res.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "This hold doesn't exist or has already been used")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, HOLD_GONE)
     hold = hold_res.data[0]
 
     if datetime.fromisoformat(hold["expires_at"]) < datetime.now(timezone.utc):
-        raise HTTPException(status.HTTP_410_GONE, "This hold has expired — please start over at the kiosk")
+        raise HTTPException(status.HTTP_410_GONE, HOLD_GONE)
 
     book_id = hold["book_copies"]["book_id"]
     book_res = db.table("books").select("*").eq("id", book_id).execute()
@@ -142,12 +206,12 @@ def extend_hold(token: str):
     db = get_admin_client()
     hold_res = db.table("soft_holds").select("id, expires_at").eq("token", token).execute()
     if not hold_res.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "This hold doesn't exist or has already been used")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, HOLD_GONE)
     hold = hold_res.data[0]
 
     if datetime.fromisoformat(hold["expires_at"]) < datetime.now(timezone.utc):
         db.table("soft_holds").delete().eq("id", hold["id"]).execute()
-        raise HTTPException(status.HTTP_410_GONE, "This hold has expired — please start over at the kiosk")
+        raise HTTPException(status.HTTP_410_GONE, HOLD_GONE)
 
     new_expiry = (datetime.now(timezone.utc) + timedelta(seconds=EXTEND_SECONDS)).isoformat()
     db.table("soft_holds").update({"expires_at": new_expiry}).eq("id", hold["id"]).execute()

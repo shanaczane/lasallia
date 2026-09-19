@@ -22,6 +22,11 @@ export function useIdleTimeout({
   const [secondsLeft, setSecondsLeft] = useState(timeoutSeconds)
   const lastActivityRef = useRef(Date.now())
   const expiredRef = useRef(false)
+  // Callers pass a fresh inline function every render. Depending on it
+  // directly re-ran the effect below on every tick, and its reset() kept
+  // pushing the deadline back — so the timeout never actually fired.
+  const onExpireRef = useRef(onExpire)
+  onExpireRef.current = onExpire
 
   const reset = useCallback(() => {
     lastActivityRef.current = Date.now()
@@ -44,7 +49,7 @@ export function useIdleTimeout({
       setSecondsLeft(left)
       if (left <= 0 && !expiredRef.current) {
         expiredRef.current = true
-        onExpire()
+        onExpireRef.current()
       }
     }, 1000)
 
@@ -52,7 +57,7 @@ export function useIdleTimeout({
       ACTIVITY_EVENTS.forEach((evt) => document.removeEventListener(evt, handleActivity))
       clearInterval(interval)
     }
-  }, [enabled, timeoutSeconds, onExpire, reset])
+  }, [enabled, timeoutSeconds, reset])
 
   return { secondsLeft, reset }
 }

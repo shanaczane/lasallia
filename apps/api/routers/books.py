@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import uuid
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from core.deps import get_optional_user, require_librarian
 from core.supabase import get_admin_client, get_client
@@ -162,3 +164,61 @@ def mark_copy_found(copy_id: str, librarian: UserProfile = Depends(require_libra
             f"This copy is currently '{copy['status']}', not missing/lost/damaged",
         )
     admin.table("book_copies").update({"status": "for_reshelving"}).eq("id", copy_id).execute()
+
+
+COVER_BUCKET = "book-covers"
+MAX_COVER_BYTES = 5 * 1024 * 1024
+
+
+# Checked against the file's own first bytes, not the client-sent
+# content-type — that header is whatever the caller says it is.
+def _sniff_image_type(data: bytes) -> tuple[str, str] | None:
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg", "jpg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png", "png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp", "webp"
+    return None
+
+
+# Storage upload for the librarian book form. Server-side on purpose (the
+# bucket has no browser write policy), so this is also where the 5 MB / image
+# type limits the form only advertises actually get enforced. A fresh object
+# name per upload keeps browsers/CDN from serving a stale cached cover.
+@router.post("/{book_id}/cover")
+def upload_book_cover(
+    book_id: str,
+    file: UploadFile = File(...),
+    librarian: UserProfile = Depends(require_librarian),
+):
+    admin = get_admin_client()
+    book_res = admin.table("books").select("id, cover_url").eq("id", book_id).execute()
+    if not book_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
+
+    data = file.file.read(MAX_COVER_BYTES + 1)
+    if len(data) > MAX_COVER_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Cover image must be 5 MB or smaller")
+    sniffed = _sniff_image_type(data)
+    if not sniffed:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cover must be a JPG, PNG, or WebP image")
+    content_type, ext = sniffed
+
+    path = f"{book_id}/{uuid.uuid4().hex}.{ext}"
+    bucket = admin.storage.from_(COVER_BUCKET)
+    bucket.upload(path, data, {"content-type": content_type})
+    cover_url = bucket.get_public_url(path)
+
+    admin.table("books").update({"cover_url": cover_url}).eq("id", book_id).execute()
+
+    # Best-effort tidy-up of the cover this replaced (only if it lives in our bucket).
+    old = book_res.data[0].get("cover_url")
+    marker = f"/{COVER_BUCKET}/"
+    if old and marker in old:
+        try:
+            bucket.remove([old.split(marker, 1)[1].split("?")[0]])
+        except Exception as e:
+            print(f"upload_book_cover: could not remove old cover for {book_id}: {e}")
+
+    return {"cover_url": cover_url}

@@ -39,7 +39,7 @@ from core.supabase import get_admin_client
 from core.tools.catalog import search_catalog
 from core.tools.policy import search_policy
 
-API_URL = "http://localhost:8000"
+API_URL = "http://127.0.0.1:8001"
 QUERY_SET_PATH = Path(__file__).parent / "queries" / "chatbot_eval_v1.json"
 RESULTS_PATH = Path(__file__).parent / "results" / "phase6_taglish_eval.md"
 BORROW_PERIOD_DAYS = 7

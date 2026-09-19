@@ -33,12 +33,15 @@ openpyxl==3.1.5
 packaging==26.2
 postgrest==2.30.1
 propcache==0.5.2
+iniconfig==2.3.0
+pluggy==1.6.0
 pycparser==3.0
 pydantic==2.13.4
 pydantic_core==2.46.4
 Pygments==2.20.0
 pyiceberg==0.11.1
 PyJWT==2.13.0
+pytest==9.1.1
 pyparsing==3.3.2
 pyroaring==1.1.0
 python-dateutil==2.9.0.post0
@@ -47,6 +50,7 @@ python-multipart==0.0.30
 PyYAML==6.0.3
 realtime==2.30.1
 requests==2.34.2
+resend==2.46.0
 rich==14.3.4
 scikit-learn==1.8.0
 scipy==1.17.1
