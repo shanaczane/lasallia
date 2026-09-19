@@ -22,6 +22,7 @@
 # call, which is why multi-turn never actually worked before this phase.
 
 import json
+import time
 import uuid
 from typing import Any, Iterator
 
@@ -29,7 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
 
-from core import chat_sessions
+from core import chat_sessions, rules
 from core.config import OPENAI_API_KEY
 from core.deps import get_current_user, get_optional_user
 from core.supabase import get_admin_client
@@ -164,6 +165,20 @@ def send_message(
     prior_history = chat_sessions.get_history(admin, session_id)
 
     def stream() -> Iterator[str]:
+        started_at = time.perf_counter()
+
+        # Rule-based fast path (core/rules.py): a confident policy match is
+        # answered straight from policy_chunks with no OpenAI call. A miss
+        # falls through to the tool-calling path below, unchanged.
+        matched = rules.match_and_answer(body.message)
+        if matched:
+            intent, rule_reply = matched
+            chat_sessions.append_message(admin, session_id, "user", body.message)
+            chat_sessions.append_message(admin, session_id, "assistant", rule_reply)
+            rules.record("rule", started_at, intent)
+            yield _sse("done", {"reply": rule_reply, "books": [], "session_id": session_id})
+            return
+
         try:
             client = _get_client()
         except RuntimeError as e:
@@ -234,6 +249,7 @@ def send_message(
         chat_sessions.append_message(admin, session_id, "user", body.message)
         chat_sessions.append_message(admin, session_id, "assistant", reply)
 
+        rules.record("rag", started_at)
         yield _sse("done", {"reply": reply, "books": books_out, "session_id": session_id})
 
     return StreamingResponse(stream(), media_type="text/event-stream")
