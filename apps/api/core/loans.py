@@ -12,6 +12,16 @@ from core.settings import get_library_settings
 # drift apart on what's borrowable.
 NON_BORROWABLE_COLLECTION_TYPES = {"Reference", "Thesis", "Capstone", "MTR", "Archives"}
 
+# One wording per cause — the same failure used to read differently depending
+# on which endpoint hit it first. Kiosk sessions start with an ID tap, so
+# that's what the student is told to do again. Shared by routers/holds.py
+# and routers/loans.py.
+SESSION_INVALID = "Your session isn't valid — please tap your ID again"
+SESSION_ENDED = "Your session has ended — please tap your ID again"
+HOLD_GONE = "This hold has expired or was already used — please start over at the kiosk"
+NO_COPIES = "No copies are available to borrow right now"
+COPY_BEING_BORROWED = "Someone else is borrowing the last available copy right now — please try again in a couple of minutes"
+
 
 def check_borrow_eligibility(db, student_id: str, book_id: str) -> None:
     """Every Phase 3 blocking check that must pass before a copy is handed

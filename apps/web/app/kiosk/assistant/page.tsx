@@ -20,8 +20,12 @@ export default function KioskAssistantPage() {
   const sessionId = session ? session.id : guestSessionId
   if (!sessionId) return null
 
+  // The shell already pads the top for the nav bar, so this has to be the
+  // viewport minus the nav — a plain h-screen makes the page taller than the
+  // window and the whole page scrolls (same sizing as the student/guest
+  // assistant pages).
   return (
-    <div className="flex h-screen">
+    <div className="flex overflow-hidden" style={{ height: 'calc(100vh - var(--height-nav))' }}>
       <ChatWindow onMenuClick={() => {}} surface="kiosk" sessionId={sessionId} />
     </div>
   )

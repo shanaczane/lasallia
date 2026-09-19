@@ -169,7 +169,7 @@ export function BorrowModal({
             </div>
 
             <a
-              href={claim.hold.qr_url}
+              href={stationSessionId ? `${claim.hold.qr_url}?from=kiosk` : claim.hold.qr_url}
               className="w-full flex items-center justify-center gap-2 py-2.5 rounded-[10px] border-2 border-green-700 text-green-700 font-semibold hover:bg-green-50 transition-colors"
               style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
             >

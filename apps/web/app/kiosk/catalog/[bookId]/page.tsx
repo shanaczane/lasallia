@@ -9,16 +9,17 @@
 
 'use client'
 
-import { use, useState } from 'react'
+import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft, MapPin, Hash, Building2, Calendar,
-  BookOpen, GraduationCap, Landmark, QrCode,
+  BookOpen, GraduationCap, Landmark, QrCode, AlertCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useBook } from '@/lib/hooks/useBooks'
 import { useKioskSession } from '@/components/kiosk/KioskSessionProvider'
 import { BorrowModal } from '@/components/kiosk/BorrowModal'
+import { fetchBorrowEligibility } from '@/lib/kiosk'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 
 // ─── Cover color helper ───────────────────────────────────────────────────────
@@ -75,14 +76,16 @@ function ActionPanel({
   available,
   total,
   isAvailable,
-  hasSession,
+  borrow,
   guestBrowsing,
   onBorrow,
 }: {
   available: number
   total: number
   isAvailable: boolean
-  hasSession: boolean
+  // What a tapped-in student can do with this book — decided by the server
+  // (GET /holds/eligibility), not guessed from copy counts.
+  borrow: { state: 'none' | 'checking' | 'ready' | 'blocked'; reason?: string }
   guestBrowsing: boolean
   onBorrow: () => void
 }) {
@@ -122,7 +125,24 @@ function ActionPanel({
         </p>
       </div>
 
-      {isAvailable && hasSession ? (
+      {borrow.state === 'blocked' ? (
+        <div
+          className="flex items-start gap-2 sm:max-w-sm rounded-[8px] bg-amber-50 border border-amber-200 px-3 py-2"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+        >
+          <AlertCircle size={15} className="text-amber-700 shrink-0 mt-0.5" />
+          <span className="text-amber-800">{borrow.reason}</span>
+        </div>
+      ) : borrow.state === 'checking' ? (
+        <button
+          type="button"
+          disabled
+          className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[8px] bg-green-700/60 text-white font-semibold cursor-wait"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+        >
+          Checking…
+        </button>
+      ) : borrow.state === 'ready' ? (
         <button
           type="button"
           onClick={onBorrow}
@@ -155,6 +175,23 @@ export default function KioskBookDetailPage({
   const { session, guestBrowsing } = useKioskSession()
   const { book, loading, error } = useBook(bookId)
   const [showBorrow, setShowBorrow] = useState(false)
+
+  // Ask the server whether this student can actually borrow this book before
+  // offering the button. Re-runs when live availability changes.
+  const [eligibility, setEligibility] = useState<{ checked: boolean; canBorrow: boolean; reason: string | null }>({
+    checked: false, canBorrow: false, reason: null,
+  })
+  const sessionId = session?.id
+  const availabilityKey = `${book?.status}-${book?.available_copies}`
+  useEffect(() => {
+    if (!sessionId || !book) return
+    let cancelled = false
+    fetchBorrowEligibility(book.id, sessionId)
+      .then((r) => { if (!cancelled) setEligibility({ checked: true, canBorrow: r.can_borrow, reason: r.reason }) })
+      .catch(() => { if (!cancelled) setEligibility({ checked: true, canBorrow: true, reason: null }) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, book?.id, availabilityKey])
 
   // ── Loading state ──────────────────────────────────────────────────────────
   if (loading) {
@@ -207,6 +244,13 @@ export default function KioskBookDetailPage({
   const availableCopies = book.available_copies ?? (book.status === 'available' ? 1 : 0)
   const totalCopies     = book.total_copies ?? 1
   const isAvailable     = book.status === 'available' && availableCopies > 0
+  // A failed eligibility call falls back to letting them try — claim_hold
+  // still enforces every rule server-side.
+  const borrowState: 'none' | 'checking' | 'ready' | 'blocked' =
+    !session ? 'none'
+    : !eligibility.checked ? (isAvailable ? 'checking' : 'none')
+    : eligibility.canBorrow ? 'ready'
+    : isAvailable ? 'blocked' : 'none'
 
   return (
     <div className="px-5 sm:px-8 py-7 max-w-5xl mx-auto">
@@ -346,7 +390,7 @@ export default function KioskBookDetailPage({
           available={availableCopies}
           total={totalCopies}
           isAvailable={isAvailable}
-          hasSession={!!session}
+          borrow={{ state: borrowState, reason: eligibility.reason ?? undefined }}
           guestBrowsing={guestBrowsing}
           onBorrow={() => setShowBorrow(true)}
         />

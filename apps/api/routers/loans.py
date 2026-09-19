@@ -5,7 +5,7 @@ from supabase import Client
 
 from core.calendar import compute_fine
 from core.deps import get_current_user, get_user_supabase, require_librarian
-from core.loans import check_borrow_eligibility, create_loan_and_notify
+from core.loans import HOLD_GONE, check_borrow_eligibility, create_loan_and_notify
 from core.notify import notify, notify_librarians
 from core.reservations import promote_next_reservation
 from core.supabase import get_admin_client
@@ -140,12 +140,12 @@ def confirm_loan(body: ConfirmLoanRequest):
 
     hold_res = db.table("soft_holds").select("*").eq("token", body.token).execute()
     if not hold_res.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "This hold doesn't exist or has already been used")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, HOLD_GONE)
     hold = hold_res.data[0]
 
     if datetime.fromisoformat(hold["expires_at"]) < datetime.now(timezone.utc):
         db.table("soft_holds").delete().eq("id", hold["id"]).execute()
-        raise HTTPException(status.HTTP_410_GONE, "This hold has expired — please start over at the kiosk")
+        raise HTTPException(status.HTTP_410_GONE, HOLD_GONE)
 
     copy_res = db.table("book_copies").select("*").eq("id", hold["book_copy_id"]).execute()
     if not copy_res.data:

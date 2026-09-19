@@ -12,7 +12,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 async function parseErrorOrThrow(res: Response, fallback: string): Promise<never> {
   const body = await res.json().catch(() => ({}))
-  throw new Error(body.detail ?? fallback)
+  // A FastAPI validation error (422) sends detail as an array of objects,
+  // not a string — reading it as one would show "[object Object]".
+  throw new Error(typeof body.detail === 'string' ? body.detail : fallback)
 }
 
 export type StationSession = {
@@ -95,7 +97,18 @@ export async function claimHold(bookId: string, stationSessionId: string): Promi
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ book_id: bookId, station_session_id: stationSessionId }),
   })
-  if (!res.ok) return parseErrorOrThrow(res, 'No copies available to borrow right now')
+  if (!res.ok) return parseErrorOrThrow(res, 'No copies are available to borrow right now')
+  return res.json()
+}
+
+export type BorrowEligibility = { can_borrow: boolean; reason: string | null }
+
+// Same checks claim_hold runs, asked up front — so the kiosk can show why a
+// student can't borrow a book instead of offering a button that fails.
+export async function fetchBorrowEligibility(bookId: string, stationSessionId: string): Promise<BorrowEligibility> {
+  const params = new URLSearchParams({ book_id: bookId, station_session_id: stationSessionId })
+  const res = await fetch(`${API_URL}/holds/eligibility?${params}`)
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not check whether you can borrow this book')
   return res.json()
 }
 

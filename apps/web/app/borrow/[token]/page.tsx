@@ -67,6 +67,16 @@ function BibRow({ icon, label, value }: { icon: React.ReactNode; label: string; 
 export default function BorrowFormPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params)
 
+  // The kiosk's "Continue on this laptop" link carries ?from=kiosk. That
+  // student was identified by an ID tap, not a web login, so /student/* would
+  // bounce them to a login — send them back to the kiosk instead.
+  const [fromKiosk, setFromKiosk] = useState(false)
+  useEffect(() => {
+    setFromKiosk(new URLSearchParams(window.location.search).get('from') === 'kiosk')
+  }, [])
+  const catalogHref = fromKiosk ? '/kiosk' : '/student/catalog'
+  const catalogLabel = fromKiosk ? 'Back to the kiosk' : 'Back to catalog'
+
   const [hold, setHold] = useState<HoldDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -162,12 +172,12 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
           </p>
         </div>
         <Link
-          href="/student/catalog"
+          href={catalogHref}
           className="flex items-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors"
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
         >
           <ArrowLeft size={14} />
-          Back to catalog
+          {catalogLabel}
         </Link>
       </div>
     )
@@ -192,12 +202,12 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
           </p>
         </div>
         <Link
-          href="/student/catalog"
+          href={catalogHref}
           className="flex items-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors"
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
         >
           <ArrowLeft size={14} />
-          Back to catalog
+          {catalogLabel}
         </Link>
       </div>
     )
@@ -227,20 +237,22 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
           </p>
         </div>
         <div className="flex flex-col items-center gap-3 mt-2">
+          {!fromKiosk && (
+            <Link
+              href="/student/library"
+              className="h-11 px-6 flex items-center justify-center rounded-xl bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors"
+              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+            >
+              View in My Library
+            </Link>
+          )}
           <Link
-            href="/student/library"
-            className="h-11 px-6 flex items-center justify-center rounded-xl bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors"
-            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
-          >
-            View in My Library
-          </Link>
-          <Link
-            href="/student/catalog"
+            href={catalogHref}
             className="flex items-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors"
             style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
           >
             <ArrowLeft size={14} />
-            Back to catalog
+            {catalogLabel}
           </Link>
         </div>
       </div>
@@ -444,12 +456,12 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
         </form>
 
         <Link
-          href="/student/catalog"
+          href={catalogHref}
           className="flex items-center justify-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors"
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
         >
           <ArrowLeft size={14} />
-          Back to catalog
+          {catalogLabel}
         </Link>
       </div>
     </div>

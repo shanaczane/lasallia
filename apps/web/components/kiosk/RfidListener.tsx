@@ -20,7 +20,7 @@ export function RfidListener({ onTap }: { onTap: (uid: string) => void }) {
       // email/password inputs. Only refocus when nothing else is
       // deliberately focused.
       const active = document.activeElement
-      if (!active || active === document.body) inputRef.current?.focus()
+      if (!active || active === document.body) inputRef.current?.focus({ preventScroll: true })
     }
     refocus()
     document.addEventListener('click', refocus)

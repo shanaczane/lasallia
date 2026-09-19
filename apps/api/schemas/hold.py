@@ -19,5 +19,9 @@ class HoldDetail(BaseModel):
     active_loan_count: int
     due_date_preview: str
 
+class BorrowEligibility(BaseModel):
+    can_borrow: bool
+    reason: str | None = None
+
 class HoldExtendResponse(BaseModel):
     expires_at: str
