@@ -24,6 +24,7 @@ import {
 import { useBooks } from '@/lib/hooks/useBooks'
 import { deriveCatalogOptions } from '@/lib/catalogOptions'
 import { archiveBook } from '@/lib/weeding'
+import { uploadBookCover } from '@/lib/books'
 
 const PAGE_SIZE = 24
 import { LibrarianBookCard } from '@/components/ui/catalog/LibrarianBookCard'
@@ -145,7 +146,9 @@ function CatalogStats({ books }: { books: Book[] }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function LibrarianCatalogContent() {
-  const { books: fetchedBooks, loading, error } = useBooks()
+  // live: false — add/edit here are still local-only (see the seeding effect
+  // below), and a realtime refetch would reseed over those unsaved changes.
+  const { books: fetchedBooks, loading, error } = useBooks({ live: false })
   const [books, setBooks]       = useState<Book[]>([])
   const [query, setQuery]       = useState('')
   const [sort, setSort]         = useState<SortOption>('relevance')
@@ -242,8 +245,9 @@ function LibrarianCatalogContent() {
     showToast(`"${newBook.title}" added to the catalog.`)
   }
 
-  function handleEditSubmit(data: BookFormData) {
+  async function handleEditSubmit(data: BookFormData) {
     if (!editBook) return
+    const bookId = editBook.id
     setBooks((prev) =>
       prev.map((b) =>
         b.id === editBook.id
@@ -290,6 +294,19 @@ function LibrarianCatalogContent() {
     )
     setEditBook(null)
     showToast(`"${data.title.trim()}" updated.`)
+
+    // Covers are the one part of edit that's persisted for real (Supabase
+    // Storage + books.cover_url). Only for books that exist in the database —
+    // a locally-added `new-…` book has nothing to attach a cover to yet.
+    if (data.cover_image_file && !bookId.startsWith('new-')) {
+      try {
+        const coverUrl = await uploadBookCover(bookId, data.cover_image_file)
+        setBooks((prev) => prev.map((b) => (b.id === bookId ? { ...b, cover_url: coverUrl } : b)))
+        showToast(`Cover updated for "${data.title.trim()}".`)
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Could not upload the cover image.')
+      }
+    }
   }
 
   // Reports plan Phase 2 — the only one of these four actions wired to a

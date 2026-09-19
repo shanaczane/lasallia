@@ -56,6 +56,22 @@ export async function fetchBookCopies(bookId: string): Promise<BookCopy[]> {
   return res.json()
 }
 
+// Uploads a cover image to Supabase Storage (via the API, which enforces the
+// 5 MB / JPG-PNG-WebP limits) and returns the new public cover_url. Only
+// works for books that exist in the database.
+export async function uploadBookCover(bookId: string, file: File): Promise<string> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${API_URL}/books/${bookId}/cover`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: form,
+  })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not upload the cover image')
+  const data: { cover_url: string } = await res.json()
+  return data.cover_url
+}
+
 // Sends a missing/lost/damaged copy to for_reshelving — the status machine
 // (migration 0004) never allows a straight jump back to available. The
 // librarian finishes the transition via the existing Reshelving Queue scan.
