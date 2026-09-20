@@ -1,15 +1,17 @@
 // Sprint 5.6 – Reports Screen
 // Reports plan Phase 1 — real filterable backend replacing the old
 // client-side derive* functions (moved to apps/api/core/reports.py).
-// Chart components below keep their exact original prop shapes; only
-// what feeds them changed.
+// Layout pass: Overview is now a fixed grid of report-preview cards
+// (each linking to its own full-report tab) instead of a draggable
+// dashboard, and every full-report tab shares one table chrome
+// (ReportTableCard) — title/subtitle, search, Export CSV, and a
+// footer summary + pagination — so the tabs read as one system.
 "use client"
 
-import { Suspense, useCallback, useEffect, useState } from "react"
+import { Fragment, Suspense, cloneElement, useCallback, useEffect, useRef, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import {
   BarChart2,
-  GripVertical,
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
@@ -17,10 +19,11 @@ import {
   TrendingUp,
   Users,
   BookMarked,
-  ArrowUpDown,
   Download,
   Sparkles,
   Search,
+  Printer,
+  GripVertical,
 } from "lucide-react"
 import {
   DndContext,
@@ -44,16 +47,17 @@ import { fetchBooks } from "@/lib/books"
 import { fetchPatrons, updatePatronStatus } from "@/lib/users"
 import { fetchLoans, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
-import { buildFeed, TX_CONFIG, type FeedItem, type TxType } from "@/lib/activity"
+import { buildFeed, TX_CONFIG, type FeedItem } from "@/lib/activity"
 import { Pagination } from "@/components/ui/catalog"
 import { PatronProfileModal } from "@/components/ui/patrons/PatronProfileModal"
 import { ConfirmStatusDialog } from "@/components/ui/patrons/ConfirmStatusDialog"
 import {
   fetchCatalogueReport,
   fetchCirculationSummary,
-  fetchBorrowingTrends,
+  fetchTransactionTrend,
   fetchTopPatrons,
   fetchOverdueReport,
+  fetchFinesReport,
   fetchLibraryStats,
   fetchTransactionStats,
   fetchShelfList,
@@ -64,8 +68,11 @@ import {
   type CatalogueSlice,
   type TopPatron,
   type OverdueRow,
+  type FineRow,
   type LibraryStats,
+  type ProgramUsage,
   type TransactionStats,
+  type TransactionTrendPoint,
   type ShelfListRow,
   type ReportSummaries,
   type DateRangePreset,
@@ -83,7 +90,7 @@ import {
 import type { Book, UserProfile, Reservation } from "@lasallia/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type ReportTab = "overview" | "activity" | "overdue" | "weeding"
+type ReportTab = "overview" | "catalogue" | "shelf-list" | "circulation" | "overdue" | "patrons" | "requests" | "weeding" | "activity"
 type SortDir = "asc" | "desc" | null
 type SortKey = "patron" | "book" | "due" | "days" | "program" | null
 type ShelfSortKey = "call_number" | "title" | "accession_number" | null
@@ -95,56 +102,205 @@ const YEAR_LEVEL_LABELS: Record<string, number> = {
   "4th Year": 4,
 }
 
-// ─── Inline chart components — all data-driven via props, unchanged shapes ────
-function DonutChart({ data }: { data: CatalogueSlice[] }) {
-  const total = data.reduce((s, d) => s + d.value, 0)
-  const r = 58
-  const cx = 80
-  const cy = 80
-  const c = 2 * Math.PI * r
-  let offset = 0
+const REPORT_PAGE_SIZE = 8
 
-  if (total === 0) {
+// ─── Small shared pieces ───────────────────────────────────────────────────────
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div
+      className="rounded border border-ink-200 bg-white py-10 flex items-center justify-center text-ink-400"
+      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+    >
+      {text}
+    </div>
+  )
+}
+
+// ─── Uniform chrome for every full-report tab: title/subtitle, search,
+// Export CSV, then whatever table the caller renders, then a footer
+// summary + pagination. Keeping this one component is what makes
+// Catalogue/Shelf List/Circulation/Patrons/Requests read as one system.
+function ReportTableCard({
+  title,
+  subtitle,
+  query,
+  onQueryChange,
+  searchPlaceholder = "Search this report…",
+  onExport,
+  exportDisabled,
+  children,
+  footerLeft,
+  page,
+  totalPages,
+  onPageChange,
+}: {
+  title: string
+  subtitle: string
+  query?: string
+  onQueryChange?: (v: string) => void
+  searchPlaceholder?: string
+  onExport: () => void
+  exportDisabled: boolean
+  children: React.ReactNode
+  footerLeft: string
+  page?: number
+  totalPages?: number
+  onPageChange?: (p: number) => void
+}) {
+  return (
+    <div className="rounded border border-ink-200 bg-white p-5 flex flex-col gap-4" style={{ boxShadow: "var(--shadow)" }}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}>
+            {title}
+          </h2>
+          <p className="text-ink-400 mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            {subtitle}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {onQueryChange && (
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
+              <input
+                type="text"
+                value={query ?? ""}
+                onChange={(e) => onQueryChange(e.target.value)}
+                placeholder={searchPlaceholder}
+                className="pl-7 pr-3 py-1.5 rounded border border-ink-300 bg-white text-ink-800 placeholder:text-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 w-44 sm:w-56"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+              />
+            </div>
+          )}
+          <button
+            onClick={onExport}
+            disabled={exportDisabled}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+          >
+            <Download size={13} /> Export CSV
+          </button>
+        </div>
+      </div>
+
+      {children}
+
+      <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+        <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          {footerLeft}
+        </p>
+        {totalPages != null && page != null ? (
+          totalPages > 1 && onPageChange ? (
+            <Pagination page={page} totalPages={totalPages} onChange={onPageChange} />
+          ) : (
+            <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+              Page {page} of {totalPages}
+            </p>
+          )
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+// ─── Overview preview card — title/subtitle left, an "Open full report"
+// link OR a plain corner note on the right, never both. ─────────────────────
+function OverviewCard({
+  title,
+  subtitle,
+  action,
+  corner,
+  dragHandle,
+  children,
+}: {
+  title: string
+  subtitle: string
+  action?: { label: string; onClick: () => void }
+  corner?: string
+  dragHandle?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div className="rounded border border-ink-200 bg-white p-5 flex flex-col gap-3 h-full" style={{ boxShadow: "var(--shadow)" }}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>
+            {title}
+          </h3>
+          <p className="text-ink-400 mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            {subtitle}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {action ? (
+            <button
+              onClick={action.onClick}
+              className="text-green-700 hover:text-green-900 font-medium shrink-0 whitespace-nowrap transition-colors"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+            >
+              {action.label}
+            </button>
+          ) : corner ? (
+            <span className="text-ink-400 shrink-0 whitespace-nowrap" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+              {corner}
+            </span>
+          ) : null}
+          {dragHandle}
+        </div>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+// ─── Drag-to-reorder wrapper for the Overview grid — Sprint 5.6.1, kept
+// through the layout pass. Renders whatever OverviewCard the caller gives
+// it, plus a grip handle wired to dnd-kit. ─────────────────────────────────
+function SortableOverviewCard({ id, full, children }: { id: string; full?: boolean; children: (dragHandle: React.ReactNode) => React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const handle = (
+    <button
+      {...attributes}
+      {...listeners}
+      className="p-1 rounded cursor-grab active:cursor-grabbing text-ink-300 hover:text-ink-600 hover:bg-ink-100 transition-colors touch-none"
+      aria-label="Drag to reorder"
+    >
+      <GripVertical size={14} />
+    </button>
+  )
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 20 : undefined }}
+      className={cn("h-full transition-shadow rounded", full && "lg:col-span-2", isDragging && "opacity-90 ring-2 ring-green-400")}
+    >
+      {children(handle)}
+    </div>
+  )
+}
+
+// ─── Inline chart components — data-driven via props ──────────────────────────
+function CatalogueBarList({ data }: { data: CatalogueSlice[] }) {
+  if (data.length === 0) {
     return <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>No books in the catalog yet.</p>
   }
-
+  const max = Math.max(1, ...data.map((d) => d.value))
   return (
-    <div className="flex items-center gap-6 flex-wrap">
-      <svg viewBox="0 0 160 160" style={{ width: 140, height: 140, flexShrink: 0 }}>
-        {data.map((d, i) => {
-          const dash = (d.value / total) * c
-          const el = (
-            <circle
-              key={i}
-              cx={cx} cy={cy} r={r}
-              fill="none"
-              stroke={d.color}
-              strokeWidth={26}
-              strokeDasharray={`${dash} ${c - dash}`}
-              strokeDashoffset={-offset}
-              transform={`rotate(-90 ${cx} ${cy})`}
-            />
-          )
-          offset += dash
-          return el
-        })}
-        <circle cx={cx} cy={cy} r={45} fill="white" />
-        <text x={cx} y={cy - 5} textAnchor="middle" fontSize={15} fontWeight="700" fill="#14150F">{total.toLocaleString()}</text>
-        <text x={cx} y={cy + 12} textAnchor="middle" fontSize={8} fill="#6B6E63">Total Books</text>
-      </svg>
-      <ul className="flex flex-col gap-1.5">
-        {data.map((d) => (
-          <li key={d.label} className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
-            <span className="text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-              {d.label}
-            </span>
-            <span className="text-ink-400 ml-auto pl-3" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)" }}>
-              {d.value}
-            </span>
-          </li>
-        ))}
-      </ul>
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-2.5">
+      {data.map((d) => (
+        <div key={d.label} className="flex items-center gap-2 min-w-0">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: d.color }} />
+          <span className="text-ink-700 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            {d.label}
+          </span>
+          <div className="flex-1 h-1.5 rounded-full bg-ink-100 overflow-hidden min-w-6">
+            <div className="h-full rounded-full" style={{ width: `${(d.value / max) * 100}%`, background: d.color }} />
+          </div>
+          <span className="text-ink-400 w-6 text-right shrink-0" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)" }}>
+            {d.value}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -174,40 +330,44 @@ function BarChartViz({ data }: { data: Bucket[] }) {
   )
 }
 
-function LineChartViz({ data }: { data: Bucket[] }) {
+function TransactionTrendChart({ data }: { data: TransactionTrendPoint[] }) {
   if (data.length === 0) {
     return <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>No activity in this range yet.</p>
   }
-  const max = Math.max(1, ...data.map((d) => d.value))
-  const W = 280; const H = 100; const padX = 12; const padY = 14
-  const pts = data.map((d, i) => ({
-    x: padX + (i / (data.length - 1)) * (W - padX * 2),
-    y: padY + ((max - d.value) / max) * (H - padY * 2),
-    label: d.label,
-    value: d.value,
-  }))
-  const path = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ")
-  const area = `${path} L${pts[pts.length - 1].x},${H - padY} L${pts[0].x},${H - padY}Z`
+  const max = Math.max(1, ...data.map((d) => Math.max(d.borrows, d.returns)))
+  const W = 280, H = 100, padX = 12, padY = 14
+  const pts = (key: "borrows" | "returns") =>
+    data.map((d, i) => ({
+      x: padX + (i / (data.length - 1)) * (W - padX * 2),
+      y: padY + ((max - d[key]) / max) * (H - padY * 2),
+    }))
+  const toPath = (p: { x: number; y: number }[]) => p.map((pt, i) => `${i === 0 ? "M" : "L"}${pt.x},${pt.y}`).join(" ")
+  const borrowPts = pts("borrows")
+  const returnPts = pts("returns")
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
-      <defs>
-        <linearGradient id="lg1" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#00874A" stopOpacity="0.18" />
-          <stop offset="100%" stopColor="#00874A" stopOpacity="0.01" />
-        </linearGradient>
-      </defs>
-      <path d={area} fill="url(#lg1)" />
-      <path d={path} fill="none" stroke="#00874A" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-      {pts.map((p, i) => (
-        <g key={i}>
-          <circle cx={p.x} cy={p.y} r={3} fill="#fff" stroke="#00874A" strokeWidth={1.5} />
-          {i % 2 === 0 && (
-            <text x={p.x} y={H - 2} textAnchor="middle" fontSize={7.5} fill="#6B6E63" fontFamily="var(--font-body)">{p.label}</text>
-          )}
-        </g>
-      ))}
-    </svg>
+    <div className="flex flex-col gap-2 w-full">
+      <div className="flex items-center gap-4">
+        <span className="flex items-center gap-1.5 text-ink-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          <span className="w-3 h-0.5 rounded-full inline-block" style={{ background: "#00874A" }} /> Borrows
+        </span>
+        <span className="flex items-center gap-1.5 text-ink-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          <span className="w-3 h-0.5 inline-block" style={{ borderTop: "1.5px dashed #B8923D" }} /> Returns
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
+        <path d={toPath(returnPts)} fill="none" stroke="#B8923D" strokeWidth={1.5} strokeDasharray="4 3" strokeLinejoin="round" strokeLinecap="round" />
+        <path d={toPath(borrowPts)} fill="none" stroke="#00874A" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        {borrowPts.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r={2.5} fill="#fff" stroke="#00874A" strokeWidth={1.5} />
+        ))}
+        {data.map((d, i) =>
+          i % 2 === 0 ? (
+            <text key={i} x={borrowPts[i].x} y={H - 2} textAnchor="middle" fontSize={7.5} fill="#6B6E63" fontFamily="var(--font-body)">{d.label}</text>
+          ) : null
+        )}
+      </svg>
+    </div>
   )
 }
 
@@ -220,32 +380,20 @@ function TopPatronsList({ patrons }: { patrons: TopPatron[] }) {
     <ul className="flex flex-col gap-2.5 w-full">
       {patrons.map((p, i) => (
         <li key={p.id} className="flex items-center gap-2.5">
-          <span
-            className="text-ink-400 w-4 text-right shrink-0"
-            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-          >
+          <span className="text-ink-400 w-4 text-right shrink-0" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
             {i + 1}
           </span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-1">
-              <span
-                className="text-ink-900 font-medium truncate"
-                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-              >
+              <span className="text-ink-900 font-medium truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
                 {p.name}
               </span>
-              <span
-                className="text-ink-500 ml-2 shrink-0"
-                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-              >
+              <span className="text-ink-500 ml-2 shrink-0" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
                 {p.count} books
               </span>
             </div>
             <div className="h-1.5 rounded-full bg-ink-100 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-green-600 transition-all"
-                style={{ width: `${(p.count / max) * 100}%` }}
-              />
+              <div className="h-full rounded-full bg-green-600 transition-all" style={{ width: `${(p.count / max) * 100}%` }} />
             </div>
           </div>
         </li>
@@ -254,88 +402,66 @@ function TopPatronsList({ patrons }: { patrons: TopPatron[] }) {
   )
 }
 
-// ─── New: filter-mismatch note for book-level reports ─────────────────────────
-function FilterMismatchNote() {
-  return (
-    <p className="text-ink-400 italic mb-1" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-      Program/year level filters don&apos;t apply here — this is a book-level report, not a loan-level one.
-    </p>
-  )
-}
-
-// ─── Reports plan Phase 3 — AI summary line, shown only once generated ────────
-function SummaryNote({ text }: { text: string }) {
-  return (
-    <p
-      className="text-ink-700 bg-green-50 border border-green-100 rounded px-2.5 py-1.5 mb-2 flex items-start gap-1.5 text-left"
-      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-    >
-      <Sparkles size={11} className="text-green-700 mt-0.5 shrink-0" />
-      <span>{text}</span>
-    </p>
-  )
-}
-
-// ─── New: Library Statistics + Transaction Statistics card content ────────────
-function LibraryStatsCard({ stats, tx }: { stats: LibraryStats | null; tx: TransactionStats | null }) {
-  if (!stats) {
-    return <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>Loading…</p>
+function ProgramUsageList({ data }: { data: ProgramUsage[] }) {
+  if (data.length === 0) {
+    return <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>No borrowing activity yet.</p>
   }
-  const tiles = [
-    { label: "Total Titles", value: stats.total_titles.toLocaleString() },
-    { label: "Total Copies", value: stats.total_copies.toLocaleString() },
-    { label: "Active Borrowers", value: stats.active_borrowers.toLocaleString() },
-    { label: "Overdue", value: stats.overdue_count.toLocaleString() },
-    { label: "Utilization", value: `${Math.round(stats.utilization_rate * 100)}%` },
-    { label: "Top Category", value: stats.most_active_category ?? "—" },
-  ]
+  const max = Math.max(1, ...data.map((d) => d.loans))
   return (
-    <div className="flex flex-col gap-3 w-full">
-      <div className="grid grid-cols-3 gap-2">
-        {tiles.map((t) => (
-          <div key={t.label} className="rounded bg-ink-50 px-2.5 py-2 min-w-0">
-            <p className="text-ink-900 font-bold truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-lg)" }}>{t.value}</p>
-            <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>{t.label}</p>
-          </div>
-        ))}
+    <div className="flex flex-col gap-2.5 w-full">
+      <div className="flex items-center gap-3">
+        <span className="w-28 shrink-0" />
+        <span className="flex-1" />
+        <span className="text-ink-300 uppercase w-7 text-right shrink-0" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>Users</span>
+        <span className="text-ink-300 uppercase w-7 text-right shrink-0" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>Loans</span>
       </div>
-      {tx && (
-        <div className="pt-2 border-t border-ink-100">
-          <p
-            className="text-ink-400 uppercase font-semibold mb-1.5"
-            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)" }}
-          >
-            Transactions (period)
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <p className="text-ink-900 font-bold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-lg)" }}>{tx.total_transactions}</p>
-              <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>Total</p>
-            </div>
-            <div>
-              <p className="text-ink-900 font-bold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-lg)" }}>{tx.loan_count}</p>
-              <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>Loans</p>
-            </div>
-            <div>
-              <p className="text-ink-900 font-bold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-lg)" }}>{tx.reservation_count}</p>
-              <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>Reservations</p>
-            </div>
+      {data.map((d) => (
+        <div key={d.program} className="flex items-center gap-3">
+          <span className="text-ink-700 w-28 truncate shrink-0" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            {d.program}
+          </span>
+          <div className="flex-1 h-1.5 rounded-full bg-ink-100 overflow-hidden">
+            <div className="h-full rounded-full bg-blue-600" style={{ width: `${(d.loans / max) * 100}%` }} />
           </div>
-          {tx.average_loan_duration_days != null && (
-            <p className="text-ink-500 mt-1.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-              Avg. loan duration: {tx.average_loan_duration_days} day{tx.average_loan_duration_days === 1 ? "" : "s"}
-            </p>
-          )}
+          <span className="text-ink-400 w-7 text-right shrink-0" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)" }}>
+            {d.users}
+          </span>
+          <span className="text-ink-900 font-semibold w-7 text-right shrink-0" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)" }}>
+            {d.loans}
+          </span>
         </div>
-      )}
+      ))}
     </div>
   )
 }
 
-// ─── New: Shelf List card content — plain sortable table, not a chart ─────────
+// ─── Shelf copy status pill — matches book_copies.status values ───────────────
+const SHELF_STATUS_CFG: Record<string, { label: string; text: string; bg: string }> = {
+  available:       { label: "Available",       text: "text-[#16A34A]", bg: "bg-[#DCFCE7]" },
+  on_loan:         { label: "On Loan",         text: "text-[#0369A1]", bg: "bg-[#E0F2FE]" },
+  reserved:        { label: "Reserved",        text: "text-[#C2730A]", bg: "bg-[#FEF3C7]" },
+  for_reshelving:  { label: "For Reshelving",  text: "text-ink-600",   bg: "bg-ink-100"    },
+  missing:         { label: "Missing",         text: "text-[#6D28D9]", bg: "bg-[#EDE9FE]" },
+}
+
+function ShelfStatusBadge({ status }: { status: string }) {
+  const cfg = SHELF_STATUS_CFG[status] ?? { label: status, text: "text-ink-600", bg: "bg-ink-100" }
+  return (
+    <span
+      className={cn("inline-flex items-center px-2 py-0.5 rounded-pill font-medium whitespace-nowrap", cfg.bg, cfg.text)}
+      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+    >
+      {cfg.label}
+    </span>
+  )
+}
+
+// ─── Shelf List — full report tab, physical copies in call-number order ───────
 function ShelfListTable({ rows, onExport }: { rows: ShelfListRow[]; onExport: () => void }) {
   const [sortKey, setSortKey] = useState<ShelfSortKey>("call_number")
   const [sortDir, setSortDir] = useState<SortDir>("asc")
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
 
   const handleSort = (key: ShelfSortKey) => {
     if (sortKey === key) {
@@ -347,7 +473,14 @@ function ShelfListTable({ rows, onExport }: { rows: ShelfListRow[]; onExport: ()
     }
   }
 
-  const sorted = [...rows].sort((a, b) => {
+  const filtered = query.trim()
+    ? rows.filter((r) => {
+        const q = query.toLowerCase()
+        return r.title.toLowerCase().includes(q) || r.call_number.toLowerCase().includes(q) || r.accession_number.toLowerCase().includes(q)
+      })
+    : rows
+
+  const sorted = [...filtered].sort((a, b) => {
     if (!sortKey || !sortDir) return 0
     const va = a[sortKey] ?? ""
     const vb = b[sortKey] ?? ""
@@ -359,39 +492,54 @@ function ShelfListTable({ rows, onExport }: { rows: ShelfListRow[]; onExport: ()
     return sortDir === "asc" ? <ChevronUp size={12} className="text-green-600" /> : <ChevronDown size={12} className="text-green-600" />
   }
 
+  const totalPages = Math.max(1, Math.ceil(sorted.length / REPORT_PAGE_SIZE))
+  const paged = sorted.slice((page - 1) * REPORT_PAGE_SIZE, page * REPORT_PAGE_SIZE)
+
+  const filterKey = `${query}|${sortKey}|${sortDir}`
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey)
+    setPage(1)
+  }
+
+  const statusCounts = rows.reduce<Record<string, number>>((acc, r) => {
+    acc[r.status] = (acc[r.status] ?? 0) + 1
+    return acc
+  }, {})
+  const available = statusCounts.available ?? 0
+  const onLoan = statusCounts.on_loan ?? 0
+  const needsAttention = (statusCounts.reserved ?? 0) + (statusCounts.for_reshelving ?? 0) + (statusCounts.missing ?? 0)
+
   return (
-    <div className="flex flex-col gap-2 w-full">
-      <div className="flex items-center justify-between">
-        <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-          {rows.length} {rows.length === 1 ? "copy" : "copies"}
-        </p>
-        <button
-          onClick={onExport}
-          disabled={rows.length === 0}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-ink-200 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-        >
-          <Download size={12} /> Export CSV
-        </button>
-      </div>
-      {rows.length === 0 ? (
-        <div className="rounded border border-ink-200 bg-white py-8 flex items-center justify-center text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-          No books match this filter.
-        </div>
+    <ReportTableCard
+      title="Shelf list"
+      subtitle={`Physical copies in call-number order · ${rows.length} ${rows.length === 1 ? "copy" : "copies"}`}
+      query={query}
+      onQueryChange={setQuery}
+      onExport={onExport}
+      exportDisabled={rows.length === 0}
+      footerLeft={`${available} available · ${onLoan} on loan · ${needsAttention} needing attention`}
+      page={page}
+      totalPages={totalPages}
+      onPageChange={setPage}
+    >
+      {paged.length === 0 ? (
+        <EmptyState text={rows.length === 0 ? "No books match this filter." : "No copies match your search."} />
       ) : (
-        <div className="rounded border border-ink-200 max-h-80 overflow-y-auto">
+        <div className="rounded border border-ink-200 overflow-x-auto">
           <table className="w-full">
-            <thead className="sticky top-0 bg-ink-50">
-              <tr className="border-b border-ink-200">
+            <thead>
+              <tr className="border-b border-ink-200 bg-ink-50">
                 {([
-                  { label: "Call #", key: "call_number" as ShelfSortKey },
-                  { label: "Title", key: "title" as ShelfSortKey },
                   { label: "Accession", key: "accession_number" as ShelfSortKey },
+                  { label: "Title", key: "title" as ShelfSortKey },
+                  { label: "Call Number", key: "call_number" as ShelfSortKey },
+                  { label: "Location", key: null },
                   { label: "Status", key: null },
                 ]).map((col) => (
                   <th
                     key={col.label}
-                    className={cn("text-left py-2 px-3 text-ink-500 font-semibold uppercase select-none", col.key ? "cursor-pointer hover:text-ink-800" : "")}
+                    className={cn("text-left py-2.5 px-4 text-ink-500 font-semibold uppercase select-none", col.key ? "cursor-pointer hover:text-ink-800" : "")}
                     onClick={() => col.key && handleSort(col.key)}
                     style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}
                   >
@@ -401,19 +549,265 @@ function ShelfListTable({ rows, onExport }: { rows: ShelfListRow[]; onExport: ()
               </tr>
             </thead>
             <tbody>
-              {sorted.map((row) => (
-                <tr key={row.accession_number} className="border-b border-ink-100 hover:bg-ink-50">
-                  <td className="py-2 px-3 text-ink-700 whitespace-nowrap" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)" }}>{row.call_number}</td>
-                  <td className="py-2 px-3 text-ink-900 font-medium truncate max-w-40" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>{row.title}</td>
-                  <td className="py-2 px-3 text-ink-500 whitespace-nowrap" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)" }}>{row.accession_number}</td>
-                  <td className="py-2 px-3 text-ink-500 whitespace-nowrap" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>{row.status}</td>
+              {paged.map((row) => (
+                <tr key={row.accession_number} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
+                  <td className="py-2.5 px-4 text-ink-700 whitespace-nowrap" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}>{row.accession_number}</td>
+                  <td className="py-2.5 px-4 text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{row.title}</td>
+                  <td className="py-2.5 px-4 text-ink-700 whitespace-nowrap" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}>{row.call_number}</td>
+                  <td className="py-2.5 px-4 text-ink-700 whitespace-nowrap" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{row.shelf_location ?? "Unassigned"}</td>
+                  <td className="py-2.5 px-4 whitespace-nowrap"><ShelfStatusBadge status={row.status} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-    </div>
+    </ReportTableCard>
+  )
+}
+
+// ─── Catalogue — full report tab, one row per title ────────────────────────────
+function CatalogueTable({ books, onExport }: { books: Book[]; onExport: () => void }) {
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+
+  const filtered = query.trim()
+    ? books.filter((b) => {
+        const q = query.toLowerCase()
+        return b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q) || b.category.toLowerCase().includes(q)
+      })
+    : books
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / REPORT_PAGE_SIZE))
+  const paged = filtered.slice((page - 1) * REPORT_PAGE_SIZE, page * REPORT_PAGE_SIZE)
+
+  const filterKey = query
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey)
+    setPage(1)
+  }
+
+  return (
+    <ReportTableCard
+      title="Catalogue report"
+      subtitle={`All titles in the collection, ${books.length} records`}
+      query={query}
+      onQueryChange={setQuery}
+      onExport={onExport}
+      exportDisabled={books.length === 0}
+      footerLeft={`Showing ${paged.length} of ${filtered.length} titles`}
+      page={page}
+      totalPages={totalPages}
+      onPageChange={setPage}
+    >
+      {paged.length === 0 ? (
+        <EmptyState text={books.length === 0 ? "No books in the catalog yet." : "No titles match your search."} />
+      ) : (
+        <div className="rounded border border-ink-200 overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-ink-200 bg-ink-50">
+                {["Title", "Author", "Category", "Copies", "Year"].map((label) => (
+                  <th key={label} className="text-left py-2.5 px-4 text-ink-500 font-semibold uppercase" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}>
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {paged.map((b) => (
+                <tr key={b.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
+                  <td className="py-2.5 px-4 text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{b.title}</td>
+                  <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{b.author}</td>
+                  <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{b.category}</td>
+                  <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}>{b.total_copies ?? 1}</td>
+                  <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}>{b.published_year ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </ReportTableCard>
+  )
+}
+
+// ─── Circulation — full report tab, one row per borrow/return event ───────────
+type CirculationRow = { id: string; date: string; title: string; patron: string; type: "Borrow" | "Return"; due: string }
+
+function buildCirculationRows(feed: FeedItem[], dateFrom?: string, dateTo?: string): CirculationRow[] {
+  const fromTs = dateFrom ? new Date(dateFrom).getTime() : null
+  const toTs = dateTo ? new Date(dateTo).getTime() : null
+  return feed
+    .filter((f) => f.type !== "reserve")
+    .filter((f) => (fromTs === null || f.timestamp >= fromTs) && (toTs === null || f.timestamp <= toTs))
+    .map((f) => ({
+      id: f.id,
+      date: new Date(f.timestamp).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
+      title: f.item,
+      patron: f.user,
+      type: f.type === "checkout" ? "Borrow" : "Return",
+      due: f.type === "checkout" && f.loan?.due_date ? new Date(f.loan.due_date).toLocaleDateString("en-PH", { month: "short", day: "numeric" }) : "—",
+    }))
+}
+
+function CirculationTable({ rows, onExport }: { rows: CirculationRow[]; onExport: () => void }) {
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+
+  const filtered = query.trim()
+    ? rows.filter((r) => {
+        const q = query.toLowerCase()
+        return r.title.toLowerCase().includes(q) || r.patron.toLowerCase().includes(q)
+      })
+    : rows
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / REPORT_PAGE_SIZE))
+  const paged = filtered.slice((page - 1) * REPORT_PAGE_SIZE, page * REPORT_PAGE_SIZE)
+
+  const filterKey = query
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey)
+    setPage(1)
+  }
+
+  const borrows = rows.filter((r) => r.type === "Borrow").length
+  const returns = rows.filter((r) => r.type === "Return").length
+
+  return (
+    <ReportTableCard
+      title="Circulation report"
+      subtitle="Movement of books in and out of the collection"
+      query={query}
+      onQueryChange={setQuery}
+      onExport={onExport}
+      exportDisabled={rows.length === 0}
+      footerLeft={`${rows.length} transactions in range · ${borrows} borrows, ${returns} returns`}
+      page={page}
+      totalPages={totalPages}
+      onPageChange={setPage}
+    >
+      {paged.length === 0 ? (
+        <EmptyState text={rows.length === 0 ? "No circulation activity in this range." : "No transactions match your search."} />
+      ) : (
+        <div className="rounded border border-ink-200 overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-ink-200 bg-ink-50">
+                {["Date", "Title", "Patron", "Type", "Due"].map((label) => (
+                  <th key={label} className="text-left py-2.5 px-4 text-ink-500 font-semibold uppercase" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}>
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {paged.map((r) => (
+                <tr key={r.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
+                  <td className="py-2.5 px-4 text-ink-700 whitespace-nowrap" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{r.date}</td>
+                  <td className="py-2.5 px-4 text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{r.title}</td>
+                  <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{r.patron}</td>
+                  <td className="py-2.5 px-4">
+                    <span
+                      className={cn("inline-flex items-center px-2 py-0.5 rounded-pill font-medium", r.type === "Borrow" ? "bg-info-bg text-info" : "bg-success-bg text-success")}
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                    >
+                      {r.type}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-4 text-ink-700 whitespace-nowrap" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{r.due}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </ReportTableCard>
+  )
+}
+
+// ─── Patrons — full report tab, every patron with activity in range ───────────
+function PatronsReportTable({ patrons, onExport }: { patrons: TopPatron[]; onExport: () => void }) {
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+
+  const filtered = query.trim()
+    ? patrons.filter((p) => {
+        const q = query.toLowerCase()
+        return p.name.toLowerCase().includes(q) || p.program.toLowerCase().includes(q)
+      })
+    : patrons
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / REPORT_PAGE_SIZE))
+  const paged = filtered.slice((page - 1) * REPORT_PAGE_SIZE, page * REPORT_PAGE_SIZE)
+
+  const filterKey = query
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey)
+    setPage(1)
+  }
+
+  return (
+    <ReportTableCard
+      title="Patrons report"
+      subtitle="Borrowing activity by patron in range"
+      query={query}
+      onQueryChange={setQuery}
+      onExport={onExport}
+      exportDisabled={patrons.length === 0}
+      footerLeft={`${patrons.length} ${patrons.length === 1 ? "patron" : "patrons"} with activity in range`}
+      page={page}
+      totalPages={totalPages}
+      onPageChange={setPage}
+    >
+      {paged.length === 0 ? (
+        <EmptyState text={patrons.length === 0 ? "No borrowing activity in this range." : "No patrons match your search."} />
+      ) : (
+        <div className="rounded border border-ink-200 overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-ink-200 bg-ink-50">
+                {["Patron", "Program", "Books Borrowed"].map((label) => (
+                  <th key={label} className="text-left py-2.5 px-4 text-ink-500 font-semibold uppercase" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}>
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {paged.map((p) => (
+                <tr key={p.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
+                  <td className="py-2.5 px-4 text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{p.name}</td>
+                  <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{p.program}</td>
+                  <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}>{p.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </ReportTableCard>
+  )
+}
+
+// ─── Requests — placeholder tab. No submit flow or table exists anywhere in
+// the app yet, so this deliberately shows real chrome + an honest empty
+// state rather than fabricated rows. Wire it up once requests can actually
+// be submitted. ─────────────────────────────────────────────────────────────
+function RequestsPlaceholder() {
+  return (
+    <ReportTableCard
+      title="Wishlist and request log"
+      subtitle="Titles requested by faculty and students"
+      onExport={() => {}}
+      exportDisabled
+      footerLeft="0 open requests"
+    >
+      <EmptyState text="No requests yet — this feature is coming soon." />
+    </ReportTableCard>
   )
 }
 
@@ -428,6 +822,8 @@ function WeedingPanel() {
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [logQuery, setLogQuery] = useState("")
+  const [logPage, setLogPage] = useState(1)
 
   function showToast(msg: string) {
     setToast(msg)
@@ -495,13 +891,13 @@ function WeedingPanel() {
       )}
 
       {/* Candidates */}
-      <div className="flex flex-col gap-3">
+      <div className="rounded border border-ink-200 bg-white p-5 flex flex-col gap-4" style={{ boxShadow: "var(--shadow)" }}>
         <div>
           <h2
             className="text-ink-900 font-semibold"
             style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}
           >
-            Weeding Candidates
+            Weeding candidates
           </h2>
           <p className="text-ink-400 mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
             Flagged by a fixed rule — low or zero borrows over 2 years, and at least 10 years old. AI only explains the finding; you decide.
@@ -511,16 +907,13 @@ function WeedingPanel() {
         {loading ? (
           <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>Loading…</p>
         ) : candidates.length === 0 ? (
-          <div className="rounded border border-ink-200 bg-white py-8 flex items-center justify-center text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-            No weeding candidates right now.
-          </div>
+          <EmptyState text="No weeding candidates right now." />
         ) : (
           <div className="flex flex-col gap-2">
             {candidates.map((c) => (
               <div
                 key={c.book_id}
-                className="rounded border border-ink-200 bg-white p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3"
-                style={{ boxShadow: "var(--shadow)" }}
+                className="rounded border border-ink-100 bg-ink-50 p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3"
               >
                 <div className="min-w-0">
                   <p className="text-ink-900 font-semibold truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
@@ -537,7 +930,7 @@ function WeedingPanel() {
                   <button
                     onClick={() => handleDismiss(c)}
                     disabled={busyId === c.book_id}
-                    className="px-3 py-1.5 rounded border border-ink-200 text-ink-700 hover:bg-ink-50 disabled:opacity-40 transition-colors"
+                    className="px-3 py-1.5 rounded border border-ink-200 bg-white text-ink-700 hover:bg-ink-100 disabled:opacity-40 transition-colors"
                     style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
                   >
                     Keep
@@ -558,128 +951,90 @@ function WeedingPanel() {
       </div>
 
       {/* Log */}
-      <div className="flex flex-col gap-3">
-        <h2
-          className="text-ink-900 font-semibold"
-          style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}
-        >
-          Weeding Log
-        </h2>
-        {events.length === 0 ? (
-          <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-            No weeding actions recorded yet.
-          </p>
-        ) : (
-          <div className="rounded border border-ink-200 bg-white overflow-x-auto" style={{ boxShadow: "var(--shadow)" }}>
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-ink-200 bg-ink-50">
-                  {["Book", "Action", "By", "When", ""].map((label) => (
-                    <th
-                      key={label}
-                      className="text-left py-2.5 px-4 text-ink-500 font-semibold uppercase"
-                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}
-                    >
-                      {label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((e) => (
-                  <tr key={e.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
-                    <td className="py-2.5 px-4 text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                      {e.book_title ?? "—"}
-                    </td>
-                    <td className="py-2.5 px-4 text-ink-700 capitalize" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                      {e.event_type}
-                    </td>
-                    <td className="py-2.5 px-4 text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-                      {e.performed_by_name ?? "—"}
-                    </td>
-                    <td className="py-2.5 px-4 text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-                      {new Date(e.occurred_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
-                    </td>
-                    <td className="py-2.5 px-4">
-                      {e.event_type === "archived" && (
-                        <button
-                          onClick={() => handleRestore(e.book_id, e.book_title)}
-                          disabled={busyId === e.book_id}
-                          className="text-green-700 hover:underline disabled:opacity-40 font-medium"
-                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+      {(() => {
+        const filteredEvents = logQuery.trim()
+          ? events.filter((e) => {
+              const q = logQuery.toLowerCase()
+              return (e.book_title ?? "").toLowerCase().includes(q) || (e.performed_by_name ?? "").toLowerCase().includes(q)
+            })
+          : events
+        const totalPages = Math.max(1, Math.ceil(filteredEvents.length / REPORT_PAGE_SIZE))
+        const paged = filteredEvents.slice((logPage - 1) * REPORT_PAGE_SIZE, logPage * REPORT_PAGE_SIZE)
+        const exportLog = () => downloadCsv("weeding-log.csv", events.map((e) => ({
+          book: e.book_title ?? "",
+          action: e.event_type,
+          by: e.performed_by_name ?? "",
+          when: e.occurred_at,
+        })))
+
+        return (
+          <ReportTableCard
+            title="Weeding log"
+            subtitle="Archive, restore and dismiss actions on record"
+            query={logQuery}
+            onQueryChange={(v) => { setLogQuery(v); setLogPage(1) }}
+            searchPlaceholder="Search book or librarian…"
+            onExport={exportLog}
+            exportDisabled={events.length === 0}
+            footerLeft={`${events.length} ${events.length === 1 ? "action" : "actions"} recorded`}
+            page={logPage}
+            totalPages={totalPages}
+            onPageChange={setLogPage}
+          >
+            {paged.length === 0 ? (
+              <EmptyState text={events.length === 0 ? "No weeding actions recorded yet." : "No actions match your search."} />
+            ) : (
+              <div className="rounded border border-ink-200 overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-ink-200 bg-ink-50">
+                      {["Book", "Action", "By", "When", ""].map((label) => (
+                        <th
+                          key={label}
+                          className="text-left py-2.5 px-4 text-ink-500 font-semibold uppercase"
+                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}
                         >
-                          Restore
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── Draggable report card ────────────────────────────────────────────────────
-interface CardDef {
-  id: string
-  title: string
-  subtitle: string
-  icon: React.ReactNode
-  content: React.ReactNode
-}
-
-function SortableCard({ card }: { card: CardDef }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id })
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        zIndex: isDragging ? 20 : undefined,
-      }}
-      className={cn(
-        "rounded border border-ink-200 bg-white flex flex-col transition-shadow",
-        isDragging ? "shadow-xl opacity-90 ring-2 ring-green-400" : "hover:shadow-md"
-      )}
-    >
-      {/* Card header */}
-      <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-ink-100">
-        <div className="flex items-center gap-2.5">
-          <span className="text-green-700">{card.icon}</span>
-          <div>
-            <p
-              className="text-ink-900 font-semibold leading-tight"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-            >
-              {card.title}
-            </p>
-            <p
-              className="text-ink-400"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-            >
-              {card.subtitle}
-            </p>
-          </div>
-        </div>
-        <button
-          {...attributes}
-          {...listeners}
-          className="p-1.5 rounded cursor-grab active:cursor-grabbing text-ink-300 hover:text-ink-600 hover:bg-ink-100 transition-colors touch-none"
-          aria-label="Drag to reorder"
-        >
-          <GripVertical size={16} />
-        </button>
-      </div>
-
-      <div className="px-4 py-4 flex-1 flex items-center justify-center">
-        {card.content}
-      </div>
+                          {label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paged.map((e) => (
+                      <tr key={e.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
+                        <td className="py-2.5 px-4 text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                          {e.book_title ?? "—"}
+                        </td>
+                        <td className="py-2.5 px-4 text-ink-700 capitalize" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                          {e.event_type}
+                        </td>
+                        <td className="py-2.5 px-4 text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                          {e.performed_by_name ?? "—"}
+                        </td>
+                        <td className="py-2.5 px-4 text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                          {new Date(e.occurred_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
+                        </td>
+                        <td className="py-2.5 px-4">
+                          {e.event_type === "archived" && (
+                            <button
+                              onClick={() => handleRestore(e.book_id, e.book_title)}
+                              disabled={busyId === e.book_id}
+                              className="text-green-700 hover:underline disabled:opacity-40 font-medium"
+                              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                            >
+                              Restore
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </ReportTableCard>
+        )
+      })()}
     </div>
   )
 }
@@ -705,14 +1060,12 @@ function ActivityLogTable({
   dateTo?: string
 }) {
   const [query, setQuery] = useState("")
-  const [typeFilter, setTypeFilter] = useState<TxType | "all">("all")
   const [page, setPage] = useState(1)
 
   const fromTs = dateFrom ? new Date(dateFrom).getTime() : null
   const toTs = dateTo ? new Date(dateTo).getTime() : null
 
   const filtered = feed.filter((tx) => {
-    if (typeFilter !== "all" && tx.type !== typeFilter) return false
     if (fromTs !== null && tx.timestamp < fromTs) return false
     if (toTs !== null && tx.timestamp > toTs) return false
     if (!query.trim()) return true
@@ -720,11 +1073,7 @@ function ActivityLogTable({
     return tx.user.toLowerCase().includes(q) || tx.item.toLowerCase().includes(q)
   })
 
-  const hasActiveFilters = !!query || typeFilter !== "all"
-
-  // Reset to page 1 whenever a filter changes — adjusted during render
-  // rather than a setState-in-effect (react.dev/learn/you-might-not-need-an-effect).
-  const filterKey = `${query}|${typeFilter}|${dateFrom}|${dateTo}`
+  const filterKey = `${query}|${dateFrom}|${dateTo}`
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
   if (filterKey !== prevFilterKey) {
     setPrevFilterKey(filterKey)
@@ -735,71 +1084,23 @@ function ActivityLogTable({
   const paged = filtered.slice((page - 1) * ACTIVITY_PAGE_SIZE, page * ACTIVITY_PAGE_SIZE)
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* Search + type filter + export — no Date Range control here, this tab
-          respects the page-level Date Range filter bar above the tabs
-          instead of duplicating it (see `dateFrom`/`dateTo` props). */}
-      <div className="flex flex-wrap items-center gap-2 justify-between">
-        <div className="flex flex-1 min-w-0 items-center gap-2">
-          <div className="relative flex-1 min-w-0 max-w-80">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search patron or title…"
-              className="w-full pl-8 pr-3 py-1.5 rounded border border-ink-300 bg-white text-ink-800 placeholder:text-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-            />
-          </div>
-          <div className="relative shrink-0">
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as TxType | "all")}
-              className="appearance-none pl-3 pr-8 py-1.5 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-ink-800"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-            >
-              <option value="all">All Types</option>
-              <option value="checkout">Checkout</option>
-              <option value="return">Return</option>
-              <option value="reserve">Reserve</option>
-            </select>
-            <ArrowUpDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
-          </div>
-
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={() => { setQuery(""); setTypeFilter("all") }}
-              className="text-green-700 font-medium hover:text-green-900 underline underline-offset-2 transition-colors shrink-0"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
-        <button
-          onClick={onExport}
-          disabled={filtered.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-        >
-          <Download size={14} /> Export CSV
-        </button>
-      </div>
-
-      <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-        {filtered.length} {filtered.length === 1 ? "event" : "events"}
-        {hasActiveFilters && " matching your filters"}
-      </p>
-
-      {/* Table */}
+    <ReportTableCard
+      title="Activity log"
+      subtitle="Every checkout, return and reservation in range"
+      query={query}
+      onQueryChange={setQuery}
+      searchPlaceholder="Search patron or title…"
+      onExport={onExport}
+      exportDisabled={filtered.length === 0}
+      footerLeft={`${filtered.length} ${filtered.length === 1 ? "event" : "events"} in range`}
+      page={page}
+      totalPages={totalPages}
+      onPageChange={setPage}
+    >
       {paged.length === 0 ? (
-        <div className="rounded border border-ink-200 bg-white py-10 flex items-center justify-center text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-          No activity found.
-        </div>
+        <EmptyState text="No activity found." />
       ) : (
-        <div className="rounded border border-ink-200 bg-white overflow-x-auto" style={{ boxShadow: "var(--shadow)" }}>
+        <div className="rounded border border-ink-200 overflow-x-auto">
           <table className="w-full min-w-150">
             <thead>
               <tr className="border-b border-ink-200 bg-ink-50">
@@ -859,9 +1160,7 @@ function ActivityLogTable({
           </table>
         </div>
       )}
-
-      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
-    </div>
+    </ReportTableCard>
   )
 }
 
@@ -869,6 +1168,8 @@ function ActivityLogTable({
 function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => void }) {
   const [sortKey, setSortKey] = useState<SortKey>(null)
   const [sortDir, setSortDir] = useState<SortDir>(null)
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -880,7 +1181,14 @@ function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => 
     }
   }
 
-  const sorted = [...rows].sort((a, b) => {
+  const filteredRows = query.trim()
+    ? rows.filter((r) => {
+        const q = query.toLowerCase()
+        return r.patron.toLowerCase().includes(q) || r.book.toLowerCase().includes(q) || r.patronEmail.toLowerCase().includes(q)
+      })
+    : rows
+
+  const sorted = [...filteredRows].sort((a, b) => {
     if (!sortKey || !sortDir) return 0
     let va: string | number = ""
     let vb: string | number = ""
@@ -898,59 +1206,39 @@ function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => 
     return sortDir === "asc" ? <ChevronUp size={12} className="text-green-600" /> : <ChevronDown size={12} className="text-green-600" />
   }
 
-  const totalFine = sorted.reduce((s, b) => s + b.fine, 0)
+  const totalFine = rows.reduce((s, b) => s + b.fine, 0)
+
+  const PAGE_SIZE = REPORT_PAGE_SIZE
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
+  const pagedRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  const filterKey = `${query}|${sortKey}|${sortDir}`
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey)
+    setPage(1)
+  }
+
+  const patronsAffected = new Set(rows.map((r) => r.patronEmail)).size
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Summary row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: "Overdue Books", value: `${rows.length}`, alert: true },
-          { label: "Total Fines",   value: `₱${totalFine.toFixed(2)}`, alert: false },
-          { label: "Patrons Affected", value: `${new Set(rows.map((r) => r.patronEmail)).size}`, alert: false },
-          { label: "Avg Days Late",   value: rows.length ? `${Math.round(rows.reduce((s, b) => s + b.daysOverdue, 0) / rows.length)}d` : "—", alert: false },
-        ].map((s) => (
-          <div key={s.label} className="rounded border border-ink-200 bg-white px-4 py-3">
-            <p
-              className="text-ink-400"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-            >
-              {s.label}
-            </p>
-            <p
-              className={cn("font-bold mt-0.5", s.alert ? "text-red-600" : "text-ink-900")}
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xl)" }}
-            >
-              {s.value}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex items-center justify-between">
-        <p
-          className="text-ink-500"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-        >
-          {sorted.length} overdue {sorted.length === 1 ? "book" : "books"} as of today
-        </p>
-        <button
-          onClick={onExport}
-          disabled={rows.length === 0}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-ink-200 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-        >
-          <Download size={12} /> Export CSV
-        </button>
-      </div>
-
-      {/* Table */}
+    <ReportTableCard
+      title="Overdue books"
+      subtitle="Loans past their due date, with the fine owed on each"
+      query={query}
+      onQueryChange={setQuery}
+      searchPlaceholder="Search patron or book…"
+      onExport={onExport}
+      exportDisabled={rows.length === 0}
+      footerLeft={`${rows.length} overdue · ₱${totalFine.toFixed(2)} total fines · ${patronsAffected} ${patronsAffected === 1 ? "patron" : "patrons"} affected`}
+      page={page}
+      totalPages={totalPages}
+      onPageChange={setPage}
+    >
       {sorted.length === 0 ? (
-        <div className="rounded border border-ink-200 bg-white py-10 flex items-center justify-center text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-          Nothing overdue right now.
-        </div>
+        <EmptyState text={rows.length === 0 ? "Nothing overdue right now." : "No overdue books match your search."} />
       ) : (
-        <div className="rounded border border-ink-200 bg-white overflow-x-auto" style={{ boxShadow: "var(--shadow)" }}>
+        <div className="rounded border border-ink-200 overflow-x-auto">
           <table className="w-full min-w-175">
             <thead>
               <tr className="border-b border-ink-200 bg-ink-50">
@@ -985,7 +1273,7 @@ function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => 
               </tr>
             </thead>
             <tbody>
-              {sorted.map((row) => (
+              {pagedRows.map((row) => (
                 <tr key={row.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
                   <td className="py-3 px-4">
                     <p
@@ -1075,6 +1363,241 @@ function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => 
           </table>
         </div>
       )}
+    </ReportTableCard>
+  )
+}
+
+// ─── Fines table — library-wide, not just currently-overdue loans ─────────────
+function FinesTable({ rows, onExport }: { rows: FineRow[]; onExport: () => void }) {
+  const [query, setQuery] = useState("")
+
+  const filtered = query.trim()
+    ? rows.filter((r) => {
+        const q = query.toLowerCase()
+        return r.patron.toLowerCase().includes(q) || r.patron_email.toLowerCase().includes(q)
+      })
+    : rows
+
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+
+  const totalOutstanding = rows.reduce((s, r) => s + r.outstanding, 0)
+  const patronsOwing = rows.filter((r) => r.outstanding > 0).length
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / REPORT_PAGE_SIZE))
+  const paged = filtered.slice((page - 1) * REPORT_PAGE_SIZE, page * REPORT_PAGE_SIZE)
+
+  const filterKey = query
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey)
+    setPage(1)
+  }
+
+  return (
+    <ReportTableCard
+      title="Patron fines"
+      subtitle="Every patron with a fine in this range — unsettled, still accruing on an open loan, or already paid"
+      query={query}
+      onQueryChange={setQuery}
+      searchPlaceholder="Search patron…"
+      onExport={onExport}
+      exportDisabled={rows.length === 0}
+      footerLeft={`₱${totalOutstanding.toFixed(2)} outstanding · ${patronsOwing} ${patronsOwing === 1 ? "patron" : "patrons"} with fines`}
+      page={page}
+      totalPages={totalPages}
+      onPageChange={setPage}
+    >
+      {paged.length === 0 ? (
+        <EmptyState text={rows.length === 0 ? "No fines on record for this range." : "No patrons match your search."} />
+      ) : (
+        <div className="rounded border border-ink-200 overflow-x-auto">
+          <table className="w-full min-w-150">
+            <thead>
+              <tr className="border-b border-ink-200 bg-ink-50">
+                {["", "Patron", "Program / Year", "Unsettled", "Accruing", "Paid", "Outstanding"].map((label) => (
+                  <th
+                    key={label}
+                    className="text-left py-2.5 px-4 text-ink-500 font-semibold uppercase"
+                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}
+                  >
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {paged.map((row) => {
+                const isOpen = expanded === row.patron_id
+                return (
+                  <Fragment key={row.patron_id}>
+                    <tr
+                      className="border-b border-ink-100 hover:bg-ink-50 transition-colors cursor-pointer"
+                      onClick={() => setExpanded(isOpen ? null : row.patron_id)}
+                    >
+                      <td className="py-3 pl-4 pr-1 w-6">
+                        {isOpen ? <ChevronUp size={13} className="text-ink-400" /> : <ChevronDown size={13} className="text-ink-400" />}
+                      </td>
+                      <td className="py-3 px-4">
+                        <p className="text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{row.patron}</p>
+                        <p className="text-ink-400" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)" }}>{row.patron_email}</p>
+                      </td>
+                      <td className="py-3 px-4">
+                        <p className="text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>{row.program}</p>
+                        <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>{row.year}</p>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span
+                          className={cn("font-semibold", row.unsettled > 0 ? "text-red-600" : "text-ink-300")}
+                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                        >
+                          ₱{row.unsettled.toFixed(2)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span
+                          className={cn("font-semibold", row.accruing > 0 ? "text-amber-700" : "text-ink-300")}
+                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                        >
+                          ₱{row.accruing.toFixed(2)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                          ₱{row.paid.toFixed(2)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span
+                          className={cn("font-bold", row.outstanding > 0 ? "text-ink-900" : "text-ink-300")}
+                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                        >
+                          ₱{row.outstanding.toFixed(2)}
+                        </span>
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="border-b border-ink-100 bg-ink-50">
+                        <td colSpan={7} className="px-4 py-3">
+                          {row.entries.length === 0 ? (
+                            <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                              No line-item detail on record for this patron.
+                            </p>
+                          ) : (
+                            <ul className="flex flex-col gap-2">
+                              {row.entries.map((entry, i) => (
+                                <li key={i} className="flex items-center justify-between gap-3 bg-white rounded border border-ink-200 px-3 py-2">
+                                  <div className="min-w-0">
+                                    <p className="text-ink-900 font-medium truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                                      {entry.title}
+                                    </p>
+                                    <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                                      {entry.detail}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span
+                                      className={cn(
+                                        "px-2 py-0.5 rounded-sm border font-semibold",
+                                        entry.kind === "unsettled" && "bg-danger-bg text-danger border-danger/30",
+                                        entry.kind === "accruing" && "bg-warn-bg text-warn border-warn/30",
+                                        entry.kind === "paid" && "bg-success-bg text-success border-success/30"
+                                      )}
+                                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                                    >
+                                      {entry.kind === "unsettled" ? "Unsettled" : entry.kind === "accruing" ? "Accruing" : "Paid"}
+                                    </span>
+                                    <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                                      ₱{entry.amount.toFixed(2)}
+                                    </span>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </ReportTableCard>
+  )
+}
+
+function dateRangePresetLabel(preset: DateRangePreset): string {
+  return preset === "all" ? "All time" : preset === "week" ? "This week" : preset === "month" ? "This month" : preset === "semester" ? "Semester" : "Custom"
+}
+
+// ─── Custom filter dropdown — a native <select>'s open popup can't be
+// restyled (its own scrollbar/arrows are OS chrome, not CSS-able), so this
+// renders the option list ourselves in a plain scrollable div instead. ──────
+function FilterDropdown({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("mousedown", onPointerDown)
+    document.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown)
+      document.removeEventListener("keydown", onKeyDown)
+    }
+  }, [open])
+
+  return (
+    <div className="flex flex-col gap-1" ref={ref}>
+      <label className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+        {label}
+      </label>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          className="min-w-36 text-left px-3 py-1.5 rounded border border-ink-300 bg-white text-ink-800 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          {value}
+        </button>
+        {open && (
+          <ul
+            role="listbox"
+            className="absolute left-0 z-30 mt-1 w-full min-w-max max-h-56 overflow-y-auto rounded border border-ink-200 bg-white py-1"
+            style={{ boxShadow: "var(--shadow-lg)" }}
+          >
+            {options.map((o) => (
+              <li key={o} role="presentation">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={o === value}
+                  onClick={() => { onChange(o); setOpen(false) }}
+                  className={cn(
+                    "w-full text-left px-3 py-1.5 whitespace-nowrap hover:bg-ink-50 transition-colors",
+                    o === value ? "text-green-700 font-medium bg-green-50" : "text-ink-700"
+                  )}
+                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                >
+                  {o}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   )
 }
@@ -1084,19 +1607,26 @@ function ReportsPageContent() {
   const searchParams = useSearchParams()
   const [tab, setTab] = useState<ReportTab>(() => {
     const t = searchParams.get("tab")
-    return t === "activity" || t === "overdue" || t === "weeding" ? t : "overview"
+    const valid: ReportTab[] = ["catalogue", "shelf-list", "circulation", "overdue", "patrons", "requests", "weeding", "activity"]
+    return (valid as string[]).includes(t ?? "") ? (t as ReportTab) : "overview"
   })
 
-  // `books` only populates the Category/Program filter dropdown — the
-  // reports themselves come from the backend now. `patrons` does that too,
+  // `books` populates the Category/Program filter dropdowns and is the full
+  // per-title data source for the Catalogue tab. `patrons` does that too,
   // but is also how the Activity Log tab resolves a feed row's user id back
   // to a full profile for the click-to-view-account popup below.
   const [books, setBooks] = useState<Book[]>([])
   const [patrons, setPatrons] = useState<UserProfile[]>([])
+  // Fixed heuristic, not affected by the report filters — fetched once so
+  // both the Overview preview and the Weeding tab's own count agree.
+  const [weedingCandidates, setWeedingCandidates] = useState<WeedingCandidate[]>([])
+
+  // Overview dashboard card order — Sprint 5.6.1, draggable.
+  const [cardOrder, setCardOrder] = useState<string[]>(["catalogue", "circulation", "patrons", "trends", "library-stats", "weeding"])
 
   useEffect(() => {
-    Promise.all([fetchBooks(), fetchPatrons()])
-      .then(([b, p]) => { setBooks(b); setPatrons(p) })
+    Promise.all([fetchBooks(), fetchPatrons(), fetchWeedingCandidates()])
+      .then(([b, p, w]) => { setBooks(b); setPatrons(p); setWeedingCandidates(w) })
       .catch(() => {})
   }, [])
 
@@ -1122,9 +1652,8 @@ function ReportsPageContent() {
     }
   }
 
-  // Activity Log tab — same real loans/reservations rows the dashboard's
-  // "Recent Activity" preview uses (see lib/activity.ts), just unsliced and
-  // with its own search/filter/pagination instead of a 6-row preview.
+  // Activity Log / Circulation tabs — same real loans/reservations rows the
+  // dashboard's "Recent Activity" preview uses (see lib/activity.ts).
   const [loans, setLoans] = useState<Loan[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
 
@@ -1145,14 +1674,17 @@ function ReportsPageContent() {
   const [yearLevel, setYearLevel]   = useState("All Year Levels")
 
   const [loading, setLoading] = useState(true)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [catalogueData, setCatalogueData] = useState<CatalogueSlice[]>([])
   const [circulationData, setCirculationData] = useState<Bucket[]>([])
-  const [trendData, setTrendData] = useState<Bucket[]>([])
-  const [topPatronsData, setTopPatronsData] = useState<TopPatron[]>([])
+  const [trendData, setTrendData] = useState<TransactionTrendPoint[]>([])
+  const [allPatronsData, setAllPatronsData] = useState<TopPatron[]>([])
   const [overdueRowsData, setOverdueRowsData] = useState<OverdueRow[]>([])
+  const [finesData, setFinesData] = useState<FineRow[]>([])
   const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null)
   const [transactionStats, setTransactionStats] = useState<TransactionStats | null>(null)
   const [shelfListData, setShelfListData] = useState<ShelfListRow[]>([])
+  const topPatronsData = allPatronsData.slice(0, 5)
 
   // Reports plan Phase 3 — never auto-fetched. Cleared (not left stale)
   // whenever any filter changes, so an AI sentence can never sit next to
@@ -1171,8 +1703,8 @@ function ReportsPageContent() {
     }
   }, [dateRange, fromDate, toDate, category, program, yearLevel])
 
-  // Just the date half of currentFilters(), for the Activity Log tab — it
-  // doesn't have its own Date Range control, it respects this same
+  // Just the date half of currentFilters(), for the Activity Log / Circulation
+  // tabs — neither has its own Date Range control, they respect this same
   // page-level filter bar instead of duplicating it.
   const activeDateBounds = resolveDateRange(dateRange, fromDate, toDate)
 
@@ -1183,22 +1715,25 @@ function ReportsPageContent() {
     Promise.all([
       fetchCatalogueReport(filters),
       fetchCirculationSummary(filters),
-      fetchBorrowingTrends(filters),
-      fetchTopPatrons(filters),
+      fetchTransactionTrend(filters),
+      fetchTopPatrons(filters, 200),
       fetchOverdueReport(filters),
+      fetchFinesReport(filters),
       fetchLibraryStats(filters),
       fetchTransactionStats(filters),
       fetchShelfList(filters),
     ])
-      .then(([cat, circ, trend, topP, overdue, libStats, txStats, shelf]) => {
+      .then(([cat, circ, trend, topP, overdue, fines, libStats, txStats, shelf]) => {
         setCatalogueData(cat)
         setCirculationData(circ)
         setTrendData(trend)
-        setTopPatronsData(topP)
+        setAllPatronsData(topP)
         setOverdueRowsData(overdue)
+        setFinesData(fines)
         setLibraryStats(libStats)
         setTransactionStats(txStats)
         setShelfListData(shelf)
+        setLastUpdated(new Date())
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -1215,6 +1750,11 @@ function ReportsPageContent() {
     }
   }
 
+  const handlePrint = () => window.print()
+
+  const catalogueBooks = category === "All Categories" ? books : books.filter((b) => b.category === category)
+  const circulationRows = buildCirculationRows(activityFeed, activeDateBounds.dateFrom, activeDateBounds.dateTo)
+
   const exportShelfListCsv = () => downloadCsv("shelf-list.csv", shelfListData.map((r) => ({
     accession_number: r.accession_number,
     call_number: r.call_number,
@@ -1223,6 +1763,28 @@ function ReportsPageContent() {
     category: r.category,
     shelf_location: r.shelf_location ?? "",
     status: r.status,
+  })))
+
+  const exportCatalogueCsv = () => downloadCsv("catalogue.csv", catalogueBooks.map((b) => ({
+    title: b.title,
+    author: b.author,
+    category: b.category,
+    copies: b.total_copies ?? 1,
+    year: b.published_year ?? "",
+  })))
+
+  const exportCirculationCsv = () => downloadCsv("circulation.csv", circulationRows.map((r) => ({
+    date: r.date,
+    title: r.title,
+    patron: r.patron,
+    type: r.type,
+    due: r.due,
+  })))
+
+  const exportPatronsCsv = () => downloadCsv("patrons.csv", allPatronsData.map((p) => ({
+    patron: p.name,
+    program: p.program,
+    books_borrowed: p.count,
   })))
 
   const exportOverdueCsv = () => downloadCsv("overdue.csv", overdueRowsData.map((r) => ({
@@ -1237,6 +1799,17 @@ function ReportsPageContent() {
     fine: r.fine,
   })))
 
+  const exportFinesCsv = () => downloadCsv("fines.csv", finesData.map((r) => ({
+    patron: r.patron,
+    email: r.patron_email,
+    program: r.program,
+    year: r.year,
+    unsettled: r.unsettled,
+    accruing: r.accruing,
+    paid: r.paid,
+    outstanding: r.outstanding,
+  })))
+
   const exportActivityCsv = () => downloadCsv("activity-log.csv", activityFeed.map((tx) => ({
     date: tx.date,
     time: tx.time,
@@ -1245,94 +1818,104 @@ function ReportsPageContent() {
     item: tx.item,
   })))
 
-  const showBookLevelNote = program !== "All Programs" || yearLevel !== "All Year Levels"
+  // Header's global Export CSV button follows whichever tab is open —
+  // Overview/Weeding/Requests have no single table to export, so it's
+  // disabled there instead of guessing which one the librarian meant.
+  const headerExport: { fn: () => void; disabled: boolean } | null = (() => {
+    switch (tab) {
+      case "catalogue":   return { fn: exportCatalogueCsv, disabled: catalogueBooks.length === 0 }
+      case "shelf-list":  return { fn: exportShelfListCsv, disabled: shelfListData.length === 0 }
+      case "circulation": return { fn: exportCirculationCsv, disabled: circulationRows.length === 0 }
+      case "overdue":     return { fn: exportOverdueCsv, disabled: overdueRowsData.length === 0 }
+      case "patrons":     return { fn: exportPatronsCsv, disabled: allPatronsData.length === 0 }
+      case "activity":    return { fn: exportActivityCsv, disabled: activityFeed.length === 0 }
+      default:            return null
+    }
+  })()
 
   const quickStats = [
     { label: "Total Titles",     value: (libraryStats?.total_titles ?? 0).toLocaleString(), icon: <BookMarked size={18} />, color: "text-green-700", bg: "bg-green-50" },
     { label: "Books Circulated", value: (transactionStats?.loan_count ?? 0).toLocaleString(), icon: <TrendingUp size={18} />,  color: "text-blue-700",  bg: "bg-blue-50"  },
     { label: "Active Borrowers", value: (libraryStats?.active_borrowers ?? 0).toLocaleString(), icon: <Users size={18} />,     color: "text-amber-700", bg: "bg-amber-50" },
-    { label: "Overdue Books",    value: overdueRowsData.length.toLocaleString(), icon: <AlertTriangle size={18} />, color: "text-red-700", bg: "bg-red-50" },
+    { label: "Overdue",          value: overdueRowsData.length.toLocaleString(), icon: <AlertTriangle size={18} />, color: "text-red-700", bg: "bg-red-50" },
+    { label: "Weeding Candidates", value: weedingCandidates.length.toLocaleString(), icon: <BarChart2 size={18} />, color: "text-gold-600", bg: "bg-gold-100" },
   ]
 
-  // DnD card order – Sprint 5.6.1, extended with Reports plan Phase 1's two new cards
-  const cardDefs: CardDef[] = [
-    {
-      id: "catalogue",
-      title: "Catalogue Overview",
-      subtitle: "Collection by category",
-      icon: <BookMarked size={16} />,
-      content: (
-        <div className="flex flex-col gap-1 w-full">
-          {summaries?.catalogue && <SummaryNote text={summaries.catalogue} />}
-          <DonutChart data={catalogueData} />
-        </div>
-      ),
-    },
-    {
-      id: "circulation",
-      title: "Circulation Summary",
-      subtitle: "Monthly borrows (last 6 months)",
-      icon: <BarChart2 size={16} />,
-      content: (
-        <div className="flex flex-col gap-1 w-full">
-          {summaries?.circulation && <SummaryNote text={summaries.circulation} />}
-          <BarChartViz data={circulationData} />
-        </div>
-      ),
-    },
-    {
-      id: "patrons",
-      title: "Top Patrons",
-      subtitle: "Highest borrowers in range",
-      icon: <Users size={16} />,
-      content: (
-        <div className="flex flex-col gap-1 w-full">
-          {summaries?.top_patrons && <SummaryNote text={summaries.top_patrons} />}
-          <TopPatronsList patrons={topPatronsData} />
-        </div>
-      ),
-    },
-    {
-      id: "trends",
-      title: "Borrowing Trends",
-      subtitle: "Weekly activity (last 8 weeks)",
-      icon: <TrendingUp size={16} />,
-      content: (
-        <div className="flex flex-col gap-1 w-full">
-          {summaries?.borrowing_trends && <SummaryNote text={summaries.borrowing_trends} />}
-          <LineChartViz data={trendData} />
-        </div>
-      ),
-    },
-    {
-      id: "library-stats",
-      title: "Library Statistics",
-      subtitle: "Snapshot + transactions in range",
-      icon: <BookMarked size={16} />,
-      content: (
-        <div className="flex flex-col gap-1 w-full">
-          {summaries?.library_stats && <SummaryNote text={summaries.library_stats} />}
-          {summaries?.transactions && <SummaryNote text={summaries.transactions} />}
-          <LibraryStatsCard stats={libraryStats} tx={transactionStats} />
-        </div>
-      ),
-    },
-    {
-      id: "shelf-list",
-      title: "Shelf List",
-      subtitle: "Physical copies, call-number order",
-      icon: <BarChart2 size={16} />,
-      content: (
-        <div className="flex flex-col gap-1 w-full">
-          {showBookLevelNote && <FilterMismatchNote />}
-          <ShelfListTable rows={shelfListData} onExport={exportShelfListCsv} />
-        </div>
-      ),
-    },
-  ]
-
-  const [cardOrder, setCardOrder] = useState<string[]>(["catalogue", "circulation", "patrons", "trends", "library-stats", "shelf-list"])
-  const cards = cardOrder.map((id) => cardDefs.find((c) => c.id === id)!).filter(Boolean)
+  // Overview dashboard cards — draggable (Sprint 5.6.1). Content only;
+  // order lives in `cardOrder` below.
+  const cardDefs: Record<string, React.ReactNode> = {
+    catalogue: (
+      <OverviewCard
+        title="Catalogue report"
+        subtitle={`${catalogueData.reduce((s, d) => s + d.value, 0)} titles across ${catalogueData.length} categories`}
+        action={{ label: "Open full report", onClick: () => setTab("catalogue") }}
+      >
+        <CatalogueBarList data={catalogueData} />
+      </OverviewCard>
+    ),
+    circulation: (
+      <OverviewCard
+        title="Circulation report"
+        subtitle="Monthly borrows, last 6 months"
+        corner={`${circulationData.reduce((s, d) => s + d.value, 0)} total`}
+      >
+        <BarChartViz data={circulationData} />
+      </OverviewCard>
+    ),
+    patrons: (
+      <OverviewCard
+        title="Top patrons"
+        subtitle="Highest borrowers in range"
+        action={{ label: "Open full report", onClick: () => setTab("patrons") }}
+      >
+        <TopPatronsList patrons={topPatronsData} />
+      </OverviewCard>
+    ),
+    trends: (
+      <OverviewCard title="Transaction statistics" subtitle="Weekly activity, last 8 weeks">
+        <TransactionTrendChart data={trendData} />
+      </OverviewCard>
+    ),
+    "library-stats": (
+      <OverviewCard title="Library statistics" subtitle="Usage by program and year level">
+        <ProgramUsageList data={libraryStats?.by_program ?? []} />
+      </OverviewCard>
+    ),
+    weeding: (
+      <OverviewCard
+        title="Weeding log"
+        subtitle="Flagged by the ten-year policy"
+        action={{ label: `Review ${weedingCandidates.length}`, onClick: () => setTab("weeding") }}
+      >
+        {weedingCandidates.length === 0 ? (
+          <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            Nothing flagged right now.
+          </p>
+        ) : (
+          <ul className="flex flex-col divide-y divide-ink-100">
+            {weedingCandidates.slice(0, 4).map((c) => (
+              <li key={c.book_id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-ink-900 font-medium truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                    {c.title}
+                  </p>
+                  <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                    {c.category}{c.published_year ? ` · ${c.published_year}` : ""}
+                  </p>
+                </div>
+                <span
+                  className="shrink-0 px-2 py-0.5 rounded-pill bg-amber-100 text-amber-700 font-medium"
+                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                >
+                  {c.years_since_added} yrs
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </OverviewCard>
+    ),
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -1350,32 +1933,78 @@ function ReportsPageContent() {
     }
   }
 
-  const today = new Date().toLocaleDateString("en-PH", {
-    weekday: "long", year: "numeric", month: "long", day: "numeric",
-  })
+  const aiSummaryText = summaries
+    ? [summaries.catalogue, summaries.circulation, summaries.top_patrons, summaries.borrowing_trends, summaries.library_stats, summaries.transactions, summaries.overdue]
+        .filter(Boolean)
+        .join(" ")
+    : ""
+
+  const dateSubtitle = (() => {
+    const label = dateRangePresetLabel(dateRange)
+    const { dateFrom, dateTo } = activeDateBounds
+    if (!dateFrom || !dateTo) return label
+    const from = new Date(dateFrom)
+    const to = new Date(dateTo)
+    const sameMonth = from.getMonth() === to.getMonth() && from.getFullYear() === to.getFullYear()
+    const range = sameMonth
+      ? `${from.toLocaleDateString("en-PH", { month: "short", day: "numeric" })} – ${to.getDate()}, ${to.getFullYear()}`
+      : `${from.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })} – ${to.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}`
+    return `${label} · ${range}`
+  })()
+  const programSubtitle = program !== "All Programs" ? program.toLowerCase() : "all programs"
 
   return (
     <div className="p-4 sm:p-6 flex flex-col gap-6">
       {/* ── Page header ───────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-        <div>
+      <div className="flex flex-col gap-1">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h1
             className="text-ink-900 font-semibold"
             style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-3xl)" }}
           >
             Reports
           </h1>
-          <p
-            className="text-ink-400 mt-0.5"
-            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-          >
-            {today}{loading ? " · Loading…" : ""}
-          </p>
+
+          <div className="flex items-center gap-2 print:hidden shrink-0">
+            <button
+              onClick={() => headerExport?.fn()}
+              disabled={!headerExport || headerExport.disabled}
+              className="flex items-center gap-1.5 px-3 py-2 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            >
+              <Download size={14} /> Export CSV
+            </button>
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 px-3 py-2 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 transition-colors"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            >
+              <Printer size={14} /> Print PDF
+            </button>
+            <button
+              onClick={handleGenerateInsights}
+              disabled={summarizing || loading}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded bg-green-700 text-white hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            >
+              <Sparkles size={14} />
+              {summarizing ? "Generating…" : "Generate Insights"}
+            </button>
+          </div>
         </div>
+        <p
+          className="text-ink-400"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          {dateSubtitle} · {programSubtitle}{loading ? " · Loading…" : ""}
+          {lastUpdated && (
+            <span className="text-ink-300"> · Updated {lastUpdated.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}</span>
+          )}
+        </p>
       </div>
 
       {/* ── Filter bar – Sprint 5.6.2 ─────────────────────── */}
-      <div className="rounded border border-ink-200 bg-white p-4 flex flex-wrap items-end gap-3" style={{ boxShadow: "var(--shadow)" }}>
+      <div className="rounded border border-ink-200 bg-white p-4 flex flex-wrap items-end gap-3 print:hidden" style={{ boxShadow: "var(--shadow)" }}>
         {/* Date range quick select */}
         <div className="flex flex-col gap-1">
           <label
@@ -1390,12 +2019,12 @@ function ReportsPageContent() {
                 key={r}
                 onClick={() => setDateRange(r)}
                 className={cn(
-                  "px-3 py-1.5 rounded capitalize transition-colors",
+                  "px-3 py-1.5 rounded transition-colors",
                   dateRange === r ? "bg-white text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-700"
                 )}
                 style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
               >
-                {r === "all" ? "All Time" : r === "week" ? "This Week" : r === "month" ? "This Month" : r === "semester" ? "Semester" : "Custom"}
+                {dateRangePresetLabel(r)}
               </button>
             ))}
           </div>
@@ -1436,40 +2065,28 @@ function ReportsPageContent() {
           { label: "Year Level", value: yearLevel, setter: setYearLevel,
             options: ["All Year Levels", "1st Year", "2nd Year", "3rd Year", "4th Year"] },
         ].map((f) => (
-          <div key={f.label} className="flex flex-col gap-1">
-            <label className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-              {f.label}
-            </label>
-            <div className="relative">
-              <select
-                value={f.value}
-                onChange={(e) => f.setter(e.target.value)}
-                className="appearance-none pl-3 pr-8 py-1.5 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-ink-800"
-                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-              >
-                {f.options.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </select>
-              <ArrowUpDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
-            </div>
-          </div>
+          <FilterDropdown key={f.label} label={f.label} value={f.value} onChange={f.setter} options={f.options} />
         ))}
       </div>
 
       {/* ── Tabs ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-0 border-b border-ink-200">
+      <div className="flex items-center gap-0 border-b border-ink-200 overflow-x-auto overflow-y-hidden print:hidden">
         {([
-          { key: "overview", label: "Overview" },
-          { key: "activity", label: "Activity Log" },
-          { key: "overdue",  label: "Overdue Books" },
-          { key: "weeding",  label: "Weeding" },
+          { key: "overview",    label: "Overview" },
+          { key: "activity",    label: "Activity Log" },
+          { key: "catalogue",   label: "Catalogue" },
+          { key: "shelf-list",  label: "Shelf List" },
+          { key: "circulation", label: "Circulation" },
+          { key: "overdue",     label: "Overdue & Fines" },
+          { key: "patrons",     label: "Patrons" },
+          { key: "requests",    label: "Requests" },
+          { key: "weeding",     label: "Weeding" },
         ] as { key: ReportTab; label: string }[]).map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
             className={cn(
-              "px-5 py-2.5 font-semibold border-b-2 transition-colors -mb-px",
+              "px-4 py-2.5 font-semibold border-b-2 transition-colors -mb-px whitespace-nowrap",
               tab === t.key
                 ? "border-green-700 text-green-700"
                 : "border-transparent text-ink-500 hover:text-ink-900"
@@ -1489,31 +2106,11 @@ function ReportsPageContent() {
         ))}
       </div>
 
-      {/* ── AI insights – Reports plan Phase 3 (not applicable to the raw activity log) ── */}
-      {tab !== "weeding" && tab !== "activity" && (
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleGenerateInsights}
-            disabled={summarizing || loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-green-700 text-green-700 hover:bg-green-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium"
-            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-          >
-            <Sparkles size={14} />
-            {summarizing ? "Generating…" : "Generate Insights"}
-          </button>
-          {summaries && !summarizing && (
-            <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-              AI summaries reflect the current filters — change a filter and regenerate to refresh them.
-            </p>
-          )}
-        </div>
-      )}
-
       {/* ── Overview tab – Sprint 5.6.1 & 5.6.3 ──────────── */}
       {tab === "overview" && (
         <div className="flex flex-col gap-6">
           {/* Quick stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {quickStats.map((s) => (
               <div key={s.label} className="rounded border border-ink-200 bg-white px-4 py-3 flex items-center gap-3" style={{ boxShadow: "var(--shadow)" }}>
                 <div className={cn("flex items-center justify-center w-9 h-9 rounded-sm shrink-0", s.bg)}>
@@ -1537,7 +2134,25 @@ function ReportsPageContent() {
             ))}
           </div>
 
-          {/* DnD chart grid */}
+          {/* AI summary — one consolidated box, not one per card */}
+          {summaries && aiSummaryText && (
+            <div className="rounded border border-green-100 bg-green-50 p-4 flex items-start gap-2.5">
+              <Sparkles size={14} className="text-green-700 mt-0.5 shrink-0" />
+              <div>
+                <p
+                  className="text-green-800 uppercase font-semibold mb-1"
+                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}
+                >
+                  AI Summary
+                </p>
+                <p className="text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                  {aiSummaryText}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Report preview grid — drag cards to rearrange */}
           <div>
             <p
               className="text-ink-400 mb-3 flex items-center gap-1.5"
@@ -1547,10 +2162,12 @@ function ReportsPageContent() {
               Drag cards to rearrange the dashboard
             </p>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={cards.map((c) => c.id)} strategy={rectSortingStrategy}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {cards.map((card) => (
-                    <SortableCard key={card.id} card={card} />
+              <SortableContext items={cardOrder} strategy={rectSortingStrategy}>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {cardOrder.map((id) => (
+                    <SortableOverviewCard key={id} id={id} full={id === "catalogue" || id === "weeding"}>
+                      {(handle) => cloneElement(cardDefs[id] as React.ReactElement<{ dragHandle?: React.ReactNode }>, { dragHandle: handle })}
+                    </SortableOverviewCard>
                   ))}
                 </div>
               </SortableContext>
@@ -1558,6 +2175,41 @@ function ReportsPageContent() {
           </div>
         </div>
       )}
+
+      {/* ── Catalogue tab ──────────────────────────────────── */}
+      {tab === "catalogue" && <CatalogueTable books={catalogueBooks} onExport={exportCatalogueCsv} />}
+
+      {/* ── Shelf List tab ─────────────────────────────────── */}
+      {tab === "shelf-list" && <ShelfListTable rows={shelfListData} onExport={exportShelfListCsv} />}
+
+      {/* ── Circulation tab ────────────────────────────────── */}
+      {tab === "circulation" && <CirculationTable rows={circulationRows} onExport={exportCirculationCsv} />}
+
+      {/* ── Overdue & Fines tab – Sprint 5.6.4 ─────────────── */}
+      {tab === "overdue" && (
+        <div className="flex flex-col gap-6">
+          {summaries?.overdue && (
+            <p
+              className="text-ink-700 bg-green-50 border border-green-100 rounded px-2.5 py-1.5 flex items-start gap-1.5 text-left"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+            >
+              <Sparkles size={11} className="text-green-700 mt-0.5 shrink-0" />
+              <span>{summaries.overdue}</span>
+            </p>
+          )}
+          <OverdueTable rows={overdueRowsData} onExport={exportOverdueCsv} />
+          <FinesTable rows={finesData} onExport={exportFinesCsv} />
+        </div>
+      )}
+
+      {/* ── Patrons tab ────────────────────────────────────── */}
+      {tab === "patrons" && <PatronsReportTable patrons={allPatronsData} onExport={exportPatronsCsv} />}
+
+      {/* ── Requests tab (placeholder — see RequestsPlaceholder) ── */}
+      {tab === "requests" && <RequestsPlaceholder />}
+
+      {/* ── Weeding tab – Reports plan Phase 2 ────────────── */}
+      {tab === "weeding" && <WeedingPanel />}
 
       {/* ── Activity Log tab ───────────────────────────────── */}
       {tab === "activity" && (
@@ -1570,17 +2222,6 @@ function ReportsPageContent() {
           dateTo={activeDateBounds.dateTo}
         />
       )}
-
-      {/* ── Overdue Books tab – Sprint 5.6.4 ──────────────── */}
-      {tab === "overdue" && (
-        <div className="flex flex-col gap-3">
-          {summaries?.overdue && <SummaryNote text={summaries.overdue} />}
-          <OverdueTable rows={overdueRowsData} onExport={exportOverdueCsv} />
-        </div>
-      )}
-
-      {/* ── Weeding tab – Reports plan Phase 2 ────────────── */}
-      {tab === "weeding" && <WeedingPanel />}
 
       {viewingPatron && (
         <PatronProfileModal
