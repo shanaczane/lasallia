@@ -199,13 +199,19 @@ function StudentCatalogContent() {
             </div>
           </div>
 
-          <FilterPillBar
-            filters={filters}
-            onChange={setFilters}
-            genres={genres}
-            floors={floors}
-            subjects={subjects}
-          />
+          {/* Desktop only — QuickChipRow below (lg:hidden) is the phone/
+              compact equivalent. Without this gate both rendered at once
+              on any viewport under lg: six wrapping pill dropdowns stacked
+              right above the "Filters" button and its own chip row. */}
+          <div className="hidden lg:block">
+            <FilterPillBar
+              filters={filters}
+              onChange={setFilters}
+              genres={genres}
+              floors={floors}
+              subjects={subjects}
+            />
+          </div>
         </div>
 
         {/* Applied filter chips */}
