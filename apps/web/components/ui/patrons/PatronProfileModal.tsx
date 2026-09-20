@@ -11,10 +11,11 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { X, BookOpen, Bookmark, History, Mail, UserX, UserCheck, ChevronDown, ChevronUp } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, ordinal } from "@/lib/utils"
 import type { UserProfile, Reservation, ReservationStatus } from "@lasallia/types"
 import { fetchLoans, settleFine, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
+import { collegeForProgram } from "@/lib/collegeForProgram"
 import { RoleBadge } from "./RoleBadge"
 import { AccountStatusPill } from "./AccountStatusPill"
 
@@ -208,6 +209,26 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronPr
     .join("")
     .toUpperCase()
 
+  // Students carry a specific degree program in `program` (e.g. "BS Computer
+  // Science"); faculty/librarian/guest accounts store their college there
+  // instead (see lib/mock/patrons.ts). `patron.college` (0036) is the real,
+  // librarian-set value when it exists; collegeForProgram's keyword guess
+  // is only a fallback for rows nobody's backfilled yet — either way it
+  // resolves to the same college codes the catalog itself filters by
+  // (lib/colleges.ts), so "what college are they in" never shows a second,
+  // differently spelled college name. Year level only ever applies to students.
+  const isStudent = patron.role === "student"
+  const resolvedCollege = patron.college || collegeForProgram(patron.program)
+  const enrollmentFields: { label: string; value: string }[] = isStudent
+    ? [
+        patron.program && { label: "Program", value: patron.program },
+        resolvedCollege && { label: "College", value: resolvedCollege },
+        patron.year_level != null && { label: "Year Level", value: `${ordinal(patron.year_level)} Year` },
+      ].filter((f): f is { label: string; value: string } => !!f)
+    : resolvedCollege
+      ? [{ label: "College", value: resolvedCollege }]
+      : []
+
   const tabs: { key: Tab; label: string; icon: React.ReactNode; count: number; warn?: boolean }[] = [
     { key: "loans",        label: "Active Loans",  icon: <BookOpen size={14} />, count: activeLoans.length },
     { key: "reservations", label: "Reservations",  icon: <Bookmark size={14} />, count: reservations.length },
@@ -259,10 +280,33 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronPr
           </button>
         </div>
 
-        {/* Meta row */}
-        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 sm:py-3.5 border-b border-ink-100 shrink-0">
-          <RoleBadge role={patron.role} />
-          <AccountStatusPill status={patron.status ?? "active"} />
+        {/* Meta row — identity pills on the left, enrollment info
+            (Program/College/Year Level) right-aligned on the same row via
+            justify-between, so a wide modal doesn't leave the whole right
+            side of this row empty next to two small pills. Falls back to
+            wrapping onto its own line only on narrow viewports. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 sm:px-6 py-3 border-b border-ink-100 shrink-0">
+          <div className="flex items-center gap-2">
+            <RoleBadge role={patron.role} />
+            <AccountStatusPill status={patron.status ?? "active"} />
+          </div>
+          {enrollmentFields.length > 0 && (
+            <div className="flex items-center divide-x divide-ink-200">
+              {enrollmentFields.map((f) => (
+                <div key={f.label} className="px-4 first:pl-0 last:pr-0 text-right">
+                  <p
+                    className="text-ink-400 uppercase font-semibold"
+                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)" }}
+                  >
+                    {f.label}
+                  </p>
+                  <p className="text-ink-900 font-medium whitespace-nowrap" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                    {f.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
