@@ -38,6 +38,7 @@ export type PatronUpdate = {
   status?: "active" | "inactive"
   program?: string | null
   year_level?: number | null
+  college?: string | null
 }
 
 export async function updatePatron(userId: string, changes: PatronUpdate): Promise<UserProfile> {
