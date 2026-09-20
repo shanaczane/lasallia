@@ -24,6 +24,9 @@ SOURCE_FILES = {
     "CBEAM.xlsx": "CBEAM",
     "CEAS.xlsx": "CEAS",
     "CITHM.xlsx": "CITHM",
+    "HEALTH-ALLIED.xlsx": "HEALTH-ALLIED",
+    "GEN-AD.xlsx": "GEN-AD",
+    "GRADUATE SCHOOL.xlsx": "GRADUATE SCHOOL",
 }
 BATCH_SIZE = 50
 
@@ -67,6 +70,7 @@ def to_book_row(record: dict, college: str) -> dict:
         "published_year": int(year) if isinstance(year, (int, float)) else None,
         "publisher": split_publisher(record["Place of Publication"]),
         "format": "print",
+        "floor": "Floor 2",
         "total_copies": 1,
         "available_copies": 1,
     }
@@ -97,14 +101,30 @@ def main(dry_run: bool = False) -> None:
         print(f"{fname}: {len(deduped)} books")
         all_rows.extend(deduped)
 
-    print(f"\nTotal: {len(all_rows)} books to insert")
+    client = get_admin_client()
+
+    # Safe to re-run on a catalog that's already partially (or fully) seeded —
+    # accession_no is unique, so re-inserting an existing one would 409 the
+    # whole batch. Skip anything already in the database and only insert the
+    # rows that are actually new (e.g. appended to a college's .xlsx since
+    # the last run).
+    existing = client.table("books").select("accession_no").execute().data
+    existing_accessions = {r["accession_no"] for r in existing if r["accession_no"]}
+    new_rows = [row for row in all_rows if row["accession_no"] not in existing_accessions]
+    skipped = len(all_rows) - len(new_rows)
+
+    print(f"\nTotal: {len(all_rows)} books read, {skipped} already in the database, {len(new_rows)} new")
 
     if dry_run:
-        print("\n--dry-run: not inserting. Sample row:")
-        print(all_rows[0])
+        print("\n--dry-run: not inserting. Sample new row:")
+        print(new_rows[0] if new_rows else "(none)")
         return
 
-    client = get_admin_client()
+    if not new_rows:
+        print("Nothing new to insert.")
+        return
+
+    all_rows = new_rows
     inserted = 0
     for i in range(0, len(all_rows), BATCH_SIZE):
         batch = all_rows[i:i + BATCH_SIZE]
