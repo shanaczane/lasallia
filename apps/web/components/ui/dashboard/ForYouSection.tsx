@@ -31,11 +31,15 @@ function SkeletonCard() {
 }
 
 function CardRow({ children }: { children: React.ReactNode }) {
-  // Horizontal scroll on mobile, grid on desktop — this column now takes
-  // the larger share of the dashboard row (student/dashboard/page.tsx),
-  // so the grid gets more columns than the old fixed w-80 sidebar did.
+  // Horizontal scroll on mobile, grid on desktop. auto-fill/minmax instead
+  // of a fixed column count — this section now spans the full dashboard
+  // row (student/dashboard/page.tsx dropped "Currently Borrowed"), and a
+  // fixed 3-column grid stretched each cover well past a sensible size at
+  // that width. minmax(140px, 1fr) matches the same 140px width the
+  // mobile scroll row already uses, and adds columns as space grows
+  // instead of inflating existing ones.
   return (
-    <div className="flex lg:grid lg:grid-cols-3 gap-3 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0">
+    <div className="flex lg:grid lg:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0">
       {children}
     </div>
   )

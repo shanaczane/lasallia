@@ -19,12 +19,6 @@ import type { Reservation } from "@lasallia/types"
 
 type BorrowStatus = "due_soon" | "overdue" | "active"
 
-const STATUS_CONFIG: Record<BorrowStatus, { label: string; dot: string; text: string }> = {
-  due_soon: { label: "Due Soon", dot: "bg-warn", text: "text-warn" },
-  overdue:  { label: "Overdue",  dot: "bg-danger", text: "text-danger" },
-  active:   { label: "Active",   dot: "bg-success", text: "text-success" },
-}
-
 // Matches apps/web/app/student/library/page.tsx — pending real LRC borrow-limit policy
 const BORROW_LIMIT_PLACEHOLDER = 3
 const DUE_SOON_DAYS = 3
@@ -46,10 +40,7 @@ function greeting(): string {
   return "Good evening"
 }
 
-type FilterKey = "all" | BorrowStatus
-
 export default function StudentDashboard() {
-  const [filter, setFilter] = useState<FilterKey>("all")
   const [loans, setLoans] = useState<ApiLoan[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [loading, setLoading] = useState(true)
@@ -75,7 +66,6 @@ export default function StudentDashboard() {
 
   const dueSoonCount = activeLoans.filter((x) => x.status === "due_soon").length
   const overdueCount = activeLoans.filter((x) => x.status === "overdue").length
-  const activeCount = activeLoans.filter((x) => x.status === "active").length
 
   const nextDue = [...activeLoans]
     .filter((x) => x.status !== "overdue")
@@ -83,16 +73,6 @@ export default function StudentDashboard() {
 
   const activeReservations = reservations.filter((r) => r.status === "pending" || r.status === "ready")
   const readyForPickup = reservations.filter((r) => r.status === "ready").length
-
-  const filteredLoans =
-    filter === "all" ? activeLoans : activeLoans.filter((x) => x.status === filter)
-
-  const filters: { key: FilterKey; label: string; count: number }[] = [
-    { key: "all", label: "All", count: activeLoans.length },
-    { key: "due_soon", label: "Due Soon", count: dueSoonCount },
-    { key: "overdue", label: "Overdue", count: overdueCount },
-    { key: "active", label: "Active", count: activeCount },
-  ]
 
   return (
     <div className="flex flex-col gap-5 px-4 py-5 sm:gap-6 sm:p-6">
@@ -162,141 +142,8 @@ export default function StudentDashboard() {
         />
       </div>
 
-      {/* Main content: borrowed list + recommendations */}
-      <div className="flex flex-col lg:flex-row gap-6">
-
-        {/* Currently Borrowed */}
-        <div className="flex-2 flex flex-col gap-3 min-w-0">
-
-          {/* Title row */}
-          <div className="flex items-center">
-            <h2
-              className="text-ink-900 font-semibold"
-              style={{ fontSize: "var(--text-xl)", fontFamily: "var(--font-display)" }}
-            >
-              Currently Borrowed
-            </h2>
-          </div>
-
-          {/* Filter pills + See all on same row */}
-          <div className="flex items-end gap-2">
-            <div className="flex gap-2 overflow-x-auto flex-1">
-              {filters.map((f) => {
-                const isActive = filter === f.key
-                return (
-                  <button
-                    key={f.key}
-                    onClick={() => setFilter(f.key)}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-pill border whitespace-nowrap transition-colors",
-                      isActive
-                        ? "bg-green-700 border-green-700 text-white font-medium"
-                        : "bg-white border-ink-200 text-ink-700 hover:bg-ink-50"
-                    )}
-                    style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
-                  >
-                    {f.label}
-                    <span
-                      className={cn(
-                        "flex items-center justify-center rounded-full min-w-5 h-5 px-1 font-semibold",
-                        isActive ? "bg-white/20 text-white" : "bg-ink-100 text-ink-500"
-                      )}
-                      style={{ fontSize: "var(--text-2xs)" }}
-                    >
-                      {f.count}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-            <Link
-              href="/student/library"
-              className="text-green-700 font-medium hover:underline whitespace-nowrap shrink-0"
-              style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-            >
-              See all →
-            </Link>
-          </div>
-
-          {/* Borrowed books — table on desktop, cards on mobile */}
-          <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
-
-            {!loading && filteredLoans.length === 0 && (
-              <div
-                className="flex items-center justify-center py-10 text-ink-400"
-                style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-              >
-                No books to show.
-              </div>
-            )}
-
-            {filteredLoans.length > 0 && (
-              <>
-                {/* Desktop table header */}
-                <div
-                  className="hidden sm:flex px-4 py-2.5 border-b border-ink-100 text-ink-400 uppercase font-semibold"
-                  style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}
-                >
-                  <span className="flex-1">Book</span>
-                  <span className="w-24">Borrowed</span>
-                  <span className="w-24">Due Date</span>
-                  <span className="w-24">Status</span>
-                </div>
-
-                <div className="flex flex-col divide-y divide-ink-100">
-                  {filteredLoans.map(({ loan, status }) => {
-                    const cfg = STATUS_CONFIG[status]
-                    return (
-                      <Link
-                        key={loan.id}
-                        href={loan.books ? `/student/catalog/${loan.books.id}` : "/student/library"}
-                        className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3 hover:bg-ink-50 transition-colors"
-                      >
-
-                        {/* Book info */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-ink-900 font-semibold truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                            {loan.books?.title ?? "Unknown title"}
-                          </p>
-                          <p className="text-ink-500 truncate" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                            {loan.books?.author}
-                          </p>
-                        </div>
-
-                        {/* Mobile: dates + status inline */}
-                        <div className="flex sm:hidden items-center gap-3 text-ink-500" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                          <span>Borrowed {formatShortDate(loan.borrowed_at)}</span>
-                          <span className={cn("font-medium", cfg.text)}>Due {formatShortDate(loan.due_date)}</span>
-                        </div>
-
-                        {/* Desktop columns */}
-                        <span className="hidden sm:block w-24 text-ink-500" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                          {formatShortDate(loan.borrowed_at)}
-                        </span>
-                        <span className={cn("hidden sm:block w-24 font-medium", cfg.text)} style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-                          {formatShortDate(loan.due_date)}
-                        </span>
-
-                        <span className="flex items-center gap-1.5 sm:w-24">
-                          <span className={cn("w-1.5 h-1.5 rounded-full", cfg.dot)} />
-                          <span className={cn("font-medium", cfg.text)} style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                            {cfg.label}
-                          </span>
-                        </span>
-                      </Link>
-                    )
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* For You — recommendations plan Phase 6 */}
-        <div className="order-first flex-3 min-w-0">
-          <ForYouSection />
-        </div>
-      </div>
+      {/* For You — recommendations plan Phase 6 */}
+      <ForYouSection />
     </div>
   )
 }
