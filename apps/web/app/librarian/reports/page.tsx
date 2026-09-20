@@ -16,7 +16,6 @@ import {
   ChevronDown,
   ChevronsUpDown,
   AlertTriangle,
-  TrendingUp,
   Users,
   BookMarked,
   Download,
@@ -60,7 +59,6 @@ import {
   fetchOverdueReport,
   fetchFinesReport,
   fetchLibraryStats,
-  fetchTransactionStats,
   fetchShelfList,
   fetchReportSummaries,
   resolveDateRange,
@@ -72,7 +70,6 @@ import {
   type FineRow,
   type LibraryStats,
   type ProgramUsage,
-  type TransactionStats,
   type TransactionTrendPoint,
   type ShelfListRow,
   type ReportSummaries,
@@ -1695,7 +1692,6 @@ function ReportsPageContent() {
   const [overdueRowsData, setOverdueRowsData] = useState<OverdueRow[]>([])
   const [finesData, setFinesData] = useState<FineRow[]>([])
   const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null)
-  const [transactionStats, setTransactionStats] = useState<TransactionStats | null>(null)
   const [shelfListData, setShelfListData] = useState<ShelfListRow[]>([])
   const topPatronsData = allPatronsData.slice(0, 5)
 
@@ -1733,10 +1729,9 @@ function ReportsPageContent() {
       fetchOverdueReport(filters),
       fetchFinesReport(filters),
       fetchLibraryStats(filters),
-      fetchTransactionStats(filters),
       fetchShelfList(filters),
     ])
-      .then(([cat, circ, trend, topP, overdue, fines, libStats, txStats, shelf]) => {
+      .then(([cat, circ, trend, topP, overdue, fines, libStats, shelf]) => {
         setCatalogueData(cat)
         setCirculationData(circ)
         setTrendData(trend)
@@ -1744,7 +1739,6 @@ function ReportsPageContent() {
         setOverdueRowsData(overdue)
         setFinesData(fines)
         setLibraryStats(libStats)
-        setTransactionStats(txStats)
         setShelfListData(shelf)
         setLastUpdated(new Date())
       })
@@ -1841,7 +1835,6 @@ function ReportsPageContent() {
 
   const quickStats = [
     { label: "Total Titles",     value: (libraryStats?.total_titles ?? 0).toLocaleString(), icon: <BookMarked size={18} />, color: "text-green-700", bg: "bg-green-50" },
-    { label: "Books Circulated", value: (transactionStats?.loan_count ?? 0).toLocaleString(), icon: <TrendingUp size={18} />,  color: "text-blue-700",  bg: "bg-blue-50"  },
     { label: "Active Borrowers", value: (libraryStats?.active_borrowers ?? 0).toLocaleString(), icon: <Users size={18} />,     color: "text-amber-700", bg: "bg-amber-50" },
     { label: "Overdue",          value: overdueRowsData.length.toLocaleString(), icon: <AlertTriangle size={18} />, color: "text-red-700", bg: "bg-red-50" },
     { label: "Weeding Candidates", value: weedingCandidates.length.toLocaleString(), icon: <BarChart2 size={18} />, color: "text-gold-600", bg: "bg-gold-100" },
@@ -2115,7 +2108,7 @@ function ReportsPageContent() {
       {tab === "overview" && (
         <div className="flex flex-col gap-6">
           {/* Quick stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {quickStats.map((s) => (
               <div key={s.label} className="rounded border border-ink-200 bg-white px-4 py-3 flex items-center gap-3" style={{ boxShadow: "var(--shadow)" }}>
                 <div className={cn("flex items-center justify-center w-9 h-9 rounded-sm shrink-0", s.bg)}>
