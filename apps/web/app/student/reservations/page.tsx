@@ -409,7 +409,12 @@ export default function ReservationsPage() {
         </div>
       </div>
 
-      <div className="border-b border-ink-200">
+      {/* Tab bar — sticky under the fixed TopNav so it stays reachable
+          while the reservation list below scrolls. */}
+      <div
+        className="sticky z-40 border-b border-ink-200 bg-paper/95 backdrop-blur-sm"
+        style={{ top: "var(--height-nav)" }}
+      >
         <div className="flex sm:hidden w-full overflow-x-auto px-2 scrollbar-none">
           {TABS.map((tab) => <TabButton key={tab.key} tab={tab} isMobile={true} />)}
         </div>
