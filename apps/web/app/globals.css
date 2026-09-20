@@ -120,10 +120,22 @@
 }
 
 /* Base styles */
+html {
+  /* Safety net, not a fix for any one page: on a phone viewport, one
+     element anywhere overflowing its container's width (a stray fixed
+     width, an un-wrapped flex row) makes the *entire* page horizontally
+     scrollable, which is the single most common "this looks broken on
+     mobile" complaint. Scoped components that scroll on purpose (e.g.
+     ForYouSection's CardRow) already contain their own overflow-x-auto,
+     so this only ever clips accidental overflow, never an intended one. */
+  overflow-x: hidden;
+}
+
 body {
   background-color: var(--color-paper);
   color: var(--color-ink-900);
   font-family: var(--font-body);
+  overflow-x: hidden;
 }
 
 @theme inline {
