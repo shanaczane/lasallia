@@ -1,7 +1,7 @@
 // Sprint 5.4 / 7.1 – Quick Scanner Interface, wired to the real borrow/return API
 "use client"
 
-import { Suspense, useState, useEffect, useCallback } from "react"
+import { Suspense, useState, useEffect, useCallback, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import {
   ScanLine,
@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils"
 import type { UserProfile } from "@lasallia/types"
 import { Pagination } from "@/components/ui/catalog"
+import { ScannerListener } from "@/components/ui/ScannerListener"
 import { searchPatrons } from "@/lib/users"
 import {
   openSession,
@@ -121,7 +122,7 @@ function AssistedBorrowPanel({ onSettled }: { onSettled: () => void }) {
     }
     setSearching(true)
     const handle = setTimeout(() => {
-      searchPatrons(searchQuery.trim())
+      searchPatrons(searchQuery.trim(), "student")
         .then(setSearchResults)
         .catch(() => setSearchResults([]))
         .finally(() => setSearching(false))
@@ -350,7 +351,7 @@ function AssistedBorrowPanel({ onSettled }: { onSettled: () => void }) {
               <Hash size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
               <input
                 type="text"
-                placeholder="e.g. T45136"
+                placeholder="Scan or type — e.g. T45136"
                 value={accessionInput}
                 onChange={(e) => setAccessionInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && canConfirm && handleConfirm()}
@@ -358,6 +359,10 @@ function AssistedBorrowPanel({ onSettled }: { onSettled: () => void }) {
                 className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
               />
+              {/* Safety net for when focus lands elsewhere (e.g. after
+                  clicking a Condition button) — a scan is filled in, not
+                  auto-submitted, since Condition still has to be picked. */}
+              <ScannerListener onScan={setAccessionInput} />
             </div>
           </div>
 
@@ -704,6 +709,10 @@ function ReturnPanel({
   if (confirmed) {
     return (
       <div className="rounded border border-green-200 bg-green-50 p-6 flex flex-col items-center gap-3 text-center">
+        {/* No visible accession field on this screen — without this, a
+            scan of the next return would be silently lost until the
+            librarian clicks "Scan Another" first. */}
+        <ScannerListener onScan={(v) => { reset(); handleFind(v) }} />
         <div className="flex items-center justify-center w-12 h-12 rounded-full bg-green-100">
           <CheckCircle2 size={26} className="text-green-700" />
         </div>
@@ -748,6 +757,7 @@ function ReturnPanel({
   if (notFound) {
     return (
       <div className="rounded border border-red-200 bg-red-50 p-6 flex flex-col items-center gap-3 text-center">
+        <ScannerListener onScan={(v) => { reset(); handleFind(v) }} />
         <AlertCircle size={26} className="text-red-600" />
         <p className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}>
           {notFoundMessage || "No active loan found for that copy"}
@@ -946,7 +956,7 @@ function ReturnPanel({
           <Hash size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
           <input
             type="text"
-            placeholder="e.g. T45136"
+            placeholder="Scan or type — e.g. T45136"
             value={accessionInput}
             onChange={(e) => setAccessionInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleFind()}
@@ -954,6 +964,7 @@ function ReturnPanel({
             className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500"
             style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
           />
+          <ScannerListener onScan={(v) => handleFind(v)} />
         </div>
         <button
           onClick={() => handleFind()}
@@ -1228,11 +1239,13 @@ function ReshelvingPanel({
   const [result, setResult] = useState<"available" | "reserved" | "error" | null>(null)
   const [message, setMessage] = useState("")
 
-  async function handleConfirm() {
-    if (!accessionInput.trim()) return
+  async function handleConfirm(overrideAccession?: string) {
+    const value = (overrideAccession ?? accessionInput).trim()
+    if (!value) return
+    setAccessionInput(value)
     setSubmitting(true)
     try {
-      const { status: copyStatus } = await reshelveCopy(accessionInput.trim())
+      const { status: copyStatus } = await reshelveCopy(value)
       // A reservation can form while a copy sits in for_reshelving — the
       // backend hands it straight to that hold instead of the open shelf,
       // so this scan doesn't always mean "now available" (loans.py's
@@ -1267,7 +1280,7 @@ function ReshelvingPanel({
             <Hash size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
             <input
               type="text"
-              placeholder="e.g. T45136"
+              placeholder="Scan or type — e.g. T45136"
               value={accessionInput}
               onChange={(e) => { setAccessionInput(e.target.value); setResult(null) }}
               onKeyDown={(e) => e.key === "Enter" && handleConfirm()}
@@ -1275,9 +1288,14 @@ function ReshelvingPanel({
               className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500"
               style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
             />
+            {/* Highest-volume scan target on this page — auto-submits
+                straight from the scan since reshelving needs no other
+                manual field, so the librarian never has to touch the
+                keyboard or mouse between copies. */}
+            <ScannerListener onScan={(v) => handleConfirm(v)} />
           </div>
           <button
-            onClick={handleConfirm}
+            onClick={() => handleConfirm()}
             disabled={!accessionInput.trim() || submitting}
             className={cn(
               "px-4 py-2 rounded font-semibold transition-colors",
@@ -1367,6 +1385,7 @@ const GUEST_PURPOSES: { value: GuestPurpose; label: string }[] = [
 ]
 
 function GuestPanel({ onSettled }: { onSettled: () => void }) {
+  const guestNameRef = useRef<HTMLInputElement>(null)
   const [accessionInput, setAccessionInput] = useState("")
   const [guestName, setGuestName] = useState("")
   const [guestIdNumber, setGuestIdNumber] = useState("")
@@ -1427,6 +1446,7 @@ function GuestPanel({ onSettled }: { onSettled: () => void }) {
   if (confirmed) {
     return (
       <div className="rounded border border-purple-200 bg-purple-50 p-6 flex flex-col items-center gap-3 text-center">
+        <ScannerListener onScan={(v) => { reset(); setAccessionInput(v) }} />
         <div className="flex items-center justify-center w-12 h-12 rounded-full bg-purple-100">
           <CheckCircle2 size={26} className="text-purple-700" />
         </div>
@@ -1474,13 +1494,18 @@ function GuestPanel({ onSettled }: { onSettled: () => void }) {
           <Hash size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
           <input
             type="text"
-            placeholder="e.g. T45136"
+            placeholder="Scan or type — e.g. T45136"
             value={accessionInput}
             onChange={(e) => setAccessionInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && guestNameRef.current?.focus()}
             autoFocus
             className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
             style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
           />
+          {/* Nothing here submits on its own — guest name/ID still need to
+              be filled in by hand — so a scan just fills the field and
+              advances focus for that next manual step. */}
+          <ScannerListener onScan={setAccessionInput} />
         </div>
       </div>
 
@@ -1490,6 +1515,7 @@ function GuestPanel({ onSettled }: { onSettled: () => void }) {
             Guest Name <span className="text-red-500">*</span>
           </label>
           <input
+            ref={guestNameRef}
             type="text"
             value={guestName}
             onChange={(e) => setGuestName(e.target.value)}

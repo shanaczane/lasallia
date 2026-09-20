@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from core.deps import get_optional_user, require_librarian
 from core.supabase import get_admin_client, get_client
 from schemas.auth import UserProfile
-from schemas.book import Book, BookCopy, BookSearchResponse
+from schemas.book import Book, BookCopy, BookSearchResponse, BookUpdate, BookWrite
 
 router = APIRouter(prefix="/books", tags=["books"])
 
@@ -47,17 +47,20 @@ def _apply_real_availability(books: list[dict], copy_rows: list[dict]) -> list[d
     # stored fields rather than showing zero copies of everything.
     agg: dict[str, dict] = {}
     for row in copy_rows:
-        entry = agg.setdefault(row["book_id"], {"total": 0, "available": 0, "statuses": set()})
+        entry = agg.setdefault(row["book_id"], {"total": 0, "available": 0, "reserved": 0, "statuses": set()})
         entry["total"] += 1
         entry["statuses"].add(row["status"])
         if row["status"] == "available":
             entry["available"] += 1
+        elif row["status"] == "reserved":
+            entry["reserved"] += 1
 
     for b in books:
         entry = agg.get(b["id"])
         if entry:
             b["total_copies"] = entry["total"]
             b["available_copies"] = entry["available"]
+            b["reserved_copies"] = entry["reserved"]
             b["status"] = _derive_status(entry["statuses"])
     return books
 
@@ -83,6 +86,59 @@ def list_books(limit: int = DEFAULT_LIMIT, user: UserProfile | None = Depends(ge
     books = _redact_accession(books, user)
 
     return BookSearchResponse(books=books, total=len(books), page=1, per_page=limit)
+
+def _check_accession_conflict(admin, accession_no: str | None, exclude_book_id: str | None = None) -> None:
+    if not accession_no:
+        return
+    query = admin.table("books").select("id").eq("accession_no", accession_no)
+    if exclude_book_id:
+        query = query.neq("id", exclude_book_id)
+    if query.execute().data:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f'Accession number "{accession_no}" is already in use by another book',
+        )
+
+# Librarian-only catalog write endpoints (BookFormModal's Add/Edit form).
+# Deliberately don't touch book_copies here — a freshly added book has no
+# physical copies yet, and _apply_real_availability already falls back to
+# these plain columns until copies exist for it (see its docstring above).
+# Editing total_copies on a book that DOES have book_copies rows won't move
+# the number shown anywhere, since those rows stay authoritative — copy
+# management for existing titles happens through the reshelving/mark-found
+# flows, not this form.
+@router.post("", response_model=Book, status_code=status.HTTP_201_CREATED)
+def create_book(body: BookWrite, librarian: UserProfile = Depends(require_librarian)):
+    admin = get_admin_client()
+    _check_accession_conflict(admin, body.accession_no)
+
+    payload = body.model_dump()
+    if payload.get("available_copies") is None:
+        payload["available_copies"] = payload.get("total_copies")
+
+    res = admin.table("books").insert(payload).execute()
+    if not res.data:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not create the book")
+    return res.data[0]
+
+@router.patch("/{book_id}", response_model=Book)
+def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends(require_librarian)):
+    admin = get_admin_client()
+    existing = admin.table("books").select("id").eq("id", book_id).execute()
+    if not existing.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
+
+    _check_accession_conflict(admin, body.accession_no, exclude_book_id=book_id)
+
+    payload = body.model_dump()
+    res = admin.table("books").update(payload).eq("id", book_id).execute()
+
+    # Same derivation list_books/get_book use, so an edit to a title that
+    # already has real book_copies rows doesn't briefly report the raw
+    # (now stale) total_copies/available_copies the PATCH just wrote.
+    copies_res = admin.table("book_copies").select("book_id, status").eq("book_id", book_id).execute()
+    book = _apply_real_availability(res.data, copies_res.data)
+    return book[0]
 
 @router.get("/{book_id}", response_model=Book)
 def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)):

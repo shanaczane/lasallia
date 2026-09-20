@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock'
 import {
   CatalogFilters,
   FilterSectionConfig,
@@ -56,18 +57,15 @@ export function FilterSheet({
     onCloseRef.current = onClose
   })
 
-  // Mount + animate in/out, lock body scroll while open
+  useBodyScrollLock(isOpen)
+
+  // Mount + animate in/out
   useEffect(() => {
     if (isOpen) {
       setMounted(true)
       setOpenSection(null)
       const raf = requestAnimationFrame(() => setVisible(true))
-      const prevOverflow = document.body.style.overflow
-      document.body.style.overflow = 'hidden'
-      return () => {
-        cancelAnimationFrame(raf)
-        document.body.style.overflow = prevOverflow
-      }
+      return () => cancelAnimationFrame(raf)
     }
     setVisible(false)
     const timer = setTimeout(() => setMounted(false), 300)

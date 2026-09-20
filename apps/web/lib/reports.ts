@@ -35,6 +35,20 @@ export type OverdueRow = {
   daysOverdue: number
   fine: number
 }
+export type FineEntry = { title: string; kind: "unsettled" | "accruing" | "paid"; amount: number; detail: string }
+export type FineRow = {
+  patron_id: string
+  patron: string
+  patron_email: string
+  program: string
+  year: string
+  unsettled: number
+  accruing: number
+  paid: number
+  outstanding: number
+  entries: FineEntry[]
+}
+export type ProgramUsage = { program: string; users: number; loans: number }
 export type LibraryStats = {
   total_titles: number
   total_copies: number
@@ -42,7 +56,9 @@ export type LibraryStats = {
   overdue_count: number
   utilization_rate: number
   most_active_category: string | null
+  by_program: ProgramUsage[]
 }
+export type TransactionTrendPoint = { label: string; borrows: number; returns: number }
 export type TransactionStats = {
   total_transactions: number
   loan_count: number
@@ -144,8 +160,18 @@ export async function fetchTopPatrons(filters: ReportFilters, limit = 5): Promis
   return getReport("top-patrons", params)
 }
 
+export async function fetchTransactionTrend(filters: ReportFilters, weeks = 8): Promise<TransactionTrendPoint[]> {
+  const params = filterParams(filters)
+  params.set("weeks", String(weeks))
+  return getReport("transaction-trend", params)
+}
+
 export async function fetchOverdueReport(filters: ReportFilters): Promise<OverdueRow[]> {
   return getReport("overdue", filterParams(filters))
+}
+
+export async function fetchFinesReport(filters: ReportFilters): Promise<FineRow[]> {
+  return getReport("fines", filterParams(filters))
 }
 
 export async function fetchLibraryStats(filters: ReportFilters): Promise<LibraryStats> {

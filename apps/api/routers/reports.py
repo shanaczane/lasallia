@@ -12,23 +12,27 @@ from core.reports import (
     borrowing_trends,
     catalogue_report,
     circulation_summary,
+    fines_report,
     library_stats,
     overdue_rows,
     shelf_list,
     top_patrons,
     transaction_stats,
+    transaction_trend,
 )
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.reports import (
     Bucket,
     CatalogueSlice,
+    FineRow,
     LibraryStats,
     OverdueRow,
     ReportSummaries,
     ShelfListRow,
     TopPatron,
     TransactionStats,
+    TransactionTrendPoint,
 )
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -70,6 +74,15 @@ def get_borrowing_trends(
     return borrowing_trends(get_admin_client(), filters, weeks=weeks)
 
 
+@router.get("/transaction-trend", response_model=list[TransactionTrendPoint])
+def get_transaction_trend(
+    weeks: int = 8,
+    filters: ReportFilters = Depends(report_filters),
+    librarian: UserProfile = Depends(require_librarian),
+):
+    return transaction_trend(get_admin_client(), filters, weeks=weeks)
+
+
 @router.get("/top-patrons", response_model=list[TopPatron])
 def get_top_patrons(
     limit: int = 5,
@@ -85,6 +98,14 @@ def get_overdue(
     librarian: UserProfile = Depends(require_librarian),
 ):
     return overdue_rows(get_admin_client(), filters)
+
+
+@router.get("/fines", response_model=list[FineRow])
+def get_fines(
+    filters: ReportFilters = Depends(report_filters),
+    librarian: UserProfile = Depends(require_librarian),
+):
+    return fines_report(get_admin_client(), filters)
 
 
 @router.get("/library-stats", response_model=LibraryStats)

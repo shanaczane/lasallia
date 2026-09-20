@@ -9,4 +9,4 @@
 //
 // Add an entry here (and the matching .xlsx + seed_books.py mapping) when a
 // new college's collection is onboarded.
-export const COLLEGES = ['CITE', 'CBEAM', 'CEAS', 'CITHM']
+export const COLLEGES = ['CITE', 'CBEAM', 'CEAS', 'CITHM', 'HEALTH-ALLIED', 'GEN-AD', 'GRADUATE SCHOOL']

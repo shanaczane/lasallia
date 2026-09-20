@@ -4,11 +4,14 @@
 
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UserProfile } from "@lasallia/types"
 import { fetchPatrons, updatePatronStatus } from "@/lib/users"
+import { downloadCsv } from "@/lib/reports"
+import { ROLE_LABEL } from "@/lib/mock/patrons"
 import {
   PatronsToolbar,
   type RoleFilter,
@@ -126,7 +129,10 @@ function Paginator({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function PatronsPage() {
+function PatronsPageContent() {
+  const searchParams = useSearchParams()
+  const highlightId = searchParams.get("highlight")
+
   const [patrons, setPatrons] = useState<UserProfile[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -143,6 +149,15 @@ export default function PatronsPage() {
   const [viewing, setViewing] = useState<UserProfile | null>(null)
   const [confirmingStatus, setConfirmingStatus] = useState<UserProfile | null>(null)
 
+  // Deep link from elsewhere (e.g. the dashboard's activity panel) — opens
+  // straight to that patron's profile once the list has loaded, instead of
+  // making the librarian search for them again by name.
+  useEffect(() => {
+    if (!highlightId || patrons.length === 0) return
+    const match = patrons.find((p) => p.id === highlightId)
+    if (match) setViewing(match)
+  }, [highlightId, patrons])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return patrons.filter((p) => {
@@ -157,6 +172,20 @@ export default function PatronsPage() {
   }, [patrons, query, roleFilter])
 
   const { page, totalPages, pageItems, goTo } = usePagination(filtered, `${query}|${roleFilter}`)
+
+  // Exports whatever the search + role filter currently narrows the table
+  // to (`filtered`), not the full unfiltered directory or just the current
+  // page — a librarian who searched down to one program expects the CSV to
+  // match what's on screen.
+  const exportPatronsCsv = () => downloadCsv("patrons.csv", filtered.map((p) => ({
+    name: p.full_name ?? "",
+    email: p.email,
+    role: ROLE_LABEL[p.role],
+    program: p.program ?? "",
+    year_level: p.year_level ?? "",
+    status: p.status ?? "active",
+    joined: p.created_at,
+  })))
 
   async function handleToggleStatus(userId: string) {
     const current = patrons.find((p) => p.id === userId)
@@ -194,6 +223,8 @@ export default function PatronsPage() {
         roleFilter={roleFilter}
         onRoleFilterChange={setRoleFilter}
         resultCount={filtered.length}
+        onExport={exportPatronsCsv}
+        exportDisabled={filtered.length === 0}
       />
 
       <PatronsTable
@@ -220,5 +251,13 @@ export default function PatronsPage() {
         />
       )}
     </div>
+  )
+}
+
+export default function PatronsPage() {
+  return (
+    <Suspense fallback={null}>
+      <PatronsPageContent />
+    </Suspense>
   )
 }

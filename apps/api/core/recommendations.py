@@ -312,6 +312,9 @@ def _borrow_counts(admin: Client, since_iso: str, program: str | None = None) ->
     student_ids that contributed — both restricted to `program` when
     given. Aggregated in Python since PostgREST has no GROUP BY, same
     approach _collect_sources already uses for the per-student case."""
+    # profiles!loans_student_id_fkey — see routers/loans.py's
+    # _embed_book_and_borrower for why a bare profiles(...) embed from
+    # loans is ambiguous since migration 0028 added loans.assisted_by.
     rows = (
         admin.table("loans")
         .select("student_id, book_copies(book_id), profiles!loans_student_id_fkey(program)")

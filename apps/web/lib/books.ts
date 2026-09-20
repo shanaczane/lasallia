@@ -29,6 +29,34 @@ export async function fetchBook(id: string): Promise<Book | null> {
   return res.json()
 }
 
+// Mirrors schemas.book.BookWrite on the API — the librarian Add/Edit form's
+// full field set, minus the read-only/derived ones (id, timestamps,
+// available_copies is optional and defaults to total_copies server-side).
+export type BookWritePayload = Omit<
+  Book,
+  'id' | 'created_at' | 'updated_at' | 'expected_back' | 'waiting_count' | 'cover_color' | 'call_number_start'
+>
+
+export async function createBook(data: BookWritePayload): Promise<Book> {
+  const res = await fetch(`${API_URL}/books`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not add this book')
+  return res.json()
+}
+
+export async function updateBook(id: string, data: BookWritePayload): Promise<Book> {
+  const res = await fetch(`${API_URL}/books/${id}`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not save changes to this book')
+  return res.json()
+}
+
 // ── Librarian-only: real per-copy data (book_copies), not the mock rows
 // CopyManagementTable still generates from total_copies/available_copies.
 

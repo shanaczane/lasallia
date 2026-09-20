@@ -18,11 +18,15 @@ from core.calendar import compute_fine
 from schemas.reports import (
     Bucket,
     CatalogueSlice,
+    FineEntryRow,
+    FineRow,
     LibraryStats,
     OverdueRow,
+    ProgramUsage,
     ShelfListRow,
     TopPatron,
     TransactionStats,
+    TransactionTrendPoint,
 )
 
 CATALOGUE_COLORS = ["#006F3C", "#00874A", "#B8923D", "#4A6FA5", "#8B5CF6", "#DDDFD7"]
@@ -64,6 +68,11 @@ def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
     aggregate-in-Python approach). Status is recomputed the same way
     routers/loans.py does: nothing writes 'overdue' back to the row on
     its own."""
+    # profiles!loans_student_id_fkey — migration 0028 added loans.assisted_by
+    # as a second FK to profiles, so a bare profiles(...) embed is now
+    # ambiguous and PostgREST rejects the whole query (this is what was
+    # blanking every report on the page, not just the ones that use this
+    # helper directly — Promise.all on the frontend fails closed).
     query = admin.table("loans").select(
         "*, book_copies(book_id, books(*)), profiles!loans_student_id_fkey(full_name, email, program, year_level)"
     )
@@ -161,6 +170,36 @@ def borrowing_trends(admin: Client, filters: ReportFilters, weeks: int = 8) -> l
     return buckets
 
 
+def transaction_trend(admin: Client, filters: ReportFilters, weeks: int = 8) -> list[TransactionTrendPoint]:
+    """Same week-bucketing as borrowing_trends, but split into borrows
+    (borrowed_at falling in the bucket) and returns (returned_at falling
+    in the bucket) — two series for the Overview 'Transaction Statistics'
+    chart instead of one combined count."""
+    loans = _fetch_filtered_loans(admin, filters)
+
+    now = datetime.now(timezone.utc)
+    days_since_sunday = now.isoweekday() % 7
+    start_of_this_week = (now - timedelta(days=days_since_sunday)).replace(hour=0, minute=0, second=0, microsecond=0)
+    starts = [start_of_this_week - timedelta(weeks=i) for i in range(weeks - 1, -1, -1)]
+    points = [TransactionTrendPoint(label=f"{cal.month_abbr[s.month]} {s.day}", borrows=0, returns=0) for s in starts]
+
+    def bucket_index(d: datetime) -> int | None:
+        for i in range(len(starts) - 1, -1, -1):
+            if d >= starts[i]:
+                return i
+        return None
+
+    for loan in loans:
+        idx = bucket_index(datetime.fromisoformat(loan["borrowed_at"]))
+        if idx is not None:
+            points[idx].borrows += 1
+        if loan.get("returned_at"):
+            idx = bucket_index(datetime.fromisoformat(loan["returned_at"]))
+            if idx is not None:
+                points[idx].returns += 1
+    return points
+
+
 def top_patrons(admin: Client, filters: ReportFilters, limit: int = 5) -> list[TopPatron]:
     """Ports deriveTopPatrons. Borrower info comes from the same embed
     _fetch_filtered_loans already did — no separate patrons fetch needed
@@ -218,6 +257,89 @@ def overdue_rows(admin: Client, filters: ReportFilters) -> list[OverdueRow]:
     return rows
 
 
+def fines_report(admin: Client, filters: ReportFilters) -> list[FineRow]:
+    """New. One row per patron with any fine on record — library-wide,
+    not just currently-overdue loans. Mirrors the per-patron Fines tab
+    in PatronProfileModal (unsettled/accruing/paid), aggregated across
+    every patron instead of one at a time. unsettled/paid come from
+    fine_amount on returned loans (set once, at return_loan); accruing
+    previews what a still-open overdue loan would cost today, via the
+    same compute_fine every other overdue figure in this codebase uses.
+    `entries` keeps the per-loan breakdown behind each total — the report
+    view can total the numbers, but a librarian asked why one is owed
+    needs the "which book, and why" underneath it, not just the sum."""
+    loans = _fetch_filtered_loans(admin, filters)
+
+    totals: dict[str, dict] = {}
+    for loan in loans:
+        profile = loan.get("profiles") or {}
+        book = loan.get("books") or {}
+        sid = loan["student_id"]
+        entry = totals.setdefault(sid, {
+            "patron": profile.get("full_name") or "Unknown patron",
+            "patron_email": profile.get("email") or "—",
+            "program": profile.get("program") or "—",
+            "year": profile.get("year_level"),
+            "unsettled": 0.0,
+            "accruing": 0.0,
+            "paid": 0.0,
+            "entries": [],
+        })
+        title = book.get("title") or "Unknown title"
+
+        if loan["status"] == "returned" and (loan.get("fine_amount") or 0) > 0:
+            amount = loan["fine_amount"]
+            if loan.get("fine_status") == "paid":
+                entry["paid"] += amount
+                receipt = loan.get("receipt_number")
+                entry["entries"].append({
+                    "title": title,
+                    "kind": "paid",
+                    "amount": round(amount, 2),
+                    "detail": f"Paid — receipt {receipt}" if receipt else "Paid at the circulation desk",
+                })
+            else:
+                entry["unsettled"] += amount
+                entry["entries"].append({
+                    "title": title,
+                    "kind": "unsettled",
+                    "amount": round(amount, 2),
+                    "detail": "Returned late — not yet settled at the desk",
+                })
+        elif loan["status"] == "overdue":
+            collection_type = book.get("collection_type") or "General"
+            days_overdue, fine = compute_fine(admin, loan["due_date"], collection_type)
+            entry["accruing"] += fine
+            entry["entries"].append({
+                "title": title,
+                "kind": "accruing",
+                "amount": round(fine, 2),
+                "detail": f"{days_overdue} day{'s' if days_overdue != 1 else ''} overdue — still out, not yet returned",
+            })
+
+    rows = []
+    for sid, entry in totals.items():
+        outstanding = round(entry["unsettled"] + entry["accruing"], 2)
+        paid = round(entry["paid"], 2)
+        if outstanding <= 0 and paid <= 0:
+            continue
+        year_level = entry["year"]
+        rows.append(FineRow(
+            patron_id=sid,
+            patron=entry["patron"],
+            patron_email=entry["patron_email"],
+            program=entry["program"],
+            year=f"{year_level}{_year_suffix(year_level)} Year" if year_level else "—",
+            unsettled=round(entry["unsettled"], 2),
+            accruing=round(entry["accruing"], 2),
+            paid=paid,
+            outstanding=outstanding,
+            entries=[FineEntryRow(**e) for e in entry["entries"]],
+        ))
+    rows.sort(key=lambda r: (-r.outstanding, -r.paid))
+    return rows
+
+
 def library_stats(admin: Client, filters: ReportFilters) -> LibraryStats:
     """New. total_titles/total_copies/utilization_rate/most_active_category
     are catalog snapshots — only the category filter applies.
@@ -248,6 +370,18 @@ def library_stats(admin: Client, filters: ReportFilters) -> LibraryStats:
         category_counts[cat] = category_counts.get(cat, 0) + 1
     most_active_category = max(category_counts, key=category_counts.get) if category_counts else None
 
+    program_users: dict[str, set[str]] = {}
+    program_loans: dict[str, int] = {}
+    for l in loans:
+        prog = (l.get("profiles") or {}).get("program") or "Unspecified"
+        program_users.setdefault(prog, set()).add(l["student_id"])
+        program_loans[prog] = program_loans.get(prog, 0) + 1
+    by_program = sorted(
+        (ProgramUsage(program=p, users=len(program_users[p]), loans=program_loans[p]) for p in program_loans),
+        key=lambda pu: pu.loans,
+        reverse=True,
+    )[:8]
+
     return LibraryStats(
         total_titles=total_titles,
         total_copies=total_copies,
@@ -255,6 +389,7 @@ def library_stats(admin: Client, filters: ReportFilters) -> LibraryStats:
         overdue_count=overdue_count,
         utilization_rate=utilization_rate,
         most_active_category=most_active_category,
+        by_program=by_program,
     )
 
 
@@ -293,6 +428,19 @@ def transaction_stats(admin: Client, filters: ReportFilters) -> TransactionStats
     )
 
 
+def _real_shelf_location(value: str | None) -> str | None:
+    """book_copies/books both seed unmapped rows with the literal sentinel
+    string "Unassigned" (see scripts/shelf_location.py, backfill_missing_
+    copies.py) rather than null, so a plain `or` fallback treats that
+    placeholder as if it were a real location and never falls through to
+    the book's actual shelf_location. Normalize it back to None here so
+    the caller's fallback chain only prefers a value that's actually
+    informative."""
+    if not value or value.strip().lower() == "unassigned":
+        return None
+    return value
+
+
 def shelf_list(admin: Client, filters: ReportFilters, floor: str | None = None, aisle: str | None = None) -> list[ShelfListRow]:
     """New. One row per physical copy, not per title — a shelf list has
     to match physical labels (accession numbers), and a title with 3
@@ -328,7 +476,7 @@ def shelf_list(admin: Client, filters: ReportFilters, floor: str | None = None, 
             author=book["author"],
             call_number=book["call_number"],
             category=book.get("category") or "Uncategorized",
-            shelf_location=c.get("shelf_location") or book.get("shelf_location"),
+            shelf_location=_real_shelf_location(c.get("shelf_location")) or _real_shelf_location(book.get("shelf_location")),
             floor=book.get("floor"),
             aisle=book.get("aisle"),
             status=c["status"],

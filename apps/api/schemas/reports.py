@@ -41,6 +41,12 @@ class OverdueRow(BaseModel):
     fine: float
 
 
+class ProgramUsage(BaseModel):
+    program: str
+    users: int
+    loans: int
+
+
 class LibraryStats(BaseModel):
     total_titles: int
     total_copies: int
@@ -48,6 +54,13 @@ class LibraryStats(BaseModel):
     overdue_count: int
     utilization_rate: float  # 0..1 — copies on loan / total copies
     most_active_category: str | None = None
+    by_program: list[ProgramUsage] = []
+
+
+class TransactionTrendPoint(BaseModel):
+    label: str
+    borrows: int
+    returns: int
 
 
 class TransactionStats(BaseModel):
@@ -55,6 +68,26 @@ class TransactionStats(BaseModel):
     loan_count: int
     reservation_count: int
     average_loan_duration_days: float | None = None
+
+
+class FineEntryRow(BaseModel):
+    title: str
+    kind: str  # "unsettled" | "accruing" | "paid"
+    amount: float
+    detail: str
+
+
+class FineRow(BaseModel):
+    patron_id: str
+    patron: str
+    patron_email: str
+    program: str
+    year: str
+    unsettled: float
+    accruing: float
+    paid: float
+    outstanding: float
+    entries: list[FineEntryRow] = []
 
 
 class ShelfListRow(BaseModel):
