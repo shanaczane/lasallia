@@ -4,7 +4,8 @@
 
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UserProfile } from "@lasallia/types"
@@ -126,7 +127,10 @@ function Paginator({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function PatronsPage() {
+function PatronsPageContent() {
+  const searchParams = useSearchParams()
+  const highlightId = searchParams.get("highlight")
+
   const [patrons, setPatrons] = useState<UserProfile[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -142,6 +146,15 @@ export default function PatronsPage() {
 
   const [viewing, setViewing] = useState<UserProfile | null>(null)
   const [confirmingStatus, setConfirmingStatus] = useState<UserProfile | null>(null)
+
+  // Deep link from elsewhere (e.g. the dashboard's activity panel) — opens
+  // straight to that patron's profile once the list has loaded, instead of
+  // making the librarian search for them again by name.
+  useEffect(() => {
+    if (!highlightId || patrons.length === 0) return
+    const match = patrons.find((p) => p.id === highlightId)
+    if (match) setViewing(match)
+  }, [highlightId, patrons])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -220,5 +233,13 @@ export default function PatronsPage() {
         />
       )}
     </div>
+  )
+}
+
+export default function PatronsPage() {
+  return (
+    <Suspense fallback={null}>
+      <PatronsPageContent />
+    </Suspense>
   )
 }

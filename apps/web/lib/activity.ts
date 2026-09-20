@@ -21,6 +21,13 @@ export type FeedItem = {
   user: string
   userId: string | null
   item: string
+  bookId: string | null
+  // The full record this entry was derived from — lets a detail view (the
+  // dashboard's activity side panel) show everything about the event
+  // without a second fetch; the feed itself only ever needed the strings
+  // above.
+  loan?: Loan
+  reservation?: Reservation
 }
 
 export const TX_CONFIG: Record<TxType, { label: string; bg: string; text: string }> = {
@@ -55,6 +62,7 @@ export function buildFeed(loans: Loan[], reservations: Reservation[]): FeedItem[
   for (const loan of loans) {
     const borrower = loan.profiles?.full_name ?? 'Unknown patron'
     const item = loan.books?.title ?? 'Unknown title'
+    const bookId = loan.books?.id ?? null
     items.push({
       id: `checkout-${loan.id}`,
       time: timeLabel(loan.borrowed_at),
@@ -64,6 +72,8 @@ export function buildFeed(loans: Loan[], reservations: Reservation[]): FeedItem[
       user: borrower,
       userId: loan.student_id ?? null,
       item,
+      bookId,
+      loan,
     })
     if (loan.returned_at) {
       items.push({
@@ -75,6 +85,8 @@ export function buildFeed(loans: Loan[], reservations: Reservation[]): FeedItem[
         user: borrower,
         userId: loan.student_id ?? null,
         item,
+        bookId,
+        loan,
       })
     }
   }
@@ -89,6 +101,8 @@ export function buildFeed(loans: Loan[], reservations: Reservation[]): FeedItem[
       user: r.profiles?.full_name ?? 'Unknown patron',
       userId: r.profiles?.id ?? r.user_id ?? null,
       item: r.books?.title ?? 'Unknown title',
+      bookId: r.books?.id ?? r.book_id ?? null,
+      reservation: r,
     })
   }
 
