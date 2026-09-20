@@ -314,7 +314,7 @@ def _borrow_counts(admin: Client, since_iso: str, program: str | None = None) ->
     approach _collect_sources already uses for the per-student case."""
     rows = (
         admin.table("loans")
-        .select("student_id, book_copies(book_id), profiles(program)")
+        .select("student_id, book_copies(book_id), profiles!loans_student_id_fkey(program)")
         .gte("borrowed_at", since_iso)
         .execute()
     ).data
