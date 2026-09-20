@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { Bell, LogOut, Menu } from "lucide-react"
+import { Bell, LogOut, Menu, Settings, User } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { clearSession } from "@/lib/auth"
 
@@ -24,6 +24,11 @@ type TopNavProps = {
    * session or a local guest-browsing session, neither of which is a
    * real auth session with anything to clear or a /login page to visit. */
   onSignOut?: () => void
+  /** Optional dropdown links, additive — a role that doesn't pass one
+   * simply doesn't get that menu item, so Librarian/Guest/Kiosk are
+   * unaffected unless they opt in. */
+  profileHref?: string
+  settingsHref?: string
 }
 
 export function TopNav({
@@ -37,6 +42,8 @@ export function TopNav({
   onMenuClick,
   homeHref = "/",
   onSignOut,
+  profileHref,
+  settingsHref,
 }: TopNavProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -185,6 +192,31 @@ export function TopNav({
                   </p>
                 )}
               </div>
+              {profileHref && (
+                <Link
+                  href={profileHref}
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-ink-700 hover:bg-ink-50 transition-colors"
+                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                >
+                  <User size={16} className="text-ink-400" />
+                  Profile
+                </Link>
+              )}
+              {settingsHref && (
+                <Link
+                  href={settingsHref}
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-ink-700 hover:bg-ink-50 transition-colors"
+                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                >
+                  <Settings size={16} className="text-ink-400" />
+                  Settings
+                </Link>
+              )}
+              {(profileHref || settingsHref) && <div className="border-t border-ink-100" />}
               <button
                 type="button"
                 role="menuitem"

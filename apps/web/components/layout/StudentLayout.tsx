@@ -196,6 +196,8 @@ function StudentLayoutInner({
         notificationsHref="/student/notifications"
         homeHref="/student/dashboard"
         showNotifications={true}
+        profileHref="/student/profile"
+        settingsHref="/student/profile?tab=settings"
         onMenuClick={() => setMenuOpen(true)}
       />
 
