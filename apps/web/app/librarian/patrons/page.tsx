@@ -10,6 +10,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UserProfile } from "@lasallia/types"
 import { fetchPatrons, updatePatronStatus } from "@/lib/users"
+import { downloadCsv } from "@/lib/reports"
+import { ROLE_LABEL } from "@/lib/mock/patrons"
 import {
   PatronsToolbar,
   type RoleFilter,
@@ -171,6 +173,20 @@ function PatronsPageContent() {
 
   const { page, totalPages, pageItems, goTo } = usePagination(filtered, `${query}|${roleFilter}`)
 
+  // Exports whatever the search + role filter currently narrows the table
+  // to (`filtered`), not the full unfiltered directory or just the current
+  // page — a librarian who searched down to one program expects the CSV to
+  // match what's on screen.
+  const exportPatronsCsv = () => downloadCsv("patrons.csv", filtered.map((p) => ({
+    name: p.full_name ?? "",
+    email: p.email,
+    role: ROLE_LABEL[p.role],
+    program: p.program ?? "",
+    year_level: p.year_level ?? "",
+    status: p.status ?? "active",
+    joined: p.created_at,
+  })))
+
   async function handleToggleStatus(userId: string) {
     const current = patrons.find((p) => p.id === userId)
     const nextStatus = current?.status === "inactive" ? "active" : "inactive"
@@ -207,6 +223,8 @@ function PatronsPageContent() {
         roleFilter={roleFilter}
         onRoleFilterChange={setRoleFilter}
         resultCount={filtered.length}
+        onExport={exportPatronsCsv}
+        exportDisabled={filtered.length === 0}
       />
 
       <PatronsTable
