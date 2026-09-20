@@ -4,7 +4,6 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
 import { Mail, Lock, Eye, EyeOff, Loader2, Check, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSignIn } from '@/lib/hooks/useSignIn'
@@ -255,17 +254,6 @@ export default function LoginSection() {
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
-
-          {/* Guest link */}
-          <div className="mt-3 text-center text-ink-700" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}>
-            Just browsing?{' '}
-            <Link
-              href="/guest/catalog"
-              className="text-green-700 hover:text-green-900 font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1 rounded-sm"
-            >
-              Explore the catalog as guest →
-            </Link>
-          </div>
 
           {/* Footer */}
           <div className="mt-4 border-t border-ink-100 pt-3 text-center">
