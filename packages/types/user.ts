@@ -11,6 +11,11 @@ export type UserProfile = {
   full_name: string | null
   role: UserRole
   program?: string
+  // One of the catalog's fixed college codes (apps/web/lib/colleges.ts).
+  // Nullable — not backfilled for every existing row; the frontend falls
+  // back to guessing from `program` (apps/web/lib/collegeForProgram.ts)
+  // when this is unset.
+  college?: string
   year_level?: number
   avatar_url?: string
   status?: UserAccountStatus
