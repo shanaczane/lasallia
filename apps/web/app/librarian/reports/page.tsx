@@ -9,7 +9,7 @@
 "use client"
 
 import { Fragment, Suspense, cloneElement, useCallback, useEffect, useRef, useState } from "react"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart2,
   ChevronUp,
@@ -51,6 +51,7 @@ import { buildFeed, TX_CONFIG, type FeedItem } from "@/lib/activity"
 import { Pagination } from "@/components/ui/catalog"
 import { PatronProfileModal } from "@/components/ui/patrons/PatronProfileModal"
 import { ConfirmStatusDialog } from "@/components/ui/patrons/ConfirmStatusDialog"
+import { ActivityDetailPanel } from "@/components/dashboard/ActivityDetailPanel"
 import {
   fetchCatalogueReport,
   fetchCirculationSummary,
@@ -90,7 +91,7 @@ import {
 import type { Book, UserProfile, Reservation } from "@lasallia/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type ReportTab = "overview" | "catalogue" | "shelf-list" | "circulation" | "overdue" | "patrons" | "requests" | "weeding" | "activity"
+type ReportTab = "overview" | "catalogue" | "shelf-list" | "circulation" | "overdue" | "requests" | "weeding" | "activity"
 type SortDir = "asc" | "desc" | null
 type SortKey = "patron" | "book" | "due" | "days" | "program" | null
 type ShelfSortKey = "call_number" | "title" | "accession_number" | null
@@ -305,27 +306,91 @@ function CatalogueBarList({ data }: { data: CatalogueSlice[] }) {
   )
 }
 
+// Circulation Overview bar chart — a single-series magnitude-by-month view.
+// Bar width/gap are fixed and the viewBox scales with data.length (rather
+// than a fixed 270px canvas sized for exactly 6 bars) so it doesn't crowd
+// or overflow if the range returns a different bucket count. Rounded-top/
+// square-baseline bars, a hairline baseline, and a per-bar hover tooltip
+// (value + share of the period total — context the always-on tip label
+// doesn't carry) replace the old static, unlabeled-baseline version.
 function BarChartViz({ data }: { data: Bucket[] }) {
+  const [hovered, setHovered] = useState<number | null>(null)
+
+  if (data.length === 0) {
+    return (
+      <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+        No circulation data in this range yet.
+      </p>
+    )
+  }
+
   const max = Math.max(1, ...data.map((d) => d.value))
+  const total = data.reduce((s, d) => s + d.value, 0)
+  const bw = 20
+  const gap = 38
+  const chartH = 64
+  const padTop = 20
+  const padBottom = 20
+  const radius = 4
+  const W = data.length * gap
+  const H = padTop + chartH + padBottom
+  const baseline = padTop + chartH
+
+  const bars = data.map((d, i) => {
+    const x = i * gap + (gap - bw) / 2
+    const h = Math.max(1.5, (d.value / max) * chartH)
+    const y = baseline - h
+    const r = Math.min(radius, h, bw / 2)
+    // Rounded top corners, square at the baseline — a plain rx rounds all
+    // four corners, which reads as "floating" rather than grown-from-axis.
+    const path = `M${x},${y + h} L${x},${y + r} Q${x},${y} ${x + r},${y} L${x + bw - r},${y} Q${x + bw},${y} ${x + bw},${y + r} L${x + bw},${y + h} Z`
+    return { ...d, x, y, h, path }
+  })
+
+  const active = hovered != null ? bars[hovered] : null
+
   return (
-    <div className="flex flex-col gap-2 w-full">
-      <svg viewBox="0 0 270 110" className="w-full">
-        {data.map((d, i) => {
-          const bw = 28
-          const gap = 42
-          const x = i * gap + 8
-          const bh = (d.value / max) * 76
-          const y = 86 - bh
+    <div className="flex flex-col gap-1.5 w-full relative">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Books borrowed by month">
+        <line x1={0} y1={baseline} x2={W} y2={baseline} stroke="#DDDFD7" strokeWidth={1} />
+        {bars.map((b, i) => {
+          const isActive = hovered === i
           return (
-            <g key={i}>
-              <rect x={x} y={y} width={bw} height={bh} fill="#00874A" rx={3} opacity={0.85} />
-              <rect x={x} y={y} width={bw} height={4} fill="#006F3C" rx={3} />
-              <text x={x + bw / 2} y={100} textAnchor="middle" fontSize={8.5} fill="#6B6E63" fontFamily="var(--font-body)">{d.label}</text>
-              <text x={x + bw / 2} y={y - 4} textAnchor="middle" fontSize={8} fill="#14150F" fontWeight="600" fontFamily="var(--font-body)">{d.value}</text>
+            <g
+              key={i}
+              onMouseEnter={() => setHovered(i)}
+              onMouseLeave={() => setHovered((v) => (v === i ? null : v))}
+              onFocus={() => setHovered(i)}
+              onBlur={() => setHovered((v) => (v === i ? null : v))}
+              tabIndex={0}
+              className="outline-none cursor-pointer"
+            >
+              {/* Hit target spans the whole slot, not just the painted bar. */}
+              <rect x={i * gap} y={padTop} width={gap} height={chartH} fill="transparent" />
+              <path d={b.path} fill="#00874A" opacity={isActive ? 1 : 0.82} className="transition-opacity" />
+              <text x={b.x + bw / 2} y={baseline + 14} textAnchor="middle" fontSize={8.5} fill="#6B6E63" fontFamily="var(--font-body)">
+                {b.label}
+              </text>
+              <text x={b.x + bw / 2} y={b.y - 5} textAnchor="middle" fontSize={8} fontWeight={isActive ? 700 : 600} fill="#14150F" fontFamily="var(--font-body)">
+                {b.value}
+              </text>
             </g>
           )
         })}
       </svg>
+      {active && (
+        <div
+          className="absolute -translate-x-1/2 -translate-y-[calc(100%+6px)] pointer-events-none rounded bg-ink-900 px-2 py-1 shadow-(--shadow-sm) whitespace-nowrap z-10"
+          style={{ left: `${((active.x + bw / 2) / W) * 100}%`, top: `${(active.y / H) * 100}%` }}
+        >
+          <p className="text-white font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            {active.value} {active.value === 1 ? "loan" : "loans"}
+          </p>
+          <p className="text-ink-300" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            {total > 0 ? Math.round((active.value / total) * 100) : 0}% of total
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -728,71 +793,6 @@ function CirculationTable({ rows, onExport }: { rows: CirculationRow[]; onExport
   )
 }
 
-// ─── Patrons — full report tab, every patron with activity in range ───────────
-function PatronsReportTable({ patrons, onExport }: { patrons: TopPatron[]; onExport: () => void }) {
-  const [query, setQuery] = useState("")
-  const [page, setPage] = useState(1)
-
-  const filtered = query.trim()
-    ? patrons.filter((p) => {
-        const q = query.toLowerCase()
-        return p.name.toLowerCase().includes(q) || p.program.toLowerCase().includes(q)
-      })
-    : patrons
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / REPORT_PAGE_SIZE))
-  const paged = filtered.slice((page - 1) * REPORT_PAGE_SIZE, page * REPORT_PAGE_SIZE)
-
-  const filterKey = query
-  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
-  if (filterKey !== prevFilterKey) {
-    setPrevFilterKey(filterKey)
-    setPage(1)
-  }
-
-  return (
-    <ReportTableCard
-      title="Patrons report"
-      subtitle="Borrowing activity by patron in range"
-      query={query}
-      onQueryChange={setQuery}
-      onExport={onExport}
-      exportDisabled={patrons.length === 0}
-      footerLeft={`${patrons.length} ${patrons.length === 1 ? "patron" : "patrons"} with activity in range`}
-      page={page}
-      totalPages={totalPages}
-      onPageChange={setPage}
-    >
-      {paged.length === 0 ? (
-        <EmptyState text={patrons.length === 0 ? "No borrowing activity in this range." : "No patrons match your search."} />
-      ) : (
-        <div className="rounded border border-ink-200 overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-ink-200 bg-ink-50">
-                {["Patron", "Program", "Books Borrowed"].map((label) => (
-                  <th key={label} className="text-left py-2.5 px-4 text-ink-500 font-semibold uppercase" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}>
-                    {label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {paged.map((p) => (
-                <tr key={p.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
-                  <td className="py-2.5 px-4 text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{p.name}</td>
-                  <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{p.program}</td>
-                  <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}>{p.count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </ReportTableCard>
-  )
-}
-
 // ─── Requests — placeholder tab. No submit flow or table exists anywhere in
 // the app yet, so this deliberately shows real chrome + an honest empty
 // state rather than fabricated rows. Wire it up once requests can actually
@@ -1047,6 +1047,7 @@ function ActivityLogTable({
   onExport,
   patrons,
   onSelectUser,
+  onSelectItem,
   dateFrom,
   dateTo,
 }: {
@@ -1054,6 +1055,9 @@ function ActivityLogTable({
   onExport: () => void
   patrons: UserProfile[]
   onSelectUser: (patron: UserProfile) => void
+  /** Opens the Activity Detail side panel (same one the dashboard's Recent
+   *  Activity table uses) for the clicked row's event. */
+  onSelectItem: (item: FeedItem) => void
   /** ISO bounds from the page-level Date Range filter bar above the tabs —
    *  this tab doesn't have its own date control, it just respects that one. */
   dateFrom?: string
@@ -1120,7 +1124,11 @@ function ActivityLogTable({
                 const cfg = TX_CONFIG[tx.type]
                 const patron = tx.userId ? patrons.find((p) => p.id === tx.userId) : undefined
                 return (
-                  <tr key={tx.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
+                  <tr
+                    key={tx.id}
+                    onClick={() => onSelectItem(tx)}
+                    className="border-b border-ink-100 hover:bg-ink-50 transition-colors cursor-pointer"
+                  >
                     <td className="py-3 px-4 whitespace-nowrap text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
                       {tx.date}
                     </td>
@@ -1136,7 +1144,7 @@ function ActivityLogTable({
                       {patron ? (
                         <button
                           type="button"
-                          onClick={() => onSelectUser(patron)}
+                          onClick={(e) => { e.stopPropagation(); onSelectUser(patron) }}
                           className="text-ink-900 font-medium hover:text-green-700 hover:underline underline-offset-2 transition-colors text-left"
                           style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
                         >
@@ -1604,10 +1612,11 @@ function FilterDropdown({ label, value, onChange, options }: { label: string; va
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 function ReportsPageContent() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const [tab, setTab] = useState<ReportTab>(() => {
     const t = searchParams.get("tab")
-    const valid: ReportTab[] = ["catalogue", "shelf-list", "circulation", "overdue", "patrons", "requests", "weeding", "activity"]
+    const valid: ReportTab[] = ["catalogue", "shelf-list", "circulation", "overdue", "requests", "weeding", "activity"]
     return (valid as string[]).includes(t ?? "") ? (t as ReportTab) : "overview"
   })
 
@@ -1635,6 +1644,10 @@ function ReportsPageContent() {
   // the Patrons page uses (see app/librarian/patrons/page.tsx).
   const [viewingPatron, setViewingPatron] = useState<UserProfile | null>(null)
   const [confirmingStatus, setConfirmingStatus] = useState<UserProfile | null>(null)
+
+  // Activity Log tab — click a row to open the same slide-in detail panel
+  // the dashboard's Recent Activity table uses (see ActivityDetailPanel).
+  const [selectedActivity, setSelectedActivity] = useState<FeedItem | null>(null)
 
   async function handleToggleStatus(userId: string) {
     const current = patrons.find((p) => p.id === userId)
@@ -1781,12 +1794,6 @@ function ReportsPageContent() {
     due: r.due,
   })))
 
-  const exportPatronsCsv = () => downloadCsv("patrons.csv", allPatronsData.map((p) => ({
-    patron: p.name,
-    program: p.program,
-    books_borrowed: p.count,
-  })))
-
   const exportOverdueCsv = () => downloadCsv("overdue.csv", overdueRowsData.map((r) => ({
     patron: r.patron,
     email: r.patronEmail,
@@ -1827,7 +1834,6 @@ function ReportsPageContent() {
       case "shelf-list":  return { fn: exportShelfListCsv, disabled: shelfListData.length === 0 }
       case "circulation": return { fn: exportCirculationCsv, disabled: circulationRows.length === 0 }
       case "overdue":     return { fn: exportOverdueCsv, disabled: overdueRowsData.length === 0 }
-      case "patrons":     return { fn: exportPatronsCsv, disabled: allPatronsData.length === 0 }
       case "activity":    return { fn: exportActivityCsv, disabled: activityFeed.length === 0 }
       default:            return null
     }
@@ -1866,7 +1872,7 @@ function ReportsPageContent() {
       <OverviewCard
         title="Top patrons"
         subtitle="Highest borrowers in range"
-        action={{ label: "Open full report", onClick: () => setTab("patrons") }}
+        action={{ label: "Manage patrons", onClick: () => router.push("/librarian/patrons") }}
       >
         <TopPatronsList patrons={topPatronsData} />
       </OverviewCard>
@@ -2078,7 +2084,6 @@ function ReportsPageContent() {
           { key: "shelf-list",  label: "Shelf List" },
           { key: "circulation", label: "Circulation" },
           { key: "overdue",     label: "Overdue & Fines" },
-          { key: "patrons",     label: "Patrons" },
           { key: "requests",    label: "Requests" },
           { key: "weeding",     label: "Weeding" },
         ] as { key: ReportTab; label: string }[]).map((t) => (
@@ -2202,9 +2207,6 @@ function ReportsPageContent() {
         </div>
       )}
 
-      {/* ── Patrons tab ────────────────────────────────────── */}
-      {tab === "patrons" && <PatronsReportTable patrons={allPatronsData} onExport={exportPatronsCsv} />}
-
       {/* ── Requests tab (placeholder — see RequestsPlaceholder) ── */}
       {tab === "requests" && <RequestsPlaceholder />}
 
@@ -2218,10 +2220,18 @@ function ReportsPageContent() {
           onExport={exportActivityCsv}
           patrons={patrons}
           onSelectUser={setViewingPatron}
+          onSelectItem={setSelectedActivity}
           dateFrom={activeDateBounds.dateFrom}
           dateTo={activeDateBounds.dateTo}
         />
       )}
+
+      <ActivityDetailPanel
+        item={selectedActivity}
+        loans={loans}
+        reservations={reservations}
+        onClose={() => setSelectedActivity(null)}
+      />
 
       {viewingPatron && (
         <PatronProfileModal
