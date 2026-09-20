@@ -428,6 +428,19 @@ def transaction_stats(admin: Client, filters: ReportFilters) -> TransactionStats
     )
 
 
+def _real_shelf_location(value: str | None) -> str | None:
+    """book_copies/books both seed unmapped rows with the literal sentinel
+    string "Unassigned" (see scripts/shelf_location.py, backfill_missing_
+    copies.py) rather than null, so a plain `or` fallback treats that
+    placeholder as if it were a real location and never falls through to
+    the book's actual shelf_location. Normalize it back to None here so
+    the caller's fallback chain only prefers a value that's actually
+    informative."""
+    if not value or value.strip().lower() == "unassigned":
+        return None
+    return value
+
+
 def shelf_list(admin: Client, filters: ReportFilters, floor: str | None = None, aisle: str | None = None) -> list[ShelfListRow]:
     """New. One row per physical copy, not per title — a shelf list has
     to match physical labels (accession numbers), and a title with 3
@@ -463,7 +476,7 @@ def shelf_list(admin: Client, filters: ReportFilters, floor: str | None = None, 
             author=book["author"],
             call_number=book["call_number"],
             category=book.get("category") or "Uncategorized",
-            shelf_location=c.get("shelf_location") or book.get("shelf_location"),
+            shelf_location=_real_shelf_location(c.get("shelf_location")) or _real_shelf_location(book.get("shelf_location")),
             floor=book.get("floor"),
             aisle=book.get("aisle"),
             status=c["status"],
