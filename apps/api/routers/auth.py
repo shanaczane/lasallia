@@ -9,7 +9,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 MIN_PASSWORD_LENGTH = 8
 
 def _fetch_profile(user_id: str) -> dict:
-    res = get_admin_client().table("profiles").select("role, full_name").eq("id", user_id).single().execute()
+    res = get_admin_client().table("profiles").select("role, full_name, program, year_level, college").eq("id", user_id).single().execute()
     return res.data or {}
 
 def _build_token_response(session, sb_user) -> TokenResponse:
@@ -23,6 +23,9 @@ def _build_token_response(session, sb_user) -> TokenResponse:
             email=sb_user.email or "",
             role=profile.get("role", "guest"),
             full_name=profile.get("full_name"),
+            program=profile.get("program"),
+            year_level=profile.get("year_level"),
+            college=profile.get("college"),
         ),
     )
 
@@ -62,7 +65,15 @@ def update_me(body: UpdateProfileRequest, user: UserProfile = Depends(get_curren
     if not name:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Full name can't be empty")
     get_admin_client().table("profiles").update({"full_name": name}).eq("id", user.id).execute()
-    return UserProfile(id=user.id, email=user.email, role=user.role, full_name=name)
+    return UserProfile(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        full_name=name,
+        program=user.program,
+        year_level=user.year_level,
+        college=user.college,
+    )
 
 # Settings' Account tab "Change Password". current_password is verified by
 # actually signing in with it (same call /login makes) — if that fails,
