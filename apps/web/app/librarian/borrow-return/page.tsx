@@ -1337,6 +1337,12 @@ function ReshelvingPanel({
 }
 
 function SessionList({ tab, records }: { tab: "borrow" | "return" | "reshelving"; records: SessionRecord[] }) {
+  const PAGE_SIZE = 8
+  const [page, setPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(records.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const paged = records.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
   if (records.length === 0) {
     return (
       <div
@@ -1349,20 +1355,23 @@ function SessionList({ tab, records }: { tab: "borrow" | "return" | "reshelving"
     )
   }
   return (
-    <div className="flex flex-col gap-1">
-      {records.map((r, i) => (
-        <div key={i} className="flex items-center justify-between gap-3 py-2 border-b border-ink-100 last:border-0">
-          <div className="min-w-0">
-            <p className="text-ink-900 font-medium truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-              {r.title}
-            </p>
-            <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-              {r.patron} · {r.time}{r.note ? ` · ${r.note}` : ""}
-            </p>
+    <>
+      <div className="flex flex-col gap-1">
+        {paged.map((r, i) => (
+          <div key={i} className="flex items-center justify-between gap-3 py-2 border-b border-ink-100 last:border-0">
+            <div className="min-w-0">
+              <p className="text-ink-900 font-medium truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                {r.title}
+              </p>
+              <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                {r.patron} · {r.time}{r.note ? ` · ${r.note}` : ""}
+              </p>
+            </div>
           </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+      <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+    </>
   )
 }
 
