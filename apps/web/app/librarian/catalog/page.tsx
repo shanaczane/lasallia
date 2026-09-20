@@ -7,7 +7,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, Search, X, ArrowUpDown,
-  BookMarked, CheckCircle2, Copy, ArrowRightLeft,
+  BookMarked, CheckCircle2, Copy, ArrowRightLeft, Bookmark,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Book } from '@lasallia/types'
@@ -24,7 +24,8 @@ import {
 import { useBooks } from '@/lib/hooks/useBooks'
 import { deriveCatalogOptions } from '@/lib/catalogOptions'
 import { archiveBook } from '@/lib/weeding'
-import { uploadBookCover } from '@/lib/books'
+import { createBook, updateBook, uploadBookCover } from '@/lib/books'
+import { bookFormDataToPayload } from '@/lib/bookForm'
 
 const PAGE_SIZE = 24
 import { LibrarianBookCard } from '@/components/ui/catalog/LibrarianBookCard'
@@ -79,13 +80,6 @@ function searchBooks(books: Book[], query: string): Book[] {
   )
 }
 
-// BookFormModal hands back keywords as one comma-separated string (plain
-// <input>, not a tag picker) — split it into the array Book.keywords wants.
-function parseKeywords(raw: string): string[] | undefined {
-  const list = raw.split(',').map((k) => k.trim()).filter(Boolean)
-  return list.length > 0 ? list : undefined
-}
-
 // ─── Toast ────────────────────────────────────────────────────────────────────
 
 function Toast({ message }: { message: string }) {
@@ -104,17 +98,22 @@ function Toast({ message }: { message: string }) {
 function CatalogStats({ books }: { books: Book[] }) {
   const total    = books.reduce((sum, b) => sum + (b.total_copies ?? 0), 0)
   const avail    = books.reduce((sum, b) => sum + (b.available_copies ?? 0), 0)
-  const borrowed = total - avail
+  const reserved = books.reduce((sum, b) => sum + (b.reserved_copies ?? 0), 0)
+  // Whatever's left after available/reserved — on_loan, overdue, or a
+  // missing/lost/damaged side-state. Reserved gets its own tile so a copy
+  // waiting for pickup isn't double-counted as "checked out".
+  const borrowed = total - avail - reserved
 
   const stats = [
     { icon: <BookMarked size={18} className="text-green-700" />, iconBg: 'bg-green-100', label: 'Titles',       value: books.length },
     { icon: <Copy size={18} className="text-info" />,            iconBg: 'bg-info-bg',    label: 'Total Copies', value: total },
     { icon: <CheckCircle2 size={18} className="text-success" />, iconBg: 'bg-success-bg', label: 'Available',    value: avail },
+    { icon: <Bookmark size={18} className="text-gold-600" />,    iconBg: 'bg-gold-100',   label: 'Reserved',     value: reserved },
     { icon: <ArrowRightLeft size={18} className="text-warn" />,  iconBg: 'bg-warn-bg',    label: 'Checked Out',  value: borrowed },
   ]
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
       {stats.map(({ icon, iconBg, label, value }) => (
         <div
           key={label}
@@ -146,9 +145,7 @@ function CatalogStats({ books }: { books: Book[] }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function LibrarianCatalogContent() {
-  // live: false — add/edit here are still local-only (see the seeding effect
-  // below), and a realtime refetch would reseed over those unsaved changes.
-  const { books: fetchedBooks, loading, error } = useBooks({ live: false })
+  const { books: fetchedBooks, loading, error } = useBooks({ live: true })
   const [books, setBooks]       = useState<Book[]>([])
   const [query, setQuery]       = useState('')
   const [sort, setSort]         = useState<SortOption>('relevance')
@@ -161,9 +158,10 @@ function LibrarianCatalogContent() {
 
   const [toast, setToast] = useState<string | null>(null)
 
-  // Seeds local editable state from the fetch once it lands. Add/edit/
-  // archive/delete below only mutate this local copy — Sprint 9.1 wires
-  // these to real write endpoints; until then changes don't persist.
+  // Seeds local editable state from the fetch. Add/edit now call the real
+  // POST/PATCH endpoints below and merge the server's response back in, so
+  // this effect re-syncing on every fetch (including live refetches) just
+  // reflects what's actually persisted, not a source of lost edits.
   useEffect(() => {
     if (!loading && !error) setBooks(fetchedBooks)
   }, [loading, error, fetchedBooks])
@@ -199,113 +197,35 @@ function LibrarianCatalogContent() {
 
   // ── Handlers ──
 
-  function handleAddSubmit(data: BookFormData) {
-    const newBook: Book = {
-      id:               `new-${Date.now()}`,
-      title:                  data.title.trim(),
-      subtitle:               data.subtitle.trim() || undefined,
-      alternate_title:        data.alternateTitle.trim() || undefined,
-      author:                 data.authors.join(', '),
-      isbn:                   data.isbn.trim() || undefined,
-      lccn:                   data.lccn.trim() || undefined,
-      issn:                   data.issn.trim() || undefined,
-      edition:                data.edition.trim() || undefined,
-      series_title:           data.seriesTitle.trim() || undefined,
-      series_volume:          data.seriesVolume.trim() || undefined,
-      place_of_publication:   data.placeOfPublication.trim() || undefined,
-      physical_extent:        data.physicalExtent.trim() || undefined,
-      physical_illustrations: data.physicalIllustrations.trim() || undefined,
-      physical_dimensions:    data.physicalDimensions.trim() || undefined,
-      accession_no:           data.accession_no.trim() || undefined,
-      publisher:              data.publisher.trim() || undefined,
-      published_year:         data.published_year ? parseInt(data.published_year, 10) : undefined,
-      call_number:            data.call_number.trim(),
-      floor:                  data.floor,
-      aisle:                  data.aisle.trim(),
-      shelf_location:         `${data.floor} · ${data.aisle.trim()}`,
-      total_copies:           parseInt(data.total_copies, 10),
-      available_copies:       parseInt(data.total_copies, 10),
-      category:               data.category.trim() || 'Uncategorised',
-      subject:                data.subject.trim() || undefined,
-      format:                 data.format || undefined,
-      keywords:               parseKeywords(data.keywords),
-      abstract:               data.abstract.trim() || undefined,
-      notes:                  data.notes.trim() || undefined,
-      purchase_price:         data.purchase_price ? Number(data.purchase_price) : undefined,
-      date_acquired:          data.date_acquired ? new Date(data.date_acquired).toISOString() : undefined,
-      circulation_type:       data.circulation_type.trim() || undefined,
-      vendor:                 data.vendor.trim() || undefined,
-      funding_source:         data.funding_source || undefined,
-      status:                 data.status || 'available',
-      created_at:             new Date().toISOString(),
-      updated_at:             new Date().toISOString(),
+  async function handleAddSubmit(data: BookFormData) {
+    try {
+      const newBook = await createBook(bookFormDataToPayload(data))
+      setBooks((prev) => [newBook, ...prev])
+      setAddOpen(false)
+      showToast(`"${newBook.title}" added to the catalog.`)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not add this book.')
     }
-    setBooks((prev) => [newBook, ...prev])
-    setAddOpen(false)
-    showToast(`"${newBook.title}" added to the catalog.`)
   }
 
   async function handleEditSubmit(data: BookFormData) {
     if (!editBook) return
     const bookId = editBook.id
-    setBooks((prev) =>
-      prev.map((b) =>
-        b.id === editBook.id
-          ? {
-              ...b,
-              title:                  data.title.trim(),
-              subtitle:               data.subtitle.trim() || undefined,
-              alternate_title:        data.alternateTitle.trim() || undefined,
-              author:                 data.authors.join(', '),
-              isbn:                   data.isbn.trim() || undefined,
-              lccn:                   data.lccn.trim() || undefined,
-              issn:                   data.issn.trim() || undefined,
-              edition:                data.edition.trim() || undefined,
-              series_title:           data.seriesTitle.trim() || undefined,
-              series_volume:          data.seriesVolume.trim() || undefined,
-              place_of_publication:   data.placeOfPublication.trim() || undefined,
-              physical_extent:        data.physicalExtent.trim() || undefined,
-              physical_illustrations: data.physicalIllustrations.trim() || undefined,
-              physical_dimensions:    data.physicalDimensions.trim() || undefined,
-              accession_no:           data.accession_no.trim() || undefined,
-              publisher:              data.publisher.trim() || undefined,
-              published_year:         data.published_year ? parseInt(data.published_year, 10) : undefined,
-              call_number:            data.call_number.trim(),
-              floor:                  data.floor,
-              aisle:                  data.aisle.trim(),
-              shelf_location:         `${data.floor} · ${data.aisle.trim()}`,
-              total_copies:           parseInt(data.total_copies, 10),
-              category:               data.category.trim() || b.category,
-              subject:                data.subject.trim() || undefined,
-              format:                 data.format || undefined,
-              keywords:               parseKeywords(data.keywords),
-              abstract:               data.abstract.trim() || undefined,
-              notes:                  data.notes.trim() || undefined,
-              purchase_price:         data.purchase_price ? Number(data.purchase_price) : undefined,
-              date_acquired:          data.date_acquired ? new Date(data.date_acquired).toISOString() : undefined,
-              circulation_type:       data.circulation_type.trim() || undefined,
-              vendor:                 data.vendor.trim() || undefined,
-              funding_source:         data.funding_source || undefined,
-              status:                 data.status || b.status,
-              updated_at:             new Date().toISOString(),
-            }
-          : b
-      )
-    )
-    setEditBook(null)
-    showToast(`"${data.title.trim()}" updated.`)
 
-    // Covers are the one part of edit that's persisted for real (Supabase
-    // Storage + books.cover_url). Only for books that exist in the database —
-    // a locally-added `new-…` book has nothing to attach a cover to yet.
-    if (data.cover_image_file && !bookId.startsWith('new-')) {
-      try {
+    try {
+      const saved = await updateBook(bookId, bookFormDataToPayload(data, { category: editBook.category, status: editBook.status }))
+      setBooks((prev) => prev.map((b) => (b.id === bookId ? saved : b)))
+      setEditBook(null)
+      showToast(`"${saved.title}" updated.`)
+
+      // Covers are uploaded separately (multipart, not part of the JSON body).
+      if (data.cover_image_file) {
         const coverUrl = await uploadBookCover(bookId, data.cover_image_file)
         setBooks((prev) => prev.map((b) => (b.id === bookId ? { ...b, cover_url: coverUrl } : b)))
-        showToast(`Cover updated for "${data.title.trim()}".`)
-      } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Could not upload the cover image.')
+        showToast(`Cover updated for "${saved.title}".`)
       }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not save changes to this book.')
     }
   }
 
