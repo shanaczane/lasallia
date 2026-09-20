@@ -185,20 +185,22 @@ function LibrarianLayoutInner({
 
   return (
     <div className="min-h-screen bg-paper">
-      <TopNav
-        userName={displayName}
-        userEmail={displayEmail}
-        userInitials={displayInitials}
-        notificationCount={unreadCount}
-        notificationsHref="/librarian/notifications"
-        homeHref="/librarian/dashboard"
-        showNotifications={true}
-        onMenuClick={() => setMenuOpen(true)}
-      />
+      <div className="print:hidden">
+        <TopNav
+          userName={displayName}
+          userEmail={displayEmail}
+          userInitials={displayInitials}
+          notificationCount={unreadCount}
+          notificationsHref="/librarian/notifications"
+          homeHref="/librarian/dashboard"
+          showNotifications={true}
+          onMenuClick={() => setMenuOpen(true)}
+        />
+      </div>
 
       {/* Desktop sidebar */}
       <aside
-        className="hidden md:flex fixed left-0 bottom-0 flex-col bg-white border-r border-ink-200 overflow-y-auto transition-all duration-200"
+        className="hidden md:flex fixed left-0 bottom-0 flex-col bg-white border-r border-ink-200 overflow-y-auto transition-all duration-200 print:hidden"
         style={{ top: "var(--height-nav)", width: collapsed ? 56 : "var(--width-side)" }}
       >
         {/* Collapse toggle */}
@@ -227,7 +229,7 @@ function LibrarianLayoutInner({
       {/* Mobile drawer */}
       <aside
         className={cn(
-          "fixed left-0 top-0 bottom-0 z-160 flex flex-col bg-white border-r border-ink-200 overflow-y-auto transition-transform duration-300 md:hidden",
+          "fixed left-0 top-0 bottom-0 z-160 flex flex-col bg-white border-r border-ink-200 overflow-y-auto transition-transform duration-300 md:hidden print:hidden",
           menuOpen ? "translate-x-0" : "-translate-x-full"
         )}
         style={{ width: "var(--width-side)" }}
@@ -256,7 +258,7 @@ function LibrarianLayoutInner({
 
       {/* Page content */}
       <main
-        className={cn("min-h-screen transition-all duration-200", collapsed ? "md:pl-14" : "md:pl-(--width-side)")}
+        className={cn("min-h-screen transition-all duration-200 print:pl-0", collapsed ? "md:pl-14" : "md:pl-(--width-side)")}
         style={{ paddingTop: "var(--height-nav)" }}
       >
         <div className="w-full">{children}</div>
