@@ -29,7 +29,10 @@ DAMAGE_PROCESSING_FEE = 50.0
 
 
 def _embed_book_and_borrower(db: Client, query):
-    return query.select("*, book_copies(book_id, accession_number, books(*)), profiles(full_name, avatar_url)")
+    # profiles!loans_student_id_fkey, not bare profiles(...): loans also links to
+    # profiles through assisted_by (the librarian who helped check it out), so
+    # a bare embed is ambiguous and PostgREST returns an error (HTTP 500 here).
+    return query.select("*, book_copies(book_id, accession_number, books(*)), profiles!loans_student_id_fkey(full_name, avatar_url)")
 
 
 def _flatten_loan(loan: dict) -> dict:

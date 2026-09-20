@@ -65,7 +65,7 @@ def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
     routers/loans.py does: nothing writes 'overdue' back to the row on
     its own."""
     query = admin.table("loans").select(
-        "*, book_copies(book_id, books(*)), profiles(full_name, email, program, year_level)"
+        "*, book_copies(book_id, books(*)), profiles!loans_student_id_fkey(full_name, email, program, year_level)"
     )
     if filters.date_from:
         query = query.gte("borrowed_at", filters.date_from)
