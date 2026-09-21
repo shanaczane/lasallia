@@ -12,6 +12,8 @@ import { usePathname } from "next/navigation"
 import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
 import { StudentCountsProvider, useStudentCounts } from "./StudentCountsContext"
 import { cn } from "@/lib/utils"
+import { getUser, refreshCachedUser } from "@/lib/auth"
+import { CompleteProfileModal } from "@/components/ui/profile/CompleteProfileModal"
 import {
   LayoutDashboard,
   BookOpen,
@@ -95,6 +97,7 @@ function StudentLayoutInner({
   const [displayName, setDisplayName] = useState(userName ?? "")
   const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
   const [displayEmail, setDisplayEmail] = useState("")
+  const [needsProfile, setNeedsProfile] = useState(false)
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("sidebar-collapsed") === "true") setCollapsed(true)
@@ -112,6 +115,21 @@ function StudentLayoutInner({
   useEffect(() => {
     localStorage.setItem("sidebar-collapsed", String(collapsed))
   }, [collapsed])
+
+  // Google sign-in: a student who isn't in the enrollment spreadsheet has an
+  // empty program/year level. The cached login copy can be stale (a librarian
+  // may have filled them in since), so confirm against the API before asking.
+  useEffect(() => {
+    const cached = getUser()
+    if (!cached || cached.role !== "student") return
+    if (cached.program && cached.year_level != null) return
+    let cancelled = false
+    refreshCachedUser().then((fresh) => {
+      if (cancelled || !fresh) return
+      if (fresh.role === "student" && (!fresh.program || fresh.year_level == null)) setNeedsProfile(true)
+    })
+    return () => { cancelled = true }
+  }, [])
 
   const renderSidebarContent = (isCollapsed: boolean) => (
     <>
@@ -269,6 +287,8 @@ function StudentLayoutInner({
       >
         <div className="w-full">{children}</div>
       </main>
+
+      {needsProfile && <CompleteProfileModal onDone={() => setNeedsProfile(false)} />}
     </div>
   )
 }

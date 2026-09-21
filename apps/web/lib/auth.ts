@@ -1,3 +1,5 @@
+import { getSupabaseAuth } from "@/lib/supabaseBrowser"
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 export type Role = "librarian" | "student" | "guest"
@@ -31,6 +33,30 @@ export async function loginRequest(email: string, password: string): Promise<Tok
     throw new Error(err.detail ?? "Invalid email or password")
   }
 
+  return res.json()
+}
+
+// Google sign-in — redirects to Google via Supabase, which returns to
+// /auth/callback. `hd` only filters Google's account picker; the role
+// (student vs guest) is decided server-side by the profiles trigger.
+export async function signInWithGoogle(): Promise<void> {
+  const { error } = await getSupabaseAuth().auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: `${location.origin}/auth/callback`,
+      queryParams: { hd: "dlsl.edu.ph" },
+    },
+  })
+  if (error) throw new Error(error.message)
+}
+
+// Profile (role included) for a Supabase access token that didn't come
+// from /auth/login — i.e. the Google callback.
+export async function fetchMe(accessToken: string): Promise<UserProfile> {
+  const res = await fetch(`${API_URL}/auth/me`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) throw new Error("Could not load your profile")
   return res.json()
 }
 
@@ -90,6 +116,43 @@ export async function updateProfile(fullName: string): Promise<UserProfile> {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.detail ?? "Could not update your profile")
+  }
+  const user: UserProfile = await res.json()
+  setCachedUser(user)
+  return user
+}
+
+// Re-reads the signed-in user's profile from the API and refreshes the
+// cached copy. The login response's copy goes stale when a librarian fills
+// in program/year level afterward (Patrons screen or the enrollment import).
+export async function refreshCachedUser(): Promise<UserProfile | null> {
+  const token = getToken()
+  if (!token) return null
+  try {
+    const user = await fetchMe(token)
+    setCachedUser(user)
+    return user
+  } catch {
+    return null
+  }
+}
+
+// First-login "complete your profile" form (students who signed in with
+// Google and aren't in the enrollment spreadsheet yet). rfid_uid is not
+// here on purpose — only a librarian assigns a card.
+export async function updateAcademicProfile(fields: {
+  program: string
+  year_level: number
+  college?: string | null
+}): Promise<UserProfile> {
+  const res = await fetch(`${API_URL}/auth/me`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify(fields),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? "Could not save your details")
   }
   const user: UserProfile = await res.json()
   setCachedUser(user)
