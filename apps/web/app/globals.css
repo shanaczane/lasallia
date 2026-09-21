@@ -128,15 +128,24 @@ html {
      scrollable, which is the single most common "this looks broken on
      mobile" complaint. Scoped components that scroll on purpose (e.g.
      ForYouSection's CardRow) already contain their own overflow-x-auto,
-     so this only ever clips accidental overflow, never an intended one. */
-  overflow-x: hidden;
+     so this only ever clips accidental overflow, never an intended one.
+     `clip`, not `hidden` — setting overflow-x to anything but `visible`
+     on html/body without also setting overflow-y makes the browser
+     auto-promote overflow-y to `auto`, which demotes html/body from
+     being the page's root scroller on iOS Safari specifically and
+     silently breaks `position: sticky` for every descendant on the page
+     (the sticky tab bars on My Library/Notifications/Reservations were
+     just scrolling away, not sticking, because of exactly this). `clip`
+     gives the same "no horizontal scrollbar" result without establishing
+     a scroll container, so it doesn't trigger that promotion. */
+  overflow-x: clip;
 }
 
 body {
   background-color: var(--color-paper);
   color: var(--color-ink-900);
   font-family: var(--font-body);
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 @theme inline {
@@ -252,6 +261,34 @@ aside::-webkit-scrollbar {
 
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* Tab-change slide, shared by My Library / Notifications / Reservations
+   (useSwipeTabs) — content enters from the direction the swipe (or tap)
+   moved toward, instead of an instant, jarring swap. */
+@keyframes tab-enter-forward {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes tab-enter-back {
+  from { opacity: 0; transform: translateX(-24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.tab-enter-forward {
+  animation: tab-enter-forward 200ms ease-out;
+}
+
+.tab-enter-back {
+  animation: tab-enter-back 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-enter-forward,
+  .tab-enter-back {
+    animation: none;
+  }
 }
 
 input[type="number"]::-webkit-inner-spin-button,
