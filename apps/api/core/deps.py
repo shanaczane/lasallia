@@ -86,7 +86,8 @@ def get_current_user(
     # routers/auth.py's login/refresh use to build the role a client
     # sees (_build_token_response) — this makes server-side authorization
     # agree with that instead of trusting a claim nothing keeps in sync.
-    profile = _load_profile(payload["sub"])
+    profile_res = get_admin_client().table("profiles").select("role, full_name, program, year_level, college").eq("id", payload["sub"]).execute()
+    profile = profile_res.data[0] if profile_res.data else {}
     role: Role = profile.get("role") or meta.get("role", "guest")
 
     return UserProfile(
@@ -94,6 +95,9 @@ def get_current_user(
         email=payload.get("email", ""),
         role=role,
         full_name=profile.get("full_name") or meta.get("full_name"),
+        program=profile.get("program"),
+        year_level=profile.get("year_level"),
+        college=profile.get("college"),
     )
 
 # A kiosk tap never produces a JWT — the station session IS the identity (its id

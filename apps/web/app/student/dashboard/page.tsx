@@ -92,15 +92,35 @@ export default function StudentDashboard() {
           </p>
         </div>
 
+        {/* Desktop/tablet only — on phone this becomes a floating button
+            (below) instead of competing with the greeting for space. */}
         <Link
           href="/student/catalog"
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors shadow-sm self-start"
+          className="hidden sm:flex items-center justify-center gap-2 px-4 py-2.5 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors shadow-sm self-start"
           style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
         >
           <Search size={15} />
           Find a book
         </Link>
       </div>
+
+      {/* Phone only — floating "Find a book" button, pinned to the bottom
+          corner so it stays reachable while scrolling instead of sitting
+          fixed in the page flow. Clears the phone's home-indicator/gesture
+          area via safe-area-inset-bottom, same convention FilterSheet's
+          footer already uses. */}
+      <Link
+        href="/student/catalog"
+        aria-label="Find a book"
+        className="sm:hidden fixed right-4 flex items-center justify-center w-14 h-14 rounded-full bg-green-700 text-white hover:bg-green-800 active:bg-green-900 transition-colors"
+        style={{
+          bottom: "max(1rem, env(safe-area-inset-bottom))",
+          boxShadow: "var(--shadow-lg)",
+          zIndex: "var(--z-fab)",
+        }}
+      >
+        <Search size={22} />
+      </Link>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 sm:flex gap-3 sm:gap-4 sm:flex-wrap">

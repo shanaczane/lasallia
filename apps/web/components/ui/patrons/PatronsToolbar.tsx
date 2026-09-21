@@ -7,7 +7,7 @@
 
 "use client"
 
-import { Search, X, Users } from "lucide-react"
+import { Search, X, Users, Download } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UserRole } from "@lasallia/types"
 import { ROLE_LABEL } from "@/lib/mock/patrons"
@@ -26,6 +26,10 @@ type PatronsToolbarProps = {
   roleFilter: RoleFilter
   onRoleFilterChange: (v: RoleFilter) => void
   resultCount: number
+  /** Exports whatever `resultCount` describes — the search+role-filtered
+   *  list, not the full unfiltered patron directory. */
+  onExport: () => void
+  exportDisabled?: boolean
 }
 
 export function PatronsToolbar({
@@ -34,6 +38,8 @@ export function PatronsToolbar({
   roleFilter,
   onRoleFilterChange,
   resultCount,
+  onExport,
+  exportDisabled,
 }: PatronsToolbarProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -99,6 +105,21 @@ export function PatronsToolbar({
             </option>
           ))}
         </select>
+
+        {/* Export CSV — follows the search + role filter above, same as
+            every report tab's Export CSV button. */}
+        <button
+          type="button"
+          onClick={onExport}
+          disabled={exportDisabled}
+          className={cn(
+            "flex items-center gap-1.5 shrink-0 px-3 py-2 rounded-sm border border-ink-200 text-ink-700",
+            "hover:bg-ink-50 hover:border-ink-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          )}
+          style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+        >
+          <Download size={14} /> Export CSV
+        </button>
       </div>
 
       {/* Result count */}

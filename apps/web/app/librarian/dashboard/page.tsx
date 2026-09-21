@@ -15,7 +15,8 @@ import { cn } from "@/lib/utils"
 import { fetchLoans, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
 import { fetchBooks } from "@/lib/books"
-import { buildFeed, timeLabel, TX_CONFIG } from "@/lib/activity"
+import { buildFeed, timeLabel, TX_CONFIG, type FeedItem } from "@/lib/activity"
+import { ActivityDetailPanel } from "@/components/dashboard/ActivityDetailPanel"
 import type { Reservation } from "@lasallia/types"
 
 // Dashboard only ever shows a short preview — the full, searchable history
@@ -29,6 +30,7 @@ export default function LibrarianDashboard() {
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [totalCopies, setTotalCopies] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [selectedActivity, setSelectedActivity] = useState<FeedItem | null>(null)
 
   useEffect(() => {
     Promise.all([fetchLoans(), fetchReservations(), fetchBooks()])
@@ -165,7 +167,12 @@ export default function LibrarianDashboard() {
                   {feed.map((tx) => {
                     const cfg = TX_CONFIG[tx.type]
                     return (
-                      <div key={tx.id} className="flex flex-col gap-1.5 px-4 py-3">
+                      <button
+                        key={tx.id}
+                        type="button"
+                        onClick={() => setSelectedActivity(tx)}
+                        className="flex flex-col gap-1.5 px-4 py-3 text-left hover:bg-ink-50 transition-colors"
+                      >
                         <div className="flex items-center justify-between">
                           <span className="text-ink-500" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
                             {tx.date} · {tx.time}
@@ -180,7 +187,7 @@ export default function LibrarianDashboard() {
                         <span className="text-ink-500 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
                           {tx.item}
                         </span>
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -221,7 +228,11 @@ export default function LibrarianDashboard() {
                       {feed.map((tx) => {
                         const cfg = TX_CONFIG[tx.type]
                         return (
-                          <tr key={tx.id} className="hover:bg-ink-50 transition-colors">
+                          <tr
+                            key={tx.id}
+                            onClick={() => setSelectedActivity(tx)}
+                            className="hover:bg-ink-50 transition-colors cursor-pointer"
+                          >
                             <td className="py-3 px-4 align-top">
                               <span className="block text-ink-700 truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
                                 {tx.date}
@@ -295,7 +306,18 @@ export default function LibrarianDashboard() {
                   <div className="flex flex-col gap-2 bg-ink-50 rounded-(--radius-sm) p-3">
                     <DetailRow label="Book" value={r.books?.title ?? "Unknown title"} />
                     <DetailRow label="Borrower" value={r.profiles?.full_name ?? "Unknown"} />
-                    <DetailRow label="Condition" value={r.condition_at_return ?? "—"} />
+                    <DetailRow
+                      label="Condition"
+                      value={r.condition_at_return ?? "—"}
+                      danger={!!r.condition_at_return && r.condition_at_return !== "good"}
+                    />
+                    {r.fine_status === "unsettled" && (
+                      <DetailRow
+                        label="Fine"
+                        value={`₱${(r.fine_amount ?? 0).toFixed(2)} unpaid`}
+                        danger
+                      />
+                    )}
                   </div>
                 </div>
               ))}
@@ -307,17 +329,27 @@ export default function LibrarianDashboard() {
           )}
         </div>
       </div>
+
+      <ActivityDetailPanel
+        item={selectedActivity}
+        loans={loans}
+        reservations={reservations}
+        onClose={() => setSelectedActivity(null)}
+      />
     </div>
   )
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-3">
       <span className="text-ink-500 shrink-0" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
         {label}
       </span>
-      <span className="text-ink-900 font-medium text-right" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+      <span
+        className={cn("font-medium text-right", danger ? "text-danger" : "text-ink-900")}
+        style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+      >
         {value}
       </span>
     </div>

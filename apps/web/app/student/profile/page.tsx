@@ -18,9 +18,10 @@
 import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { AlertCircle } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, ordinal } from "@/lib/utils"
 import { getUser, updateProfile, changePassword, type UserProfile as AuthUser } from "@/lib/auth"
 import { fetchLoans, type Loan as ApiLoan } from "@/lib/kiosk"
+import { collegeForProgram } from "@/lib/collegeForProgram"
 
 const MIN_PASSWORD_LENGTH = 8
 
@@ -263,6 +264,25 @@ function StudentProfileContent() {
                   onChange={() => {}}
                   disabled
                 />
+                {/* Program/College/Year Level — same fields the librarian's
+                    Patron Record shows about this same account (see
+                    PatronProfileModal.tsx), read-only here since this is
+                    enrollment data, not something a student edits. */}
+                {profile.role === "student" ? (
+                  <>
+                    {profile.program && <Field label="Program" value={profile.program} onChange={() => {}} disabled />}
+                    {(profile.college || collegeForProgram(profile.program)) && (
+                      <Field label="College" value={(profile.college || collegeForProgram(profile.program))!} onChange={() => {}} disabled />
+                    )}
+                    {profile.year_level != null && (
+                      <Field label="Year Level" value={`${ordinal(profile.year_level)} Year`} onChange={() => {}} disabled />
+                    )}
+                  </>
+                ) : (
+                  (profile.college || collegeForProgram(profile.program)) && (
+                    <Field label="College" value={(profile.college || collegeForProgram(profile.program))!} onChange={() => {}} disabled />
+                  )
+                )}
               </SettingsSection>
 
               <SettingsSection title="Outstanding Fines">

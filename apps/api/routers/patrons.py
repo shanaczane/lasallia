@@ -57,6 +57,8 @@ def update_patron(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Year Level must be between 1 and {MAX_YEAR_LEVEL}")
     if "program" in changes and changes["program"] is not None:
         changes["program"] = changes["program"].strip() or None
+    if "college" in changes and changes["college"] is not None:
+        changes["college"] = changes["college"].strip() or None
 
     admin = get_admin_client()
     res = admin.table("profiles").update(changes).eq("id", user_id).execute()

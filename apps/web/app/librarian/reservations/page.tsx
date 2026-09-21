@@ -1,7 +1,7 @@
 // apps/web/app/librarian/reservations/page.tsx
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { cn } from "@/lib/utils"
 import {
   CheckCircle,
@@ -12,10 +12,19 @@ import {
   Search,
   BookMarked,
   X,
+  ScanLine,
+  CheckCircle2,
 } from "lucide-react"
 import { useReservations } from "@/lib/hooks/useReservations"
 import { cancelReservation } from "@/lib/reservations"
+import { openSession, createAssistedLoan, endSession, type Condition } from "@/lib/kiosk"
 import type { Reservation, ReservationStatus } from "@lasallia/types"
+
+const BORROW_CONDITIONS: { value: Condition; label: string }[] = [
+  { value: "good", label: "Good" },
+  { value: "minor_wear", label: "Minor wear" },
+  { value: "already_damaged", label: "Already damaged" },
+]
 
 // Same chevron-as-background-image treatment PatronsToolbar's role filter
 // uses, so every librarian list page's search+filter row reads as one
@@ -165,6 +174,205 @@ function RejectModal({ reservation, pending, onConfirm, onClose }: RejectModalPr
   )
 }
 
+// ─── Process Borrow Modal ────────────────────────────────────────────────────
+// Shortcut into the same POST /loans/librarian-assisted flow Borrow & Return's
+// Assisted Borrow panel uses — skips the "tap ID / search for student" step
+// since a reservation already identifies exactly who this copy is held for.
+// The librarian still has to scan/type the accession number themselves: that
+// step is what proves they actually have the right physical copy in hand,
+// same as every other desk checkout, not something a reservation record can
+// stand in for.
+interface ProcessBorrowModalProps {
+  reservation: Reservation
+  onDone: () => void
+  onClose: () => void
+}
+
+function ProcessBorrowModal({ reservation, onDone, onClose }: ProcessBorrowModalProps) {
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [sessionError, setSessionError] = useState("")
+
+  const [accessionInput, setAccessionInput] = useState("")
+  const [condition, setCondition] = useState<Condition | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState("")
+  const [confirmedTitle, setConfirmedTitle] = useState<string | null>(null)
+
+  // Mirrors sessionId/confirmedTitle for the unmount cleanup below — that
+  // closure is fixed at the moment this effect first runs (empty dep array,
+  // intentionally: it should only open one session for this modal's whole
+  // lifetime), so it can't see later state updates directly. Refs can.
+  const sessionIdRef = useRef<string | null>(null)
+  const confirmedRef = useRef(false)
+
+  useEffect(() => {
+    let cancelled = false
+    openSession("librarian-desk", { authMethod: "librarian_assisted", studentId: reservation.user_id })
+      .then((s) => { if (!cancelled) { setSessionId(s.id); sessionIdRef.current = s.id } })
+      .catch((err) => { if (!cancelled) setSessionError(err instanceof Error ? err.message : "Could not start this checkout") })
+    return () => {
+      cancelled = true
+      // Only the "still mid-flow, never confirmed" case needs cleanup — a
+      // successful confirm already closed it out via handleConfirm below.
+      if (sessionIdRef.current && !confirmedRef.current) endSession(sessionIdRef.current).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function handleConfirm() {
+    if (!sessionId || !condition || !accessionInput.trim()) return
+    setSubmitting(true)
+    setSubmitError("")
+    try {
+      const loan = await createAssistedLoan({
+        stationSessionId: sessionId,
+        accessionNumber: accessionInput.trim(),
+        condition,
+      })
+      confirmedRef.current = true
+      await endSession(sessionId)
+      setConfirmedTitle(loan.books?.title ?? bookTitle(reservation))
+      onDone()
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Could not confirm this loan")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const canConfirm = !!sessionId && !!condition && accessionInput.trim().length > 0 && !submitting
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="flex flex-col gap-4 bg-white rounded-(--radius) p-6 w-full max-w-sm shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {confirmedTitle ? (
+          <div className="flex flex-col items-center gap-3 text-center py-2">
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-success-bg">
+              <CheckCircle2 size={26} className="text-success" />
+            </div>
+            <div>
+              <p className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}>
+                Book Borrowed Successfully
+              </p>
+              <p className="text-ink-500 mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+                <span className="font-medium text-ink-700">{confirmedTitle}</span> picked up by{" "}
+                <span className="font-medium text-ink-700">{patronName(reservation)}</span>
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="size-11 rounded-full bg-success-bg flex items-center justify-center flex-shrink-0">
+              <ScanLine size={20} className="text-success" />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <h3 className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>
+                Process Pickup
+              </h3>
+              <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                Scan or type the accession number of the physical copy you&apos;re handing over.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-1 bg-ink-50 px-3.5 py-3 rounded-(--radius) border-l-[3px] border-green-600">
+              <p className="text-ink-900 font-semibold leading-snug" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                {bookTitle(reservation)}
+              </p>
+              <p className="text-ink-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+                {patronName(reservation)} · {patronEmail(reservation)}
+              </p>
+            </div>
+
+            {sessionError ? (
+              <p className="text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+                {sessionError}
+              </p>
+            ) : (
+              <>
+                <div className="flex flex-col gap-1">
+                  <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                    Accession Number <span className="text-danger">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={accessionInput}
+                    onChange={(e) => setAccessionInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && canConfirm && handleConfirm()}
+                    placeholder="Scan or type…"
+                    className="w-full px-3 py-2 rounded-sm border border-ink-200 focus:outline-none focus:border-green-700"
+                    style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                    Condition <span className="text-danger">*</span>
+                  </label>
+                  <div className="flex gap-1.5">
+                    {BORROW_CONDITIONS.map((c) => (
+                      <button
+                        key={c.value}
+                        type="button"
+                        onClick={() => setCondition(c.value)}
+                        className={cn(
+                          "flex-1 px-2 py-1.5 rounded-sm border font-medium transition-colors",
+                          condition === c.value
+                            ? "border-green-700 bg-green-50 text-green-800"
+                            : "border-ink-200 text-ink-600 hover:border-ink-300"
+                        )}
+                        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {submitError && (
+                  <p className="text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+                    {submitError}
+                  </p>
+                )}
+              </>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={onClose}
+                disabled={submitting}
+                className="flex-1 min-w-[120px] px-4 py-2.5 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm disabled:opacity-50"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={!canConfirm}
+                className="flex-1 min-w-[120px] px-4 py-2.5 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors disabled:opacity-50"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+              >
+                {submitting ? "Confirming…" : "Confirm Borrow"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: ReservationStatus }) {
   const cfg = STATUS_CONFIG[status]
@@ -219,9 +427,10 @@ interface ReservationRowProps {
   reservation: Reservation
   isLast: boolean
   onReject: (r: Reservation) => void
+  onProcessBorrow: (r: Reservation) => void
 }
 
-function ReservationRow({ reservation: r, isLast, onReject }: ReservationRowProps) {
+function ReservationRow({ reservation: r, isLast, onReject, onProcessBorrow }: ReservationRowProps) {
   const cfg = STATUS_CONFIG[r.status]
   const isPending = r.status === "pending"
   const isReady = r.status === "ready"
@@ -280,6 +489,16 @@ function ReservationRow({ reservation: r, isLast, onReject }: ReservationRowProp
       </div>
 
       <div className="flex items-center gap-2 flex-shrink-0">
+        {isReady && (
+          <button
+            onClick={() => onProcessBorrow(r)}
+            className="flex items-center justify-center gap-1.5 h-8 w-8 sm:w-auto sm:min-w-30 sm:px-3 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+          >
+            <ScanLine size={13} />
+            <span className="hidden sm:inline">Process Borrow</span>
+          </button>
+        )}
         {canCancel ? (
           <button
             onClick={() => onReject(r)}
@@ -309,6 +528,7 @@ export default function LibrarianReservationsPage() {
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "pickup">("newest")
 
   const [rejectTarget, setRejectTarget] = useState<Reservation | null>(null)
+  const [borrowTarget, setBorrowTarget] = useState<Reservation | null>(null)
 
   const tabCounts: Record<TabKey, number> = useMemo(() => ({
     all:       reservations.length,
@@ -481,7 +701,7 @@ export default function LibrarianReservationsPage() {
             </p>
             <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
               {filtered.map((r, i) => (
-                <ReservationRow key={r.id} reservation={r} isLast={i === filtered.length - 1} onReject={setRejectTarget} />
+                <ReservationRow key={r.id} reservation={r} isLast={i === filtered.length - 1} onReject={setRejectTarget} onProcessBorrow={setBorrowTarget} />
               ))}
             </div>
           </div>
@@ -494,6 +714,14 @@ export default function LibrarianReservationsPage() {
           pending={actionPending}
           onConfirm={handleRejectConfirm}
           onClose={() => setRejectTarget(null)}
+        />
+      )}
+
+      {borrowTarget && (
+        <ProcessBorrowModal
+          reservation={borrowTarget}
+          onDone={refresh}
+          onClose={() => setBorrowTarget(null)}
         />
       )}
     </div>

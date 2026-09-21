@@ -7,6 +7,9 @@ export type UserProfile = {
   email: string
   role: Role
   full_name: string | null
+  program?: string | null
+  year_level?: number | null
+  college?: string | null
 }
 
 type TokenResponse = {

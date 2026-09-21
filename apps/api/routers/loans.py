@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
+from core.accession import normalize_accession_number
 from core.calendar import compute_fine
 from core.deps import get_current_user, get_user_supabase, require_librarian
 from core.loans import HOLD_GONE, check_borrow_eligibility, create_loan_and_notify
@@ -29,9 +30,11 @@ DAMAGE_PROCESSING_FEE = 50.0
 
 
 def _embed_book_and_borrower(db: Client, query):
-    # profiles!loans_student_id_fkey, not bare profiles(...): loans also links to
-    # profiles through assisted_by (the librarian who helped check it out), so
-    # a bare embed is ambiguous and PostgREST returns an error (HTTP 500 here).
+    # profiles!loans_student_id_fkey, not bare profiles(...) — migration
+    # 0028 added loans.assisted_by as a second FK to profiles, so an
+    # unqualified embed is ambiguous and PostgREST 400s the whole query.
+    # The borrower is always student_id; assisted_by is a separate,
+    # optional audit field nothing here reads back out.
     return query.select("*, book_copies(book_id, accession_number, books(*)), profiles!loans_student_id_fkey(full_name, avatar_url)")
 
 
@@ -155,8 +158,8 @@ def confirm_loan(body: ConfirmLoanRequest):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Copy not found")
     copy = copy_res.data[0]
 
-    submitted = body.accession_number.strip().lower()
-    actual = (copy["accession_number"] or "").strip().lower()
+    submitted = normalize_accession_number(body.accession_number).lower()
+    actual = normalize_accession_number(copy["accession_number"] or "").lower()
 
     if submitted != actual:
         attempts = hold["attempt_count"] + 1
@@ -217,7 +220,7 @@ def create_librarian_assisted_loan(
     copy_res = (
         admin.table("book_copies")
         .select("id, book_id, status")
-        .eq("accession_number", body.accession_number.strip())
+        .eq("accession_number", normalize_accession_number(body.accession_number))
         .execute()
     )
     if not copy_res.data:
@@ -263,7 +266,7 @@ def lookup_loan(
     # like the return/reshelve endpoints below, runs entirely on the admin
     # client. require_librarian already gates the endpoint itself.
     admin = get_admin_client()
-    copy_res = admin.table("book_copies").select("id, book_id").eq("accession_number", accession_number.strip()).execute()
+    copy_res = admin.table("book_copies").select("id, book_id").eq("accession_number", normalize_accession_number(accession_number)).execute()
     if not copy_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No copy with that accession number")
     copy = copy_res.data[0]
@@ -519,7 +522,7 @@ def reshelve_copy(
     librarian: UserProfile = Depends(require_librarian),
 ):
     admin = get_admin_client()
-    copy_res = admin.table("book_copies").select("id, book_id, status").eq("accession_number", body.accession_number.strip()).execute()
+    copy_res = admin.table("book_copies").select("id, book_id, status").eq("accession_number", normalize_accession_number(body.accession_number)).execute()
     if not copy_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No copy with that accession number")
     copy = copy_res.data[0]

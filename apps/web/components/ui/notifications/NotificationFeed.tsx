@@ -156,8 +156,12 @@ export function NotificationFeed({
         </div>
       </div>
 
-      {/* ── Tab filters ────────────────────────────────────────────────── */}
-      <div className="border-b border-ink-200">
+      {/* ── Tab filters — sticky under the fixed TopNav, so it stays
+          reachable while the notification list below scrolls. ─────────── */}
+      <div
+        className="sticky z-40 border-b border-ink-200 bg-paper/95 backdrop-blur-sm"
+        style={{ top: "var(--height-nav)" }}
+      >
 
         {/* Mobile: content-width tabs, scrollable if needed, no forced equal columns */}
         <div className="flex sm:hidden w-full overflow-x-auto px-2 scrollbar-none">

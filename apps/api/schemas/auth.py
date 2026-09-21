@@ -15,6 +15,12 @@ class UserProfile(BaseModel):
     email: str
     role: Role
     full_name: str | None = None
+    # Self-service fields (Settings/Profile page) — same columns
+    # schemas/patron.Patron exposes to a librarian looking someone else up,
+    # just also readable by the account itself via GET /auth/me.
+    program: str | None = None
+    year_level: int | None = None
+    college: str | None = None
 
 class TokenResponse(BaseModel):
     access_token: str

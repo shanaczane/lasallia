@@ -19,7 +19,8 @@ import { BookFormModal, type BookFormData } from '@/components/ui/catalog/BookFo
 import { DeleteBookModal } from '@/components/ui/catalog/DeleteBookModal'
 import { useRouter } from 'next/navigation'
 import { archiveBook } from '@/lib/weeding'
-import { fetchBookCopies, markCopyFound, type BookCopy as RealCopy } from '@/lib/books'
+import { fetchBookCopies, markCopyFound, updateBook, uploadBookCover, type BookCopy as RealCopy } from '@/lib/books'
+import { bookFormDataToPayload } from '@/lib/bookForm'
 
 // ─── Cover color helper ───────────────────────────────────────────────────────
 
@@ -118,6 +119,7 @@ export default function LibrarianBookDetailPage({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [copies, setCopies] = useState<MockCopy[]>([])
   const [archiveError, setArchiveError] = useState('')
+  const [editError, setEditError] = useState('')
 
   // Per-copy tracking isn't backed by a real table yet — this regenerates
   // placeholder copy rows from total_copies/available_copies once the real
@@ -209,13 +211,23 @@ export default function LibrarianBookDetailPage({
     setCopies((prev) => [...prev, copy])
   }
 
-  function handleEditSubmit(_data: BookFormData) {
-    setEditOpen(false)
+  async function handleEditSubmit(data: BookFormData) {
+    if (!book) return
+    try {
+      await updateBook(book.id, bookFormDataToPayload(data, { category: book.category, status: book.status }))
+      if (data.cover_image_file) {
+        await uploadBookCover(book.id, data.cover_image_file)
+      }
+      setEditOpen(false)
+      refetch()
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Could not save changes to this book.')
+    }
   }
 
-  // Reports plan Phase 2 — the only one of these actions wired to a real
-  // endpoint so far (edit/delete stay local-only, see the copies effect
-  // above). Only navigates away once the archive actually succeeds.
+  // Delete still stays local-only (see handleDelete below) — only archive
+  // and edit are wired to real endpoints. Only navigates away once the
+  // archive actually succeeds.
   async function handleArchive(book: Book) {
     try {
       await archiveBook(book.id)
@@ -253,6 +265,18 @@ export default function LibrarianBookDetailPage({
         >
           {archiveError}
           <button type="button" onClick={() => setArchiveError('')} className="font-semibold hover:underline shrink-0">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {editError && (
+        <div
+          className="mb-6 px-4 py-3 rounded-(--radius) border border-danger bg-danger-bg text-danger flex items-center justify-between gap-3"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+        >
+          {editError}
+          <button type="button" onClick={() => setEditError('')} className="font-semibold hover:underline shrink-0">
             Dismiss
           </button>
         </div>

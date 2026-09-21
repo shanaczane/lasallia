@@ -178,13 +178,18 @@ function GuestCatalogContent() {
             </div>
           </div>
 
-          <FilterPillBar
-            filters={filters}
-            onChange={setFilters}
-            genres={genres}
-            floors={floors}
-            subjects={subjects}
-          />
+          {/* Desktop only — QuickChipRow below (lg:hidden) is the phone/
+              compact equivalent; without this gate both render at once
+              under lg. */}
+          <div className="hidden lg:block">
+            <FilterPillBar
+              filters={filters}
+              onChange={setFilters}
+              genres={genres}
+              floors={floors}
+              subjects={subjects}
+            />
+          </div>
         </div>
 
         {/* Applied filter chips */}

@@ -20,6 +20,11 @@ class Patron(BaseModel):
     role: PatronRole
     program: str | None = None
     year_level: int | None = None
+    # One of the catalog's fixed college codes (apps/web/lib/colleges.ts:
+    # CITE, CBEAM, CEAS, CITHM, HEALTH-ALLIED, GEN-AD, GRADUATE SCHOOL).
+    # Nullable — not backfilled for every existing row; the frontend falls
+    # back to guessing from `program` (lib/collegeForProgram.ts) when null.
+    college: str | None = None
     avatar_url: str | None = None
     status: PatronStatus | None = None
     created_at: str
@@ -35,3 +40,4 @@ class UpdatePatronRequest(BaseModel):
     status: PatronStatus | None = None
     program: str | None = None
     year_level: int | None = None
+    college: str | None = None
