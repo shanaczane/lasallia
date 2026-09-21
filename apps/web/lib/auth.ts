@@ -1,3 +1,5 @@
+import { getSupabaseAuth } from "@/lib/supabaseBrowser"
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 export type Role = "librarian" | "student" | "guest"
@@ -31,6 +33,30 @@ export async function loginRequest(email: string, password: string): Promise<Tok
     throw new Error(err.detail ?? "Invalid email or password")
   }
 
+  return res.json()
+}
+
+// Google sign-in — redirects to Google via Supabase, which returns to
+// /auth/callback. `hd` only filters Google's account picker; the role
+// (student vs guest) is decided server-side by the profiles trigger.
+export async function signInWithGoogle(): Promise<void> {
+  const { error } = await getSupabaseAuth().auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: `${location.origin}/auth/callback`,
+      queryParams: { hd: "dlsl.edu.ph" },
+    },
+  })
+  if (error) throw new Error(error.message)
+}
+
+// Profile (role included) for a Supabase access token that didn't come
+// from /auth/login — i.e. the Google callback.
+export async function fetchMe(accessToken: string): Promise<UserProfile> {
+  const res = await fetch(`${API_URL}/auth/me`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) throw new Error("Could not load your profile")
   return res.json()
 }
 
