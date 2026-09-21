@@ -16,7 +16,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Clock, Search, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Clock, Search, Sparkles, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { TopNav } from '@/components/layout/TopNav'
 import { KioskSessionProvider, useKioskSession } from '@/components/kiosk/KioskSessionProvider'
@@ -30,6 +30,7 @@ const WARNING_AT_SECONDS = 15
 
 const kioskNav = [
   { label: 'Find a book', icon: <Search size={16} />, href: '/kiosk/catalog' },
+  { label: 'For you', icon: <Sparkles size={16} />, href: '/kiosk/for-you' },
   { label: 'Ask Lasallia', icon: <MessageSquare size={16} />, href: '/kiosk/assistant' },
 ]
 

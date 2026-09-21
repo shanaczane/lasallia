@@ -34,3 +34,14 @@ export async function fetchPopularRecommendations(limit = 8): Promise<Recommenda
   if (!res.ok) return parseErrorOrThrow(res, "Failed to load popular books")
   return res.json()
 }
+
+// The kiosk's "For you" tab. A kiosk tap never produces a JWT — the open station
+// session id is the identity (same trust as holds and kiosk chat). No session
+// (a guest visit) gets the public popular rung from the server.
+export async function fetchKioskRecommendations(sessionId: string | null, limit = 8): Promise<RecommendationsResponse> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (sessionId) params.set('session_id', sessionId)
+  const res = await fetch(`${API_URL}/recommendations/kiosk?${params}`)
+  if (!res.ok) return parseErrorOrThrow(res, "Failed to load recommendations")
+  return res.json()
+}

@@ -12,8 +12,8 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getUser } from "@/lib/auth"
-import { fetchLoans, type Loan as ApiLoan } from "@/lib/kiosk"
-import { fetchReservations } from "@/lib/reservations"
+import type { Loan as ApiLoan } from "@/lib/kiosk"
+import { useStudentCounts } from "@/components/layout/StudentCountsContext"
 import { ForYouSection } from "@/components/ui/dashboard/ForYouSection"
 import type { Reservation } from "@lasallia/types"
 
@@ -41,17 +41,9 @@ function greeting(): string {
 }
 
 export default function StudentDashboard() {
-  const [loans, setLoans] = useState<ApiLoan[]>([])
-  const [reservations, setReservations] = useState<Reservation[]>([])
-  const [loading, setLoading] = useState(true)
+  const { loans, reservations, loaded } = useStudentCounts()
+  const loading = !loaded
   const [firstName, setFirstName] = useState("there")
-
-  useEffect(() => {
-    Promise.all([fetchLoans(), fetchReservations()])
-      .then(([l, r]) => { setLoans(l); setReservations(r) })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
 
   // getUser() reads localStorage, which doesn't exist during Next's SSR
   // pass of this client component — has to run post-hydration, in an

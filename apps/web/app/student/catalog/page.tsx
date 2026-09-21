@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/catalog'
 import { useBooks } from '@/lib/hooks/useBooks'
 import { deriveCatalogOptions } from '@/lib/catalogOptions'
+import { programLabel } from '@/lib/programLabels'
 import { fetchSavedBooks, saveBook, unsaveBook } from '@/lib/saved'
 
 const PAGE_SIZE = 24
@@ -54,6 +55,7 @@ function searchBooks(books: Book[], query: string): Book[] {
       book.title.toLowerCase().includes(q) ||
       book.author.toLowerCase().includes(q) ||
       book.category.toLowerCase().includes(q) ||
+      programLabel(book.category).toLowerCase().includes(q) ||
       (book.subject?.toLowerCase().includes(q) ?? false) ||
       book.call_number.toLowerCase().includes(q)
   )
@@ -65,7 +67,6 @@ function StudentCatalogContent() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const filtersButtonRef = useRef<HTMLButtonElement>(null)
 
-  const { filters, setFilter, setFilters, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
   const { books, loading, error } = useBooks()
 
   const [savedBookIds, setSavedBookIds] = useState<Set<string>>(new Set())
@@ -95,7 +96,8 @@ function StudentCatalogContent() {
     }
   }
 
-  const { genres, subjects, floors } = useMemo(() => deriveCatalogOptions(books), [books])
+  const { genres, subjects, floors, programToCollege } = useMemo(() => deriveCatalogOptions(books), [books])
+  const { filters, setFilter, setFilters, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters(programToCollege)
 
   const sections = useMemo(
     () => buildFilterSections({ genres, subjects, floors }),

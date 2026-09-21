@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react"
 import { fetchNotifications } from "@/lib/notifications"
+import { usePolling } from "@/lib/hooks/usePolling"
 
 type NotificationContextType = {
   unreadCount: number
@@ -34,7 +35,7 @@ export function useNotifications() {
 // with the app already open would only see a student's transaction after
 // their next full navigation or reload; this is what makes it show up on
 // its own instead.
-const POLL_INTERVAL_MS = 20_000
+const POLL_INTERVAL_MS = 60_000
 
 export function NotificationProvider({
   children,
@@ -51,11 +52,7 @@ export function NotificationProvider({
       .catch(() => {})
   }
 
-  useEffect(() => {
-    refresh()
-    const id = setInterval(refresh, POLL_INTERVAL_MS)
-    return () => clearInterval(id)
-  }, [])
+  usePolling(refresh, POLL_INTERVAL_MS)
 
   return (
     <NotificationContext.Provider

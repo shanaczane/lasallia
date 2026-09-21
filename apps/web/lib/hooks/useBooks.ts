@@ -10,7 +10,7 @@ import { subscribeToBookChanges } from '@/lib/realtime'
 // parent book (migration 0033), the subscription fires, and the data is
 // refetched through the same API path as the initial load — silently, so the
 // page doesn't flash a loading state.
-export function useBooks({ live = true }: { live?: boolean } = {}) {
+export function useBooks({ live = true, full = false }: { live?: boolean; full?: boolean } = {}) {
   const [books, setBooks] = useState<Book[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -18,7 +18,7 @@ export function useBooks({ live = true }: { live?: boolean } = {}) {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    fetchBooks()
+    fetchBooks({ full })
       .then((data) => { if (!cancelled) setBooks(data) })
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load the catalog') })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -28,13 +28,24 @@ export function useBooks({ live = true }: { live?: boolean } = {}) {
   useEffect(() => {
     if (!live) return
     let cancelled = false
-    const unsubscribe = subscribeToBookChanges(() => {
-      fetchBooks()
+    // A hidden tab has nobody to show it to — remember that something changed
+    // and refetch once when the tab comes back, instead of on every event.
+    let missedWhileHidden = false
+    const refetch = () => {
+      fetchBooks({ full })
         .then((data) => { if (!cancelled) setBooks(data) })
         .catch(() => {})
+    }
+    const unsubscribe = subscribeToBookChanges(() => {
+      if (document.visibilityState === 'hidden') { missedWhileHidden = true; return }
+      refetch()
     })
-    return () => { cancelled = true; unsubscribe() }
-  }, [live])
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && missedWhileHidden) { missedWhileHidden = false; refetch() }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { cancelled = true; unsubscribe(); document.removeEventListener('visibilitychange', onVisible) }
+  }, [live, full])
 
   return { books, loading, error }
 }

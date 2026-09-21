@@ -91,6 +91,8 @@ export function BookCard({ book, href, className, showBookmark = false, isSaved,
           {book.cover_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
+              loading="lazy"
+              decoding="async"
               src={book.cover_url}
               alt={`Cover of ${book.title}`}
               className="w-full h-full object-cover"

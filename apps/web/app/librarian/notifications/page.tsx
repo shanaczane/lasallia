@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import { AlertCircle, Bookmark, BookOpen, RotateCcw, PackageCheck, Bell } from "lucide-react"
 import { fetchNotifications, markNotificationRead, markAllNotificationsRead } from "@/lib/notifications"
 import { useNotifications } from "@/components/ui/notifications/NotificationContext"
+import { usePolling } from "@/lib/hooks/usePolling"
 import type { Notification } from "@lasallia/types"
 
 // Every librarian-facing row core/notify.py inserts comes in as one type,
@@ -96,17 +97,12 @@ export default function LibrarianNotificationsPage() {
   // librarian who already has this page open otherwise never sees a
   // student's transaction land here until they reload) — silent after the
   // first load, so it doesn't flash back to the "Loading…" state.
-  useEffect(() => {
-    function load() {
-      fetchNotifications()
-        .then(setNotifications)
-        .catch(() => {})
-        .finally(() => setLoading(false))
-    }
-    load()
-    const id = setInterval(load, 20_000)
-    return () => clearInterval(id)
-  }, [])
+  usePolling(() => {
+    fetchNotifications()
+      .then(setNotifications)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, 60_000)
 
   const categorized = notifications.map((n) => ({ n, category: categoryOf(n) }))
 

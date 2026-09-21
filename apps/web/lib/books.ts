@@ -15,8 +15,10 @@ function optionalAuthHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-export async function fetchBooks(): Promise<Book[]> {
-  const res = await fetch(`${API_URL}/books`, { headers: optionalAuthHeaders() })
+// The list omits each book's abstract (most of the payload, and only the detail
+// page and the librarian edit form use it). full: true asks for it too.
+export async function fetchBooks({ full = false }: { full?: boolean } = {}): Promise<Book[]> {
+  const res = await fetch(`${API_URL}/books${full ? '?include_abstract=true' : ''}`, { headers: optionalAuthHeaders() })
   if (!res.ok) throw new Error('Failed to load the catalog')
   const data: BookSearchResponse = await res.json()
   return data.books

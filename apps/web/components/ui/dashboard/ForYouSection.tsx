@@ -72,7 +72,15 @@ const RUNG_COPY: Record<RecommendationsResponse["rung"], { title: string; subtit
   popular: { title: "Popular at the LRC", subtitle: "Library-wide, not personalized yet." },
 }
 
-export function ForYouSection() {
+// fetcher/hrefPrefix default to the student dashboard's behavior; the kiosk's
+// "For you" tab passes its own (no JWT there — see fetchKioskRecommendations).
+export function ForYouSection({
+  fetcher = () => fetchRecommendations(8),
+  hrefPrefix = "/student/catalog",
+}: {
+  fetcher?: () => Promise<RecommendationsResponse>
+  hrefPrefix?: string
+} = {}) {
   const [items, setItems] = useState<RecommendationItem[] | null>(null)
   const [rung, setRung] = useState<RecommendationsResponse["rung"]>("personal")
   const [loading, setLoading] = useState(true)
@@ -82,7 +90,7 @@ export function ForYouSection() {
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
-    fetchRecommendations(8)
+    fetcher()
       .then((res) => {
         setItems(res.recommendations)
         setRung(res.rung)
@@ -124,7 +132,7 @@ export function ForYouSection() {
               book={item.book}
               // fromRec/rank let the detail page attribute a later
               // reserve action back to this card (Phase 9).
-              href={`/student/catalog/${item.book.id}?fromRec=1&rank=${item.rank}`}
+              href={`${hrefPrefix}/${item.book.id}?fromRec=1&rank=${item.rank}`}
               reason={item.reason}
               className="w-[140px] lg:w-full shrink-0"
               onClick={() => logEvent("click", item.book.id, item.rank)}

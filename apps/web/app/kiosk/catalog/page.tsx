@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/catalog'
 import { useBooks } from '@/lib/hooks/useBooks'
 import { deriveCatalogOptions } from '@/lib/catalogOptions'
+import { programLabel } from '@/lib/programLabels'
 import { useKioskSession } from '@/components/kiosk/KioskSessionProvider'
 
 const PAGE_SIZE = 24
@@ -59,6 +60,7 @@ function searchBooks(books: Book[], query: string): Book[] {
       book.title.toLowerCase().includes(q) ||
       book.author.toLowerCase().includes(q) ||
       book.category.toLowerCase().includes(q) ||
+      programLabel(book.category).toLowerCase().includes(q) ||
       (book.subject?.toLowerCase().includes(q) ?? false) ||
       book.call_number.toLowerCase().includes(q)
   )
@@ -71,10 +73,10 @@ function KioskCatalogContent() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const filtersButtonRef = useRef<HTMLButtonElement>(null)
 
-  const { filters, setFilter, setFilters, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
   const { books, loading, error } = useBooks()
 
-  const { genres, subjects, floors } = useMemo(() => deriveCatalogOptions(books), [books])
+  const { genres, subjects, floors, programToCollege } = useMemo(() => deriveCatalogOptions(books), [books])
+  const { filters, setFilter, setFilters, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters(programToCollege)
   const sections = useMemo(() => buildFilterSections({ genres, subjects, floors }), [genres, subjects, floors])
 
   const results = useMemo(

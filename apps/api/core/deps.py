@@ -1,4 +1,5 @@
 import json
+import time
 import jwt
 import httpx
 from jwt.algorithms import ECAlgorithm
@@ -11,6 +12,26 @@ from core.supabase import get_admin_client, get_user_client
 
 bearer = HTTPBearer()
 optional_bearer = HTTPBearer(auto_error=False)
+
+# Role/full_name for a user id, cached briefly. Every authenticated request
+# used to spend one Supabase round trip on this before the endpoint's own
+# queries even started. 60s means a role change (rare — librarian promotes an
+# account) can take up to a minute to apply on this instance; anything that
+# must apply immediately calls invalidate_profile().
+_PROFILE_TTL_SECONDS = 60
+_profile_cache: dict[str, tuple[float, dict]] = {}
+
+def invalidate_profile(user_id: str) -> None:
+    _profile_cache.pop(user_id, None)
+
+def _load_profile(user_id: str) -> dict:
+    hit = _profile_cache.get(user_id)
+    if hit and time.monotonic() - hit[0] < _PROFILE_TTL_SECONDS:
+        return hit[1]
+    res = get_admin_client().table("profiles").select("role, full_name").eq("id", user_id).execute()
+    profile = res.data[0] if res.data else {}
+    _profile_cache[user_id] = (time.monotonic(), profile)
+    return profile
 
 # Cache the public key fetched from Supabase's JWKS endpoint
 _public_key = None
@@ -65,8 +86,7 @@ def get_current_user(
     # routers/auth.py's login/refresh use to build the role a client
     # sees (_build_token_response) — this makes server-side authorization
     # agree with that instead of trusting a claim nothing keeps in sync.
-    profile_res = get_admin_client().table("profiles").select("role, full_name").eq("id", payload["sub"]).execute()
-    profile = profile_res.data[0] if profile_res.data else {}
+    profile = _load_profile(payload["sub"])
     role: Role = profile.get("role") or meta.get("role", "guest")
 
     return UserProfile(
@@ -75,6 +95,23 @@ def get_current_user(
         role=role,
         full_name=profile.get("full_name") or meta.get("full_name"),
     )
+
+# A kiosk tap never produces a JWT — the station session IS the identity (its id
+# is the credential, the same way holds/loans already treat it). A live,
+# un-ended station session for a real student resolves to that student, which
+# is what lets the kiosk chat and the kiosk For You tab know who is tapped in.
+# A guest kiosk visit's id matches no row and resolves to None.
+def kiosk_session_user(admin: Client, session_id: str | None) -> UserProfile | None:
+    if not session_id:
+        return None
+    try:
+        session = admin.table("station_sessions").select("student_id, ended_at").eq("id", session_id).execute().data
+        if not session or session[0]["ended_at"] is not None:
+            return None
+        profile = admin.table("profiles").select("id, email, role, full_name").eq("id", session[0]["student_id"]).execute().data
+    except Exception:
+        return None
+    return UserProfile(**profile[0]) if profile and profile[0]["role"] == "student" else None
 
 def get_optional_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer),

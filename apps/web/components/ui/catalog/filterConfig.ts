@@ -3,6 +3,7 @@
 // Consumed by FilterSidebar (desktop), FilterSheet (mobile), and FilterChips.
 
 import { Book, BookStatus, BookFormat } from '@lasallia/types'
+import { programLabel } from '@/lib/programLabels'
 
 export type CatalogFilters = {
   genre: string
@@ -58,8 +59,8 @@ export const FORMAT_OPTIONS: FilterOption[] = [
   { value: 'reference', label: 'Reference' },
 ]
 
-function toOptions(values: string[]): FilterOption[] {
-  return values.map((v) => ({ value: v === 'All' ? 'all' : v, label: v }))
+function toOptions(values: string[], labelOf: (v: string) => string = (v) => v): FilterOption[] {
+  return values.map((v) => ({ value: v === 'All' ? 'all' : v, label: labelOf(v) }))
 }
 
 export function buildFilterSections(source: {
@@ -68,7 +69,7 @@ export function buildFilterSections(source: {
   floors: string[]
 }): FilterSectionConfig[] {
   return [
-    { key: 'genre', label: 'Program', type: 'radio', options: toOptions(source.genres) },
+    { key: 'genre', label: 'Program', type: 'radio', options: toOptions(source.genres, programLabel) },
     { key: 'availability', label: 'Availability', type: 'radio', options: AVAILABILITY_OPTIONS },
     { key: 'format', label: 'Format', type: 'radio', options: FORMAT_OPTIONS },
     { key: 'floor', label: 'Floor location', type: 'radio', options: toOptions(source.floors) },

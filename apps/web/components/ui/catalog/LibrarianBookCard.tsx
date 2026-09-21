@@ -54,6 +54,8 @@ export function LibrarianBookCard({ book, onEdit, onDelete, className }: Librari
           {book.cover_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
+              loading="lazy"
+              decoding="async"
               src={book.cover_url}
               alt=""
               className="absolute inset-0 w-full h-full object-cover"

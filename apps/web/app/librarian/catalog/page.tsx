@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/catalog'
 import { useBooks } from '@/lib/hooks/useBooks'
 import { deriveCatalogOptions } from '@/lib/catalogOptions'
+import { programLabel } from '@/lib/programLabels'
 import { archiveBook } from '@/lib/weeding'
 import { uploadBookCover } from '@/lib/books'
 
@@ -73,6 +74,7 @@ function searchBooks(books: Book[], query: string): Book[] {
       book.title.toLowerCase().includes(q) ||
       book.author.toLowerCase().includes(q) ||
       book.category.toLowerCase().includes(q) ||
+      programLabel(book.category).toLowerCase().includes(q) ||
       (book.subject?.toLowerCase().includes(q) ?? false) ||
       book.call_number.toLowerCase().includes(q) ||
       (book.isbn?.includes(q) ?? false)
@@ -148,7 +150,7 @@ function CatalogStats({ books }: { books: Book[] }) {
 function LibrarianCatalogContent() {
   // live: false — add/edit here are still local-only (see the seeding effect
   // below), and a realtime refetch would reseed over those unsaved changes.
-  const { books: fetchedBooks, loading, error } = useBooks({ live: false })
+  const { books: fetchedBooks, loading, error } = useBooks({ live: false, full: true })
   const [books, setBooks]       = useState<Book[]>([])
   const [query, setQuery]       = useState('')
   const [sort, setSort]         = useState<SortOption>('relevance')
@@ -168,9 +170,9 @@ function LibrarianCatalogContent() {
     if (!loading && !error) setBooks(fetchedBooks)
   }, [loading, error, fetchedBooks])
 
-  const { filters, setFilter, setFilters, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters()
 
-  const { genres, subjects, floors } = useMemo(() => deriveCatalogOptions(books), [books])
+  const { genres, subjects, floors, programToCollege } = useMemo(() => deriveCatalogOptions(books), [books])
+  const { filters, setFilter, setFilters, resetSection, resetAll, activeCount, hasActive } = useCatalogFilters(programToCollege)
 
   const sections = useMemo(
     () => buildFilterSections({ genres, subjects, floors }),

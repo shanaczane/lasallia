@@ -31,7 +31,11 @@ function filtersFromParams(params: URLSearchParams): CatalogFilters {
   }
 }
 
-export function useCatalogFilters() {
+// programToCollege keeps Program and College in step: picking a Program also
+// selects the college it belongs to, and picking a College that doesn't
+// contain the current Program clears the Program. When a single apply changes
+// both (the mobile sheet), the user's explicit pair is respected as-is.
+export function useCatalogFilters(programToCollege: Record<string, string> = {}) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -39,7 +43,15 @@ export function useCatalogFilters() {
   const filters = useMemo(() => filtersFromParams(searchParams), [searchParams])
 
   const applyFilters = useCallback(
-    (next: CatalogFilters) => {
+    (requested: CatalogFilters) => {
+      const next = { ...requested }
+      const genreChanged = next.genre !== filters.genre
+      const subjectChanged = next.subject !== filters.subject
+      if (genreChanged && !subjectChanged && next.genre !== 'all' && programToCollege[next.genre]) {
+        next.subject = programToCollege[next.genre]
+      } else if (subjectChanged && !genreChanged && next.subject !== 'all' && next.genre !== 'all' && programToCollege[next.genre] !== next.subject) {
+        next.genre = 'all'
+      }
       const params = new URLSearchParams(searchParams.toString())
       ;(Object.keys(PARAM_KEYS) as Array<keyof CatalogFilters>).forEach((key) => {
         const paramName = PARAM_KEYS[key]
@@ -50,7 +62,7 @@ export function useCatalogFilters() {
       const qs = params.toString()
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
     },
-    [router, pathname, searchParams]
+    [router, pathname, searchParams, filters, programToCollege]
   )
 
   const setFilter = useCallback(

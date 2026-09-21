@@ -22,6 +22,7 @@ import {
   CheckCircle2, Clock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { programLabel } from '@/lib/programLabels'
 import { useBook, useBooks } from '@/lib/hooks/useBooks'
 import { useReservations } from '@/lib/hooks/useReservations'
 import { createReservation, cancelReservation } from '@/lib/reservations'
@@ -592,7 +593,7 @@ export default function StudentBookDetailPage({
                   className="px-2.5 py-0.5 rounded-full bg-ink-100 text-ink-500 font-medium"
                   style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
                 >
-                  {book.category}
+                  {programLabel(book.category)}
                 </span>
               )}
             </div>
@@ -673,7 +674,7 @@ export default function StudentBookDetailPage({
             {[
               { icon: <Hash size={14} />,     label: 'Call Number',    value: book.call_number },
               { icon: <MapPin size={14} />,    label: 'Shelf Location', value: book.shelf_location },
-              { icon: <GraduationCap size={14} />, label: 'Program',  value: book.category },
+              { icon: <GraduationCap size={14} />, label: 'Program',  value: programLabel(book.category) },
               { icon: <Landmark size={14} />,      label: 'College',  value: book.subject },
               { icon: <Building2 size={14} />, label: 'Publisher',      value: book.publisher },
               { icon: <Calendar size={14} />,  label: 'Year Published', value: book.published_year },
@@ -715,7 +716,7 @@ export default function StudentBookDetailPage({
         {/* ── You may also like (4.3.3) ─────────────────────────────────────── */}
         <Recommendations
           currentId={book.id}
-          category={book.category}
+          category={programLabel(book.category)}
           savedBookIds={savedBookIds}
           onToggleSave={handleToggleSave}
         />

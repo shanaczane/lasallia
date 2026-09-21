@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from supabase_auth.errors import AuthApiError
 from schemas.auth import ChangePasswordRequest, LoginRequest, RefreshRequest, TokenResponse, UpdateProfileRequest, UserProfile
 from core.supabase import get_client, get_admin_client
-from core.deps import get_current_user
+from core.deps import get_current_user, invalidate_profile
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -62,6 +62,7 @@ def update_me(body: UpdateProfileRequest, user: UserProfile = Depends(get_curren
     if not name:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Full name can't be empty")
     get_admin_client().table("profiles").update({"full_name": name}).eq("id", user.id).execute()
+    invalidate_profile(user.id)
     return UserProfile(id=user.id, email=user.email, role=user.role, full_name=name)
 
 # Settings' Account tab "Change Password". current_password is verified by

@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { programLabel } from '@/lib/programLabels'
 import { BookStatus, BookFormat } from '@lasallia/types'
 import { CatalogFilters, AVAIL_OPTIONS, FORMAT_OPTIONS } from './FilterSidebar'
 
@@ -89,7 +90,7 @@ export function FilterPillBar({
   const set = <K extends keyof CatalogFilters>(key: K, value: CatalogFilters[K]) =>
     onChange({ ...filters, [key]: value })
 
-  const genreOptions = genres.map((g) => ({ value: g === 'All' ? 'all' : g, label: g }))
+  const genreOptions = genres.map((g) => ({ value: g === 'All' ? 'all' : g, label: programLabel(g) }))
   const floorOptions = floors.map((f) => ({ value: f === 'All' ? 'all' : f, label: f }))
   const subjectOptions = subjects.map((s) => ({ value: s === 'All' ? 'all' : s, label: s }))
 
@@ -106,7 +107,7 @@ export function FilterPillBar({
       id: 'genre',
       label: 'Program',
       active: filters.genre !== 'all',
-      valueLabel: filters.genre !== 'all' ? filters.genre : undefined,
+      valueLabel: filters.genre !== 'all' ? programLabel(filters.genre) : undefined,
       panel: (
         <div className="flex flex-col gap-0.5 max-h-72 overflow-y-auto">
           {genreOptions.map((opt) => (

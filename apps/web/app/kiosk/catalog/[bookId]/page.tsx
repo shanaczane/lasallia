@@ -16,6 +16,7 @@ import {
   BookOpen, GraduationCap, Landmark, QrCode, AlertCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { programLabel } from '@/lib/programLabels'
 import { useBook } from '@/lib/hooks/useBooks'
 import { useKioskSession } from '@/components/kiosk/KioskSessionProvider'
 import { BorrowModal } from '@/components/kiosk/BorrowModal'
@@ -367,7 +368,7 @@ export default function KioskBookDetailPage({
                 className="px-2.5 py-0.5 rounded-full bg-ink-100 text-ink-500 font-medium"
                 style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
               >
-                {book.category}
+                {programLabel(book.category)}
               </span>
             )}
           </div>
@@ -432,7 +433,7 @@ export default function KioskBookDetailPage({
           {[
             { icon: <Hash size={14} />,      label: 'Call Number',    value: book.call_number },
             { icon: <MapPin size={14} />,     label: 'Shelf Location', value: book.shelf_location },
-            { icon: <GraduationCap size={14} />, label: 'Program',  value: book.category },
+            { icon: <GraduationCap size={14} />, label: 'Program',  value: programLabel(book.category) },
             { icon: <Landmark size={14} />,      label: 'College',  value: book.subject },
             { icon: <Building2 size={14} />,  label: 'Publisher',      value: book.publisher },
             { icon: <Calendar size={14} />,   label: 'Year Published', value: book.published_year },

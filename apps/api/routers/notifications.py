@@ -17,7 +17,7 @@ def list_notifications(
     user: UserProfile = Depends(get_current_user),
     db: Client = Depends(get_user_supabase),
 ):
-    res = db.table("notifications").select("*").order("created_at", desc=True).execute()
+    res = db.table("notifications").select("*").order("created_at", desc=True).limit(50).execute()
     return res.data
 
 @router.patch("/{notification_id}", response_model=Notification)

@@ -13,7 +13,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from supabase import Client
 
-from core.deps import get_current_user, get_optional_user, get_user_supabase
+from core.deps import get_current_user, get_optional_user, get_user_supabase, kiosk_session_user
 from core.rate_limit import check_and_record
 from core.recommendation_events import log_events
 from core.recommendations import get_currently_excluded_book_ids
@@ -44,6 +44,7 @@ STALE_AFTER_DAYS = 7
 # it's a write, not a cached read.
 POPULAR_RATE_LIMIT = (120, 60)  # (max_requests, window_seconds)
 EVENTS_RATE_LIMIT = (60, 60)
+KIOSK_RATE_LIMIT = (60, 60)  # per station session
 MAX_EVENTS_PER_BATCH = 50
 
 
@@ -65,8 +66,13 @@ def get_my_recommendations(
     if user.role != "student":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Recommendations are only available for students")
 
-    limit = max(1, min(limit, STORED_LIMIT))
+    return _recommend_for(db, user.id, max(1, min(limit, STORED_LIMIT)))
 
+
+def _recommend_for(db: Client, user_id: str, limit: int) -> RecommendationsResponse:
+    """The whole ladder for one student. db is the caller's RLS-scoped client
+    for GET /me and the admin client for the kiosk (which has no JWT) — both
+    run the identical query, filtered to user_id."""
     # book:books!book_id(*) embeds the recommended book in the same round
     # trip — student_recommendations has two FKs into books (book_id and
     # reason_book_id), so the !book_id hint disambiguates which one. The
@@ -79,12 +85,12 @@ def get_my_recommendations(
         stored_future = pool.submit(
             lambda: db.table("student_recommendations")
             .select("rank, score, reason, reason_book_id, generated_at, book:books!book_id(*)")
-            .eq("student_id", user.id)
+            .eq("student_id", user_id)
             .order("rank")
             .limit(STORED_LIMIT)
             .execute()
         )
-        excluded_future = pool.submit(get_currently_excluded_book_ids, db, user.id)
+        excluded_future = pool.submit(get_currently_excluded_book_ids, db, user_id)
         stored = stored_future.result().data
         excluded = excluded_future.result()
 
@@ -95,7 +101,7 @@ def get_my_recommendations(
     # serve week-old "personalization" either.
     live = [row for row in stored if row["book"]["id"] not in excluded][:limit] if stored else []
     if not live or _is_stale(stored[0]["generated_at"]):
-        return _fallback_response(get_admin_client(), user.id, limit)
+        return _fallback_response(get_admin_client(), user_id, limit)
 
     items = [
         RecommendationItem(
@@ -170,8 +176,11 @@ def get_popular_recommendations_endpoint(request: Request, response: Response, l
     if not check_and_record(f"popular:{request.client.host}", *POPULAR_RATE_LIMIT):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many requests — try again shortly")
 
-    limit = max(1, min(limit, STORED_LIMIT))
-    admin = get_admin_client()
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return _popular_response(get_admin_client(), max(1, min(limit, STORED_LIMIT)))
+
+
+def _popular_response(admin: Client, limit: int) -> RecommendationsResponse:
     rows = (
         admin.table("popular_recommendations")
         .select("rank, reason, generated_at, book:books!book_id(*)")
@@ -179,10 +188,31 @@ def get_popular_recommendations_endpoint(request: Request, response: Response, l
         .limit(limit)
         .execute()
     ).data
-    response.headers["Cache-Control"] = "public, max-age=3600"
     if not rows:
         return RecommendationsResponse(recommendations=[], generated_at=None, rung="popular")
     return _rows_to_response(rows, rung="popular")
+
+
+# The kiosk's "For you" tab. A kiosk tap never produces a JWT, so the open
+# station session is the identity (see core/deps.py kiosk_session_user — same
+# trust level as holds, loans and the kiosk chat). A tapped-in student gets
+# their own ladder; anything else — a guest visit, an ended or unknown
+# session — gets the public popular rung, which has no path to anyone's
+# personal data. Rate limited per session, or per IP when there isn't one.
+@router.get("/kiosk", response_model=RecommendationsResponse)
+def get_kiosk_recommendations(request: Request, session_id: str | None = None, limit: int = DEFAULT_LIMIT):
+    limit = max(1, min(limit, STORED_LIMIT))
+    admin = get_admin_client()
+    student = kiosk_session_user(admin, session_id)
+
+    if student is None:
+        if not check_and_record(f"popular:{request.client.host}", *POPULAR_RATE_LIMIT):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many requests — try again shortly")
+        return _popular_response(admin, limit)
+
+    if not check_and_record(f"kiosk-recs:{session_id}", *KIOSK_RATE_LIMIT):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many requests — try again shortly")
+    return _recommend_for(admin, student.id, limit)
 
 
 @router.post("/events", status_code=status.HTTP_204_NO_CONTENT)

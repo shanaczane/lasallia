@@ -1,4 +1,5 @@
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
@@ -62,13 +63,22 @@ def _apply_real_availability(books: list[dict], copy_rows: list[dict]) -> list[d
     return books
 
 @router.get("", response_model=BookSearchResponse)
-def list_books(limit: int = DEFAULT_LIMIT, user: UserProfile | None = Depends(get_optional_user)):
+def list_books(
+    limit: int = DEFAULT_LIMIT,
+    # The abstract is ~80% of this response by size and only the detail page
+    # (GET /books/{id}) and the librarian edit form use it. Off by default.
+    include_abstract: bool = False,
+    user: UserProfile | None = Depends(get_optional_user),
+):
     db = get_client()
     # Reports plan Phase 2: an archived book is meant to disappear from
     # every catalog view (student, guest, kiosk, librarian alike) — this
     # is the one query every one of those surfaces shares.
-    res = db.table("books").select("*").is_("archived_at", "null").order("title").limit(limit).execute()
-    books = res.data
+    def fetch_books():
+        return db.table("books").select("*").is_("archived_at", "null").order("title").limit(limit).execute()
+
+    def fetch_copies():
+        return get_admin_client().table("book_copies").select("book_id, status").execute()
 
     # book_copies has no public RLS policy (its only legitimate public-ish
     # access path is the token-authorized holds/loans flow) — the backend
@@ -78,8 +88,18 @@ def list_books(limit: int = DEFAULT_LIMIT, user: UserProfile | None = Depends(ge
     #
     # Small dataset (~185 rows) — one unfiltered fetch is simpler and just
     # as cheap as filtering by the ids already on the page.
-    copies_res = get_admin_client().table("book_copies").select("book_id, status").execute()
-    books = _apply_real_availability(books, copies_res.data)
+    #
+    # The two reads don't depend on each other, so they run side by side
+    # instead of paying the database latency twice.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        books_future = pool.submit(fetch_books)
+        copies_future = pool.submit(fetch_copies)
+        books = books_future.result().data
+        copies_data = copies_future.result().data
+    if not include_abstract:
+        for b in books:
+            b.pop("abstract", None)
+    books = _apply_real_availability(books, copies_data)
     books = _redact_accession(books, user)
 
     return BookSearchResponse(books=books, total=len(books), page=1, per_page=limit)
@@ -87,7 +107,15 @@ def list_books(limit: int = DEFAULT_LIMIT, user: UserProfile | None = Depends(ge
 @router.get("/{book_id}", response_model=Book)
 def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)):
     db = get_client()
-    res = db.table("books").select("*").eq("id", book_id).execute()
+    admin = get_admin_client()
+    # Book row and its copies don't depend on each other — fetch side by side.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        res_future = pool.submit(lambda: db.table("books").select("*").eq("id", book_id).execute())
+        copies_future = pool.submit(
+            lambda: admin.table("book_copies").select("id, book_id, status").eq("book_id", book_id).execute()
+        )
+        res = res_future.result()
+        copies_res = copies_future.result()
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
 
@@ -98,8 +126,6 @@ def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)
     if res.data[0].get("archived_at") and (user is None or user.role != "librarian"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
 
-    admin = get_admin_client()
-    copies_res = admin.table("book_copies").select("id, book_id, status").eq("book_id", book_id).execute()
     book = _apply_real_availability(res.data, copies_res.data)
 
     # Phase 5, plan 5.1: no button, no date, no waiting count once a copy

@@ -81,6 +81,7 @@ import {
   type WeedingEvent,
 } from "@/lib/weeding"
 import type { Book, UserProfile, Reservation } from "@lasallia/types"
+import { programLabel } from "@/lib/programLabels"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ReportTab = "overview" | "activity" | "overdue" | "weeding"
@@ -287,7 +288,7 @@ function LibraryStatsCard({ stats, tx }: { stats: LibraryStats | null; tx: Trans
     { label: "Active Borrowers", value: stats.active_borrowers.toLocaleString() },
     { label: "Overdue", value: stats.overdue_count.toLocaleString() },
     { label: "Utilization", value: `${Math.round(stats.utilization_rate * 100)}%` },
-    { label: "Top Category", value: stats.most_active_category ?? "—" },
+    { label: "Top Category", value: stats.most_active_category ? programLabel(stats.most_active_category) : "—" },
   ]
   return (
     <div className="flex flex-col gap-3 w-full">
@@ -527,7 +528,7 @@ function WeedingPanel() {
                     {c.title}
                   </p>
                   <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-                    {c.author} · {c.category}{c.published_year ? ` · ${c.published_year}` : ""}
+                    {c.author} · {programLabel(c.category)}{c.published_year ? ` · ${c.published_year}` : ""}
                   </p>
                   <p className="text-ink-600 mt-1.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
                     {c.reason}
@@ -1220,7 +1221,7 @@ function ReportsPageContent() {
     call_number: r.call_number,
     title: r.title,
     author: r.author,
-    category: r.category,
+    category: programLabel(r.category),
     shelf_location: r.shelf_location ?? "",
     status: r.status,
   })))
@@ -1448,7 +1449,7 @@ function ReportsPageContent() {
                 style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
               >
                 {f.options.map((o) => (
-                  <option key={o} value={o}>{o}</option>
+                  <option key={o} value={o}>{programLabel(o)}</option>
                 ))}
               </select>
               <ArrowUpDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />

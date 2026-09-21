@@ -10,6 +10,7 @@ import {
   BookOpen, GraduationCap, Landmark, Copy, Pencil, Trash2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { programLabel } from '@/lib/programLabels'
 import { useBook } from '@/lib/hooks/useBooks'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 import type { Book } from '@lasallia/types'
@@ -407,7 +408,7 @@ export default function LibrarianBookDetailPage({
                 style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
               >
                 <GraduationCap size={10} />
-                {book.category}
+                {programLabel(book.category)}
               </span>
             )}
             {book.format && (
