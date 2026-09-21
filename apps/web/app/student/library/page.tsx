@@ -916,7 +916,7 @@ export default function MyLibraryPage() {
         className="sticky z-40 border-b border-ink-200 bg-paper/95 backdrop-blur-sm"
         style={{ top: "var(--height-nav)" }}
       >
-        <div className="flex sm:hidden w-full overflow-x-auto px-2 scrollbar-none">
+        <div className="flex sm:hidden w-full overflow-x-auto px-2 no-scrollbar">
           {TABS.map((t) => <TabButton key={t.key} t={t} mobile={true} />)}
         </div>
         <div className="hidden sm:flex px-8">
