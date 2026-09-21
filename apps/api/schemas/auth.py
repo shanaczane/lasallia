@@ -34,8 +34,16 @@ class TokenResponse(BaseModel):
 # librarian editing someone *else's* account status). Just full_name —
 # email change needs Supabase Auth's own confirm-by-email flow, a
 # separate feature; password change is its own request below.
+#
+# program/year_level/college (Google sign-in "complete your profile" form):
+# every field is optional so the same endpoint serves both the Settings name
+# change and that form; only the fields actually sent are updated. rfid_uid
+# is deliberately NOT here — a card can only be assigned by a librarian.
 class UpdateProfileRequest(BaseModel):
-    full_name: str
+    full_name: str | None = None
+    program: str | None = None
+    year_level: int | None = None
+    college: str | None = None
 
 # POST /auth/change-password. current_password re-verifies identity
 # (sign_in_with_password against it) before the new one is set — same

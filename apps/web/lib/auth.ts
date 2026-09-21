@@ -122,6 +122,43 @@ export async function updateProfile(fullName: string): Promise<UserProfile> {
   return user
 }
 
+// Re-reads the signed-in user's profile from the API and refreshes the
+// cached copy. The login response's copy goes stale when a librarian fills
+// in program/year level afterward (Patrons screen or the enrollment import).
+export async function refreshCachedUser(): Promise<UserProfile | null> {
+  const token = getToken()
+  if (!token) return null
+  try {
+    const user = await fetchMe(token)
+    setCachedUser(user)
+    return user
+  } catch {
+    return null
+  }
+}
+
+// First-login "complete your profile" form (students who signed in with
+// Google and aren't in the enrollment spreadsheet yet). rfid_uid is not
+// here on purpose — only a librarian assigns a card.
+export async function updateAcademicProfile(fields: {
+  program: string
+  year_level: number
+  college?: string | null
+}): Promise<UserProfile> {
+  const res = await fetch(`${API_URL}/auth/me`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify(fields),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? "Could not save your details")
+  }
+  const user: UserProfile = await res.json()
+  setCachedUser(user)
+  return user
+}
+
 // Settings' Account tab — "Change Password". The API re-verifies
 // currentPassword by signing in with it before applying newPassword; a
 // wrong current password comes back as a normal thrown Error, same as

@@ -7,6 +7,7 @@ from core.deps import get_current_user, invalidate_profile
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 MIN_PASSWORD_LENGTH = 8
+MAX_YEAR_LEVEL = 8  # same ceiling routers/patrons.py enforces for a librarian's edit
 
 def _fetch_profile(user_id: str) -> dict:
     res = get_admin_client().table("profiles").select("role, full_name, program, year_level, college").eq("id", user_id).single().execute()
@@ -61,18 +62,46 @@ def me(user: UserProfile = Depends(get_current_user)):
 # check against an id that isn't already the caller's own.
 @router.patch("/me", response_model=UserProfile)
 def update_me(body: UpdateProfileRequest, user: UserProfile = Depends(get_current_user)):
-    name = body.full_name.strip()
-    if not name:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Full name can't be empty")
-    get_admin_client().table("profiles").update({"full_name": name}).eq("id", user.id).execute()
+    sent = body.model_dump(exclude_unset=True)
+    if not sent:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No changes given")
+
+    changes: dict = {}
+
+    if "full_name" in sent:
+        name = (sent["full_name"] or "").strip()
+        if not name:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Full name can't be empty")
+        changes["full_name"] = name
+
+    # Academic fields are for students only — a guest has no program, and
+    # a librarian's is set by another librarian through the Patrons screen.
+    if {"program", "year_level", "college"} & sent.keys():
+        if user.role != "student":
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only students can set a program or year level")
+        if "program" in sent:
+            program = (sent["program"] or "").strip()
+            if not program:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Program can't be empty")
+            changes["program"] = program
+        if "year_level" in sent:
+            year = sent["year_level"]
+            if year is None or not (1 <= year <= MAX_YEAR_LEVEL):
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Year Level must be between 1 and {MAX_YEAR_LEVEL}")
+            changes["year_level"] = year
+        if "college" in sent:
+            changes["college"] = (sent["college"] or "").strip() or None
+
+    get_admin_client().table("profiles").update(changes).eq("id", user.id).execute()
+    invalidate_profile(user.id)
     return UserProfile(
         id=user.id,
         email=user.email,
         role=user.role,
-        full_name=name,
-        program=user.program,
-        year_level=user.year_level,
-        college=user.college,
+        full_name=changes.get("full_name", user.full_name),
+        program=changes.get("program", user.program),
+        year_level=changes.get("year_level", user.year_level),
+        college=changes["college"] if "college" in changes else user.college,
     )
 
 # Settings' Account tab "Change Password". current_password is verified by
