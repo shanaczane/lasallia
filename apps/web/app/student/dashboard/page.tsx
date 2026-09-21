@@ -15,6 +15,7 @@ import { getUser } from "@/lib/auth"
 import type { Loan as ApiLoan } from "@/lib/kiosk"
 import { useStudentCounts } from "@/components/layout/StudentCountsContext"
 import { ForYouSection } from "@/components/ui/dashboard/ForYouSection"
+import { CatalogHighlights } from "@/components/ui/dashboard/CatalogHighlights"
 import type { Reservation } from "@lasallia/types"
 
 type BorrowStatus = "due_soon" | "overdue" | "active"
@@ -60,7 +61,7 @@ export default function StudentDashboard() {
   const overdueCount = activeLoans.filter((x) => x.status === "overdue").length
 
   const nextDue = [...activeLoans]
-    .filter((x) => x.status !== "overdue")
+    .filter((x) => x.status === "due_soon")
     .sort((a, b) => new Date(a.loan.due_date).getTime() - new Date(b.loan.due_date).getTime())[0]
 
   const activeReservations = reservations.filter((r) => r.status === "pending" || r.status === "ready")
@@ -156,6 +157,9 @@ export default function StudentDashboard() {
 
       {/* For You — recommendations plan Phase 6 */}
       <ForYouSection />
+
+      {/* New Arrivals / Program / College — sprint 5.7 */}
+      <CatalogHighlights />
     </div>
   )
 }

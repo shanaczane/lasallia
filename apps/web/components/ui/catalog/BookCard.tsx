@@ -55,7 +55,13 @@ export function BookCard({ book, href, className, showBookmark = false, isSaved,
     : book.author
 
   return (
-    <div className="relative">
+    // className (caller-provided sizing like a fixed width + shrink-0 for a
+    // horizontal scroll row) has to land on THIS div — it's the actual flex/
+    // grid item a caller like CardRow lays out. Putting it on the <Link>
+    // below instead left this wrapper unsized, so flexbox was free to shrink
+    // it to whatever width the row's math produced — different per card,
+    // while the fixed-width Link inside just overflowed that shrunk box.
+    <div className={cn("relative", className)}>
       {/* Bookmark button — overlaid on cover top-right */}
       {showBookmark && (
         <button
@@ -77,10 +83,9 @@ export function BookCard({ book, href, className, showBookmark = false, isSaved,
         href={destination}
         onClick={onClick}
         className={cn(
-          'group flex flex-col rounded-(--radius) overflow-hidden bg-white border border-ink-200',
+          'group w-full h-full flex flex-col rounded-(--radius) overflow-hidden bg-white border border-ink-200',
           'shadow-(--shadow-sm) hover:shadow-(--shadow) transition-shadow duration-200',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700',
-          className
         )}
       >
         {/* Cover */}

@@ -2,9 +2,10 @@
 // Sprint 4.5 — My Library (unified tabbed page)
 // 4.5.1 Borrowed Books · 4.5.2 Saved · 4.5.3 History
 // QR for BORROWING only — lives on catalog detail page
-// Fix: all three tabs use a 5-per-row book-card grid (matching the catalog),
-//      instead of a table/list. Each tab keeps its own filter pills and the
-//      status/date/fine info specific to that tab, shown on the card itself.
+// Fix: all three tabs use the same responsive book-card grid as the catalog
+//      (2/3/4/5/6 columns depending on breakpoint), instead of a table/list.
+//      Each tab keeps its own filter pills and the status/date/fine info
+//      specific to that tab, shown on the card itself.
 
 "use client"
 
@@ -52,7 +53,9 @@ const HISTORY_CFG: Record<
   overdue_returned: { label: "Returned Late", shortLabel: "Late",     icon: <Clock size={11} />,        text: "text-warn",    bg: "bg-warn-bg"    },
 }
 
-// 5 columns at lg — pick a page size that fills whole rows (2 rows/page)
+// Note: CARD_GRID's column count varies by breakpoint (2/3/4/5/6), so 10
+// only forms whole rows at the lg (5-col) breakpoint — a ragged last row is
+// expected/normal at the other breakpoints, matching BookGrid's own pattern.
 const PAGE_SIZE = 10
 
 // Matches apps/web/app/borrow/[token]/page.tsx — pending real LRC borrow-limit policy
@@ -137,6 +140,7 @@ function Paginator({
           aria-label="Previous page"
           className={cn(
             "flex items-center justify-center w-8 h-8 rounded-[8px] border transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1",
             page === 1
               ? "border-ink-100 text-ink-300 cursor-not-allowed"
               : "border-ink-200 text-ink-600 hover:bg-ink-50 hover:border-ink-300",
@@ -160,6 +164,7 @@ function Paginator({
               onClick={() => goTo(n as number)}
               className={cn(
                 "flex items-center justify-center w-8 h-8 rounded-[8px] border font-medium transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1",
                 n === page
                   ? "bg-green-700 border-green-700 text-white font-semibold"
                   : "border-ink-200 text-ink-600 hover:bg-ink-50 hover:border-ink-300",
@@ -177,6 +182,7 @@ function Paginator({
           aria-label="Next page"
           className={cn(
             "flex items-center justify-center w-8 h-8 rounded-[8px] border transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1",
             page === totalPages
               ? "border-ink-100 text-ink-300 cursor-not-allowed"
               : "border-ink-200 text-ink-600 hover:bg-ink-50 hover:border-ink-300",
@@ -343,7 +349,7 @@ function BorrowedTab({ loans, loading, error }: { loans: ApiLoan[]; loading: boo
   const [filter, setFilter] = useState<BorrowFilter>("all")
 
   const entries = loans
-    .filter((loan) => loan.status !== "returned")
+    .filter((loan) => loan.status !== "returned" && loan.books)
     .map((loan) => ({ loan, status: deriveBorrowStatus(loan) }))
 
   const counts = {
@@ -697,7 +703,7 @@ function HistoryTab({ loans, loading, error }: { loans: ApiLoan[]; loading: bool
   const [filter, setFilter] = useState<HistoryFilter>("all")
 
   const entries = loans
-    .filter((loan) => loan.status === "returned")
+    .filter((loan) => loan.status === "returned" && loan.books)
     .map((loan) => ({ loan, status: deriveHistoryStatus(loan) }))
 
   const counts = {
@@ -869,7 +875,7 @@ export default function MyLibraryPage() {
         type="button"
         onClick={() => setTab(t.key)}
         className={cn(
-          "flex items-center gap-1.5 py-2.5 px-3 font-medium border-b-2 transition-colors -mb-px whitespace-nowrap flex-shrink-0",
+          "flex items-center gap-1.5 py-2.5 px-3 font-medium border-b-2 transition-colors -mb-px whitespace-nowrap shrink-0",
           isActive
             ? "border-green-700 text-green-700"
             : "border-transparent text-ink-500 hover:text-ink-900",

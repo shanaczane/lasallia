@@ -18,7 +18,7 @@ const SKELETON_COUNT = 4
 
 function SkeletonCard() {
   return (
-    <div className="w-[140px] lg:w-full shrink-0 rounded-(--radius) overflow-hidden bg-white border border-ink-200 animate-pulse">
+    <div className="w-[140px] shrink-0 rounded-(--radius) overflow-hidden bg-white border border-ink-200 animate-pulse">
       <div className="w-full bg-ink-100" style={{ aspectRatio: "2/3" }} />
       <div className="p-2.5 flex flex-col gap-1.5">
         <div className="h-3 bg-ink-100 rounded w-4/5" />
@@ -31,15 +31,14 @@ function SkeletonCard() {
 }
 
 function CardRow({ children }: { children: React.ReactNode }) {
-  // Horizontal scroll on mobile, grid on desktop. auto-fill/minmax instead
-  // of a fixed column count — this section now spans the full dashboard
-  // row (student/dashboard/page.tsx dropped "Currently Borrowed"), and a
-  // fixed 3-column grid stretched each cover well past a sensible size at
-  // that width. minmax(140px, 1fr) matches the same 140px width the
-  // mobile scroll row already uses, and adds columns as space grows
-  // instead of inflating existing ones.
+  // Always a single horizontally-scrolling row, at every breakpoint — no
+  // grid wrap into extra rows on wide screens. no-scrollbar (globals.css,
+  // already used by FilterChips.tsx) hides the browser's own scrollbar
+  // chrome — its styling varies by OS/browser and isn't reliably
+  // reskinnable via ::-webkit-scrollbar, so hiding it is the consistent
+  // choice. The row still scrolls fine by drag, trackpad, or wheel.
   return (
-    <div className="flex lg:grid lg:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0">
+    <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar">
       {children}
     </div>
   )
@@ -69,7 +68,7 @@ function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
 const RUNG_COPY: Record<RecommendationsResponse["rung"], { title: string; subtitle: string }> = {
   personal: { title: "For You", subtitle: "Based on what you've borrowed." },
   program: { title: "For You", subtitle: "Popular in your program." },
-  popular: { title: "Popular at the LRC", subtitle: "Library-wide, not personalized yet." },
+  popular: { title: "Recommended for You", subtitle: "Library-wide, not personalized yet." },
 }
 
 // fetcher/hrefPrefix default to the student dashboard's behavior; the kiosk's
@@ -133,8 +132,12 @@ export function ForYouSection({
               // fromRec/rank let the detail page attribute a later
               // reserve action back to this card (Phase 9).
               href={`${hrefPrefix}/${item.book.id}?fromRec=1&rank=${item.rank}`}
-              reason={item.reason}
-              className="w-[140px] lg:w-full shrink-0"
+              // The popular rung's stored reason is just "Popular at the
+              // LRC" for every row — redundant under the card when the
+              // section header already says so (or, now, says "Recommended
+              // for You" instead of claiming personalization it didn't do).
+              reason={rung === "popular" ? undefined : item.reason}
+              className="w-[140px] shrink-0"
               onClick={() => logEvent("click", item.book.id, item.rank)}
             />
           ))}
