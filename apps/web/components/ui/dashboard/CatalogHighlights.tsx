@@ -9,6 +9,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
+import { ArrowRight } from "lucide-react"
 import type { Book } from "@lasallia/types"
 import { BookCard } from "@/components/ui/catalog/BookCard"
 import { fetchBooks } from "@/lib/books"
@@ -16,7 +18,7 @@ import { getUser } from "@/lib/auth"
 import { collegeForProgram } from "@/lib/collegeForProgram"
 import { programLabel } from "@/lib/programLabels"
 
-const SECTION_SIZE = 8
+const SECTION_SIZE = 12
 const SKELETON_COUNT = 4
 
 function SkeletonCard() {
@@ -46,16 +48,40 @@ function CardRow({ children }: { children: React.ReactNode }) {
   )
 }
 
+// End-of-row card linking back to the catalog (optionally pre-filtered) —
+// same height as the book cards beside it via the row's default flex
+// stretch, so it reads as part of the row, not a stray button after it.
+function ViewMoreCard({ href }: { href: string }) {
+  return (
+    <Link
+      href={href}
+      className="w-[140px] shrink-0 flex flex-col items-center justify-center gap-2 rounded-(--radius) border border-dashed border-ink-300 bg-white hover:bg-ink-50 hover:border-green-700 transition-colors"
+    >
+      <div className="flex items-center justify-center w-9 h-9 rounded-full bg-green-100 text-green-700">
+        <ArrowRight size={16} />
+      </div>
+      <span
+        className="text-ink-600 font-medium text-center px-3"
+        style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
+      >
+        View catalog
+      </span>
+    </Link>
+  )
+}
+
 function Section({
   title,
   subtitle,
   loading,
   books,
+  viewMoreHref,
 }: {
   title: string
   subtitle: string
   loading: boolean
   books: Book[]
+  viewMoreHref: string
 }) {
   // Supplementary sections, same rule Phase 6 set for "For You": nothing
   // to show yet is not an error — just don't render the section rather
@@ -90,6 +116,7 @@ function Section({
               className="w-[140px] shrink-0"
             />
           ))}
+          <ViewMoreCard href={viewMoreHref} />
         </CardRow>
       )}
     </div>
@@ -139,18 +166,24 @@ export function CatalogHighlights() {
         subtitle="Recently added to the collection."
         loading={loading}
         books={newArrivals}
+        viewMoreHref="/student/catalog"
       />
       <Section
         title={`From ${programLabel(program)}`}
         subtitle="Books shelved under your program."
         loading={loading}
         books={programBooks}
+        // genre is the catalog filter's own param name for Program (see
+        // useCatalogFilters.ts) — pre-filters the catalog to match.
+        viewMoreHref={`/student/catalog?genre=${encodeURIComponent(program ?? "")}`}
       />
       <Section
         title={`From ${college ?? ""}`}
         subtitle="More from your college's collection."
         loading={loading}
         books={collegeBooks}
+        // subject is the catalog filter's own param name for College.
+        viewMoreHref={`/student/catalog?subject=${encodeURIComponent(college ?? "")}`}
       />
     </>
   )
