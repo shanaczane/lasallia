@@ -25,6 +25,12 @@ FROM_ADDRESS = "Lasallia <notifications@lasallia.com>"
 # as core/embeddings.py's OPENAI_API_KEY check — so the app keeps
 # working with in-app-only notifications until a real key is added.
 def _send_email(to_email: str, subject: str, body_text: str, link: str | None = None) -> None:
+    # .invalid is a reserved TLD (RFC 2606) — only ever used by audit/UI-test
+    # accounts (zz-audit-*, zz-ui-*), never a real inbox. Sending to them just
+    # produces "Delivery Delayed" noise in Resend and hurts sender reputation.
+    if to_email.lower().endswith(".invalid"):
+        return
+
     if not RESEND_API_KEY:
         print(f"_send_email() skipped (no RESEND_API_KEY set) — would have emailed {to_email!r}: {subject!r}")
         return
