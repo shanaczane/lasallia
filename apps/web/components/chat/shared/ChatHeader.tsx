@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Menu, MoreVertical, Trash2 } from "lucide-react"
+import { PanelLeft, MoreVertical, Trash2 } from "lucide-react"
 
 interface ChatHeaderProps {
   onMenuClick: () => void
@@ -29,19 +29,27 @@ export default function ChatHeader({ onMenuClick, canDelete, onDeleteChat }: Cha
   }, [])
 
   return (
-    // px-6 py-4, border-bottom ink-100
+    // px-4 sm:px-6 py-4, border-bottom ink-100 — matches TopNav's own
+    // px-4 sm:px-6 edge padding so this row's icon column lines up with
+    // the hamburger in the nav bar above it, not offset from it.
     <header
-      className="shrink-0 flex items-center gap-3 px-6 py-4 bg-white border-b"
+      className="shrink-0 flex items-center gap-3 px-4 sm:px-6 py-4 bg-white border-b"
       style={{ borderColor: "var(--color-ink-100)" }}
     >
-      {/* Hamburger — tablet only (md → lg) */}
+      {/* Hamburger — below lg, where the sidebar is a drawer instead of
+          always in-flow. Was `hidden md:flex lg:hidden` (tablet only),
+          which left phones with no way to open the drawer at all — the
+          sidebar's own drawer logic already covers everything below lg,
+          so the toggle needs to match it. -ml-1 mirrors TopNav's own
+          hamburger button for the same reason — aligns the icon glyph
+          itself, not just the button's padding box. */}
       <button
         type="button"
         onClick={onMenuClick}
-        className="hidden md:flex lg:hidden shrink-0 items-center justify-center w-8 h-8 rounded-md text-ink-500 hover:bg-ink-100 transition-colors"
+        className="flex lg:hidden shrink-0 -ml-1 items-center justify-center w-8 h-8 rounded-md text-ink-500 hover:bg-ink-100 transition-colors"
         aria-label="Toggle chat sessions sidebar"
       >
-        <Menu size={18} />
+        <PanelLeft size={18} />
       </button>
 
       {/* Avatar — 40px green circle, online dot — 8px green-500 */}
