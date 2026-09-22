@@ -8,6 +8,8 @@ import { Mail, Lock, Eye, EyeOff, Loader2, Check, AlertCircle } from 'lucide-rea
 import { cn } from '@/lib/utils'
 import { useSignIn } from '@/lib/hooks/useSignIn'
 import { signInWithGoogle } from '@/lib/auth'
+import { ContactSupportModal } from './ContactSupportModal'
+import { SystemStatusModal } from './SystemStatusModal'
 
 const DLSL_EMAIL_PATTERN = /^[^\s@]+@dlsl\.edu\.ph$/i
 
@@ -21,6 +23,8 @@ export default function LoginSection() {
   const [emailError, setEmailError] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [showSupport, setShowSupport] = useState(false)
+  const [showStatus, setShowStatus] = useState(false)
 
   function handleEmailChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = e.target.value
@@ -298,11 +302,21 @@ export default function LoginSection() {
           {/* Footer */}
           <div className="mt-4 border-t border-ink-100 pt-3 text-center">
             <p className="text-ink-400" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-2xs)' }}>
-              <button type="button" suppressHydrationWarning className="hover:text-ink-700 transition-colors">
+              <button
+                type="button"
+                suppressHydrationWarning
+                onClick={() => setShowSupport(true)}
+                className="hover:text-ink-700 transition-colors"
+              >
                 Contact Support
               </button>
               <span className="mx-1.5">|</span>
-              <button type="button" suppressHydrationWarning className="hover:text-ink-700 transition-colors">
+              <button
+                type="button"
+                suppressHydrationWarning
+                onClick={() => setShowStatus(true)}
+                className="hover:text-ink-700 transition-colors"
+              >
                 System Status
               </button>
             </p>
@@ -310,6 +324,9 @@ export default function LoginSection() {
 
         </div>
       </div>
+
+      {showSupport && <ContactSupportModal onClose={() => setShowSupport(false)} />}
+      {showStatus && <SystemStatusModal onClose={() => setShowStatus(false)} />}
     </div>
   )
 }
