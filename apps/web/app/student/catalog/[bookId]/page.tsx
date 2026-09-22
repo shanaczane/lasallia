@@ -372,6 +372,21 @@ export default function StudentBookDetailPage({
   const { bookId }      = use(params)
   const [showQR, setShowQR]   = useState(false)
 
+  // Where "Back" returns to — defaults to the catalog search results, but a
+  // linking page (My Library's Borrowed/Saved/History tabs, Reservations)
+  // can carry the visitor's origin via ?from= so this doesn't always bounce
+  // them to Catalog. Same query-param idiom borrow/[token]/page.tsx already
+  // uses for kiosk vs. student back-nav.
+  const backSearchParams = useSearchParams()
+  const from = backSearchParams.get('from')
+  const libraryTab = backSearchParams.get('tab')
+  const { backHref, backLabel } =
+    from === 'library'
+      ? { backHref: libraryTab ? `/student/library?tab=${libraryTab}` : '/student/library', backLabel: 'Back to My Library' }
+      : from === 'reservations'
+        ? { backHref: '/student/reservations', backLabel: 'Back to reservations' }
+        : { backHref: '/student/catalog', backLabel: 'Back to results' }
+
   const { book, loading } = useBook(bookId)
   const { reservations, refresh: refreshReservations } = useReservations()
   const existingReservation = reservations.find(
@@ -453,12 +468,12 @@ export default function StudentBookDetailPage({
           This title may have been removed or the link is incorrect.
         </p>
         <Link
-          href="/student/catalog"
+          href={backHref}
           className="inline-flex items-center gap-2 text-green-700 font-medium hover:text-green-800 transition-colors"
           style={{ fontSize: 'var(--text-body)', fontFamily: 'var(--font-body)' }}
         >
           <ArrowLeft size={16} />
-          Back to catalog
+          {backLabel}
         </Link>
       </div>
     )
@@ -475,12 +490,12 @@ export default function StudentBookDetailPage({
 
         {/* Back */}
         <Link
-          href="/student/catalog"
+          href={backHref}
           className="inline-flex items-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors mb-7"
           style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
         >
           <ArrowLeft size={15} />
-          Back to results
+          {backLabel}
         </Link>
 
         {/* ── Two-column hero ───────────────────────────────────────────────── */}
