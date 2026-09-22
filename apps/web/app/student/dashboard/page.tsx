@@ -72,7 +72,7 @@ export default function StudentDashboard() {
 
       {/* Greeting + Find a book */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-        <div className="text-center sm:text-left">
+        <div className="text-left">
           <h1
             className="text-ink-900 font-semibold leading-tight"
             style={{ fontSize: "var(--text-4xl)", fontFamily: "var(--font-display)" }}
