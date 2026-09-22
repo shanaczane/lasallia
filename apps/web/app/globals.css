@@ -139,6 +139,17 @@ html {
      gives the same "no horizontal scrollbar" result without establishing
      a scroll container, so it doesn't trigger that promotion. */
   overflow-x: clip;
+  /* Reserves the vertical scrollbar's width permanently, whether or not a
+     scrollbar is actually drawn right now. Without this, locking body
+     scroll (useBodyScrollLock, for the Activity side panel / FilterSheet)
+     removes the real scrollbar and the viewport itself gets wider by its
+     width — TopNav and the sidebar are `position: fixed`, sized off that
+     viewport directly, so they visibly stretch by a few pixels the instant
+     the panel opens and snap back when it closes. Reserving the gutter up
+     front means the scrollbar's presence never changes the viewport width,
+     so nothing shifts. Supported in all evergreen browsers; on the rare one
+     that lacks it, this just degrades to the old (harmless) behavior. */
+  scrollbar-gutter: stable;
 }
 
 body {
