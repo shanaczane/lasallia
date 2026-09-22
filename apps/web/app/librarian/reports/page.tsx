@@ -2279,9 +2279,14 @@ function ReportsPageContent() {
       </div>
 
       {/* ── Filter bar – Sprint 5.6.2 ─────────────────────── */}
-      <div className="rounded border border-ink-200 bg-white p-4 flex flex-wrap items-end gap-3 print:hidden" style={{ boxShadow: "var(--shadow)" }}>
+      {/* flex-nowrap + overflow-x-auto instead of flex-wrap: Year Level
+          was dropping to its own second row whenever the other three
+          groups' combined width left it just short of room. Scrolling
+          horizontally in that case reads better than a filter bar whose
+          height changes depending on what's selected. */}
+      <div className="rounded border border-ink-200 bg-white p-4 flex flex-nowrap items-end gap-3 overflow-x-auto no-scrollbar print:hidden" style={{ boxShadow: "var(--shadow)" }}>
         {/* Date range quick select */}
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 shrink-0">
           <label
             className="text-ink-500"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
@@ -2307,7 +2312,7 @@ function ReportsPageContent() {
 
         {/* Custom date inputs */}
         {dateRange === "custom" && (
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2 shrink-0">
             <div className="flex flex-col gap-1">
               <label className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>From</label>
               <input
@@ -2340,7 +2345,7 @@ function ReportsPageContent() {
           { label: "Year Level", value: yearLevel, setter: setYearLevel,
             options: ["All Year Levels", "1st Year", "2nd Year", "3rd Year", "4th Year"] },
         ].map((f) => (
-          <div key={f.label} className="flex flex-col gap-1">
+          <div key={f.label} className="flex flex-col gap-1 shrink-0">
             <label className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
               {f.label}
             </label>

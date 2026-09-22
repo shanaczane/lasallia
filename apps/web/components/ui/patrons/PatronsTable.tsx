@@ -88,11 +88,11 @@ export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTablePr
                 </button>
 
                 <span className="text-ink-600 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                  {patron.program ?? "—"}
+                  {patron.program ?? ""}
                 </span>
 
                 <span className="hidden lg:block text-ink-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                  {patron.year_level ? `Year ${patron.year_level}` : "—"}
+                  {patron.year_level ? `Year ${patron.year_level}` : ""}
                 </span>
 
                 {/* Role — now on the other side, after Name and Program (College) */}
