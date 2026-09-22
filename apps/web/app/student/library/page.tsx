@@ -1019,20 +1019,22 @@ export default function MyLibraryPage() {
           sits, and only once it scrolls above the nav does the bar
           switch to fixed (with a spacer to prevent the layout jump that
           leaving flow would otherwise cause). Desktop (sm+) keeps plain
-          `sticky`, since only phone widths were ever reported broken. */}
-      <div ref={sentinelRef} className="sm:hidden" />
-      {isStuck && <div className="sm:hidden h-12" aria-hidden="true" />}
+          `sticky` — phone and tablet (including iPad) both get the compact
+          row below, so the breakpoint tracks device class, not just phone
+          width. */}
+      <div ref={sentinelRef} className="lg:hidden" />
+      {isStuck && <div className="lg:hidden h-12" aria-hidden="true" />}
       <div
         className={cn(
-          "z-40 border-b border-ink-200 bg-paper/95 backdrop-blur-sm sm:sticky",
-          isStuck && "max-sm:fixed max-sm:inset-x-0",
+          "z-40 border-b border-ink-200 bg-paper/95 backdrop-blur-sm lg:sticky",
+          isStuck && "max-lg:fixed max-lg:inset-x-0",
         )}
         style={{ top: "var(--height-nav)" }}
       >
-        <div className="flex sm:hidden w-full h-12 items-center overflow-x-auto px-2 no-scrollbar">
+        <div className="flex lg:hidden w-full h-12 items-center overflow-x-auto px-2 no-scrollbar">
           {TABS.map((t) => <TabButton key={t.key} t={t} mobile={true} />)}
         </div>
-        <div className="hidden sm:flex items-center justify-between px-8">
+        <div className="hidden lg:flex items-center justify-between px-8">
           <div className="flex items-center">
             {TABS.map((t) => <TabButton key={t.key} t={t} mobile={false} />)}
           </div>

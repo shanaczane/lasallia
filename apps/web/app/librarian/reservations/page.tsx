@@ -620,10 +620,13 @@ export default function LibrarianReservationsPage() {
       </div>
 
       <div className="border-b border-ink-200">
-        <div className="flex sm:hidden w-full overflow-x-auto px-2 scrollbar-none">
+        {/* Phone and tablet (including iPad) get the compact, horizontally
+            scrollable tab row below lg (1024px) — only real desktop widths
+            keep the wide fixed layout. */}
+        <div className="flex lg:hidden w-full overflow-x-auto px-2 scrollbar-none">
           {TABS.map((tab) => <TabButton key={tab.key} tab={tab} isMobile={true} />)}
         </div>
-        <div className="hidden sm:flex px-8">
+        <div className="hidden lg:flex px-8">
           {TABS.map((tab) => <TabButton key={tab.key} tab={tab} isMobile={false} />)}
         </div>
       </div>

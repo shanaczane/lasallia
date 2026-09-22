@@ -166,26 +166,28 @@ export function NotificationFeed({
           native sticky wasn't reliably engaging below sm, and plain fixed
           overlapped the header above it (no "wait until scrolled past"
           behavior). useStickyBelowNav reimplements that waiting behavior
-          via IntersectionObserver. Desktop (sm+) keeps plain sticky. ── */}
-      <div ref={sentinelRef} className="sm:hidden" />
-      {isStuck && <div className="sm:hidden h-12" aria-hidden="true" />}
+          via IntersectionObserver. Real desktop (lg+) keeps plain sticky —
+          phone and tablet (including iPad) both get the compact row below
+          that, so the breakpoint tracks device class, not just phone width. ── */}
+      <div ref={sentinelRef} className="lg:hidden" />
+      {isStuck && <div className="lg:hidden h-12" aria-hidden="true" />}
       <div
         className={cn(
-          "z-40 border-b border-ink-200 bg-paper/95 backdrop-blur-sm sm:sticky",
-          isStuck && "max-sm:fixed max-sm:inset-x-0",
+          "z-40 border-b border-ink-200 bg-paper/95 backdrop-blur-sm lg:sticky",
+          isStuck && "max-lg:fixed max-lg:inset-x-0",
         )}
         style={{ top: "var(--height-nav)" }}
       >
 
-        {/* Mobile: content-width tabs, scrollable if needed, no forced equal columns */}
-        <div className="flex sm:hidden w-full h-12 items-center overflow-x-auto px-2 no-scrollbar">
+        {/* Phone/tablet: content-width tabs, scrollable if needed, no forced equal columns */}
+        <div className="flex lg:hidden w-full h-12 items-center overflow-x-auto px-2 no-scrollbar">
           {TABS.map((tab) => (
             <TabButton key={tab.key} tab={tab} isMobile={true} />
           ))}
         </div>
 
-        {/* Desktop sm+: same flex layout, with side padding */}
-        <div className="hidden sm:flex px-8">
+        {/* Real desktop (lg+): same flex layout, with side padding */}
+        <div className="hidden lg:flex px-8">
           {TABS.map((tab) => (
             <TabButton key={tab.key} tab={tab} isMobile={false} />
           ))}

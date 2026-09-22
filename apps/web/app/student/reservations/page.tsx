@@ -420,19 +420,22 @@ export default function ReservationsPage() {
           overlapped the header above it (no "wait until scrolled past"
           behavior). useStickyBelowNav reimplements that waiting behavior
           via IntersectionObserver. Desktop (sm+) keeps plain sticky. */}
-      <div ref={sentinelRef} className="sm:hidden" />
-      {isStuck && <div className="sm:hidden h-12" aria-hidden="true" />}
+      <div ref={sentinelRef} className="lg:hidden" />
+      {isStuck && <div className="lg:hidden h-12" aria-hidden="true" />}
       <div
         className={cn(
-          "z-40 border-b border-ink-200 bg-paper/95 backdrop-blur-sm sm:sticky",
-          isStuck && "max-sm:fixed max-sm:inset-x-0",
+          "z-40 border-b border-ink-200 bg-paper/95 backdrop-blur-sm lg:sticky",
+          isStuck && "max-lg:fixed max-lg:inset-x-0",
         )}
         style={{ top: "var(--height-nav)" }}
       >
-        <div className="flex sm:hidden w-full h-12 items-center overflow-x-auto px-2 no-scrollbar">
+        {/* Phone and tablet (including iPad) get the compact, horizontally
+            scrollable tab row below lg (1024px) — only real desktop widths
+            keep the wide fixed layout. */}
+        <div className="flex lg:hidden w-full h-12 items-center overflow-x-auto px-2 no-scrollbar">
           {TABS.map((tab) => <TabButton key={tab.key} tab={tab} isMobile={true} />)}
         </div>
-        <div className="hidden sm:flex px-8">
+        <div className="hidden lg:flex px-8">
           {TABS.map((tab) => <TabButton key={tab.key} tab={tab} isMobile={false} />)}
         </div>
       </div>
