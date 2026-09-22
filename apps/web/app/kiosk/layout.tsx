@@ -19,7 +19,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { Clock, Search, Sparkles, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { TopNav } from '@/components/layout/TopNav'
-import { KioskSessionProvider, useKioskSession } from '@/components/kiosk/KioskSessionProvider'
+import { KioskSessionProvider, useKioskSession, readInitialActiveKey } from '@/components/kiosk/KioskSessionProvider'
 import { RfidListener } from '@/components/kiosk/RfidListener'
 import { useIdleTimeout } from '@/components/kiosk/useIdleTimeout'
 
@@ -38,7 +38,10 @@ function KioskShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const { session, open, end, guestBrowsing, endGuest } = useKioskSession()
-  const previousActiveKey = useRef<string | null>(null)
+  // Seeded from sessionStorage synchronously (not via an effect) so a
+  // session restored after a refresh isn't mistaken for a brand-new tap —
+  // see readInitialActiveKey's comment.
+  const previousActiveKey = useRef<string | null>(readInitialActiveKey())
   const [collapsed, setCollapsed] = useState(false)
 
   const active = !!session || guestBrowsing
