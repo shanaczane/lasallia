@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils"
 import type { Notification, NotificationType } from "@lasallia/types"
-import { Clock, BookOpen, BookCheck, CheckCircle, XCircle, Bell, AlertTriangle, Users, Bookmark, ArrowUpCircle } from "lucide-react"
+import { Clock, BookOpen, BookCheck, CheckCircle, XCircle, Bell, AlertTriangle, Users, Bookmark, ArrowUpCircle, Banknote, AlertCircle } from "lucide-react"
 
 type NotificationItemCardProps = {
   notification: Notification
@@ -62,6 +62,16 @@ const typeConfig: Record<NotificationType, TypeConfig> = {
     icon: () => <Users size={15} />,
     iconBg: "bg-info-bg",
     iconColor: "text-info",
+  },
+  fine_settled: {
+    icon: () => <Banknote size={15} />,
+    iconBg: "bg-success-bg",
+    iconColor: "text-success",
+  },
+  fine_reminder: {
+    icon: () => <AlertCircle size={15} />,
+    iconBg: "bg-warn-bg",
+    iconColor: "text-warn",
   },
 }
 

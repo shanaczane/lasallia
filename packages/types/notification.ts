@@ -10,6 +10,8 @@ export type NotificationType =
   | 'return_confirmed'
   | 'loan_confirmed'      // student-facing: a borrow just succeeded
   | 'student_activity'    // librarian-facing: one row per librarian, for every student transaction
+  | 'fine_settled'        // student-facing: a librarian marked a previously-unsettled fine as paid
+  | 'fine_reminder'       // student-facing: recurring nudge about a fine that's still unpaid
 
 export type Notification = {
   id: string

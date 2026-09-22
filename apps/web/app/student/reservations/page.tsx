@@ -8,6 +8,8 @@ import { CheckCircle, Clock, XCircle, BookMarked, PackageCheck, AlertCircle, QrC
 import { useReservations } from "@/lib/hooks/useReservations"
 import { cancelReservation } from "@/lib/reservations"
 import { useStudentCounts } from "@/components/layout/StudentCountsContext"
+import { useSwipeTabs } from "@/lib/hooks/useSwipeTabs"
+import { useStickyBelowNav } from "@/lib/hooks/useStickyBelowNav"
 import type { Reservation, ReservationStatus } from "@lasallia/types"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -121,6 +123,8 @@ const TABS: Tab[] = [
   { key: "expired",   label: "Expired",   shortLabel: "Expired",   showCount: false },
   { key: "cancelled", label: "Cancelled", shortLabel: "Cancelled", showCount: false },
 ]
+
+const TAB_ORDER: TabKey[] = TABS.map((t) => t.key)
 
 // ─── Reservation Item Row ─────────────────────────────────────────────────────
 interface ReservationItemCardProps {
@@ -318,6 +322,8 @@ export default function ReservationsPage() {
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState("")
   const [activeTab, setActiveTab] = useState<TabKey>("pending")
+  const { direction, changeTo, touchHandlers } = useSwipeTabs(TAB_ORDER, activeTab, setActiveTab)
+  const { sentinelRef, isStuck } = useStickyBelowNav(64) // matches globals.css's --height-nav
 
   async function handleCancelConfirm() {
     if (!cancelTarget) return
@@ -355,7 +361,7 @@ export default function ReservationsPage() {
     return (
       <button
         type="button"
-        onClick={() => setActiveTab(tab.key)}
+        onClick={() => changeTo(tab.key)}
         className={cn(
           "flex items-center gap-1.5 py-2.5 font-medium border-b-2 transition-colors -mb-px whitespace-nowrap flex-shrink-0 px-3",
           isActive ? "border-green-700 text-green-700" : "border-transparent text-ink-500 hover:text-ink-900"
@@ -409,13 +415,21 @@ export default function ReservationsPage() {
         </div>
       </div>
 
-      {/* Tab bar — sticky under the fixed TopNav so it stays reachable
-          while the reservation list below scrolls. */}
+      {/* Tab bar — see student/library/page.tsx's matching note: native
+          sticky wasn't reliably engaging below sm, and plain fixed
+          overlapped the header above it (no "wait until scrolled past"
+          behavior). useStickyBelowNav reimplements that waiting behavior
+          via IntersectionObserver. Desktop (sm+) keeps plain sticky. */}
+      <div ref={sentinelRef} className="sm:hidden" />
+      {isStuck && <div className="sm:hidden h-12" aria-hidden="true" />}
       <div
-        className="sticky z-40 border-b border-ink-200 bg-paper/95 backdrop-blur-sm"
+        className={cn(
+          "z-40 border-b border-ink-200 bg-paper/95 backdrop-blur-sm sm:sticky",
+          isStuck && "max-sm:fixed max-sm:inset-x-0",
+        )}
         style={{ top: "var(--height-nav)" }}
       >
-        <div className="flex sm:hidden w-full overflow-x-auto px-2 scrollbar-none">
+        <div className="flex sm:hidden w-full h-12 items-center overflow-x-auto px-2 no-scrollbar">
           {TABS.map((tab) => <TabButton key={tab.key} tab={tab} isMobile={true} />)}
         </div>
         <div className="hidden sm:flex px-8">
@@ -423,7 +437,8 @@ export default function ReservationsPage() {
         </div>
       </div>
 
-      <div className="flex-1 px-4 sm:px-8 py-4">
+      <div className="flex-1 px-4 sm:px-8 py-4" {...touchHandlers}>
+        <div key={activeTab} className={direction === "forward" ? "tab-enter-forward" : "tab-enter-back"}>
         {error ? (
           <p className="text-center py-12 text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
             {error}
@@ -469,6 +484,7 @@ export default function ReservationsPage() {
             ))}
           </div>
         )}
+        </div>
       </div>
 
       {cancelTarget && (

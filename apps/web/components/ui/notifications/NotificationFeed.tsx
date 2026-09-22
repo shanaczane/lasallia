@@ -5,6 +5,8 @@ import { useState } from "react"
 import { cn } from "@/lib/utils"
 import type { Notification, NotificationType } from "@lasallia/types"
 import { NotificationItemCard } from "./NotificationItemCard"
+import { useSwipeTabs } from "@/lib/hooks/useSwipeTabs"
+import { useStickyBelowNav } from "@/lib/hooks/useStickyBelowNav"
 import { Bell } from "lucide-react"
 
 type TabKey = "all" | "due_dates" | "reservations" | "loans"
@@ -20,8 +22,10 @@ const TABS: Tab[] = [
   { key: "all",          label: "All",          shortLabel: "All" },
   { key: "due_dates",    label: "Due Dates",    shortLabel: "Due Dates",    types: ["due_reminder", "overdue"] },
   { key: "reservations", label: "Reservations", shortLabel: "Reservations", types: ["reservation_placed", "reservation_queue_advanced", "reservation_confirmed", "reservation_cancelled"] },
-  { key: "loans",        label: "Loans",        shortLabel: "Loans",        types: ["loan_confirmed", "return_confirmed"] },
+  { key: "loans",        label: "Loans",        shortLabel: "Loans",        types: ["loan_confirmed", "return_confirmed", "fine_settled", "fine_reminder"] },
 ]
+
+const TAB_ORDER: TabKey[] = TABS.map((t) => t.key)
 
 function groupByDate(notifications: Notification[]): { label: string; items: Notification[] }[] {
   const groups: Record<string, Notification[]> = {}
@@ -62,6 +66,8 @@ export function NotificationFeed({
   onMarkAllRead,
 }: NotificationFeedProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("all")
+  const { direction, changeTo, touchHandlers } = useSwipeTabs(TAB_ORDER, activeTab, setActiveTab)
+  const { sentinelRef, isStuck } = useStickyBelowNav(64) // matches globals.css's --height-nav
 
   const unreadCount = notifications.filter((n) => !n.is_read).length
 
@@ -77,7 +83,7 @@ export function NotificationFeed({
     all:             notifications.filter((n) => !n.is_read).length,
     due_dates:       notifications.filter((n) => !n.is_read && ["due_reminder", "overdue"].includes(n.type)).length,
     reservations:    notifications.filter((n) => !n.is_read && ["reservation_placed", "reservation_queue_advanced", "reservation_confirmed", "reservation_cancelled"].includes(n.type)).length,
-    loans:           notifications.filter((n) => !n.is_read && ["loan_confirmed", "return_confirmed"].includes(n.type)).length,
+    loans:           notifications.filter((n) => !n.is_read && ["loan_confirmed", "return_confirmed", "fine_settled", "fine_reminder"].includes(n.type)).length,
   }
 
   const groups = groupByDate(filtered)
@@ -91,7 +97,7 @@ export function NotificationFeed({
         key={tab.key}
         type="button"
         suppressHydrationWarning
-        onClick={() => setActiveTab(tab.key)}
+        onClick={() => changeTo(tab.key)}
         className={cn(
           "flex items-center gap-1.5 py-2.5 font-medium border-b-2 transition-colors -mb-px whitespace-nowrap flex-shrink-0",
           isMobile ? "px-3" : "px-3",
@@ -156,15 +162,23 @@ export function NotificationFeed({
         </div>
       </div>
 
-      {/* ── Tab filters — sticky under the fixed TopNav, so it stays
-          reachable while the notification list below scrolls. ─────────── */}
+      {/* ── Tab filters — see student/library/page.tsx's matching note:
+          native sticky wasn't reliably engaging below sm, and plain fixed
+          overlapped the header above it (no "wait until scrolled past"
+          behavior). useStickyBelowNav reimplements that waiting behavior
+          via IntersectionObserver. Desktop (sm+) keeps plain sticky. ── */}
+      <div ref={sentinelRef} className="sm:hidden" />
+      {isStuck && <div className="sm:hidden h-12" aria-hidden="true" />}
       <div
-        className="sticky z-40 border-b border-ink-200 bg-paper/95 backdrop-blur-sm"
+        className={cn(
+          "z-40 border-b border-ink-200 bg-paper/95 backdrop-blur-sm sm:sticky",
+          isStuck && "max-sm:fixed max-sm:inset-x-0",
+        )}
         style={{ top: "var(--height-nav)" }}
       >
 
         {/* Mobile: content-width tabs, scrollable if needed, no forced equal columns */}
-        <div className="flex sm:hidden w-full overflow-x-auto px-2 scrollbar-none">
+        <div className="flex sm:hidden w-full h-12 items-center overflow-x-auto px-2 no-scrollbar">
           {TABS.map((tab) => (
             <TabButton key={tab.key} tab={tab} isMobile={true} />
           ))}
@@ -180,7 +194,8 @@ export function NotificationFeed({
       </div>
 
       {/* ── Notification groups ─────────────────────────────────────────── */}
-      <div className="flex-1 px-4 sm:px-8 py-4">
+      <div className="flex-1 px-4 sm:px-8 py-4" {...touchHandlers}>
+        <div key={activeTab} className={direction === "forward" ? "tab-enter-forward" : "tab-enter-back"}>
         {groups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-ink-400">
             <Bell size={28} className="mb-2 opacity-30" />
@@ -216,6 +231,7 @@ export function NotificationFeed({
             ))}
           </div>
         )}
+        </div>
       </div>
 
     </div>

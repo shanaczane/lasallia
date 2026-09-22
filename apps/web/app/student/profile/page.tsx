@@ -17,7 +17,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle, ChevronDown } from "lucide-react"
 import { cn, ordinal } from "@/lib/utils"
 import { getUser, updateProfile, changePassword, type UserProfile as AuthUser } from "@/lib/auth"
 import { fetchLoans, type Loan as ApiLoan } from "@/lib/kiosk"
@@ -48,6 +48,9 @@ type FineEntry = {
   amount: number
   kind: FineKind
   detail: string
+  // Longer explanation of why this fine exists, shown when the row is
+  // expanded — the collapsed `detail` line stays terse.
+  reason: string
 }
 
 const FINE_CFG: Record<FineKind, { label: string; text: string; bg: string }> = {
@@ -105,12 +108,16 @@ function StudentProfileContent() {
     for (const l of loans) {
       const title = l.books?.title ?? "Unknown title"
       if (l.status === "returned" && (l.fine_amount ?? 0) > 0) {
+        const daysLate = l.returned_at
+          ? Math.max(0, Math.round((new Date(l.returned_at).getTime() - new Date(l.due_date).getTime()) / 86_400_000))
+          : 0
         entries.push({
           loanId: l.id,
           title,
           amount: l.fine_amount!,
           kind: l.fine_status === "paid" ? "paid" : "unsettled",
           detail: l.returned_at ? `Returned ${formatDate(l.returned_at)}` : "Returned",
+          reason: `"${title}" was due ${formatDate(l.due_date)} and came back ${daysLate} day${daysLate === 1 ? "" : "s"} late.`,
         })
       } else if ((l.status === "active" || l.status === "overdue") && (l.preview_fine_amount ?? 0) > 0) {
         const days = l.days_overdue ?? 0
@@ -120,6 +127,7 @@ function StudentProfileContent() {
           amount: l.preview_fine_amount!,
           kind: "accruing",
           detail: `${days} day${days === 1 ? "" : "s"} overdue · not yet returned`,
+          reason: `"${title}" was due ${formatDate(l.due_date)} and still hasn't been returned — ${days} day${days === 1 ? "" : "s"} overdue so far. This fine keeps growing until the book comes back.`,
         })
       }
     }
@@ -130,6 +138,18 @@ function StudentProfileContent() {
     () => fineEntries.filter((e) => e.kind !== "paid").reduce((sum, e) => sum + e.amount, 0),
     [fineEntries]
   )
+
+  // Which fine rows have their "why" explanation expanded — a set rather
+  // than a single id, so more than one can be open at once.
+  const [expandedFines, setExpandedFines] = useState<Set<string>>(new Set())
+  function toggleFine(loanId: string) {
+    setExpandedFines((prev) => {
+      const next = new Set(prev)
+      if (next.has(loanId)) next.delete(loanId)
+      else next.add(loanId)
+      return next
+    })
+  }
 
   // Settings tab — Full Name
   const [nameSaving, setNameSaving] = useState(false)
@@ -309,30 +329,52 @@ function StudentProfileContent() {
                         No fines on record.
                       </p>
                     ) : (
-                      <div className="flex flex-col divide-y divide-ink-100 border-t border-ink-100">
+                      <div className="flex flex-col divide-y divide-ink-100 border-t border-ink-100 -mx-4">
                         {fineEntries.map((e) => {
                           const cfg = FINE_CFG[e.kind]
+                          const isOpen = expandedFines.has(e.loanId)
                           return (
-                            <div key={e.loanId} className="flex items-center justify-between gap-3 py-2.5">
-                              <div className="min-w-0">
-                                <p className="text-ink-900 font-medium truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                                  {e.title}
-                                </p>
-                                <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
-                                  {e.detail}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span
-                                  className={cn("px-2 py-0.5 rounded-full font-medium", cfg.bg, cfg.text)}
-                                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-                                >
-                                  {cfg.label}
-                                </span>
-                                <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                                  ₱{e.amount.toFixed(2)}
-                                </span>
-                              </div>
+                            <div key={e.loanId}>
+                              <button
+                                type="button"
+                                onClick={() => toggleFine(e.loanId)}
+                                aria-expanded={isOpen}
+                                className="flex items-center justify-between gap-x-3 gap-y-1.5 flex-wrap py-3 px-4 w-full text-left hover:bg-ink-50 focus-visible:outline-none focus-visible:bg-ink-50 transition-colors"
+                              >
+                                <div className="min-w-0 max-w-full">
+                                  <p className="text-ink-900 font-medium truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                                    {e.title}
+                                  </p>
+                                  <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+                                    {e.detail}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
+                                  <span
+                                    className={cn("px-2 py-0.5 rounded-full font-medium", cfg.bg, cfg.text)}
+                                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                                  >
+                                    {cfg.label}
+                                  </span>
+                                  <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                                    ₱{e.amount.toFixed(2)}
+                                  </span>
+                                  <ChevronDown
+                                    size={16}
+                                    className={cn("shrink-0 text-ink-400 transition-transform duration-200", isOpen && "rotate-180")}
+                                  />
+                                </div>
+                              </button>
+                              {isOpen && (
+                                <div className="mx-4 mb-3 px-3 py-2.5 rounded-(--radius-sm) bg-ink-50">
+                                  <p
+                                    className="text-ink-600"
+                                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
+                                  >
+                                    {e.reason}
+                                  </p>
+                                </div>
+                              )}
                             </div>
                           )
                         })}
@@ -422,10 +464,6 @@ function StudentProfileContent() {
                 {passwordSaving ? "Updating…" : "Update Password"}
               </button>
             </SettingsSection>
-
-            <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
-              Email changes aren&apos;t wired up yet — that needs Supabase&apos;s own confirm-by-email flow.
-            </p>
           </>
         )}
       </div>
