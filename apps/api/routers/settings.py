@@ -12,13 +12,22 @@ from core.deps import require_librarian
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
-from schemas.settings import LibrarySettings, UpdateLibrarySettingsRequest
+from schemas.settings import LibrarySettings, PublicLibrarySettings, UpdateLibrarySettingsRequest
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 @router.get("", response_model=LibrarySettings)
 def get_settings(librarian: UserProfile = Depends(require_librarian)):
+    return get_library_settings(get_admin_client())
+
+
+# No auth — the login page's Contact Support / System Status links need
+# this before anyone has signed in. PublicLibrarySettings drops every
+# field that isn't meant for an anonymous visitor; pydantic ignores the
+# extra keys in get_library_settings()'s dict rather than erroring on them.
+@router.get("/public", response_model=PublicLibrarySettings)
+def get_public_settings():
     return get_library_settings(get_admin_client())
 
 

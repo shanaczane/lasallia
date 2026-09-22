@@ -65,6 +65,23 @@ export async function fetchLibrarySettings(): Promise<LibrarySettings> {
   return res.json()
 }
 
+export type PublicLibrarySettings = Pick<
+  LibrarySettings,
+  | "library_name" | "address" | "contact_email" | "contact_number"
+  | "weekday_open_time" | "weekday_close_time"
+  | "saturday_open_time" | "saturday_close_time"
+  | "sunday_open_time" | "sunday_close_time"
+>
+
+// No auth header — GET /settings/public is the one settings route that
+// doesn't require require_librarian, for the login page's Contact
+// Support / System Status links (nobody's signed in yet at that point).
+export async function fetchPublicLibrarySettings(): Promise<PublicLibrarySettings> {
+  const res = await fetch(`${API_URL}/settings/public`)
+  if (!res.ok) return parseErrorOrThrow(res, "Failed to load library info")
+  return res.json()
+}
+
 export async function updateLibrarySettings(changes: UpdateLibrarySettings): Promise<LibrarySettings> {
   const res = await fetch(`${API_URL}/settings`, {
     method: "PATCH",

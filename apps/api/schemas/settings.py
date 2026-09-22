@@ -45,6 +45,25 @@ class LibrarySettings(BaseModel):
     is_default: bool = False
 
 
+# The subset of LibrarySettings safe to serve without auth — the login
+# page's Contact Support / System Status links need this before anyone's
+# signed in. Deliberately excludes updated_at/updated_by (no reason to
+# expose a librarian's user id to an anonymous visitor) and the borrowing
+# rules (nobody outside the library needs those pre-login).
+class PublicLibrarySettings(BaseModel):
+    library_name: str
+    address: str
+    contact_email: str
+    contact_number: str
+
+    weekday_open_time: str | None = None
+    weekday_close_time: str | None = None
+    saturday_open_time: str | None = None
+    saturday_close_time: str | None = None
+    sunday_open_time: str | None = None
+    sunday_close_time: str | None = None
+
+
 # All fields optional — PATCH only writes what's actually included, same
 # convention as UpdatePatronStatusRequest.
 class UpdateLibrarySettingsRequest(BaseModel):
