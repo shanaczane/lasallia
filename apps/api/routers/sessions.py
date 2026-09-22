@@ -38,10 +38,15 @@ def _insert_session(student_id: str, auth_method: str, station_id: str) -> dict:
     session = res.data[0]
 
     # The kiosk greets whoever just tapped/logged in by first name — same
-    # split-on-space pattern already used in holds.py's get_hold.
-    profile_res = admin.table("profiles").select("full_name").eq("id", student_id).execute()
-    full_name = (profile_res.data[0]["full_name"] if profile_res.data else None) or ""
+    # split-on-space pattern already used in holds.py's get_hold. program/
+    # college ride along too, for the kiosk "For you" tab's New Arrivals/
+    # Program/College sections (see schemas/session.py's comment on why).
+    profile_res = admin.table("profiles").select("full_name, program, college").eq("id", student_id).execute()
+    profile = profile_res.data[0] if profile_res.data else {}
+    full_name = profile.get("full_name") or ""
     session["student_first_name"] = full_name.split(" ")[0] or "there"
+    session["program"] = profile.get("program")
+    session["college"] = profile.get("college")
     return session
 
 # Not behind auth for manual_login/rfid: this is what the kiosk calls to
