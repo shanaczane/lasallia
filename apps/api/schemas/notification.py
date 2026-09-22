@@ -8,6 +8,8 @@ NotificationType = Literal[
     "loan_confirmed", "student_activity",
     "reservation_placed", "reservation_queue_advanced",
     "fine_settled", "fine_reminder",
+    "book_request_submitted", "book_request_approved", "book_request_rejected",
+    "book_request_fulfilled", "book_request_cancelled",
 ]
 
 class Notification(BaseModel):

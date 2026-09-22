@@ -12,6 +12,11 @@ export type NotificationType =
   | 'student_activity'    // librarian-facing: one row per librarian, for every student transaction
   | 'fine_settled'        // student-facing: a librarian marked a previously-unsettled fine as paid
   | 'fine_reminder'       // student-facing: recurring nudge about a fine that's still unpaid
+  | 'book_request_submitted'  // librarian-facing: a faculty member submitted a new book request
+  | 'book_request_cancelled'  // librarian-facing: a faculty member withdrew their pending request
+  | 'book_request_approved'   // faculty-facing: a librarian approved their request
+  | 'book_request_rejected'   // faculty-facing: a librarian declined their request
+  | 'book_request_fulfilled'  // faculty-facing: the requested title was acquired
 
 export type Notification = {
   id: string

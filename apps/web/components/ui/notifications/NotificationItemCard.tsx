@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils"
 import type { Notification, NotificationType } from "@lasallia/types"
-import { Clock, BookOpen, BookCheck, CheckCircle, XCircle, Bell, AlertTriangle, Users, Bookmark, ArrowUpCircle, Banknote, AlertCircle } from "lucide-react"
+import { Clock, BookOpen, BookCheck, BookPlus, CheckCircle, XCircle, Ban, Bell, AlertTriangle, Users, Bookmark, ArrowUpCircle, Banknote, AlertCircle } from "lucide-react"
 
 type NotificationItemCardProps = {
   notification: Notification
@@ -72,6 +72,31 @@ const typeConfig: Record<NotificationType, TypeConfig> = {
     icon: () => <AlertCircle size={15} />,
     iconBg: "bg-warn-bg",
     iconColor: "text-warn",
+  },
+  book_request_submitted: {
+    icon: () => <BookPlus size={15} />,
+    iconBg: "bg-info-bg",
+    iconColor: "text-info",
+  },
+  book_request_cancelled: {
+    icon: () => <Ban size={15} />,
+    iconBg: "bg-ink-100",
+    iconColor: "text-ink-400",
+  },
+  book_request_approved: {
+    icon: () => <CheckCircle size={15} />,
+    iconBg: "bg-success-bg",
+    iconColor: "text-success",
+  },
+  book_request_rejected: {
+    icon: () => <XCircle size={15} />,
+    iconBg: "bg-danger-bg",
+    iconColor: "text-danger",
+  },
+  book_request_fulfilled: {
+    icon: () => <BookCheck size={15} />,
+    iconBg: "bg-success-bg",
+    iconColor: "text-success",
   },
 }
 

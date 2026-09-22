@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { BookPlus, Clock, CheckCircle2, XCircle, PackageCheck, Paperclip, X } from "lucide-react"
+import { BookPlus, Clock, CheckCircle2, XCircle, PackageCheck, Paperclip, X, Ban, ChevronUp, ChevronDown } from "lucide-react"
 import { getUser } from "@/lib/auth"
 import {
   createBookRequest,
@@ -20,6 +20,7 @@ import {
   type BookRequestStatus,
   type BookRequestFormat,
 } from "@/lib/bookRequests"
+import { MyBookRequestModal } from "@/components/ui/requests/MyBookRequestModal"
 import { resolveDateRange, type DateRangePreset } from "@/lib/reports"
 
 // Same chevron-as-background-image treatment used by the librarian
@@ -33,6 +34,7 @@ const STATUS_CONFIG: Record<BookRequestStatus, { label: string; icon: React.Reac
   approved:  { label: "Approved",  icon: <CheckCircle2 size={12} />, badge: "bg-info-bg text-info" },
   rejected:  { label: "Rejected",  icon: <XCircle size={12} />,      badge: "bg-danger-bg text-danger" },
   fulfilled: { label: "Fulfilled", icon: <PackageCheck size={12} />, badge: "bg-success-bg text-success" },
+  cancelled: { label: "Cancelled", icon: <Ban size={12} />,          badge: "bg-ink-100 text-ink-500" },
 }
 
 const FORMAT_LABEL: Record<BookRequestFormat, string> = {
@@ -49,6 +51,7 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "approved", label: "Approved" },
   { key: "rejected", label: "Rejected" },
   { key: "fulfilled", label: "Fulfilled" },
+  { key: "cancelled", label: "Cancelled" },
 ]
 
 // No "custom" here — keep it to quick presets for a self-service history
@@ -87,6 +90,7 @@ export default function RequestABookPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [justSubmitted, setJustSubmitted] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   useEffect(() => {
     setIsFaculty(getUser()?.role === "faculty")
@@ -244,14 +248,34 @@ export default function RequestABookPage() {
               <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
                 Copies needed
               </label>
-              <input
-                type="number"
-                min={1}
-                value={copies}
-                onChange={(e) => setCopies(Math.max(1, Number(e.target.value) || 1))}
-                className="px-3 py-2 rounded-sm border border-ink-200 focus:outline-none focus:border-green-700"
-                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-              />
+              <div className="relative">
+                <input
+                  type="number"
+                  min={1}
+                  value={copies}
+                  onChange={(e) => setCopies(Math.max(1, Number(e.target.value) || 1))}
+                  className="px-3 py-2 pr-7 rounded-sm border border-ink-200 focus:outline-none focus:border-green-700 w-full"
+                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                />
+                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col">
+                  <button
+                    type="button"
+                    onClick={() => setCopies((c) => c + 1)}
+                    aria-label="Increase copies"
+                    className="text-ink-400 hover:text-green-700 transition-colors leading-none p-0.5"
+                  >
+                    <ChevronUp size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCopies((c) => Math.max(1, c - 1))}
+                    aria-label="Decrease copies"
+                    className="text-ink-400 hover:text-green-700 transition-colors leading-none p-0.5"
+                  >
+                    <ChevronDown size={13} />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -410,7 +434,11 @@ export default function RequestABookPage() {
               {visible.map((r, i) => (
                 <div
                   key={r.id}
-                  className={cn("flex items-center justify-between gap-3 px-4 py-3.5", i !== visible.length - 1 && "border-b border-ink-100")}
+                  onClick={() => setSelectedId(r.id)}
+                  className={cn(
+                    "flex items-center justify-between gap-3 px-4 py-3.5 cursor-pointer hover:bg-ink-50 transition-colors",
+                    i !== visible.length - 1 && "border-b border-ink-100"
+                  )}
                 >
                   <div className="min-w-0">
                     <p className="text-ink-900 font-semibold truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
@@ -430,6 +458,7 @@ export default function RequestABookPage() {
                           href={a.url}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
                           className="flex items-center gap-1 text-green-700 hover:text-green-900 transition-colors"
                           style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
                         >
@@ -453,6 +482,18 @@ export default function RequestABookPage() {
           })()}
         </div>
       </div>
+
+      {selectedId && (() => {
+        const selected = requests.find((req) => req.id === selectedId)
+        if (!selected) return null
+        return (
+          <MyBookRequestModal
+            request={selected}
+            onClose={() => setSelectedId(null)}
+            onUpdated={(updated) => setRequests((prev) => prev.map((req) => (req.id === updated.id ? updated : req)))}
+          />
+        )
+      })()}
     </div>
   )
 }

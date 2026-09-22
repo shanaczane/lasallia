@@ -8,7 +8,7 @@ import { getToken } from "@/lib/auth"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
-export type BookRequestStatus = "pending" | "approved" | "rejected" | "fulfilled"
+export type BookRequestStatus = "pending" | "approved" | "rejected" | "fulfilled" | "cancelled"
 export type BookRequestFormat = "print" | "ebook" | "either"
 
 export type BookRequestAttachment = {
@@ -92,6 +92,40 @@ export async function deleteRequestAttachment(requestId: string, attachmentId: s
     headers: authHeaders(),
   })
   if (!res.ok) return parseErrorOrThrow(res, "Could not remove this attachment")
+  return res.json()
+}
+
+// Faculty editing their own not-yet-reviewed request. Every field is
+// optional — only send what changed. 409s once a librarian has already
+// approved/rejected/fulfilled it (routers/book_requests.py enforces this
+// server-side; the UI should already be hiding the edit action by then).
+export async function updateMyBookRequest(
+  id: string,
+  fields: Partial<{
+    title: string
+    author: string
+    isbn: string
+    note: string
+    format: BookRequestFormat
+    copies: number
+    course: string
+  }>
+): Promise<BookRequest> {
+  const res = await fetch(`${API_URL}/book-requests/${id}/edit`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify(fields),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, "Could not update this request")
+  return res.json()
+}
+
+export async function cancelBookRequest(id: string): Promise<BookRequest> {
+  const res = await fetch(`${API_URL}/book-requests/${id}/cancel`, {
+    method: "POST",
+    headers: authHeaders(),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, "Could not cancel this request")
   return res.json()
 }
 

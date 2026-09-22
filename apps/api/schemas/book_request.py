@@ -54,3 +54,17 @@ class CreateBookRequestRequest(BaseModel):
 
 class UpdateBookRequestRequest(BaseModel):
     status: RequestStatus | None = None
+
+
+# Faculty editing their own not-yet-reviewed request — deliberately separate
+# from UpdateBookRequestRequest (the librarian's status-only PATCH, which
+# also stamps reviewed_by/reviewed_at). Every field is optional so a caller
+# only sends what actually changed.
+class UpdateOwnBookRequestRequest(BaseModel):
+    title: str | None = None
+    author: str | None = None
+    isbn: str | None = None
+    note: str | None = None
+    format: RequestFormat | None = None
+    copies: int | None = None
+    course: str | None = None

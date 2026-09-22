@@ -52,6 +52,7 @@ import { buildFeed, TX_CONFIG, type FeedItem } from "@/lib/activity"
 import { fetchBookRequests, updateBookRequest, type BookRequest, type BookRequestStatus } from "@/lib/bookRequests"
 import { Pagination } from "@/components/ui/catalog"
 import { PatronProfileModal } from "@/components/ui/patrons/PatronProfileModal"
+import { BookRequestDetailModal } from "@/components/ui/requests/BookRequestDetailModal"
 import { ConfirmStatusDialog } from "@/components/ui/patrons/ConfirmStatusDialog"
 import { ActivityDetailPanel } from "@/components/dashboard/ActivityDetailPanel"
 import {
@@ -799,13 +800,14 @@ function CirculationTable({ rows, onExport }: { rows: CirculationRow[]; onExport
 // lets a librarian move it through pending -> approved/rejected ->
 // (approved only) fulfilled. See migrations/0039_book_requests.sql.
 const REQUEST_STATUS_LABEL: Record<BookRequestStatus, string> = {
-  pending: "Pending", approved: "Approved", rejected: "Rejected", fulfilled: "Fulfilled",
+  pending: "Pending", approved: "Approved", rejected: "Rejected", fulfilled: "Fulfilled", cancelled: "Cancelled",
 }
 const REQUEST_STATUS_BADGE: Record<BookRequestStatus, string> = {
   pending: "bg-warn-bg text-warn",
   approved: "bg-info-bg text-info",
   rejected: "bg-danger-bg text-danger",
   fulfilled: "bg-success-bg text-success",
+  cancelled: "bg-ink-100 text-ink-500",
 }
 
 type RequestTabKey = "all" | BookRequestStatus
@@ -816,6 +818,7 @@ const REQUEST_TABS: { key: RequestTabKey; label: string; showCount: boolean }[] 
   { key: "approved",  label: "Approved",  showCount: true },
   { key: "rejected",  label: "Rejected",  showCount: false },
   { key: "fulfilled", label: "Fulfilled", showCount: false },
+  { key: "cancelled", label: "Cancelled", showCount: false },
 ]
 
 function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: string }) {
@@ -826,6 +829,7 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
   const [busyId, setBusyId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const PAGE_SIZE = 10
 
   function showToast(msg: string) {
@@ -869,6 +873,7 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
     approved: inRange.filter((r) => r.status === "approved").length,
     rejected: inRange.filter((r) => r.status === "rejected").length,
     fulfilled: inRange.filter((r) => r.status === "fulfilled").length,
+    cancelled: inRange.filter((r) => r.status === "cancelled").length,
   }
 
   const byTab = activeTab === "all" ? inRange : inRange.filter((r) => r.status === activeTab)
@@ -975,7 +980,11 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
               </thead>
               <tbody>
                 {paged.map((r) => (
-                  <tr key={r.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
+                  <tr
+                    key={r.id}
+                    onClick={() => setSelectedId(r.id)}
+                    className="border-b border-ink-100 hover:bg-ink-50 transition-colors cursor-pointer"
+                  >
                     <td className="py-2.5 px-4">
                       <p className="text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{r.title}</p>
                       <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
@@ -989,6 +998,7 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
                               href={a.url}
                               target="_blank"
                               rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
                               className="inline-flex items-center gap-1 text-green-700 hover:text-green-900 transition-colors"
                               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
                             >
@@ -1014,7 +1024,7 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
                     <td className="py-2.5 px-4 text-ink-700 whitespace-nowrap" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
                       {new Date(r.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
                     </td>
-                    <td className="py-2.5 px-4">
+                    <td className="py-2.5 px-4" onClick={(e) => e.stopPropagation()}>
                       {r.status === "pending" ? (
                         <div className="flex gap-2">
                           <button
@@ -1054,6 +1064,22 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
           </div>
         )}
       </ReportTableCard>
+
+      {selectedId && (() => {
+        const selected = requests.find((r) => r.id === selectedId)
+        if (!selected) return null
+        return (
+          <BookRequestDetailModal
+            request={selected}
+            busy={busyId === selected.id}
+            onClose={() => setSelectedId(null)}
+            onDecision={async (status) => {
+              await handleDecision(selected, status)
+              setSelectedId(null)
+            }}
+          />
+        )
+      })()}
     </div>
   )
 }

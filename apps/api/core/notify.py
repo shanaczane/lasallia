@@ -93,7 +93,7 @@ def notify(user_id: str, type: NotificationType, title: str, message: str, link:
 # "broadcast to a role" concept, so notifying every librarian means one row
 # per librarian. Used for "every student transaction" (checkout, return,
 # reservation placed/cancelled) via the "student_activity" type.
-def notify_librarians(title: str, message: str, link: str | None = None) -> None:
+def notify_librarians(title: str, message: str, link: str | None = None, type: NotificationType = "student_activity") -> None:
     try:
         admin = get_admin_client()
         librarians = admin.table("profiles").select("id").eq("role", "librarian").execute().data
@@ -101,4 +101,4 @@ def notify_librarians(title: str, message: str, link: str | None = None) -> None
         print(f"notify_librarians() failed to look up librarians: {e}")
         return
     for librarian in librarians:
-        notify(librarian["id"], "student_activity", title, message, link=link)
+        notify(librarian["id"], type, title, message, link=link)
