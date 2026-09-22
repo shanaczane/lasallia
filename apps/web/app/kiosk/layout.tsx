@@ -66,16 +66,27 @@ function KioskShell({ children }: { children: React.ReactNode }) {
   // new tap interrupting an active session, real or guest) resets to
   // the catalog root rather than leaving whoever's there now on
   // whatever page the previous person was viewing.
+  //
+  // The inactive branch used to only fire on a real active->inactive
+  // transition (prev truthy). That missed landing on a subpage — e.g.
+  // /kiosk/catalog — while already inactive the whole time: nobody ever
+  // tapped in this tab, or sessionStorage had nothing to restore. Every
+  // page under here except the catalog/for-you/assistant tabs themselves
+  // is only reachable via the sidebar, but this route effect is the one
+  // thing standing between a stray/bookmarked URL and getting stuck on a
+  // page with the tap-in-gated sidebar/TopNav missing and no way back —
+  // so this now checks "inactive AND not already on the idle screen",
+  // not just "inactive and just became so".
   useEffect(() => {
     const prev = previousActiveKey.current
     const current = session?.id ?? (guestBrowsing ? 'guest' : null)
     if (current && current !== prev) {
       router.push('/kiosk/catalog')
-    } else if (!current && prev) {
+    } else if (!current && pathname !== '/kiosk') {
       router.replace('/kiosk')
     }
     previousActiveKey.current = current
-  }, [session?.id, guestBrowsing, router])
+  }, [session?.id, guestBrowsing, pathname, router])
 
   async function handleTap(uid: string) {
     await open({ authMethod: 'rfid', rfidUid: uid })
@@ -166,7 +177,12 @@ function KioskShell({ children }: { children: React.ReactNode }) {
         className={cn('min-h-screen transition-all duration-200', active && (collapsed ? 'md:pl-14' : 'md:pl-(--width-side)'))}
         style={active ? { paddingTop: 'var(--height-nav)' } : undefined}
       >
-        {children}
+        {/* Withholds a subpage's content (e.g. someone lands straight on a
+            bookmarked /kiosk/catalog with nothing tapped in) for the one
+            frame before the route effect above redirects to /kiosk — the
+            actual bug being fixed here: book cards rendering with the
+            sidebar/TopNav gone and nothing on screen to get back with. */}
+        {(active || pathname === '/kiosk') && children}
       </main>
     </div>
   )
