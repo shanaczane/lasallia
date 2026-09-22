@@ -42,7 +42,15 @@ export function RfidListener({ onTap }: { onTap: (uid: string) => void }) {
     <input
       ref={inputRef}
       type="text"
-      aria-hidden="true"
+      // Not aria-hidden — this element is real DOM focus itself for most
+      // of the kiosk shell's lifetime (see refocus() above), and
+      // aria-hidden on a focused element is an invalid, self-contradictory
+      // combination (Chrome flags it: "aria-hidden...because its
+      // descendant retained focus"). aria-label instead gives assistive
+      // tech an honest name for what it lands on, same intent as
+      // aria-hidden without the contradiction. tabIndex={-1} still keeps
+      // it out of normal Tab order.
+      aria-label="RFID scanner input (background, not for manual use)"
       tabIndex={-1}
       autoComplete="off"
       onKeyDown={handleKeyDown}

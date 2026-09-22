@@ -29,10 +29,17 @@ async function post(events: { event_type: EventType; book_id: string; rank?: num
   if (token) headers.Authorization = `Bearer ${token}`
 
   try {
+    // Always send session_id, even alongside a token — a stale/expired
+    // token still passes the truthy check here but gets silently treated
+    // as anonymous server-side (get_optional_user swallows the 401), so
+    // omitting session_id whenever *a* token merely exists left the
+    // backend with neither a valid user nor a session_id to rate-limit
+    // against, which 400s. The backend already prefers a valid user over
+    // session_id when both are present, so sending both is never wrong.
     await fetch(`${API_URL}/recommendations/events`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ events, session_id: token ? undefined : getOrCreateSessionId() }),
+      body: JSON.stringify({ events, session_id: getOrCreateSessionId() }),
     })
   } catch {
     // Logging is best-effort — a network hiccup here shouldn't surface

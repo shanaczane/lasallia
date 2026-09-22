@@ -25,6 +25,16 @@ interface ChatWindowProps {
 
 const GREETING_TEXT = "Hi there! I'm Lasallia, your library assistant at De La Salle Lipa. I can help you find books and check availability. How can I help you today?"
 
+// A kiosk chat session's id is the station session's own id (always
+// present, tap-in to walk-away), unlike web's — so there's no natural
+// "no id yet" signal for "this visitor hasn't actually said anything".
+// Without this, hydrate() below would call fetchChatHistory() for every
+// kiosk visit, including the very first message of a brand-new session,
+// which is guaranteed to 404 since chat_sessions rows are only created on
+// the first POST /chat/message. Tracked in sessionStorage (not state) so
+// it survives a navigate-away-and-back within the same station session.
+const KIOSK_CHAT_STARTED_KEY_PREFIX = "lasallia-kiosk-chat-started-"
+
 function bookToCardData(book: Book): BookCardData {
   return {
     title: book.title,
@@ -59,11 +69,15 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
     let cancelled = false
 
     async function hydrate() {
-      // Kiosk: the id is fixed to this visit's station session — always
-      // try to load it (a student may have chatted earlier this same
-      // visit, navigated to catalog, and come back). Web: only if a
-      // prior tab/refresh left an id behind.
-      const existingId = surface === "kiosk" ? sessionId : sessionStorage.getItem(WEB_CHAT_SESSION_STORAGE_KEY)
+      // Kiosk: the id is fixed to this visit's station session, but only
+      // worth fetching if a message was actually sent earlier this same
+      // visit (navigated to catalog, came back) — otherwise there's
+      // nothing server-side to find yet. Web: only if a prior tab/refresh
+      // left an id behind.
+      const existingId =
+        surface === "kiosk"
+          ? (sessionId && sessionStorage.getItem(`${KIOSK_CHAT_STARTED_KEY_PREFIX}${sessionId}`) ? sessionId : null)
+          : sessionStorage.getItem(WEB_CHAT_SESSION_STORAGE_KEY)
 
       if (!existingId) {
         if (!cancelled) setMessages([greeting()])
@@ -123,6 +137,7 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
         sessionIdRef.current = result.session_id
         setHasSession(true)
         if (surface === "web") sessionStorage.setItem(WEB_CHAT_SESSION_STORAGE_KEY, result.session_id)
+        if (surface === "kiosk") sessionStorage.setItem(`${KIOSK_CHAT_STARTED_KEY_PREFIX}${result.session_id}`, "1")
         setTypingStatus(null)
         setMessages((prev) => [...prev, {
           id: String(Date.now() + 1),
@@ -152,6 +167,7 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
     sessionIdRef.current = null
     setHasSession(false)
     if (surface === "web") sessionStorage.removeItem(WEB_CHAT_SESSION_STORAGE_KEY)
+    if (surface === "kiosk") sessionStorage.removeItem(`${KIOSK_CHAT_STARTED_KEY_PREFIX}${id}`)
     setMessages([greeting()])
   }
 

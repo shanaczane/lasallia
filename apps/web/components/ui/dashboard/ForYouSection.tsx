@@ -115,16 +115,22 @@ export function ForYouSection({
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
+    // React 18 Strict Mode (dev only) double-invokes this effect — without
+    // the guard, logImpressions() below fired twice with the same items,
+    // double-posting to /recommendations/events on every load.
+    let cancelled = false
     fetcher()
       .then((res) => {
+        if (cancelled) return
         setItems(res.recommendations)
         setRung(res.rung)
         // Phase 9 — one batched call for the whole rendered list, not
         // one per card.
         logImpressions(res.recommendations)
       })
-      .catch(() => setFailed(true))
-      .finally(() => setLoading(false))
+      .catch(() => { if (!cancelled) setFailed(true) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [])
 
   if (failed) return null

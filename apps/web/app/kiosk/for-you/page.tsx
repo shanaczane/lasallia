@@ -48,8 +48,10 @@ export default function KioskForYouPage() {
           dashboard shows. */}
       <ForYouSection
         // Keyed so a different student tapping in gets a fresh fetch, never
-        // the previous student's list left on screen.
-        key={session?.id ?? 'guest'}
+        // the previous student's list left on screen. Prefixed — CatalogHighlights
+        // below is keyed off the same session id, and React only requires
+        // uniqueness among siblings, not that every key in the tree is distinct.
+        key={`for-you-${session?.id ?? 'guest'}`}
         fetcher={() => fetchKioskRecommendations(session?.id ?? null)}
         hrefPrefix="/kiosk/catalog"
       />
@@ -61,7 +63,7 @@ export default function KioskForYouPage() {
           browser's localStorage would risk showing a different student's
           program/college than the one actually standing here. */}
       <CatalogHighlights
-        key={session?.id ?? 'guest'}
+        key={`highlights-${session?.id ?? 'guest'}`}
         identity={{ program: session?.program ?? null, college: session?.college ?? null }}
         hrefPrefix="/kiosk/catalog"
       />
