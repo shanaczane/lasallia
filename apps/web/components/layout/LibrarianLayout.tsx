@@ -18,6 +18,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Inbox,
 } from "lucide-react"
 
 const useLayoutEffectSafe = typeof window !== "undefined" ? useLayoutEffect : useEffect
@@ -49,6 +50,7 @@ const librarianNav: NavSection[] = [
     items: [
       { label: "Catalog",       icon: <Library size={16} />,  href: "/librarian/catalog" },
       { label: "Patrons",       icon: <Users size={16} />,    href: "/librarian/patrons" },
+      { label: "Support",       icon: <Inbox size={16} />,    href: "/librarian/support" },
       { label: "Notifications", icon: <Bell size={16} />,     href: "/librarian/notifications" },
       { label: "Settings",      icon: <Settings size={16} />, href: "/librarian/settings" },
     ],
