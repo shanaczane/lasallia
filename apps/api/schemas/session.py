@@ -20,6 +20,11 @@ class StationSession(BaseModel):
     id: str
     student_id: str
     student_first_name: str
+    # The kiosk TopNav's account badge wants the same full name the web
+    # portal shows (StudentLayout/LibrarianLayout both read profiles.full_name)
+    # rather than the first-name-only greeting — first_name stays as-is since
+    # the greeting/"Borrowing as" copy elsewhere is deliberately first-name-only.
+    student_full_name: str
     auth_method: AuthMethod
     station_id: str
     started_at: str

@@ -21,6 +21,12 @@ export type StationSession = {
   id: string
   student_id: string
   student_first_name: string
+  // Full name for the TopNav account badge — same field StudentLayout/
+  // LibrarianLayout read off profiles.full_name, so a logged-in kiosk
+  // session matches the web portal's display instead of showing first
+  // name only. student_first_name stays first-name-only on purpose for
+  // the greeting/"Borrowing as" copy elsewhere.
+  student_full_name: string
   auth_method: 'manual_login' | 'rfid' | 'librarian_assisted'
   station_id: string
   started_at: string

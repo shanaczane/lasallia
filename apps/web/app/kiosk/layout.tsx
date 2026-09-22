@@ -28,9 +28,18 @@ const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : us
 const IDLE_TIMEOUT_SECONDS = 90
 const WARNING_AT_SECONDS = 15
 
+// Same pattern as StudentLayout/LibrarianLayout's own getInitials.
+function getInitials(name: string): string {
+  return name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+}
+
 const kioskNav = [
   { label: 'Find a book', icon: <Search size={16} />, href: '/kiosk/catalog' },
-  { label: 'For you', icon: <Sparkles size={16} />, href: '/kiosk/for-you' },
+  // "For you" needs a tapped-in student to personalize on — a guest has
+  // no identity for recommendations to key off, so this entry is added
+  // conditionally below rather than shown and falling back to public-only
+  // content, which would just be the "Find a book" tab's job done worse.
+  { label: 'For you', icon: <Sparkles size={16} />, href: '/kiosk/for-you', requiresSession: true },
   { label: 'Ask Lasallia', icon: <MessageSquare size={16} />, href: '/kiosk/assistant' },
 ]
 
@@ -99,8 +108,11 @@ function KioskShell({ children }: { children: React.ReactNode }) {
       {active && (
         <>
           <TopNav
-            userName={session ? session.student_first_name : 'Guest'}
-            userInitials={session ? session.student_first_name.slice(0, 1).toUpperCase() : 'G'}
+            // student_full_name falls back to first_name — a session
+            // restored from sessionStorage (see KioskSessionProvider) may
+            // predate this field having been added to the stored shape.
+            userName={session ? (session.student_full_name || session.student_first_name) : 'Guest'}
+            userInitials={session ? getInitials(session.student_full_name || session.student_first_name) : 'G'}
             showNotifications={false}
             showSignOut={true}
             homeHref="/kiosk/catalog"
@@ -123,7 +135,7 @@ function KioskShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
             <nav className={cn('flex-1 py-4 flex flex-col gap-0.5', collapsed ? 'px-1' : 'px-3')}>
-              {kioskNav.map((item) => {
+              {kioskNav.filter((item) => !item.requiresSession || !!session).map((item) => {
                 const isActive = pathname.startsWith(item.href)
                 return (
                   <Link

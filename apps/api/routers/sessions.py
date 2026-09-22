@@ -45,6 +45,7 @@ def _insert_session(student_id: str, auth_method: str, station_id: str) -> dict:
     profile = profile_res.data[0] if profile_res.data else {}
     full_name = profile.get("full_name") or ""
     session["student_first_name"] = full_name.split(" ")[0] or "there"
+    session["student_full_name"] = full_name or session["student_first_name"]
     session["program"] = profile.get("program")
     session["college"] = profile.get("college")
     return session

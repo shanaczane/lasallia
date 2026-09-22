@@ -113,7 +113,7 @@ function KioskCatalogContent() {
             className="text-ink-400"
             style={{ fontSize: 'var(--text-body)', fontFamily: 'var(--font-body)' }}
           >
-            {session ? `Borrowing as ${session.student_first_name}` : guestBrowsing ? 'Browsing as guest' : '…'}
+            {session ? `Borrowing as ${session.student_full_name || session.student_first_name}` : guestBrowsing ? 'Browsing as guest' : '…'}
           </p>
         </div>
 

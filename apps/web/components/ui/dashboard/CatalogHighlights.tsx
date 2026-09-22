@@ -138,9 +138,15 @@ function Section({
 export function CatalogHighlights({
   identity,
   hrefPrefix = "/student/catalog",
+  // The kiosk's "For you" tab only wants New Arrivals — Program/College
+  // sections lean on the same walk-up-terminal identity concerns as
+  // ForYouSection (see app/kiosk/for-you/page.tsx), so it opts out here
+  // rather than the student dashboard's default of showing everything.
+  showProgramCollege = true,
 }: {
   identity?: { program: string | null; college: string | null }
   hrefPrefix?: string
+  showProgramCollege?: boolean
 } = {}) {
   const [books, setBooks] = useState<Book[] | null>(null)
   const [failed, setFailed] = useState(false)
@@ -188,25 +194,29 @@ export function CatalogHighlights({
         hrefPrefix={hrefPrefix}
         viewMoreHref={hrefPrefix}
       />
-      <Section
-        title={`From ${programLabel(program)}`}
-        subtitle="Books shelved under your program."
-        loading={loading}
-        books={programBooks}
-        hrefPrefix={hrefPrefix}
-        // genre is the catalog filter's own param name for Program (see
-        // useCatalogFilters.ts) — pre-filters the catalog to match.
-        viewMoreHref={`${hrefPrefix}?genre=${encodeURIComponent(program ?? "")}`}
-      />
-      <Section
-        title={`From ${college ?? ""}`}
-        subtitle="More from your college's collection."
-        loading={loading}
-        books={collegeBooks}
-        hrefPrefix={hrefPrefix}
-        // subject is the catalog filter's own param name for College.
-        viewMoreHref={`${hrefPrefix}?subject=${encodeURIComponent(college ?? "")}`}
-      />
+      {showProgramCollege && (
+        <>
+          <Section
+            title={`From ${programLabel(program)}`}
+            subtitle="Books shelved under your program."
+            loading={loading}
+            books={programBooks}
+            hrefPrefix={hrefPrefix}
+            // genre is the catalog filter's own param name for Program (see
+            // useCatalogFilters.ts) — pre-filters the catalog to match.
+            viewMoreHref={`${hrefPrefix}?genre=${encodeURIComponent(program ?? "")}`}
+          />
+          <Section
+            title={`From ${college ?? ""}`}
+            subtitle="More from your college's collection."
+            loading={loading}
+            books={collegeBooks}
+            hrefPrefix={hrefPrefix}
+            // subject is the catalog filter's own param name for College.
+            viewMoreHref={`${hrefPrefix}?subject=${encodeURIComponent(college ?? "")}`}
+          />
+        </>
+      )}
     </>
   )
 }

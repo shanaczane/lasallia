@@ -10,6 +10,8 @@
 
 'use client'
 
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { ForYouSection } from '@/components/ui/dashboard/ForYouSection'
 import { CatalogHighlights } from '@/components/ui/dashboard/CatalogHighlights'
 import { useKioskSession } from '@/components/kiosk/KioskSessionProvider'
@@ -24,7 +26,16 @@ function greeting(): string {
 
 export default function KioskForYouPage() {
   const { session, guestBrowsing } = useKioskSession()
-  if (!session && !guestBrowsing) return null
+  const router = useRouter()
+
+  // Guests have no identity to personalize on, and the nav tab is hidden
+  // for them (see app/kiosk/layout.tsx) — this only catches a stray/
+  // bookmarked URL, same guard style as the layout's own route effect.
+  useEffect(() => {
+    if (guestBrowsing && !session) router.replace('/kiosk/catalog')
+  }, [guestBrowsing, session, router])
+
+  if (!session) return null
 
   return (
     <div className="px-5 sm:px-8 py-7 max-w-5xl mx-auto flex flex-col gap-6">
@@ -37,11 +48,7 @@ export default function KioskForYouPage() {
         className="text-ink-900 font-semibold leading-tight"
         style={{ fontSize: 'var(--text-4xl)', fontFamily: 'var(--font-display)' }}
       >
-        {session ? (
-          <>{greeting()}, <span className="italic text-green-700">{session.student_first_name}</span>.</>
-        ) : (
-          <>Welcome to the <span className="italic text-green-700">LRC</span>.</>
-        )}
+        {greeting()}, <span className="italic text-green-700">{session.student_full_name || session.student_first_name}</span>.
       </h1>
 
       {/* For You — recommendations plan Phase 6, same section the student
@@ -51,20 +58,22 @@ export default function KioskForYouPage() {
         // the previous student's list left on screen. Prefixed — CatalogHighlights
         // below is keyed off the same session id, and React only requires
         // uniqueness among siblings, not that every key in the tree is distinct.
-        key={`for-you-${session?.id ?? 'guest'}`}
-        fetcher={() => fetchKioskRecommendations(session?.id ?? null)}
+        key={`for-you-${session.id}`}
+        fetcher={() => fetchKioskRecommendations(session.id)}
         hrefPrefix="/kiosk/catalog"
       />
 
-      {/* New Arrivals / Program / College — sprint 5.7. identity comes from
-          the station session (program/college now ride along on it — see
-          schemas/session.py), never getUser()/localStorage: this is a
-          shared terminal, and falling back to whatever's cached in this
-          browser's localStorage would risk showing a different student's
-          program/college than the one actually standing here. */}
+      {/* New Arrivals only — sprint 5.7 added Program/College sections too,
+          but the kiosk's For You tab sticks to New Arrivals here. identity
+          is still passed (rather than omitted) so the component never falls
+          back to getUser()/localStorage for it: this is a shared terminal,
+          and that fallback would risk showing a different student's
+          program/college than the one actually standing here, even though
+          those sections are hidden. */}
       <CatalogHighlights
-        key={`highlights-${session?.id ?? 'guest'}`}
-        identity={{ program: session?.program ?? null, college: session?.college ?? null }}
+        key={`highlights-${session.id}`}
+        identity={{ program: session.program ?? null, college: session.college ?? null }}
+        showProgramCollege={false}
         hrefPrefix="/kiosk/catalog"
       />
     </div>
