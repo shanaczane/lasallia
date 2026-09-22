@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status, Depends
 
 from core.deps import require_librarian
+from core.notify import notify_librarians
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.support_ticket import (
@@ -38,7 +39,20 @@ def create_ticket(body: CreateSupportTicketRequest):
     }).execute()
     if not res.data:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not submit this ticket")
-    return res.data[0]
+
+    ticket = res.data[0]
+    # Reuses the existing "student_activity" broadcast type (one row per
+    # librarian, core/notify.py) rather than adding a new NotificationType —
+    # the librarian Notifications page already buckets anything it doesn't
+    # recognize by title keyword into an "Other" catch-all, same as it does
+    # for every other librarian-facing event today.
+    preview = message if len(message) <= 120 else message[:117] + "…"
+    notify_librarians(
+        "New support ticket submitted",
+        f"{ticket['ticket_number']} from {name} ({email}): {preview}",
+        link="/librarian/settings?tab=support",
+    )
+    return ticket
 
 
 # Public — no auth. Requires the submitting email as well as the ticket

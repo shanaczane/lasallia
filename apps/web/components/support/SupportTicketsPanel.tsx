@@ -1,6 +1,7 @@
-// apps/web/app/librarian/support/page.tsx
+// apps/web/components/support/SupportTicketsPanel.tsx
 // Librarian inbox for tickets submitted through the login page's Contact
-// Support form (lib/supportTickets.ts). List + detail/update only — no
+// Support form (lib/supportTickets.ts). Lives inside Settings (its own
+// tab) rather than a standalone page — list + detail/update only, no
 // incident/status-page management here, that was explicitly out of scope.
 
 "use client"
@@ -20,6 +21,7 @@ import {
 import { useSupportTickets } from "@/lib/hooks/useSupportTickets"
 import { useBodyScrollLock } from "@/lib/hooks/useBodyScrollLock"
 import { updateSupportTicket, type SupportTicket, type TicketCategory, type TicketStatus } from "@/lib/supportTickets"
+import { resolveDateRange, type DateRangePreset } from "@/lib/reports"
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
@@ -45,6 +47,18 @@ const TABS: { key: TabKey; label: string; showCount: boolean }[] = [
   { key: "open",        label: "Open",        showCount: true },
   { key: "in_progress", label: "In Progress", showCount: true },
   { key: "resolved",    label: "Resolved",    showCount: false },
+]
+
+// Same chevron-as-background-image treatment used by every other styled
+// <select> on the site (librarian Reservations/Reports, student Requests).
+const SELECT_CHEVRON =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"
+
+const DATE_FILTERS: { key: DateRangePreset; label: string }[] = [
+  { key: "all", label: "All time" },
+  { key: "week", label: "This week" },
+  { key: "month", label: "This month" },
+  { key: "semester", label: "Semester" },
 ]
 
 function StatusBadge({ status }: { status: TicketStatus }) {
@@ -204,21 +218,32 @@ function TicketDetailPanel({
   )
 }
 
-export default function LibrarianSupportPage() {
+export function SupportTicketsPanel() {
   const { tickets, loading, error, setTickets } = useSupportTickets()
   const [activeTab, setActiveTab] = useState<TabKey>("open")
+  const [dateFilter, setDateFilter] = useState<DateRangePreset>("all")
   const [search, setSearch] = useState("")
   const [selected, setSelected] = useState<SupportTicket | null>(null)
 
+  const inRange = useMemo(() => {
+    const { dateFrom, dateTo } = resolveDateRange(dateFilter, "", "")
+    return tickets.filter((t) => {
+      const created = new Date(t.created_at).getTime()
+      if (dateFrom && created < new Date(dateFrom).getTime()) return false
+      if (dateTo && created > new Date(dateTo).getTime()) return false
+      return true
+    })
+  }, [tickets, dateFilter])
+
   const tabCounts: Record<TabKey, number> = useMemo(() => ({
-    all: tickets.length,
-    open: tickets.filter((t) => t.status === "open").length,
-    in_progress: tickets.filter((t) => t.status === "in_progress").length,
-    resolved: tickets.filter((t) => t.status === "resolved").length,
-  }), [tickets])
+    all: inRange.length,
+    open: inRange.filter((t) => t.status === "open").length,
+    in_progress: inRange.filter((t) => t.status === "in_progress").length,
+    resolved: inRange.filter((t) => t.status === "resolved").length,
+  }), [inRange])
 
   const filtered = useMemo(() => {
-    let result = activeTab === "all" ? tickets : tickets.filter((t) => t.status === activeTab)
+    let result = activeTab === "all" ? inRange : inRange.filter((t) => t.status === activeTab)
     if (search.trim()) {
       const q = search.toLowerCase()
       result = result.filter(
@@ -230,7 +255,7 @@ export default function LibrarianSupportPage() {
       )
     }
     return result
-  }, [tickets, activeTab, search])
+  }, [inRange, activeTab, search])
 
   function handleUpdated(updated: SupportTicket) {
     setTickets((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
@@ -238,18 +263,8 @@ export default function LibrarianSupportPage() {
   }
 
   return (
-    <div className="flex flex-col w-full min-h-screen bg-paper">
-      <div className="px-4 sm:px-8 pt-6 pb-4">
-        <h1 className="text-ink-900 font-semibold leading-tight" style={{ fontSize: "var(--text-3xl)", fontFamily: "var(--font-display)" }}>
-          Support Tickets
-        </h1>
-        <p className="text-ink-500 mt-1" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
-          Submitted through the login page&apos;s Contact Support form. A submitter tracks progress with their ticket
-          number and email — there&apos;s no email notification, so a note here is the only way they&apos;ll see it.
-        </p>
-      </div>
-
-      <div className="border-b border-ink-200 px-4 sm:px-8 flex overflow-x-auto scrollbar-none">
+    <div className="flex flex-col gap-3 -mt-2">
+      <div className="flex overflow-x-auto scrollbar-none">
         {TABS.map((tab) => (
           <button
             key={tab.key}
@@ -277,8 +292,8 @@ export default function LibrarianSupportPage() {
         ))}
       </div>
 
-      <div className="px-4 sm:px-8 py-3">
-        <div className="relative max-w-md">
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
           <input
             type="text"
@@ -289,9 +304,26 @@ export default function LibrarianSupportPage() {
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
           />
         </div>
+        <select
+          value={dateFilter}
+          onChange={(e) => setDateFilter(e.target.value as DateRangePreset)}
+          aria-label="Filter by date"
+          className="appearance-none bg-white border border-ink-200 text-ink-700 rounded-sm pl-3 pr-7 py-2 focus:outline-none focus:border-green-700 hover:border-ink-300 cursor-pointer transition-colors shrink-0"
+          style={{
+            fontFamily: "var(--font-body)",
+            fontSize: "var(--text-sm-body)",
+            backgroundImage: `url("${SELECT_CHEVRON}")`,
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "right 8px center",
+          }}
+        >
+          {DATE_FILTERS.map((f) => (
+            <option key={f.key} value={f.key}>{f.label}</option>
+          ))}
+        </select>
       </div>
 
-      <div className="flex-1 px-4 sm:px-8 py-4">
+      <div>
         {error ? (
           <p className="text-center py-12 text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
             {error}
@@ -345,6 +377,11 @@ export default function LibrarianSupportPage() {
           </div>
         )}
       </div>
+
+      <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+        Submitted through the login page&apos;s Contact Support form. A submitter tracks progress with their ticket
+        number and email — there&apos;s no email notification, so a note here is the only way they&apos;ll see it.
+      </p>
 
       {selected && (
         <TicketDetailPanel

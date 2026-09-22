@@ -16,20 +16,23 @@
 // Auth's own confirm-by-email flow, a separate feature.
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { fetchLibrarySettings, updateLibrarySettings, type LibrarySettings, type UpdateLibrarySettings } from "@/lib/settings"
 import { changePassword, getUser, updateProfile, type UserProfile as AuthUser } from "@/lib/auth"
+import { SupportTicketsPanel } from "@/components/support/SupportTicketsPanel"
 
 const MIN_PASSWORD_LENGTH = 8
 
-type TabKey = "library" | "borrowing" | "account"
+type TabKey = "library" | "borrowing" | "account" | "support"
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "library", label: "Library Info" },
   { key: "borrowing", label: "Borrowing Rules" },
   { key: "account", label: "Account" },
+  { key: "support", label: "Support" },
 ]
 
 type Draft = Omit<LibrarySettings, "updated_at" | "updated_by" | "is_default">
@@ -111,8 +114,17 @@ function toDraft(s: LibrarySettings): Draft {
   }
 }
 
-export default function LibrarianSettingsPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>("library")
+const VALID_TABS: TabKey[] = ["library", "borrowing", "account", "support"]
+
+function LibrarianSettingsPageContent() {
+  const searchParams = useSearchParams()
+  // Lets a link (e.g. the "New support ticket submitted" notification)
+  // open straight to a specific tab via ?tab=support instead of always
+  // landing on Library Info.
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    const t = searchParams.get("tab")
+    return (VALID_TABS as string[]).includes(t ?? "") ? (t as TabKey) : "library"
+  })
 
   const [settings, setSettings] = useState<LibrarySettings | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -268,18 +280,20 @@ export default function LibrarianSettingsPage() {
           </p>
         </div>
 
-        <button
-          onClick={handleSave}
-          disabled={
-            saving ||
-            loading ||
-            (activeTab === "account" ? !fullName.trim() : !draft || !!validationError)
-          }
-          className="self-start sm:self-auto px-4 py-2.5 rounded-(--radius) font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed bg-green-700 text-white hover:bg-green-800"
-          style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-        >
-          {saving ? "Saving…" : "Save changes"}
-        </button>
+        {activeTab !== "support" && (
+          <button
+            onClick={handleSave}
+            disabled={
+              saving ||
+              loading ||
+              (activeTab === "account" ? !fullName.trim() : !draft || !!validationError)
+            }
+            className="self-start sm:self-auto px-4 py-2.5 rounded-(--radius) font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed bg-green-700 text-white hover:bg-green-800"
+            style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+          >
+            {saving ? "Saving…" : "Save changes"}
+          </button>
+        )}
       </div>
 
       {toast && (
@@ -291,7 +305,7 @@ export default function LibrarianSettingsPage() {
         </div>
       )}
 
-      {settings?.is_default && (
+      {activeTab !== "support" && settings?.is_default && (
         <div
           className="flex items-start gap-2 rounded-(--radius) border border-warn/30 bg-warn-bg px-4 py-3 text-warn"
           style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
@@ -304,7 +318,7 @@ export default function LibrarianSettingsPage() {
         </div>
       )}
 
-      {(saveError || (activeTab !== "account" && validationError)) && (
+      {activeTab !== "support" && (saveError || (activeTab !== "account" && validationError)) && (
         <div
           className="flex items-start gap-2 rounded-(--radius) border border-danger/30 bg-danger-bg px-4 py-3 text-danger"
           style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
@@ -337,9 +351,11 @@ export default function LibrarianSettingsPage() {
       </div>
 
       {/* Tab content */}
-      <div className="flex flex-col gap-4 max-w-2xl">
+      <div className={cn("flex flex-col gap-4", activeTab === "support" ? "max-w-4xl" : "max-w-2xl")}>
 
-        {loadError ? (
+        {activeTab === "support" ? (
+          <SupportTicketsPanel />
+        ) : loadError ? (
           <p className="text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
             {loadError}
           </p>
@@ -507,6 +523,14 @@ export default function LibrarianSettingsPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function LibrarianSettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <LibrarianSettingsPageContent />
+    </Suspense>
   )
 }
 
