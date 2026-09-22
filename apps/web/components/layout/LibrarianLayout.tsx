@@ -6,6 +6,7 @@ import { TopNav } from "./TopNav"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { getUser } from "@/lib/auth"
 import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
 import {
   LayoutDashboard,
@@ -92,9 +93,10 @@ function LibrarianLayoutInner({
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("librarian-sidebar-collapsed") === "true") setCollapsed(true)
-    const raw = localStorage.getItem("user")
-    if (raw) {
-      const user = JSON.parse(raw)
+    // getUser(), not a direct localStorage read — a "Remember me" unchecked
+    // login only exists in sessionStorage (see lib/auth.ts).
+    const user = getUser()
+    if (user) {
       if (user.full_name) {
         setDisplayName(user.full_name)
         setDisplayInitials(getInitials(user.full_name))

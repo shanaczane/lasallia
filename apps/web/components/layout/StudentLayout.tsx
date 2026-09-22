@@ -101,9 +101,12 @@ function StudentLayoutInner({
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("sidebar-collapsed") === "true") setCollapsed(true)
-    const raw = localStorage.getItem("user")
-    if (raw) {
-      const user = JSON.parse(raw)
+    // getUser(), not a direct localStorage read — a "Remember me" unchecked
+    // login only exists in sessionStorage (see lib/auth.ts), and reading
+    // localStorage directly here would show a signed-out-looking header for
+    // that session even while it's still active.
+    const user = getUser()
+    if (user) {
       if (user.full_name) {
         setDisplayName(user.full_name)
         setDisplayInitials(getInitials(user.full_name))

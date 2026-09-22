@@ -54,7 +54,7 @@ export default function LoginSection() {
     }
     setEmailError('')
 
-    await signIn(email, password)
+    await signIn(email, password, rememberMe)
   }
 
   return (
@@ -224,7 +224,7 @@ export default function LoginSection() {
                   <span
                     className={cn(
                       'flex h-4 w-4 items-center justify-center rounded-[4px] border transition-colors',
-                      'bg-ink-400 border-ink-400',
+                      rememberMe ? 'bg-green-700 border-green-700' : 'bg-white border-ink-300',
                       'peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-green-700 peer-focus-visible:ring-offset-1'
                     )}
                   >
