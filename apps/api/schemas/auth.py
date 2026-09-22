@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Literal
 
-Role = Literal["librarian", "student", "guest"]
+Role = Literal["librarian", "student", "faculty", "guest"]
 
 class LoginRequest(BaseModel):
     email: str

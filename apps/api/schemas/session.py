@@ -24,3 +24,11 @@ class StationSession(BaseModel):
     station_id: str
     started_at: str
     ended_at: str | None = None
+    # Sprint 5.7's dashboard "New Arrivals"/Program/College sections
+    # (components/ui/dashboard/CatalogHighlights.tsx) need these to
+    # personalize the kiosk's "For you" tab the same way — a kiosk tap has
+    # no JWT for GET /auth/me to read them from, so they ride on the
+    # session itself instead, same reasoning student_first_name already
+    # does for the kiosk's greeting.
+    program: str | None = None
+    college: str | None = None

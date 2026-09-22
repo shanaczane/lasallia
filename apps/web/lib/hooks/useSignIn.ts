@@ -13,12 +13,12 @@ export function useSignIn() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  async function signIn(email: string, password: string) {
+  async function signIn(email: string, password: string, remember: boolean) {
     setLoading(true)
     setError('')
     try {
       const data = await loginRequest(email, password)
-      saveSession(data)
+      saveSession(data, remember)
       // replace, not push — a pushed entry leaves /login sitting right
       // behind the dashboard in history, so a phone's swipe-back gesture
       // (or the hardware back button) lands you back on the login screen

@@ -143,4 +143,8 @@ def require_role(*roles: Role):
     return _check
 
 require_librarian = require_role("librarian")
-require_student = require_role("librarian", "student")
+# Faculty use the same site and borrowing rules as students (no separate
+# role-gated endpoints for them) — every check that used to mean "student or
+# librarian" means "student, faculty, or librarian" now. Kept the name
+# require_student since that's still what it reads as at every call site.
+require_student = require_role("librarian", "student", "faculty")

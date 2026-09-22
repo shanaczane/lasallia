@@ -1,13 +1,50 @@
 // apps/web/components/kiosk/KioskSessionProvider.tsx
-// Holds the active kiosk station session in memory only — no localStorage
-// or sessionStorage. A page refresh loses the session by design: there's
-// no legitimate reason to reload a full-screen public kiosk, and the safe
-// default on a shared machine is to lose state, not preserve it.
+// Mirrors the active kiosk session into sessionStorage — NOT localStorage —
+// so an accidental page refresh mid-visit (F5, a browser crash-restore,
+// whatever) doesn't wipe the whole screen back to blank/idle. sessionStorage
+// is the deliberate choice here: it's cleared the moment the browser tab/
+// window itself closes, so it never carries a student's identity over to
+// the next person once the kiosk terminal actually restarts — the same
+// privacy goal the old "memory only" comment was protecting, just without
+// losing an in-progress visit to a stray reload. The 90s idle timeout
+// (useIdleTimeout, app/kiosk/layout.tsx) is still the real session boundary
+// either way — this only survives a refresh, not inactivity.
 
 'use client'
 
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from 'react'
 import { openSession, endSession, type StationSession } from '@/lib/kiosk'
+
+const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect
+
+const STORAGE_KEY = 'kiosk-active-session'
+
+type StoredSession =
+  | { kind: 'session'; session: StationSession }
+  | { kind: 'guest'; guestSessionId: string }
+
+function readStoredSession(): StoredSession | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    return raw ? (JSON.parse(raw) as StoredSession) : null
+  } catch {
+    return null
+  }
+}
+
+// For app/kiosk/layout.tsx's "did a session just activate" tracking ref —
+// read synchronously (not in an effect) so that ref's initial value already
+// matches what KioskSessionProvider's restore is about to settle on. Without
+// this, a restored-after-refresh session looks identical to a brand-new tap
+// to that tracking logic, and it force-navigates back to /kiosk/catalog on
+// every refresh instead of staying on whatever page was open.
+export function readInitialActiveKey(): string | null {
+  const stored = readStoredSession()
+  if (stored?.kind === 'session') return stored.session.id
+  if (stored?.kind === 'guest') return stored.guestSessionId
+  return null
+}
 
 type OpenAuth = Parameters<typeof openSession>[1]
 
@@ -40,6 +77,35 @@ export function KioskSessionProvider({ children }: { children: ReactNode }) {
   const [openError, setOpenError] = useState('')
   const [guestBrowsing, setGuestBrowsing] = useState(false)
   const [guestSessionId, setGuestSessionId] = useState<string | null>(null)
+  // Guards the write-through effect below until the restore effect has had
+  // its turn — without this, the write-through would fire once on mount
+  // with the default (nothing tapped in yet) state and immediately erase
+  // whatever sessionStorage was about to be restored from.
+  const [restored, setRestored] = useState(false)
+
+  // Runs before paint (useLayoutEffect, not useEffect) so a refresh never
+  // shows a flash of the blank/idle screen before the session comes back.
+  useLayoutEffectSafe(() => {
+    const stored = readStoredSession()
+    if (stored?.kind === 'session') {
+      setSession(stored.session)
+    } else if (stored?.kind === 'guest') {
+      setGuestBrowsing(true)
+      setGuestSessionId(stored.guestSessionId)
+    }
+    setRestored(true)
+  }, [])
+
+  useEffect(() => {
+    if (!restored) return
+    if (session) {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ kind: 'session', session }))
+    } else if (guestBrowsing && guestSessionId) {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ kind: 'guest', guestSessionId }))
+    } else {
+      sessionStorage.removeItem(STORAGE_KEY)
+    }
+  }, [restored, session, guestBrowsing, guestSessionId])
 
   const open = useCallback(async (auth: OpenAuth) => {
     setOpening(true)

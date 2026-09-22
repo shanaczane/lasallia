@@ -2,7 +2,7 @@ import { getSupabaseAuth } from "@/lib/supabaseBrowser"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
-export type Role = "librarian" | "student" | "guest"
+export type Role = "librarian" | "student" | "faculty" | "guest"
 
 export type UserProfile = {
   id: string
@@ -75,27 +75,49 @@ function clearSessionCookie(): void {
   document.cookie = `${SESSION_ROLE_COOKIE}=; path=/; max-age=0; SameSite=Lax`
 }
 
-export function saveSession(data: TokenResponse): void {
-  localStorage.setItem("access_token", data.access_token)
-  localStorage.setItem("refresh_token", data.refresh_token)
-  localStorage.setItem("user", JSON.stringify(data.user))
+// "Remember me" — unchecked, the session lives in sessionStorage (gone the
+// moment the tab/browser closes); checked (and Google sign-in, which has no
+// checkbox — see app/auth/callback/page.tsx), it lives in localStorage
+// (survives closing the browser entirely). Before this, everything always
+// went to localStorage regardless of the checkbox, so unchecking it did
+// nothing — signing out was the only way to actually end the session.
+const SESSION_KEYS = ["access_token", "refresh_token", "user"] as const
+
+function sessionStore(remember: boolean): Storage {
+  return remember ? localStorage : sessionStorage
+}
+
+export function saveSession(data: TokenResponse, remember: boolean = true): void {
+  const store = sessionStore(remember)
+  const other = sessionStore(!remember)
+  store.setItem("access_token", data.access_token)
+  store.setItem("refresh_token", data.refresh_token)
+  store.setItem("user", JSON.stringify(data.user))
+  // Clear the other storage so a session from an earlier, differently-
+  // checked login doesn't linger there and get picked up by getToken().
+  for (const key of SESSION_KEYS) other.removeItem(key)
   setSessionCookie(data.user.role)
 }
 
+// sessionStorage checked first — if "remember me" was off, that's the only
+// place the session exists, and it deliberately has nothing to fall back to
+// once the tab closes.
 export function getToken(): string | null {
-  return localStorage.getItem("access_token")
+  return sessionStorage.getItem("access_token") ?? localStorage.getItem("access_token")
 }
 
 export function getUser(): UserProfile | null {
-  const raw = localStorage.getItem("user")
+  const raw = sessionStorage.getItem("user") ?? localStorage.getItem("user")
   return raw ? JSON.parse(raw) : null
 }
 
 // After a successful PATCH /auth/me, so getUser() reflects the change
 // immediately everywhere it's read — without this, the cached copy from
 // login would keep showing the old name until the next full sign-in.
+// Written back to whichever storage actually holds the session.
 function setCachedUser(user: UserProfile): void {
-  localStorage.setItem("user", JSON.stringify(user))
+  const store = sessionStorage.getItem("access_token") ? sessionStorage : localStorage
+  store.setItem("user", JSON.stringify(user))
 }
 
 function authHeaders(): HeadersInit {
@@ -137,12 +159,14 @@ export async function refreshCachedUser(): Promise<UserProfile | null> {
   }
 }
 
-// First-login "complete your profile" form (students who signed in with
-// Google and aren't in the enrollment spreadsheet yet). rfid_uid is not
-// here on purpose — only a librarian assigns a card.
+// First-login "complete your profile" form (students/faculty who signed in
+// with Google and aren't in the enrollment spreadsheet yet). A student sends
+// program+year_level(+college); faculty send college only (the API 403s a
+// faculty caller that sends program/year_level — see routers/auth.py).
+// rfid_uid is not here on purpose — only a librarian assigns a card.
 export async function updateAcademicProfile(fields: {
-  program: string
-  year_level: number
+  program?: string
+  year_level?: number
   college?: string | null
 }): Promise<UserProfile> {
   const res = await fetch(`${API_URL}/auth/me`, {
@@ -176,16 +200,20 @@ export async function changePassword(currentPassword: string, newPassword: strin
 }
 
 export function clearSession(): void {
-  localStorage.removeItem("access_token")
-  localStorage.removeItem("refresh_token")
-  localStorage.removeItem("user")
+  for (const key of SESSION_KEYS) {
+    localStorage.removeItem(key)
+    sessionStorage.removeItem(key)
+  }
   clearSessionCookie()
 }
 
 export function roleRedirect(role: string): string {
   switch (role) {
     case "librarian": return "/librarian/dashboard"
-    case "student":   return "/student/dashboard"
+    // Faculty share the student site and rules — same route, no separate
+    // faculty layout to keep in sync.
+    case "student":
+    case "faculty":   return "/student/dashboard"
     case "guest":     return "/guest/dashboard"
     default:
       console.warn(`roleRedirect: unrecognized role "${role}", defaulting to student route`)

@@ -76,12 +76,14 @@ function Section({
   loading,
   books,
   viewMoreHref,
+  hrefPrefix,
 }: {
   title: string
   subtitle: string
   loading: boolean
   books: Book[]
   viewMoreHref: string
+  hrefPrefix: string
 }) {
   // Supplementary sections, same rule Phase 6 set for "For You": nothing
   // to show yet is not an error — just don't render the section rather
@@ -112,7 +114,7 @@ function Section({
             <BookCard
               key={book.id}
               book={book}
-              href={`/student/catalog/${book.id}`}
+              href={`${hrefPrefix}/${book.id}`}
               className="w-[140px] shrink-0"
             />
           ))}
@@ -123,19 +125,33 @@ function Section({
   )
 }
 
-export function CatalogHighlights() {
+// identity/hrefPrefix default to the student dashboard's behavior (read the
+// signed-in student from localStorage); the kiosk's "For you" tab passes its
+// own (a kiosk tap has no JWT/localStorage session to read — see
+// app/kiosk/for-you/page.tsx). identity is passed as an object, even with
+// null fields, specifically so this never falls back to getUser() on a
+// shared kiosk terminal — that would risk showing whatever student happens
+// to be cached in that browser's localStorage from an unrelated tab/visit.
+export function CatalogHighlights({
+  identity,
+  hrefPrefix = "/student/catalog",
+}: {
+  identity?: { program: string | null; college: string | null }
+  hrefPrefix?: string
+} = {}) {
   const [books, setBooks] = useState<Book[] | null>(null)
   const [failed, setFailed] = useState(false)
   // getUser() reads localStorage, which doesn't exist during Next's SSR
   // pass of this client component — has to run post-hydration, in an
   // effect, same reasoning as student/dashboard/page.tsx's firstName.
-  const [program, setProgram] = useState<string | null>(null)
-  const [college, setCollege] = useState<string | null>(null)
+  const [program, setProgram] = useState<string | null>(identity?.program ?? null)
+  const [college, setCollege] = useState<string | null>(identity?.college ?? null)
 
   useEffect(() => {
     fetchBooks()
       .then(setBooks)
       .catch(() => setFailed(true))
+    if (identity) return
     const user = getUser()
     setProgram(user?.program ?? null)
     setCollege(user?.college || collegeForProgram(user?.program))
@@ -166,24 +182,27 @@ export function CatalogHighlights() {
         subtitle="Recently added to the collection."
         loading={loading}
         books={newArrivals}
-        viewMoreHref="/student/catalog"
+        hrefPrefix={hrefPrefix}
+        viewMoreHref={hrefPrefix}
       />
       <Section
         title={`From ${programLabel(program)}`}
         subtitle="Books shelved under your program."
         loading={loading}
         books={programBooks}
+        hrefPrefix={hrefPrefix}
         // genre is the catalog filter's own param name for Program (see
         // useCatalogFilters.ts) — pre-filters the catalog to match.
-        viewMoreHref={`/student/catalog?genre=${encodeURIComponent(program ?? "")}`}
+        viewMoreHref={`${hrefPrefix}?genre=${encodeURIComponent(program ?? "")}`}
       />
       <Section
         title={`From ${college ?? ""}`}
         subtitle="More from your college's collection."
         loading={loading}
         books={collegeBooks}
+        hrefPrefix={hrefPrefix}
         // subject is the catalog filter's own param name for College.
-        viewMoreHref={`/student/catalog?subject=${encodeURIComponent(college ?? "")}`}
+        viewMoreHref={`${hrefPrefix}?subject=${encodeURIComponent(college ?? "")}`}
       />
     </>
   )

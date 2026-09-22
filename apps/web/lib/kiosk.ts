@@ -25,6 +25,10 @@ export type StationSession = {
   station_id: string
   started_at: string
   ended_at: string | null
+  // For the kiosk "For you" tab's CatalogHighlights section — a kiosk tap
+  // has no JWT for GET /auth/me, so these ride on the session instead.
+  program: string | null
+  college: string | null
 }
 
 // The student is already logged into the web portal — reuses that JWT

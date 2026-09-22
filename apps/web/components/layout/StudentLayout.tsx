@@ -97,13 +97,16 @@ function StudentLayoutInner({
   const [displayName, setDisplayName] = useState(userName ?? "")
   const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
   const [displayEmail, setDisplayEmail] = useState("")
-  const [needsProfile, setNeedsProfile] = useState(false)
+  const [profileRole, setProfileRole] = useState<"student" | "faculty" | null>(null)
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("sidebar-collapsed") === "true") setCollapsed(true)
-    const raw = localStorage.getItem("user")
-    if (raw) {
-      const user = JSON.parse(raw)
+    // getUser(), not a direct localStorage read — a "Remember me" unchecked
+    // login only exists in sessionStorage (see lib/auth.ts), and reading
+    // localStorage directly here would show a signed-out-looking header for
+    // that session even while it's still active.
+    const user = getUser()
+    if (user) {
       if (user.full_name) {
         setDisplayName(user.full_name)
         setDisplayInitials(getInitials(user.full_name))
@@ -116,17 +119,24 @@ function StudentLayoutInner({
     localStorage.setItem("sidebar-collapsed", String(collapsed))
   }, [collapsed])
 
-  // Google sign-in: a student who isn't in the enrollment spreadsheet has an
-  // empty program/year level. The cached login copy can be stale (a librarian
-  // may have filled them in since), so confirm against the API before asking.
+  // Google sign-in: a student/faculty account that isn't in the enrollment
+  // spreadsheet has empty academic fields (a student needs program + year
+  // level; a faculty account — which the librarian promoted from a plain
+  // student sign-in, see routers/patrons.py — only needs a college). The
+  // cached login copy can be stale (a librarian may have filled these in, or
+  // changed the role, since), so confirm against the API before asking.
+  const isIncomplete = (u: { role: string; program?: string | null; year_level?: number | null; college?: string | null }) =>
+    u.role === "student" ? !u.program || u.year_level == null
+    : u.role === "faculty" ? !u.college
+    : false
+
   useEffect(() => {
     const cached = getUser()
-    if (!cached || cached.role !== "student") return
-    if (cached.program && cached.year_level != null) return
+    if (!cached || !isIncomplete(cached)) return
     let cancelled = false
     refreshCachedUser().then((fresh) => {
-      if (cancelled || !fresh) return
-      if (fresh.role === "student" && (!fresh.program || fresh.year_level == null)) setNeedsProfile(true)
+      if (cancelled || !fresh || !isIncomplete(fresh)) return
+      if (fresh.role === "student" || fresh.role === "faculty") setProfileRole(fresh.role)
     })
     return () => { cancelled = true }
   }, [])
@@ -288,7 +298,7 @@ function StudentLayoutInner({
         <div className="w-full">{children}</div>
       </main>
 
-      {needsProfile && <CompleteProfileModal onDone={() => setNeedsProfile(false)} />}
+      {profileRole && <CompleteProfileModal role={profileRole} onDone={() => setProfileRole(null)} />}
     </div>
   )
 }
