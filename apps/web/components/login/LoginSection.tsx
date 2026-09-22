@@ -62,7 +62,7 @@ export default function LoginSection() {
   }
 
   return (
-    <div className="relative min-h-screen w-full overflow-x-hidden" style={{ backgroundColor: 'var(--color-ink-900)' }}>
+    <div className="relative min-h-dvh w-full overflow-x-hidden" style={{ backgroundColor: 'var(--color-ink-900)' }}>
 
       {/* Background photo — desktop/tablet only; the mobile card covers the full viewport */}
       <div
@@ -77,11 +77,11 @@ export default function LoginSection() {
       <div aria-hidden="true" className="absolute inset-0 hidden sm:block bg-black/55 backdrop-blur-sm" />
 
       {/* Centering layer */}
-      <div className="relative z-10 flex min-h-screen w-full items-center justify-center sm:px-4 sm:py-5">
+      <div className="relative z-10 flex min-h-dvh w-full items-center justify-center sm:px-4 sm:py-5">
         <div
           className={cn(
             'flex w-full flex-col justify-center bg-white',
-            'min-h-screen p-6',
+            'min-h-dvh p-6',
             'sm:min-h-0 sm:max-w-(--max-w-form) sm:justify-start sm:rounded-3xl sm:p-6 sm:shadow-(--shadow-lg)'
           )}
         >
@@ -140,7 +140,9 @@ export default function LoginSection() {
                   name="email"
                   type="email"
                   autoComplete="email"
-                  autoFocus
+                  // No autoFocus: on phones it pops the keyboard the instant
+                  // this page loads, resizing the viewport mid-paint and
+                  // reading as a flicker/jump on the min-h-dvh layout below.
                   required
                   value={email}
                   onChange={handleEmailChange}
