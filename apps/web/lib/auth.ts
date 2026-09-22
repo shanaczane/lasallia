@@ -2,7 +2,7 @@ import { getSupabaseAuth } from "@/lib/supabaseBrowser"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
-export type Role = "librarian" | "student" | "guest"
+export type Role = "librarian" | "student" | "faculty" | "guest"
 
 export type UserProfile = {
   id: string
@@ -137,12 +137,14 @@ export async function refreshCachedUser(): Promise<UserProfile | null> {
   }
 }
 
-// First-login "complete your profile" form (students who signed in with
-// Google and aren't in the enrollment spreadsheet yet). rfid_uid is not
-// here on purpose — only a librarian assigns a card.
+// First-login "complete your profile" form (students/faculty who signed in
+// with Google and aren't in the enrollment spreadsheet yet). A student sends
+// program+year_level(+college); faculty send college only (the API 403s a
+// faculty caller that sends program/year_level — see routers/auth.py).
+// rfid_uid is not here on purpose — only a librarian assigns a card.
 export async function updateAcademicProfile(fields: {
-  program: string
-  year_level: number
+  program?: string
+  year_level?: number
   college?: string | null
 }): Promise<UserProfile> {
   const res = await fetch(`${API_URL}/auth/me`, {
@@ -185,7 +187,10 @@ export function clearSession(): void {
 export function roleRedirect(role: string): string {
   switch (role) {
     case "librarian": return "/librarian/dashboard"
-    case "student":   return "/student/dashboard"
+    // Faculty share the student site and rules — same route, no separate
+    // faculty layout to keep in sync.
+    case "student":
+    case "faculty":   return "/student/dashboard"
     case "guest":     return "/guest/dashboard"
     default:
       console.warn(`roleRedirect: unrecognized role "${role}", defaulting to student route`)

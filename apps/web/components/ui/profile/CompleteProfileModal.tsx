@@ -19,7 +19,9 @@ const fieldClass = cn(
   "focus:outline-none focus:border-green-700 focus:shadow-(--shadow-focus-green)"
 )
 
-export function CompleteProfileModal({ onDone }: { onDone: () => void }) {
+export function CompleteProfileModal({ role, onDone }: { role: "student" | "faculty"; onDone: () => void }) {
+  const isFaculty = role === "faculty"
+
   const [program, setProgram] = useState("")
   const [college, setCollege] = useState("")
   const [yearLevel, setYearLevel] = useState("")
@@ -27,19 +29,24 @@ export function CompleteProfileModal({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState("")
 
   // Suggest a college from the program as they type, until they pick one.
-  const suggested = collegeForProgram(program)
+  // Faculty have no program field to guess from — they pick their college
+  // directly (see routers/patrons.py: a faculty row's "program" column
+  // holds a college name, not a degree program, same as the mock data).
+  const suggested = isFaculty ? null : collegeForProgram(program)
   const effectiveCollege = college || suggested || ""
+
+  const canSubmit = isFaculty ? !!effectiveCollege : !!program.trim() && !!yearLevel
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError("")
     setSaving(true)
     try {
-      await updateAcademicProfile({
-        program: program.trim(),
-        year_level: Number(yearLevel),
-        college: effectiveCollege || null,
-      })
+      await updateAcademicProfile(
+        isFaculty
+          ? { college: effectiveCollege }
+          : { program: program.trim(), year_level: Number(yearLevel), college: effectiveCollege || null }
+      )
       onDone()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Could not save your details")
@@ -56,27 +63,32 @@ export function CompleteProfileModal({ onDone }: { onDone: () => void }) {
           Finish setting up
         </h2>
         <p className="mt-1 text-ink-400" style={labelStyle}>
-          Tell us your program and year level so we can recommend the right books. You only do this once.
+          {isFaculty
+            ? "Tell us your college so we can recommend the right books. You only do this once."
+            : "Tell us your program and year level so we can recommend the right books. You only do this once."}
         </p>
 
         <div className="mt-4 flex flex-col gap-3">
-          <div>
-            <label htmlFor="cp-program" className="mb-1 block font-semibold text-ink-900" style={labelStyle}>Program</label>
-            <input
-              id="cp-program"
-              required
-              value={program}
-              onChange={(e) => setProgram(e.target.value)}
-              placeholder="e.g. BS Computer Science"
-              className={fieldClass}
-              style={labelStyle}
-            />
-          </div>
+          {!isFaculty && (
+            <div>
+              <label htmlFor="cp-program" className="mb-1 block font-semibold text-ink-900" style={labelStyle}>Program</label>
+              <input
+                id="cp-program"
+                required
+                value={program}
+                onChange={(e) => setProgram(e.target.value)}
+                placeholder="e.g. BS Computer Science"
+                className={fieldClass}
+                style={labelStyle}
+              />
+            </div>
+          )}
 
           <div>
             <label htmlFor="cp-college" className="mb-1 block font-semibold text-ink-900" style={labelStyle}>College</label>
             <select
               id="cp-college"
+              required={isFaculty}
               value={effectiveCollege}
               onChange={(e) => setCollege(e.target.value)}
               className={fieldClass}
@@ -87,20 +99,22 @@ export function CompleteProfileModal({ onDone }: { onDone: () => void }) {
             </select>
           </div>
 
-          <div>
-            <label htmlFor="cp-year" className="mb-1 block font-semibold text-ink-900" style={labelStyle}>Year level</label>
-            <select
-              id="cp-year"
-              required
-              value={yearLevel}
-              onChange={(e) => setYearLevel(e.target.value)}
-              className={fieldClass}
-              style={labelStyle}
-            >
-              <option value="">Select your year</option>
-              {YEAR_LEVELS.map((y) => <option key={y} value={y}>{y}{y === 1 ? "st" : y === 2 ? "nd" : y === 3 ? "rd" : "th"} year</option>)}
-            </select>
-          </div>
+          {!isFaculty && (
+            <div>
+              <label htmlFor="cp-year" className="mb-1 block font-semibold text-ink-900" style={labelStyle}>Year level</label>
+              <select
+                id="cp-year"
+                required
+                value={yearLevel}
+                onChange={(e) => setYearLevel(e.target.value)}
+                className={fieldClass}
+                style={labelStyle}
+              >
+                <option value="">Select your year</option>
+                {YEAR_LEVELS.map((y) => <option key={y} value={y}>{y}{y === 1 ? "st" : y === 2 ? "nd" : y === 3 ? "rd" : "th"} year</option>)}
+              </select>
+            </div>
+          )}
         </div>
 
         {error && (
@@ -112,7 +126,7 @@ export function CompleteProfileModal({ onDone }: { onDone: () => void }) {
 
         <button
           type="submit"
-          disabled={saving || !program.trim() || !yearLevel}
+          disabled={saving || !canSubmit}
           className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-green-700 py-2.5 font-semibold text-white transition-colors hover:bg-green-800 disabled:opacity-60 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
           style={labelStyle}
         >

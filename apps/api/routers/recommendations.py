@@ -63,8 +63,8 @@ def get_my_recommendations(
     # "unauthenticated requests return 401, not an empty list"). A
     # logged-in non-student additionally gets a plain 403 rather than a
     # silently empty section — this endpoint has no meaning for them.
-    if user.role != "student":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Recommendations are only available for students")
+    if user.role not in ("student", "faculty"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Recommendations are only available for students and faculty")
 
     return _recommend_for(db, user.id, max(1, min(limit, STORED_LIMIT)))
 

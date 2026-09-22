@@ -74,17 +74,25 @@ def update_me(body: UpdateProfileRequest, user: UserProfile = Depends(get_curren
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Full name can't be empty")
         changes["full_name"] = name
 
-    # Academic fields are for students only — a guest has no program, and
-    # a librarian's is set by another librarian through the Patrons screen.
+    # Academic fields are for students and faculty only — a guest has no
+    # program, and a librarian's is set by another librarian through the
+    # Patrons screen. Faculty have no year level (and their "program" is a
+    # college, not a degree program — see routers/patrons.py's comment on
+    # the same distinction), so program/year_level are student-only; college
+    # is the one field both self-service roles can set.
     if {"program", "year_level", "college"} & sent.keys():
-        if user.role != "student":
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only students can set a program or year level")
+        if user.role not in ("student", "faculty"):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only students and faculty can set these fields")
         if "program" in sent:
+            if user.role != "student":
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Only students set a program — faculty set a college instead")
             program = (sent["program"] or "").strip()
             if not program:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, "Program can't be empty")
             changes["program"] = program
         if "year_level" in sent:
+            if user.role != "student":
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Faculty don't have a year level")
             year = sent["year_level"]
             if year is None or not (1 <= year <= MAX_YEAR_LEVEL):
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Year Level must be between 1 and {MAX_YEAR_LEVEL}")
