@@ -9,7 +9,7 @@
 
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import {
@@ -894,7 +894,10 @@ const TABS: TabDef[] = [
 
 const TAB_ORDER: Tab[] = ["borrowed", "saved", "history"]
 
-export default function MyLibraryPage() {
+// useSearchParams() opts this out of static rendering unless it's under a
+// Suspense boundary — without one, `next build`'s prerender of this page
+// fails outright (see the default export below).
+function MyLibraryPage() {
   // Lets a book detail page's "Back to My Library" link (?tab=saved etc.,
   // set when a card in that tab was clicked) restore the same tab instead
   // of always landing back on Borrowed.
@@ -1065,5 +1068,13 @@ export default function MyLibraryPage() {
       </div>
 
     </div>
+  )
+}
+
+export default function MyLibraryPageRoute() {
+  return (
+    <Suspense fallback={null}>
+      <MyLibraryPage />
+    </Suspense>
   )
 }
