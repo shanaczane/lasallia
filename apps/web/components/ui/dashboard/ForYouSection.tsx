@@ -15,7 +15,10 @@ import { fetchRecommendations } from "@/lib/recommendations"
 import { logEvent, logImpressions } from "@/lib/recommendationEvents"
 import type { RecommendationItem, RecommendationsResponse } from "@lasallia/types"
 
-const SKELETON_COUNT = 4
+// 8, not 4 — a wide viewport fits more than 4 of the 140px cards before the
+// row needs to scroll, so 4 skeletons visibly under-filled the row and the
+// real (up to 12) cards would jump the row wider the instant they loaded in.
+const SKELETON_COUNT = 8
 
 function SkeletonCard() {
   return (
