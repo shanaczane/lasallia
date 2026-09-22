@@ -19,7 +19,10 @@ import { collegeForProgram } from "@/lib/collegeForProgram"
 import { programLabel } from "@/lib/programLabels"
 
 const SECTION_SIZE = 12
-const SKELETON_COUNT = 4
+// 8, not 4 — same reasoning as ForYouSection.tsx's SKELETON_COUNT: a wide
+// viewport fits more than 4 of the 140px cards before the row needs to
+// scroll, so 4 skeletons under-filled the row next to the real cards.
+const SKELETON_COUNT = 8
 
 function SkeletonCard() {
   return (
