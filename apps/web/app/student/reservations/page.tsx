@@ -177,7 +177,7 @@ function ReservationItemCard({ reservation: r, onCancel, isLast }: ReservationIt
       <div className="flex items-center gap-2 flex-shrink-0">
         {r.status === "ready" && (
           <Link
-            href={`/student/catalog/${r.book_id}`}
+            href={`/student/catalog/${r.book_id}?from=reservations`}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-(--radius) border border-green-700 bg-green-700 text-white font-medium hover:bg-green-800 transition-colors whitespace-nowrap"
             style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
           >

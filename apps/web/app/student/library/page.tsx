@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import {
   Library, Bookmark, History,
   CheckCircle2, Clock,
@@ -327,7 +328,7 @@ function BorrowedCard({ loan, status }: { loan: ApiLoan; status: BorrowStatus })
 
   return (
     <Link
-      href={`/student/catalog/${book.id}`}
+      href={`/student/catalog/${book.id}?from=library&tab=borrowed`}
       className="group flex flex-col rounded-(--radius) overflow-hidden bg-white border border-ink-200 shadow-(--shadow-sm) hover:shadow-(--shadow) transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700"
     >
       <Cover book={book}>
@@ -534,7 +535,7 @@ function SavedCard({
       )}
     >
       <Link
-        href={`/student/catalog/${book.id}`}
+        href={`/student/catalog/${book.id}?from=library&tab=saved`}
         className="group flex flex-col flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
       >
         <Cover book={book}>
@@ -704,7 +705,7 @@ function HistoryCard({ loan, status }: { loan: ApiLoan; status: HistoryStatus })
   if (!book) return null
   return (
     <Link
-      href={`/student/catalog/${book.id}`}
+      href={`/student/catalog/${book.id}?from=library&tab=history`}
       className="group flex flex-col rounded-(--radius) overflow-hidden bg-white border border-ink-200 shadow-(--shadow-sm) hover:shadow-(--shadow) transition-shadow duration-200"
     >
       <Cover book={book}>
@@ -894,7 +895,14 @@ const TABS: TabDef[] = [
 const TAB_ORDER: Tab[] = ["borrowed", "saved", "history"]
 
 export default function MyLibraryPage() {
-  const [tab, setTab] = useState<Tab>("borrowed")
+  // Lets a book detail page's "Back to My Library" link (?tab=saved etc.,
+  // set when a card in that tab was clicked) restore the same tab instead
+  // of always landing back on Borrowed.
+  const searchParams = useSearchParams()
+  const initialTab = searchParams.get("tab")
+  const [tab, setTab] = useState<Tab>(
+    initialTab && (TAB_ORDER as string[]).includes(initialTab) ? (initialTab as Tab) : "borrowed"
+  )
   const { direction, changeTo, touchHandlers } = useSwipeTabs(TAB_ORDER, tab, setTab)
   const { sentinelRef, isStuck } = useStickyBelowNav(64) // matches globals.css's --height-nav
   const [loans, setLoans] = useState<ApiLoan[]>([])
