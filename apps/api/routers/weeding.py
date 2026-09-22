@@ -3,6 +3,8 @@
 # decision (archive/restore/dismiss) is a collection-management action,
 # same authorization boundary as routers/patrons.py.
 
+from concurrent.futures import ThreadPoolExecutor
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.deps import require_librarian
@@ -25,6 +27,17 @@ router = APIRouter(prefix="/weeding", tags=["weeding"])
 def get_candidates(librarian: UserProfile = Depends(require_librarian)):
     admin = get_admin_client()
     candidates = find_weeding_candidates(admin)
+    if not candidates:
+        return []
+
+    # narrate() is a blocking OpenAI call (~4s each, measured) — called once
+    # per candidate. Run them concurrently instead of one after another, or
+    # a modest candidate list turns this endpoint into a multi-minute wait.
+    # max_workers caps how many requests fire at once so this doesn't
+    # hammer the OpenAI rate limit on a large candidate list.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        reasons = list(pool.map(narrate, candidates))
+
     return [
         WeedingCandidate(
             book_id=c.book_id,
@@ -35,9 +48,9 @@ def get_candidates(librarian: UserProfile = Depends(require_librarian)):
             borrow_count_in_window=c.borrow_count_in_window,
             years_since_added=round(c.years_since_added, 1),
             heuristic_reason=c.heuristic_reason,
-            reason=narrate(c),
+            reason=reason,
         )
-        for c in candidates
+        for c, reason in zip(candidates, reasons)
     ]
 
 
