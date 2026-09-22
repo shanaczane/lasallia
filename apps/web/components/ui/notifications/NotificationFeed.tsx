@@ -147,18 +147,17 @@ export function NotificationFeed({
             </p>
           </div>
 
-          {unreadCount > 0 && (
-            <button
-              type="button"
-              suppressHydrationWarning
-              onClick={onMarkAllRead}
-              className="flex-shrink-0 px-3 py-1.5 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm"
-              style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
-            >
-              <span className="sm:hidden">Mark read</span>
-              <span className="hidden sm:inline">Mark all as read</span>
-            </button>
-          )}
+          <button
+            type="button"
+            suppressHydrationWarning
+            onClick={onMarkAllRead}
+            disabled={unreadCount === 0}
+            className="flex-shrink-0 px-3 py-1.5 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+            style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
+          >
+            <span className="sm:hidden">Mark read</span>
+            <span className="hidden sm:inline">Mark all as read</span>
+          </button>
         </div>
       </div>
 

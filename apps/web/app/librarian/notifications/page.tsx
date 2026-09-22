@@ -174,15 +174,14 @@ export default function LibrarianNotificationsPage() {
           </p>
         </div>
 
-        {unreadCount > 0 && (
-          <button
-            onClick={markAllRead}
-            className="self-start sm:self-auto px-4 py-2 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm"
-            style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-          >
-            Mark all as read
-          </button>
-        )}
+        <button
+          onClick={markAllRead}
+          disabled={unreadCount === 0}
+          className="self-start sm:self-auto px-4 py-2 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+          style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+        >
+          Mark all as read
+        </button>
       </div>
 
       {/* Tab filters */}
