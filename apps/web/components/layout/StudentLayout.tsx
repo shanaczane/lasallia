@@ -23,6 +23,7 @@ import {
   Library,
   ChevronLeft,
   ChevronRight,
+  BookPlus,
 } from "lucide-react"
 
 type NavItem = {
@@ -37,25 +38,31 @@ type NavSection = {
   items: NavItem[]
 }
 
-const studentNav: NavSection[] = [
-  {
-    title: "Main",
-    items: [
-      { label: "Dashboard",         icon: <LayoutDashboard size={16} />, href: "/student/dashboard" },
-      { label: "Catalog",           icon: <Search size={16} />,          href: "/student/catalog" },
-      { label: "Reservations",      icon: <BookOpen size={16} />,        href: "/student/reservations" },
-      { label: "Library Assistant", icon: <MessageSquare size={16} />,   href: "/student/assistant" },
-      { label: "Notifications",     icon: <Bell size={16} />,            href: "/student/notifications" },
-    ],
-  },
-  {
-    title: "My Library",
-    items: [
-      // Sprint 4.5 — single entry point for Borrowed, Saved, and History tabs
-      { label: "My Library", icon: <Library size={16} />, href: "/student/library" },
-    ],
-  },
-]
+// Faculty share this whole layout/route tree with students (require_student
+// covers both, core/deps.py) — isFaculty just adds the one nav item neither
+// role needs from the other, rather than forking into a separate layout.
+function getStudentNav(isFaculty: boolean): NavSection[] {
+  return [
+    {
+      title: "Main",
+      items: [
+        { label: "Dashboard",         icon: <LayoutDashboard size={16} />, href: "/student/dashboard" },
+        { label: "Catalog",           icon: <Search size={16} />,          href: "/student/catalog" },
+        { label: "Reservations",      icon: <BookOpen size={16} />,        href: "/student/reservations" },
+        ...(isFaculty ? [{ label: "Request a Book", icon: <BookPlus size={16} />, href: "/student/requests" }] : []),
+        { label: "Library Assistant", icon: <MessageSquare size={16} />,   href: "/student/assistant" },
+        { label: "Notifications",     icon: <Bell size={16} />,            href: "/student/notifications" },
+      ],
+    },
+    {
+      title: "My Library",
+      items: [
+        // Sprint 4.5 — single entry point for Borrowed, Saved, and History tabs
+        { label: "My Library", icon: <Library size={16} />, href: "/student/library" },
+      ],
+    },
+  ]
+}
 
 type StudentLayoutProps = {
   children: React.ReactNode
@@ -98,6 +105,7 @@ function StudentLayoutInner({
   const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
   const [displayEmail, setDisplayEmail] = useState("")
   const [profileRole, setProfileRole] = useState<"student" | "faculty" | null>(null)
+  const [isFaculty, setIsFaculty] = useState(false)
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("sidebar-collapsed") === "true") setCollapsed(true)
@@ -112,6 +120,7 @@ function StudentLayoutInner({
         setDisplayInitials(getInitials(user.full_name))
       }
       if (user.email) setDisplayEmail(user.email)
+      setIsFaculty(user.role === "faculty")
     }
   }, [])
 
@@ -121,10 +130,11 @@ function StudentLayoutInner({
 
   // Google sign-in: a student/faculty account that isn't in the enrollment
   // spreadsheet has empty academic fields (a student needs program + year
-  // level; a faculty account — which the librarian promoted from a plain
-  // student sign-in, see routers/patrons.py — only needs a college). The
-  // cached login copy can be stale (a librarian may have filled these in, or
-  // changed the role, since), so confirm against the API before asking.
+  // level; a faculty account — role assigned automatically at signup from
+  // the email's local part, see scripts/reclassify_dlsl_roles.py — only
+  // needs a college; there's no librarian UI to change a role by hand).
+  // The cached login copy can be stale (a librarian may have filled these
+  // in since), so confirm against the API before asking.
   const isIncomplete = (u: { role: string; program?: string | null; year_level?: number | null; college?: string | null }) =>
     u.role === "student" ? !u.program || u.year_level == null
     : u.role === "faculty" ? !u.college
@@ -144,7 +154,7 @@ function StudentLayoutInner({
   const renderSidebarContent = (isCollapsed: boolean) => (
     <>
       <nav className={cn("flex-1 py-4 flex flex-col gap-5", isCollapsed ? "px-1" : "px-3")}>
-        {studentNav.map((section) => (
+        {getStudentNav(isFaculty).map((section) => (
           <div key={section.title}>
             {!isCollapsed && (
               <p

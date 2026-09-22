@@ -148,3 +148,8 @@ require_librarian = require_role("librarian")
 # librarian" means "student, faculty, or librarian" now. Kept the name
 # require_student since that's still what it reads as at every call site.
 require_student = require_role("librarian", "student", "faculty")
+# Book requests (routers/book_requests.py) — strictly faculty, not "student
+# or faculty" like require_student above. A librarian manages the catalog
+# directly and has no reason to submit one; letting a librarian through here
+# would blur who a submitted request is actually from.
+require_faculty = require_role("faculty")

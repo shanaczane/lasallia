@@ -24,6 +24,7 @@ import {
   Printer,
   GripVertical,
   ArrowUpDown,
+  Paperclip,
 } from "lucide-react"
 import {
   DndContext,
@@ -48,6 +49,7 @@ import { fetchPatrons, updatePatronStatus } from "@/lib/users"
 import { fetchLoans, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
 import { buildFeed, TX_CONFIG, type FeedItem } from "@/lib/activity"
+import { fetchBookRequests, updateBookRequest, type BookRequest, type BookRequestStatus } from "@/lib/bookRequests"
 import { Pagination } from "@/components/ui/catalog"
 import { PatronProfileModal } from "@/components/ui/patrons/PatronProfileModal"
 import { ConfirmStatusDialog } from "@/components/ui/patrons/ConfirmStatusDialog"
@@ -792,21 +794,267 @@ function CirculationTable({ rows, onExport }: { rows: CirculationRow[]; onExport
   )
 }
 
-// ─── Requests — placeholder tab. No submit flow or table exists anywhere in
-// the app yet, so this deliberately shows real chrome + an honest empty
-// state rather than fabricated rows. Wire it up once requests can actually
-// be submitted. ─────────────────────────────────────────────────────────────
-function RequestsPlaceholder() {
+// ─── Requests — faculty book-request inbox. Faculty submit from
+// /student/requests (require_faculty at the API); this lists every one and
+// lets a librarian move it through pending -> approved/rejected ->
+// (approved only) fulfilled. See migrations/0039_book_requests.sql.
+const REQUEST_STATUS_LABEL: Record<BookRequestStatus, string> = {
+  pending: "Pending", approved: "Approved", rejected: "Rejected", fulfilled: "Fulfilled",
+}
+const REQUEST_STATUS_BADGE: Record<BookRequestStatus, string> = {
+  pending: "bg-warn-bg text-warn",
+  approved: "bg-info-bg text-info",
+  rejected: "bg-danger-bg text-danger",
+  fulfilled: "bg-success-bg text-success",
+}
+
+type RequestTabKey = "all" | BookRequestStatus
+
+const REQUEST_TABS: { key: RequestTabKey; label: string; showCount: boolean }[] = [
+  { key: "all",       label: "All",       showCount: false },
+  { key: "pending",   label: "Pending",   showCount: true },
+  { key: "approved",  label: "Approved",  showCount: true },
+  { key: "rejected",  label: "Rejected",  showCount: false },
+  { key: "fulfilled", label: "Fulfilled", showCount: false },
+]
+
+function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: string }) {
+  const [requests, setRequests] = useState<BookRequest[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<RequestTabKey>("all")
+  const [query, setQuery] = useState("")
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 10
+
+  function showToast(msg: string) {
+    setToast(msg)
+    setTimeout(() => setToast(null), 3000)
+  }
+
+  function load() {
+    setLoading(true)
+    fetchBookRequests().then(setRequests).catch(() => {}).finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function handleDecision(r: BookRequest, status: BookRequestStatus) {
+    setBusyId(r.id)
+    try {
+      await updateBookRequest(r.id, status)
+      showToast(`"${r.title}" marked ${status}.`)
+      load()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Could not update this request")
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  // Respects the same page-level Date Range control every other full-report
+  // tab uses (see activeDateBounds) instead of a second, duplicate control
+  // just for this tab.
+  const inRange = requests.filter((r) => {
+    const t = new Date(r.created_at).getTime()
+    if (dateFrom && t < new Date(dateFrom).getTime()) return false
+    if (dateTo && t > new Date(dateTo).getTime()) return false
+    return true
+  })
+
+  const tabCounts: Record<RequestTabKey, number> = {
+    all: inRange.length,
+    pending: inRange.filter((r) => r.status === "pending").length,
+    approved: inRange.filter((r) => r.status === "approved").length,
+    rejected: inRange.filter((r) => r.status === "rejected").length,
+    fulfilled: inRange.filter((r) => r.status === "fulfilled").length,
+  }
+
+  const byTab = activeTab === "all" ? inRange : inRange.filter((r) => r.status === activeTab)
+
+  const filtered = query.trim()
+    ? byTab.filter((r) => {
+        const q = query.toLowerCase()
+        return (
+          r.title.toLowerCase().includes(q) ||
+          (r.author ?? "").toLowerCase().includes(q) ||
+          (r.profiles?.full_name ?? "").toLowerCase().includes(q) ||
+          (r.profiles?.email ?? "").toLowerCase().includes(q)
+        )
+      })
+    : byTab
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const openCount = inRange.filter((r) => r.status === "pending").length
+
   return (
-    <ReportTableCard
-      title="Wishlist and request log"
-      subtitle="Titles requested by faculty and students"
-      onExport={() => {}}
-      exportDisabled
-      footerLeft="0 open requests"
-    >
-      <EmptyState text="No requests yet — this feature is coming soon." />
-    </ReportTableCard>
+    <div className="flex flex-col gap-3">
+      {toast && (
+        <div
+          className="fixed bottom-6 right-6 z-50 bg-ink-900 text-white px-4 py-2.5 rounded-(--radius) shadow-lg"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          {toast}
+        </div>
+      )}
+
+      <div className="flex overflow-x-auto scrollbar-none">
+        {REQUEST_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => { setActiveTab(tab.key); setPage(1) }}
+            className={cn(
+              "flex items-center gap-1.5 py-2 px-3 font-medium border-b-2 transition-colors -mb-px whitespace-nowrap shrink-0",
+              activeTab === tab.key ? "border-green-700 text-green-700" : "border-transparent text-ink-500 hover:text-ink-900"
+            )}
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+          >
+            {tab.label}
+            {tab.showCount && tabCounts[tab.key] > 0 && (
+              <span
+                className={cn(
+                  "flex items-center justify-center rounded-full min-w-4 h-4 px-1 font-semibold shrink-0",
+                  activeTab === tab.key ? "bg-green-700 text-white" : "bg-ink-200 text-ink-500"
+                )}
+                style={{ fontSize: "var(--text-2xs)" }}
+              >
+                {tabCounts[tab.key]}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <ReportTableCard
+        title="Wishlist and request log"
+        subtitle="Titles requested by faculty"
+        query={query}
+        onQueryChange={(v) => { setQuery(v); setPage(1) }}
+        searchPlaceholder="Search by title, author, or requester…"
+        onExport={() => downloadCsv("book-requests.csv", filtered.map((r) => ({
+          Title: r.title,
+          Author: r.author ?? "",
+          ISBN: r.isbn ?? "",
+          Format: r.format,
+          Copies: r.copies,
+          Course: r.course ?? "",
+          Requester: r.profiles?.full_name ?? "",
+          Email: r.profiles?.email ?? "",
+          Status: r.status,
+          Attachments: r.attachments.map((a) => a.url).join("; "),
+          "Requested At": r.created_at,
+        })))}
+        exportDisabled={filtered.length === 0}
+        footerLeft={`${openCount} open request${openCount === 1 ? "" : "s"}`}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+      >
+        {loading ? (
+          <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>Loading…</p>
+        ) : paged.length === 0 ? (
+          <EmptyState text={requests.length === 0 ? "No requests yet." : "No requests match your search."} />
+        ) : (
+          <div className="rounded border border-ink-200 overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-ink-200 bg-ink-50">
+                  {["Title", "Requester", "Status", "Requested", "Actions"].map((label) => (
+                    <th
+                      key={label}
+                      className="text-left py-2.5 px-4 text-ink-500 font-semibold uppercase"
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}
+                    >
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {paged.map((r) => (
+                  <tr key={r.id} className="border-b border-ink-100 hover:bg-ink-50 transition-colors">
+                    <td className="py-2.5 px-4">
+                      <p className="text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{r.title}</p>
+                      <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                        {[r.author, `${r.copies} ${r.copies === 1 ? "copy" : "copies"}`, r.format, r.course].filter(Boolean).join(" · ")}
+                      </p>
+                      {r.attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-0.5">
+                          {r.attachments.map((a) => (
+                            <a
+                              key={a.id}
+                              href={a.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-green-700 hover:text-green-900 transition-colors"
+                              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                            >
+                              <Paperclip size={11} />
+                              {a.name}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                      {r.profiles?.full_name ?? "Unknown"}
+                      <div className="text-ink-400" style={{ fontSize: "var(--text-2xs)" }}>{r.profiles?.email}</div>
+                    </td>
+                    <td className="py-2.5 px-4">
+                      <span
+                        className={cn("inline-flex items-center px-2 py-0.5 rounded-pill font-medium", REQUEST_STATUS_BADGE[r.status])}
+                        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                      >
+                        {REQUEST_STATUS_LABEL[r.status]}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-4 text-ink-700 whitespace-nowrap" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                      {new Date(r.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
+                    </td>
+                    <td className="py-2.5 px-4">
+                      {r.status === "pending" ? (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleDecision(r, "rejected")}
+                            disabled={busyId === r.id}
+                            className="px-2.5 py-1 rounded border border-ink-200 bg-white text-ink-700 hover:bg-ink-100 disabled:opacity-40 transition-colors"
+                            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                          >
+                            Reject
+                          </button>
+                          <button
+                            onClick={() => handleDecision(r, "approved")}
+                            disabled={busyId === r.id}
+                            className="px-2.5 py-1 rounded bg-green-700 text-white hover:bg-green-800 disabled:opacity-40 transition-colors font-medium"
+                            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                          >
+                            Approve
+                          </button>
+                        </div>
+                      ) : r.status === "approved" ? (
+                        <button
+                          onClick={() => handleDecision(r, "fulfilled")}
+                          disabled={busyId === r.id}
+                          className="px-2.5 py-1 rounded bg-gold-500 text-white hover:bg-gold-600 disabled:opacity-40 transition-colors font-medium"
+                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                        >
+                          Mark Fulfilled
+                        </button>
+                      ) : (
+                        <span className="text-ink-300" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ReportTableCard>
+    </div>
   )
 }
 
@@ -2219,8 +2467,10 @@ function ReportsPageContent() {
         </div>
       )}
 
-      {/* ── Requests tab (placeholder — see RequestsPlaceholder) ── */}
-      {tab === "requests" && <RequestsPlaceholder />}
+      {/* ── Requests tab — see RequestsPanel ── */}
+      {tab === "requests" && (
+        <RequestsPanel dateFrom={activeDateBounds.dateFrom} dateTo={activeDateBounds.dateTo} />
+      )}
 
       {/* ── Weeding tab – Reports plan Phase 2 ────────────── */}
       {tab === "weeding" && <WeedingPanel />}
