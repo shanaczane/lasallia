@@ -152,8 +152,8 @@ export function NotificationFeed({
             suppressHydrationWarning
             onClick={onMarkAllRead}
             disabled={unreadCount === 0}
-            className="flex-shrink-0 px-3 py-1.5 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
-            style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
+            className="flex-shrink-0 px-5 py-2.5 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+            style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
           >
             <span className="sm:hidden">Mark read</span>
             <span className="hidden sm:inline">Mark all as read</span>

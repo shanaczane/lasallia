@@ -16,7 +16,7 @@ import {
   Library, Bookmark, History,
   CheckCircle2, Clock,
   BookOpen, Info, X,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, ArrowRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AvailabilityPill } from "@/components/ui/pills/availability-pill"
@@ -586,6 +586,29 @@ function SavedCard({
   )
 }
 
+// End-of-grid card linking back to the catalog — same dashed-border
+// "view more" style as the dashboard's CatalogHighlights.tsx, sized to
+// fill its grid cell (stretch) instead of that component's fixed 140px
+// row-card width.
+function BrowseCatalogCard() {
+  return (
+    <Link
+      href="/student/catalog"
+      className="h-full min-h-[200px] flex flex-col items-center justify-center gap-2 rounded-(--radius) border border-dashed border-ink-300 bg-white hover:bg-ink-50 hover:border-green-700 transition-colors"
+    >
+      <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 text-green-700">
+        <ArrowRight size={18} />
+      </div>
+      <span
+        className="text-ink-600 font-medium text-center px-3"
+        style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+      >
+        Browse catalog
+      </span>
+    </Link>
+  )
+}
+
 function SavedTab({ savedBooks, loading, error, onRemove }: { savedBooks: Book[]; loading: boolean; error: string | null; onRemove: (bookId: string) => void }) {
   const [removingId, setRemovingId] = useState<string | null>(null)
 
@@ -641,21 +664,12 @@ function SavedTab({ savedBooks, loading, error, onRemove }: { savedBooks: Book[]
   return (
     <div className="flex flex-col gap-4">
 
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p
-          className="text-ink-500"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-        >
-          {savedBooks.length} {savedBooks.length === 1 ? "book" : "books"} saved
-        </p>
-        <Link
-          href="/student/catalog"
-          className="text-green-700 font-medium hover:underline"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-        >
-          Browse catalog →
-        </Link>
-      </div>
+      <p
+        className="text-ink-500"
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+      >
+        {savedBooks.length} {savedBooks.length === 1 ? "book" : "books"} saved
+      </p>
 
       <div className={CARD_GRID}>
         {pageItems.map((book) => (
@@ -666,6 +680,7 @@ function SavedTab({ savedBooks, loading, error, onRemove }: { savedBooks: Book[]
             onRemove={() => handleRemove(book.id)}
           />
         ))}
+        <BrowseCatalogCard />
       </div>
 
       {/* Pagination */}
