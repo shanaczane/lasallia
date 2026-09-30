@@ -23,7 +23,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { programLabel } from '@/lib/programLabels'
-import { useBook, useBooks } from '@/lib/hooks/useBooks'
+import { useBook } from '@/lib/hooks/useBooks'
+import { fetchSimilarBooks } from '@/lib/books'
 import { useReservations } from '@/lib/hooks/useReservations'
 import { createReservation, cancelReservation } from '@/lib/reservations'
 import { fetchSavedBooks, saveBook, unsaveBook } from '@/lib/saved'
@@ -318,23 +319,31 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
-// ─── You may also like (4.3.3) ────────────────────────────────────────────────
+// ─── You may also like (4.3.3, re-wired onto the real similarity engine) ──────
+// Used to be a plain same-category filter over the whole catalog — no
+// ranking, and "same program" isn't "similar book". Now reads this book's
+// actual TF-IDF/cosine-similarity neighbors (book_similarities, the same
+// data the dashboard's "For You" section is built from), so this row is a
+// genuine "books like this one", not a category coincidence.
 
 function Recommendations({
   currentId,
-  category,
   savedBookIds,
   onToggleSave,
 }: {
   currentId: string
-  category: string
   savedBookIds: Set<string>
   onToggleSave: (book: Book) => void
 }) {
-  const { books } = useBooks()
-  const related = books
-    .filter((b) => b.category === category && b.id !== currentId)
-    .slice(0, 5)
+  const [related, setRelated] = useState<Book[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    fetchSimilarBooks(currentId).then((books) => {
+      if (!cancelled) setRelated(books)
+    })
+    return () => { cancelled = true }
+  }, [currentId])
 
   if (related.length === 0) return null
 
@@ -731,7 +740,6 @@ export default function StudentBookDetailPage({
         {/* ── You may also like (4.3.3) ─────────────────────────────────────── */}
         <Recommendations
           currentId={book.id}
-          category={programLabel(book.category)}
           savedBookIds={savedBookIds}
           onToggleSave={handleToggleSave}
         />

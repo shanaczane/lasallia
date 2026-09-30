@@ -215,6 +215,52 @@ def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)
 
     return book[0]
 
+# "You may also like" on the book detail page — previously a plain
+# same-category client-side filter with no ranking (apps/web's
+# Recommendations component in app/student/catalog/[bookId]/page.tsx).
+# This reads the same TF-IDF/cosine-similarity data the "For You"
+# dashboard section already uses (book_similarities, computed nightly by
+# jobs/rebuild_similarities.py) instead of a same-category guess — a real
+# "books like this one" ranking, not a same-program coincidence.
+@router.get("/{book_id}/similar", response_model=list[Book])
+def get_similar_books(book_id: str, limit: int = 5, user: UserProfile | None = Depends(get_optional_user)):
+    admin = get_admin_client()
+
+    # book_similarities has no public RLS policy (deny by default, same as
+    # every other precomputed recommendation table — see migrations/0017's
+    # own comment) — service-role client is what's actually allowed to
+    # read it, same as routers/recommendations.py does for its tables.
+    neighbor_rows = (
+        admin.table("book_similarities")
+        .select("neighbor_book_id, rank")
+        .eq("book_id", book_id)
+        .order("rank")
+        .limit(limit)
+        .execute()
+    ).data
+    if not neighbor_rows:
+        return []
+
+    neighbor_ids = [r["neighbor_book_id"] for r in neighbor_rows]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        books_future = pool.submit(
+            lambda: admin.table("books").select("*").in_("id", neighbor_ids).is_("archived_at", "null").execute()
+        )
+        copies_future = pool.submit(
+            lambda: admin.table("book_copies").select("book_id, status").in_("book_id", neighbor_ids).execute()
+        )
+        books_by_id = {b["id"]: b for b in books_future.result().data}
+        copies_data = copies_future.result().data
+
+    # Preserves book_similarities' own rank order — a plain .in_() fetch
+    # above doesn't — and silently drops a neighbor that's since been
+    # archived, same effect as never having matched at all.
+    ordered = [books_by_id[nid] for nid in neighbor_ids if nid in books_by_id]
+    ordered = _apply_real_availability(ordered, copies_data)
+    ordered = _redact_accession(ordered, user)
+    return ordered
+
+
 @router.get("/{book_id}/copies", response_model=list[BookCopy])
 def list_book_copies(book_id: str, librarian: UserProfile = Depends(require_librarian)):
     admin = get_admin_client()
