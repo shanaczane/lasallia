@@ -31,6 +31,17 @@ export async function fetchBook(id: string): Promise<Book | null> {
   return res.json()
 }
 
+// Book detail page's "You may also like" — the TF-IDF/cosine-similarity
+// neighbors already computed for this book (book_similarities), not a
+// same-category guess. Empty array on failure, same as ForYouSection's own
+// "hide the section rather than show an error" rule — this is a nice-to-have
+// row, not core page content worth blocking or erroring the page over.
+export async function fetchSimilarBooks(id: string, limit = 5): Promise<Book[]> {
+  const res = await fetch(`${API_URL}/books/${id}/similar?limit=${limit}`, { headers: optionalAuthHeaders() })
+  if (!res.ok) return []
+  return res.json()
+}
+
 // Mirrors schemas.book.BookWrite on the API — the librarian Add/Edit form's
 // full field set, minus the read-only/derived ones (id, timestamps,
 // available_copies is optional and defaults to total_copies server-side).

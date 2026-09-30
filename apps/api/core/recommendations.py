@@ -45,6 +45,17 @@ DEFAULT_LIMIT = 10
 # ever changed from the plan's starting point.
 COOCCURRENCE_ALPHA = 0.3
 
+# Program-match re-ranking (CBEAM/CEAS/CITE/CITHM/…, whatever the student's
+# own profiles.program says — not hardcoded per college). Same
+# "multiplicative, re-ranking only, never invents a candidate" shape as
+# COOCCURRENCE_ALPHA above: a book only gets this boost if it already
+# earned a spot via content similarity to something the student borrowed —
+# this just nudges an already-legitimate candidate higher when it also
+# happens to match their program. A deliberately light nudge (15%), not a
+# hard "program books first" rule — rung 1 is supposed to stay personal to
+# the student, program is a steer, not a replacement for their own history.
+PROGRAM_ALPHA = 0.15
+
 # Phase 7 — rungs 2-4 of the cold-start ladder.
 POPULAR_LOOKBACK_DAYS = 365
 POPULAR_REASON = "Popular at the LRC"
@@ -207,6 +218,13 @@ def get_recommendations_for_student(admin: Client, student_id: str, limit: int =
     if not sources:
         return []
 
+    # For the program boost below. This function only ever runs from the
+    # nightly job (see this file's own header comment — nothing here runs
+    # on the live request path), so one extra query per student here costs
+    # nothing a student waits on.
+    profile_res = admin.table("profiles").select("program").eq("id", student_id).execute()
+    student_program = profile_res.data[0]["program"] if profile_res.data else None
+
     source_ids = list(sources.keys())
     neighbor_rows = (
         admin.table("book_similarities")
@@ -277,6 +295,13 @@ def get_recommendations_for_student(admin: Client, student_id: str, limit: int =
             reason = f"{reason} · popular with students who read it"
         else:
             score = content_score
+
+        # Program-match boost — stacks with the co-occurrence blend above
+        # rather than replacing it; both are independent "does this extra
+        # signal apply" multipliers on the same content_score baseline.
+        if student_program and categories.get(candidate_id) == student_program:
+            score *= (1 + PROGRAM_ALPHA)
+            reason = f"{reason} · matches your program"
 
         scored.append((candidate_id, score, reason_book_id, reason))
 
@@ -388,9 +413,48 @@ def get_popular_recommendations(admin: Client, limit: int = DEFAULT_LIMIT) -> li
 def get_program_recommendations(admin: Client, program: str, limit: int = DEFAULT_LIMIT) -> list[Recommendation]:
     """Rung 2 — most-borrowed among students in the same program, gated
     by MIN_PROGRAM_STUDENTS so a small program's aggregate can't be
-    reverse-engineered back to one or two students' actual history."""
+    reverse-engineered back to one or two students' actual history.
+
+    Below that threshold (a new deployment, or a program nobody's
+    borrowed under yet), tops up with the catalog's own program-tagged
+    books (books.category) instead of returning too little/nothing — the
+    router's fallback ladder (_fallback_response) would otherwise skip
+    straight to the generic library-wide "Popular at the LRC" list for
+    every new student in that program, which isn't program-relevant at
+    all. This needs no borrow history to exist — same reasoning as the
+    "top up with recently-added books" branch in _fallback_recommendations
+    below, just filtered to this program's own tagged books instead of
+    the whole catalog."""
     since = (datetime.now(timezone.utc) - timedelta(days=POPULAR_LOOKBACK_DAYS)).isoformat()
     counts, students = _borrow_counts(admin, since, program=program)
-    if len(students) < MIN_PROGRAM_STUDENTS:
-        return []
-    return _fallback_recommendations(admin, counts, limit, matched_reason=f"Popular among {program} students")
+    results = (
+        _fallback_recommendations(admin, counts, limit, matched_reason=f"Popular among {program} students")
+        if len(students) >= MIN_PROGRAM_STUDENTS
+        else []
+    )
+    if len(results) >= limit:
+        return results
+
+    excluded = _non_borrowable_book_ids(admin) | {r.book_id for r in results}
+    # Overfetch generously, same reasoning as _fallback_recommendations'
+    # own top-up: some rows will land in `excluded` and get filtered out,
+    # and there's no cheap way to ask Postgres for "N rows not already in
+    # this set" through the fluent builder.
+    catalog_rows = (
+        admin.table("books")
+        .select("id")
+        .eq("category", program)
+        .is_("archived_at", "null")
+        .order("created_at", desc=True)
+        .limit((limit - len(results)) * 4 + 20)
+        .execute()
+    ).data
+    for b in catalog_rows:
+        if len(results) >= limit:
+            break
+        if b["id"] in excluded:
+            continue
+        results.append(Recommendation(book_id=b["id"], score=0.0, reason_book_id=None, reason=f"For {program} students"))
+        excluded.add(b["id"])
+
+    return results
