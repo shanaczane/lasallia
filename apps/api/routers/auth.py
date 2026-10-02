@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from supabase_auth.errors import AuthApiError
-from schemas.auth import ChangePasswordRequest, LoginRequest, RefreshRequest, TokenResponse, UpdateProfileRequest, UserProfile
+from schemas.auth import ChangePasswordRequest, LoginRequest, PasswordStatusResponse, RefreshRequest, SetPasswordRequest, TokenResponse, UpdateProfileRequest, UserProfile
 from core.supabase import get_client, get_admin_client
 from core.deps import get_current_user, invalidate_profile
 
@@ -127,6 +127,49 @@ def change_password(body: ChangePasswordRequest, user: UserProfile = Depends(get
         get_client().auth.sign_in_with_password({"email": user.email, "password": body.current_password})
     except AuthApiError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
+
+    try:
+        get_admin_client().auth.admin.update_user_by_id(user.id, {"password": body.new_password})
+    except AuthApiError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+
+# A Google sign-in never sets a password — app_metadata.providers stays
+# ['google'] forever, even after a password is added later (verified by
+# hand against a real Supabase project: it does NOT grow an 'email' entry).
+# The actual signal is the identities list, which does gain an 'email'
+# entry the moment a password is set (admin.update_user_by_id, same call
+# change_password/set_password use) — confirmed the same way. Checked
+# here rather than cached on the JWT/profile: it can change mid-session
+# (a student sets a password after already being logged in), and this is
+# only called from the Settings page, not every request.
+def _has_password_identity(user_id: str) -> bool:
+    sb_user = get_admin_client().auth.admin.get_user_by_id(user_id).user
+    return any(i.provider == "email" for i in (sb_user.identities or []))
+
+# Settings' Account tab — tells the frontend whether to show "Set a
+# password" (Google-only account, no current password to verify) or the
+# existing "Change Password" form (current_password required).
+@router.get("/password-status", response_model=PasswordStatusResponse)
+def password_status(user: UserProfile = Depends(get_current_user)):
+    return PasswordStatusResponse(has_password=_has_password_identity(user.id))
+
+# Settings' Account tab "Set a password" — for a Google-only account that
+# has never had one. Unlike change_password above, there's no
+# current_password to verify (there's nothing to check it against); the
+# real-world equivalent of that re-verification is already satisfied by
+# the caller holding a valid, currently-signed-in JWT at all. Re-checks
+# has_password itself (not just trusting the frontend only showed this
+# form when appropriate) so this can never be used to bypass
+# change_password's current-password check on an account that already has
+# one — Google login keeps working unaffected either way, this only adds
+# a second way in.
+@router.post("/set-password", status_code=status.HTTP_204_NO_CONTENT)
+def set_password(body: SetPasswordRequest, user: UserProfile = Depends(get_current_user)):
+    if len(body.new_password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
+
+    if _has_password_identity(user.id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account already has a password — use Change Password instead")
 
     try:
         get_admin_client().auth.admin.update_user_by_id(user.id, {"password": body.new_password})

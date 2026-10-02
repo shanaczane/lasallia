@@ -53,3 +53,18 @@ class UpdateProfileRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+
+# GET /auth/password-status — lets Settings show "Set a password" (no
+# current-password field) for an account that doesn't have one yet (e.g.
+# Google sign-in, which never sets one) instead of "Change Password".
+class PasswordStatusResponse(BaseModel):
+    has_password: bool
+
+# POST /auth/set-password. No current_password field, unlike
+# ChangePasswordRequest above — there's nothing to verify against for an
+# account that has never had a password. The endpoint itself re-checks
+# has_password server-side before applying this, so a caller can't use this
+# route to skip ChangePasswordRequest's current-password check on an
+# account that already has one.
+class SetPasswordRequest(BaseModel):
+    new_password: str

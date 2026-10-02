@@ -199,6 +199,29 @@ export async function changePassword(currentPassword: string, newPassword: strin
   }
 }
 
+// Settings' Account tab — whether to show "Set a password" (a Google
+// sign-in never has one) or the existing "Change Password" form.
+export async function fetchPasswordStatus(): Promise<{ has_password: boolean }> {
+  const res = await fetch(`${API_URL}/auth/password-status`, { headers: authHeaders() })
+  if (!res.ok) throw new Error("Could not check your account")
+  return res.json()
+}
+
+// Settings' Account tab — "Set a password" (Google-only account, nothing
+// to verify against). Adds a second way to sign in; "Continue with
+// Google" keeps working exactly as before either way.
+export async function setPassword(newPassword: string): Promise<void> {
+  const res = await fetch(`${API_URL}/auth/set-password`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ new_password: newPassword }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? "Could not set your password")
+  }
+}
+
 export function clearSession(): void {
   for (const key of SESSION_KEYS) {
     localStorage.removeItem(key)

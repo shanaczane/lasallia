@@ -12,7 +12,7 @@ import { usePathname } from "next/navigation"
 import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
 import { StudentCountsProvider, useStudentCounts } from "./StudentCountsContext"
 import { cn } from "@/lib/utils"
-import { getUser, refreshCachedUser } from "@/lib/auth"
+import { getUser, refreshCachedUser, fetchPasswordStatus } from "@/lib/auth"
 import { CompleteProfileModal } from "@/components/ui/profile/CompleteProfileModal"
 import {
   LayoutDashboard,
@@ -105,6 +105,8 @@ function StudentLayoutInner({
   const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
   const [displayEmail, setDisplayEmail] = useState("")
   const [profileRole, setProfileRole] = useState<"student" | "faculty" | null>(null)
+  const [needsProfile, setNeedsProfile] = useState(false)
+  const [needsPassword, setNeedsPassword] = useState(false)
   const [isFaculty, setIsFaculty] = useState(false)
 
   useLayoutEffectSafe(() => {
@@ -140,13 +142,29 @@ function StudentLayoutInner({
     : u.role === "faculty" ? !u.college
     : false
 
+  // Password check runs every time, independent of isIncomplete above — a
+  // student already pre-filled by the enrollment spreadsheet still has no
+  // password if they signed in with Google, and that's the only thing
+  // standing between them and manual login ever working (kiosk included).
+  // See routers/auth.py's GET /auth/password-status.
   useEffect(() => {
     const cached = getUser()
-    if (!cached || !isIncomplete(cached)) return
+    if (!cached || (cached.role !== "student" && cached.role !== "faculty")) return
     let cancelled = false
-    refreshCachedUser().then((fresh) => {
-      if (cancelled || !fresh || !isIncomplete(fresh)) return
-      if (fresh.role === "student" || fresh.role === "faculty") setProfileRole(fresh.role)
+    const profileIncomplete = isIncomplete(cached)
+
+    Promise.all([
+      profileIncomplete ? refreshCachedUser() : Promise.resolve(cached),
+      fetchPasswordStatus().catch(() => ({ has_password: true })), // unknown — don't nag on a failed check
+    ]).then(([fresh, passwordStatus]) => {
+      if (cancelled || !fresh || (fresh.role !== "student" && fresh.role !== "faculty")) return
+      const stillIncomplete = isIncomplete(fresh)
+      const stillNeedsPassword = !passwordStatus.has_password
+      if (stillIncomplete || stillNeedsPassword) {
+        setProfileRole(fresh.role)
+        setNeedsProfile(stillIncomplete)
+        setNeedsPassword(stillNeedsPassword)
+      }
     })
     return () => { cancelled = true }
   }, [])
@@ -308,7 +326,14 @@ function StudentLayoutInner({
         <div className="w-full">{children}</div>
       </main>
 
-      {profileRole && <CompleteProfileModal role={profileRole} onDone={() => setProfileRole(null)} />}
+      {profileRole && (
+        <CompleteProfileModal
+          role={profileRole}
+          needsProfile={needsProfile}
+          needsPassword={needsPassword}
+          onDone={() => setProfileRole(null)}
+        />
+      )}
     </div>
   )
 }

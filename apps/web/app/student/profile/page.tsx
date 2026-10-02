@@ -19,7 +19,7 @@ import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { AlertCircle, ChevronDown } from "lucide-react"
 import { cn, ordinal } from "@/lib/utils"
-import { getUser, updateProfile, changePassword, type UserProfile as AuthUser } from "@/lib/auth"
+import { getUser, updateProfile, changePassword, fetchPasswordStatus, setPassword, type UserProfile as AuthUser } from "@/lib/auth"
 import { fetchLoans, type Loan as ApiLoan } from "@/lib/kiosk"
 import { collegeForProgram } from "@/lib/collegeForProgram"
 
@@ -176,7 +176,20 @@ function StudentProfileContent() {
     }
   }
 
-  // Settings tab — Change Password
+  // Settings tab — Change Password / Set a Password. Which form shows
+  // depends on whether the account has a password at all yet — a Google
+  // sign-in never sets one, so "Current Password" has nothing to verify
+  // against for that account until this runs once (see GET
+  // /auth/password-status). null while loading, so neither form flashes
+  // before we actually know.
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    fetchPasswordStatus()
+      .then((res) => setHasPassword(res.has_password))
+      .catch(() => setHasPassword(true)) // unknown — default to the safer (current-password-required) form
+  }, [])
+
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -185,21 +198,21 @@ function StudentProfileContent() {
   const [passwordChanged, setPasswordChanged] = useState(false)
 
   const passwordValidationError =
-    !currentPassword && !newPassword && !confirmPassword
+    !newPassword && !confirmPassword && (!hasPassword || !currentPassword)
       ? null
-      : !currentPassword
+      : hasPassword && !currentPassword
         ? "Enter your current password."
         : newPassword.length < MIN_PASSWORD_LENGTH
           ? `New password must be at least ${MIN_PASSWORD_LENGTH} characters.`
           : newPassword !== confirmPassword
             ? "New password and confirmation don't match."
-            : newPassword === currentPassword
+            : hasPassword && newPassword === currentPassword
               ? "New password must be different from your current password."
               : null
 
   async function handleChangePassword() {
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setPasswordError("Fill in all three password fields.")
+    if ((hasPassword && !currentPassword) || !newPassword || !confirmPassword) {
+      setPasswordError(hasPassword ? "Fill in all three password fields." : "Fill in both password fields.")
       return
     }
     if (passwordValidationError) {
@@ -210,13 +223,18 @@ function StudentProfileContent() {
     setPasswordError("")
     setPasswordChanged(false)
     try {
-      await changePassword(currentPassword, newPassword)
+      if (hasPassword) {
+        await changePassword(currentPassword, newPassword)
+      } else {
+        await setPassword(newPassword)
+        setHasPassword(true) // Change Password form takes over on any future visit
+      }
       setCurrentPassword("")
       setNewPassword("")
       setConfirmPassword("")
       setPasswordChanged(true)
     } catch (err) {
-      setPasswordError(err instanceof Error ? err.message : "Could not change your password")
+      setPasswordError(err instanceof Error ? err.message : "Could not save your password")
     } finally {
       setPasswordSaving(false)
     }
@@ -419,27 +437,37 @@ function StudentProfileContent() {
               </button>
             </SettingsSection>
 
-            <SettingsSection title="Change Password">
+            <SettingsSection title={hasPassword === false ? "Set a Password" : "Change Password"}>
+              {hasPassword === false && (
+                <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+                  Your account signs in with Google and has no password yet. Setting one gives you a second way to
+                  sign in — useful at the library kiosk, or anywhere Google sign-in isn't available. &quot;Continue
+                  with Google&quot; keeps working exactly as before either way.
+                </p>
+              )}
+
+              {hasPassword !== false && (
+                <Field
+                  label="Current Password"
+                  value={currentPassword}
+                  onChange={setCurrentPassword}
+                  type="password"
+                  placeholder="Enter current password"
+                />
+              )}
               <Field
-                label="Current Password"
-                value={currentPassword}
-                onChange={setCurrentPassword}
-                type="password"
-                placeholder="Enter current password"
-              />
-              <Field
-                label="New Password"
+                label={hasPassword === false ? "Password" : "New Password"}
                 value={newPassword}
                 onChange={setNewPassword}
                 type="password"
                 placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
               />
               <Field
-                label="Confirm New Password"
+                label="Confirm Password"
                 value={confirmPassword}
                 onChange={setConfirmPassword}
                 type="password"
-                placeholder="Confirm new password"
+                placeholder="Confirm password"
               />
 
               {passwordError && (
@@ -450,18 +478,18 @@ function StudentProfileContent() {
               )}
               {passwordChanged && !passwordError && (
                 <p className="text-success" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
-                  Password updated.
+                  {hasPassword === false ? "Password set." : "Password updated."}
                 </p>
               )}
 
               <button
                 type="button"
                 onClick={handleChangePassword}
-                disabled={passwordSaving || !currentPassword || !newPassword || !confirmPassword}
+                disabled={passwordSaving || hasPassword === null || (hasPassword && !currentPassword) || !newPassword || !confirmPassword}
                 className="self-start px-4 py-2 rounded-(--radius) font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-ink-900 text-white hover:bg-ink-700"
                 style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
               >
-                {passwordSaving ? "Updating…" : "Update Password"}
+                {passwordSaving ? "Saving…" : hasPassword === false ? "Set Password" : "Update Password"}
               </button>
             </SettingsSection>
           </>
