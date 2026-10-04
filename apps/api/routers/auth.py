@@ -10,11 +10,18 @@ MIN_PASSWORD_LENGTH = 8
 MAX_YEAR_LEVEL = 8  # same ceiling routers/patrons.py enforces for a librarian's edit
 
 def _fetch_profile(user_id: str) -> dict:
-    res = get_admin_client().table("profiles").select("role, full_name, program, year_level, college").eq("id", user_id).single().execute()
+    res = get_admin_client().table("profiles").select("role, full_name, program, year_level, college, status").eq("id", user_id).single().execute()
     return res.data or {}
 
 def _build_token_response(session, sb_user) -> TokenResponse:
     profile = _fetch_profile(sb_user.id)
+
+    # A correct password shouldn't still hand a deactivated account a
+    # working session — same rule core/deps.get_current_user enforces on
+    # every later request, checked again here so it's refused up front.
+    if profile.get("status") == "inactive":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This account has been deactivated. Please contact a librarian.")
+
     return TokenResponse(
         access_token=session.access_token,
         refresh_token=session.refresh_token,
@@ -27,6 +34,7 @@ def _build_token_response(session, sb_user) -> TokenResponse:
             program=profile.get("program"),
             year_level=profile.get("year_level"),
             college=profile.get("college"),
+            status=profile.get("status"),
         ),
     )
 
