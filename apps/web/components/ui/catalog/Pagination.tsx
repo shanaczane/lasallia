@@ -10,6 +10,12 @@ type PaginationProps = {
   page: number
   totalPages: number
   onChange: (page: number) => void
+  // No margin by default — a caller embedding this inline next to other
+  // content (e.g. a "Showing X of Y" count in a flex row, as ReportTableCard
+  // and the patrons page do) would otherwise get pushed out of alignment
+  // with its siblings. Pass "mt-8" explicitly for the standalone-below-a-
+  // grid usage (catalog pages, borrow-return) that wants that spacing.
+  className?: string
 }
 
 function pageWindow(page: number, totalPages: number): Array<number | 'ellipsis'> {
@@ -26,11 +32,11 @@ function pageWindow(page: number, totalPages: number): Array<number | 'ellipsis'
   return range
 }
 
-export function Pagination({ page, totalPages, onChange }: PaginationProps) {
+export function Pagination({ page, totalPages, onChange, className }: PaginationProps) {
   if (totalPages <= 1) return null
 
   return (
-    <nav aria-label="Catalog pages" className="flex items-center justify-center gap-2 mt-8">
+    <nav aria-label="Catalog pages" className={cn('flex items-center justify-center gap-2', className)}>
       <button
         type="button"
         onClick={() => onChange(page - 1)}
