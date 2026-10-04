@@ -302,6 +302,14 @@ function StudentProfileContent() {
                   onChange={() => {}}
                   disabled
                 />
+                {profile.id_number && (
+                  <Field
+                    label={profile.role === "student" ? "Student Number" : profile.role === "faculty" ? "Faculty Number" : "ID Number"}
+                    value={profile.id_number}
+                    onChange={() => {}}
+                    disabled
+                  />
+                )}
                 {/* Program/College/Year Level — same fields the librarian's
                     Patron Record shows about this same account (see
                     PatronProfileModal.tsx), read-only here since this is

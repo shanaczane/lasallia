@@ -219,15 +219,24 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronPr
   // differently spelled college name. Year level only ever applies to students.
   const isStudent = patron.role === "student"
   const resolvedCollege = patron.college || collegeForProgram(patron.program)
+  // id_number (0045) is school-issued, same identity-level field for
+  // either role, so it's prepended to both branches below rather than
+  // living inside the student-only/faculty-only split the rest of this
+  // list makes.
+  const idNumberField = patron.id_number
+    ? [{ label: isStudent ? "Student No." : "Faculty No.", value: patron.id_number }]
+    : []
   const enrollmentFields: { label: string; value: string }[] = isStudent
     ? [
+        ...idNumberField,
         patron.program && { label: "Program", value: patron.program },
         resolvedCollege && { label: "College", value: resolvedCollege },
         patron.year_level != null && { label: "Year Level", value: `${ordinal(patron.year_level)} Year` },
       ].filter((f): f is { label: string; value: string } => !!f)
-    : resolvedCollege
-      ? [{ label: "College", value: resolvedCollege }]
-      : []
+    : [
+        ...idNumberField,
+        ...(resolvedCollege ? [{ label: "College", value: resolvedCollege }] : []),
+      ]
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode; count: number; warn?: boolean }[] = [
     { key: "loans",        label: "Active Loans",  icon: <BookOpen size={14} />, count: activeLoans.length },

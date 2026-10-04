@@ -21,6 +21,9 @@ class UserProfile(BaseModel):
     program: str | None = None
     year_level: int | None = None
     college: str | None = None
+    # School-issued student/faculty number (0045) — unique same as email,
+    # just assigned by the school instead of chosen by the account holder.
+    id_number: str | None = None
     # Mirrors schemas/patron.PatronStatus. get_current_user/login reject a
     # request outright when this is "inactive" (see core/deps.py), so any
     # caller that actually receives a UserProfile is implicitly active —
@@ -49,6 +52,7 @@ class UpdateProfileRequest(BaseModel):
     program: str | None = None
     year_level: int | None = None
     college: str | None = None
+    id_number: str | None = None
 
 # POST /auth/change-password. current_password re-verifies identity
 # (sign_in_with_password against it) before the new one is set — same

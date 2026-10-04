@@ -24,7 +24,8 @@ export async function fetchPatrons(): Promise<UserProfile[]> {
 }
 
 // Librarian-assisted borrow's fallback student picker, when there's no ID
-// card to tap — searches by name or email, scoped to students only.
+// card to tap — searches by name, email, or id_number (routers/patrons.py),
+// scoped to students only.
 export async function searchPatrons(q: string, role?: UserRole): Promise<UserProfile[]> {
   const params = new URLSearchParams()
   if (q.trim()) params.set("q", q.trim())
@@ -39,6 +40,7 @@ export type PatronUpdate = {
   program?: string | null
   year_level?: number | null
   college?: string | null
+  id_number?: string | null
 }
 
 export async function updatePatron(userId: string, changes: PatronUpdate): Promise<UserProfile> {

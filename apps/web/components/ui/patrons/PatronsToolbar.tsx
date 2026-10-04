@@ -61,7 +61,7 @@ export function PatronsToolbar({
             type="text"
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
-            placeholder="Search by name, email, or program…"
+            placeholder="Search by name, email, ID number, or program…"
             className={cn(
               "w-full pl-9 pr-8 py-2 rounded-sm border bg-white text-ink-900",
               "placeholder:text-ink-300 focus:outline-none transition-colors",

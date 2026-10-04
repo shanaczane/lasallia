@@ -83,6 +83,7 @@ export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTablePr
                     </p>
                     <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
                       {patron.email}
+                      {patron.id_number ? ` · ${patron.id_number}` : ""}
                     </p>
                   </div>
                 </button>

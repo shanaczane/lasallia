@@ -281,7 +281,7 @@ function AssistedBorrowPanel({ onSettled }: { onSettled: () => void }) {
           ) : (
             <>
               <label className="block text-ink-700 mb-1" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
-                Search by name or email <span className="text-red-500">*</span>
+                Search by name, email, or ID number <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />

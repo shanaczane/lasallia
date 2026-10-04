@@ -7,20 +7,20 @@ import type { UserProfile, UserRole, UserAccountStatus } from '@lasallia/types'
 // ─── Patron directory (5.5.1) ────────────────────────────────────────────────
 
 export const MOCK_PATRONS: UserProfile[] = [
-  { id: 'p1',  email: 'shan.cruz@dlsl.edu.ph',      full_name: 'Shan Cruz',        role: 'student',   program: 'BS Computer Science',  year_level: 3, status: 'active',   created_at: '2024-06-01T00:00:00Z' },
-  { id: 'p2',  email: 'miguel.santos@dlsl.edu.ph',  full_name: 'Miguel Santos',    role: 'student',   program: 'BS Information Technology',  year_level: 2, status: 'active',   created_at: '2024-06-01T00:00:00Z' },
-  { id: 'p3',  email: 'ana.reyes@dlsl.edu.ph',      full_name: 'Ana Reyes',        role: 'student',   program: 'BS Nursing',           year_level: 4, status: 'active',   created_at: '2024-06-01T00:00:00Z' },
-  { id: 'p4',  email: 'j.delacruz@dlsl.edu.ph',     full_name: 'Jerome Dela Cruz', role: 'faculty',   program: 'College of Engineering', status: 'active',   created_at: '2023-08-15T00:00:00Z' },
-  { id: 'p5',  email: 'k.villanueva@dlsl.edu.ph',   full_name: 'Kristine Villanueva', role: 'student', program: 'BS Accountancy',      year_level: 1, status: 'inactive', created_at: '2025-01-10T00:00:00Z' },
-  { id: 'p6',  email: 'r.bautista@dlsl.edu.ph',     full_name: 'Rico Bautista',    role: 'student',   program: 'BS Computer Science',  year_level: 3, status: 'active',   created_at: '2024-06-01T00:00:00Z' },
-  { id: 'p7',  email: 'l.fernandez@dlsl.edu.ph',    full_name: 'Liza Fernandez',   role: 'faculty',   program: 'College of Business',  status: 'active',   created_at: '2022-11-03T00:00:00Z' },
-  { id: 'p8',  email: 'p.mendoza@dlsl.edu.ph',      full_name: 'Paolo Mendoza',    role: 'student',   program: 'BS Information Technology',  year_level: 2, status: 'inactive', created_at: '2024-06-01T00:00:00Z' },
-  { id: 'p9',  email: 's.garcia@dlsl.edu.ph',       full_name: 'Sofia Garcia',     role: 'student',   program: 'BS Psychology',        year_level: 1, status: 'active',   created_at: '2025-06-01T00:00:00Z' },
-  { id: 'p10', email: 'c.torres@dlsl.edu.ph',       full_name: 'Carlo Torres',     role: 'student',   program: 'BS Computer Science',  year_level: 4, status: 'active',   created_at: '2022-06-01T00:00:00Z' },
-  { id: 'p11', email: 'n.aquino@dlsl.edu.ph',       full_name: 'Nadine Aquino',    role: 'librarian', program: 'LRC Staff',            status: 'active',   created_at: '2021-03-20T00:00:00Z' },
-  { id: 'p12', email: 'd.ramos@dlsl.edu.ph',        full_name: 'Diego Ramos',      role: 'student',   program: 'BS Nursing',           year_level: 2, status: 'active',   created_at: '2024-06-01T00:00:00Z' },
-  { id: 'p13', email: 'b.morales@dlsl.edu.ph',      full_name: 'Bea Morales',      role: 'faculty',   program: 'College of Arts & Sciences', status: 'inactive', created_at: '2020-07-01T00:00:00Z' },
-  { id: 'p14', email: 't.pascual@dlsl.edu.ph',      full_name: 'Tomas Pascual',    role: 'student',   program: 'BS Accountancy',       year_level: 3, status: 'active',   created_at: '2023-06-01T00:00:00Z' },
+  { id: 'p1',  email: 'shan.cruz@dlsl.edu.ph',      full_name: 'Shan Cruz',        role: 'student',   id_number: '21-00456', program: 'BS Computer Science',  year_level: 3, status: 'active',   created_at: '2024-06-01T00:00:00Z' },
+  { id: 'p2',  email: 'miguel.santos@dlsl.edu.ph',  full_name: 'Miguel Santos',    role: 'student',   id_number: '22-00891', program: 'BS Information Technology',  year_level: 2, status: 'active',   created_at: '2024-06-01T00:00:00Z' },
+  { id: 'p3',  email: 'ana.reyes@dlsl.edu.ph',      full_name: 'Ana Reyes',        role: 'student',   id_number: '20-00213', program: 'BS Nursing',           year_level: 4, status: 'active',   created_at: '2024-06-01T00:00:00Z' },
+  { id: 'p4',  email: 'j.delacruz@dlsl.edu.ph',     full_name: 'Jerome Dela Cruz', role: 'faculty',   id_number: 'F-2023-014', program: 'College of Engineering', status: 'active',   created_at: '2023-08-15T00:00:00Z' },
+  { id: 'p5',  email: 'k.villanueva@dlsl.edu.ph',   full_name: 'Kristine Villanueva', role: 'student', id_number: '25-00077', program: 'BS Accountancy',      year_level: 1, status: 'inactive', created_at: '2025-01-10T00:00:00Z' },
+  { id: 'p6',  email: 'r.bautista@dlsl.edu.ph',     full_name: 'Rico Bautista',    role: 'student',   id_number: '21-00512', program: 'BS Computer Science',  year_level: 3, status: 'active',   created_at: '2024-06-01T00:00:00Z' },
+  { id: 'p7',  email: 'l.fernandez@dlsl.edu.ph',    full_name: 'Liza Fernandez',   role: 'faculty',   id_number: 'F-2022-009', program: 'College of Business',  status: 'active',   created_at: '2022-11-03T00:00:00Z' },
+  { id: 'p8',  email: 'p.mendoza@dlsl.edu.ph',      full_name: 'Paolo Mendoza',    role: 'student',   id_number: '22-00934', program: 'BS Information Technology',  year_level: 2, status: 'inactive', created_at: '2024-06-01T00:00:00Z' },
+  { id: 'p9',  email: 's.garcia@dlsl.edu.ph',       full_name: 'Sofia Garcia',     role: 'student',   id_number: '25-00142', program: 'BS Psychology',        year_level: 1, status: 'active',   created_at: '2025-06-01T00:00:00Z' },
+  { id: 'p10', email: 'c.torres@dlsl.edu.ph',       full_name: 'Carlo Torres',     role: 'student',   id_number: '19-00331', program: 'BS Computer Science',  year_level: 4, status: 'active',   created_at: '2022-06-01T00:00:00Z' },
+  { id: 'p11', email: 'n.aquino@dlsl.edu.ph',       full_name: 'Nadine Aquino',    role: 'librarian', id_number: 'LRC-003', program: 'LRC Staff',            status: 'active',   created_at: '2021-03-20T00:00:00Z' },
+  { id: 'p12', email: 'd.ramos@dlsl.edu.ph',        full_name: 'Diego Ramos',      role: 'student',   id_number: '23-00188', program: 'BS Nursing',           year_level: 2, status: 'active',   created_at: '2024-06-01T00:00:00Z' },
+  { id: 'p13', email: 'b.morales@dlsl.edu.ph',      full_name: 'Bea Morales',      role: 'faculty',   id_number: 'F-2020-002', program: 'College of Arts & Sciences', status: 'inactive', created_at: '2020-07-01T00:00:00Z' },
+  { id: 'p14', email: 't.pascual@dlsl.edu.ph',      full_name: 'Tomas Pascual',    role: 'student',   id_number: '23-00256', program: 'BS Accountancy',       year_level: 3, status: 'active',   created_at: '2023-06-01T00:00:00Z' },
 ]
 
 export const ROLE_LABEL: Record<UserRole, string> = {

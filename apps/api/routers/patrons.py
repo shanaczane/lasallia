@@ -10,6 +10,16 @@ router = APIRouter(prefix="/users", tags=["patrons"])
 
 MAX_YEAR_LEVEL = 8  # generous ceiling — covers every real program length (4-6 yrs) with room to spare
 
+# Same shape as routers/books.py's _check_accession_conflict / routers/
+# auth.py's own copy of this check for a self-service edit — pre-checked
+# with a SELECT rather than relying on the DB's unique index (0045) to
+# reject it, so a collision comes back as a readable 400 instead of a raw
+# integrity-error 500.
+def _check_id_number_conflict(admin, id_number: str, exclude_user_id: str) -> None:
+    res = admin.table("profiles").select("id").eq("id_number", id_number).neq("id", exclude_user_id).execute()
+    if res.data:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f'ID number "{id_number}" is already in use by another patron')
+
 # Librarian-only management view over every registered account (build plan
 # 5.5). profiles_select_librarian (0008) is a role check, not a row check —
 # is_librarian() doesn't reference the row at all — so it grants a
@@ -38,7 +48,9 @@ def list_patrons(
     if needle:
         patrons = [
             p for p in patrons
-            if needle in (p.get("full_name") or "").lower() or needle in (p.get("email") or "").lower()
+            if needle in (p.get("full_name") or "").lower()
+            or needle in (p.get("email") or "").lower()
+            or needle in (p.get("id_number") or "").lower()
         ]
     return patrons
 
@@ -61,6 +73,11 @@ def update_patron(
         changes["college"] = changes["college"].strip() or None
 
     admin = get_admin_client()
+
+    if "id_number" in changes and changes["id_number"] is not None:
+        changes["id_number"] = changes["id_number"].strip() or None
+        if changes["id_number"]:
+            _check_id_number_conflict(admin, changes["id_number"], user_id)
 
     # A patron currently holding a book is still accountable for it — losing
     # access (and showing up as "inactive" everywhere) shouldn't be a way to

@@ -12,7 +12,7 @@ import { usePathname } from "next/navigation"
 import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
 import { StudentCountsProvider, useStudentCounts } from "./StudentCountsContext"
 import { cn } from "@/lib/utils"
-import { getUser, refreshCachedUser } from "@/lib/auth"
+import { getUser, refreshCachedUser, type UserProfile } from "@/lib/auth"
 import { CompleteProfileModal } from "@/components/ui/profile/CompleteProfileModal"
 import {
   LayoutDashboard,
@@ -104,7 +104,7 @@ function StudentLayoutInner({
   const [displayName, setDisplayName] = useState(userName ?? "")
   const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
   const [displayEmail, setDisplayEmail] = useState("")
-  const [profileRole, setProfileRole] = useState<"student" | "faculty" | null>(null)
+  const [profileSeed, setProfileSeed] = useState<UserProfile | null>(null)
   const [isFaculty, setIsFaculty] = useState(false)
 
   useLayoutEffectSafe(() => {
@@ -133,11 +133,14 @@ function StudentLayoutInner({
   // level; a faculty account — role assigned automatically at signup from
   // the email's local part, see scripts/reclassify_dlsl_roles.py — only
   // needs a college; there's no librarian UI to change a role by hand).
-  // The cached login copy can be stale (a librarian may have filled these
-  // in since), so confirm against the API before asking.
-  const isIncomplete = (u: { role: string; program?: string | null; year_level?: number | null; college?: string | null }) =>
-    u.role === "student" ? !u.program || u.year_level == null
-    : u.role === "faculty" ? !u.college
+  // Both also need id_number (0045) — the enrollment spreadsheet never
+  // carried one (see import_rfid_enrollment.py), so every real account
+  // predates this field. The cached login copy can be stale (a librarian
+  // may have filled these in since), so confirm against the API before
+  // asking.
+  const isIncomplete = (u: { role: string; program?: string | null; year_level?: number | null; college?: string | null; id_number?: string | null }) =>
+    u.role === "student" ? !u.program || u.year_level == null || !u.id_number
+    : u.role === "faculty" ? !u.college || !u.id_number
     : false
 
   useEffect(() => {
@@ -146,7 +149,7 @@ function StudentLayoutInner({
     let cancelled = false
     refreshCachedUser().then((fresh) => {
       if (cancelled || !fresh || !isIncomplete(fresh)) return
-      if (fresh.role === "student" || fresh.role === "faculty") setProfileRole(fresh.role)
+      if (fresh.role === "student" || fresh.role === "faculty") setProfileSeed(fresh)
     })
     return () => { cancelled = true }
   }, [])
@@ -308,7 +311,9 @@ function StudentLayoutInner({
         <div className="w-full">{children}</div>
       </main>
 
-      {profileRole && <CompleteProfileModal role={profileRole} onDone={() => setProfileRole(null)} />}
+      {profileSeed && (profileSeed.role === "student" || profileSeed.role === "faculty") && (
+        <CompleteProfileModal role={profileSeed.role} initial={profileSeed} onDone={() => setProfileSeed(null)} />
+      )}
     </div>
   )
 }

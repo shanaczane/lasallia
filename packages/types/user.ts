@@ -10,6 +10,11 @@ export type UserProfile = {
   // Every reader must handle null, not assume a name was ever set.
   full_name: string | null
   role: UserRole
+  // School-issued student/faculty number — unique same as email, just
+  // assigned by the school instead of chosen by the account holder.
+  // Nullable for the same reasons `program`/`college` are: not backfilled
+  // for every existing row, and a guest/librarian account never gets one.
+  id_number?: string
   program?: string
   // One of the catalog's fixed college codes (apps/web/lib/colleges.ts).
   // Nullable — not backfilled for every existing row; the frontend falls

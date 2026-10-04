@@ -140,7 +140,8 @@ function PatronsPageContent() {
         !q ||
         (p.full_name ?? "").toLowerCase().includes(q) ||
         p.email.toLowerCase().includes(q) ||
-        (p.program ?? "").toLowerCase().includes(q)
+        (p.program ?? "").toLowerCase().includes(q) ||
+        (p.id_number ?? "").toLowerCase().includes(q)
       const matchesRole = roleFilter === "all" || p.role === roleFilter
       return matchesQuery && matchesRole
     })
@@ -155,6 +156,7 @@ function PatronsPageContent() {
   const exportPatronsCsv = () => downloadCsv("patrons.csv", filtered.map((p) => ({
     name: p.full_name ?? "",
     email: p.email,
+    id_number: p.id_number ?? "",
     role: ROLE_LABEL[p.role],
     program: p.program ?? "",
     year_level: p.year_level ?? "",

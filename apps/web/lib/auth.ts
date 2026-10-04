@@ -12,6 +12,7 @@ export type UserProfile = {
   program?: string | null
   year_level?: number | null
   college?: string | null
+  id_number?: string | null
 }
 
 type TokenResponse = {
@@ -168,6 +169,7 @@ export async function updateAcademicProfile(fields: {
   program?: string
   year_level?: number
   college?: string | null
+  id_number?: string
 }): Promise<UserProfile> {
   const res = await fetch(`${API_URL}/auth/me`, {
     method: "PATCH",

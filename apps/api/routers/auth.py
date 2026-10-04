@@ -9,8 +9,21 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 MIN_PASSWORD_LENGTH = 8
 MAX_YEAR_LEVEL = 8  # same ceiling routers/patrons.py enforces for a librarian's edit
 
+# Same shape as routers/books.py's _check_accession_conflict — pre-checked
+# with a SELECT rather than relying on the DB's unique index (0045) to
+# reject it, so a collision comes back as a readable 400 instead of a raw
+# integrity-error 500. routers/patrons.py has its own copy of this for a
+# librarian's edit, same duplication MAX_YEAR_LEVEL above already has.
+def _check_id_number_conflict(id_number: str, exclude_user_id: str) -> None:
+    res = (
+        get_admin_client().table("profiles")
+        .select("id").eq("id_number", id_number).neq("id", exclude_user_id).execute()
+    )
+    if res.data:
+        raise HTTPException(status.HTTP_409_CONFLICT, f'ID number "{id_number}" is already in use by another account')
+
 def _fetch_profile(user_id: str) -> dict:
-    res = get_admin_client().table("profiles").select("role, full_name, program, year_level, college, status").eq("id", user_id).single().execute()
+    res = get_admin_client().table("profiles").select("role, full_name, program, year_level, college, id_number, status").eq("id", user_id).single().execute()
     return res.data or {}
 
 def _build_token_response(session, sb_user) -> TokenResponse:
@@ -34,6 +47,7 @@ def _build_token_response(session, sb_user) -> TokenResponse:
             program=profile.get("program"),
             year_level=profile.get("year_level"),
             college=profile.get("college"),
+            id_number=profile.get("id_number"),
             status=profile.get("status"),
         ),
     )
@@ -86,9 +100,11 @@ def update_me(body: UpdateProfileRequest, user: UserProfile = Depends(get_curren
     # program, and a librarian's is set by another librarian through the
     # Patrons screen. Faculty have no year level (and their "program" is a
     # college, not a degree program — see routers/patrons.py's comment on
-    # the same distinction), so program/year_level are student-only; college
-    # is the one field both self-service roles can set.
-    if {"program", "year_level", "college"} & sent.keys():
+    # the same distinction), so program/year_level are student-only;
+    # college and id_number (0045 — a faculty number is exactly as much
+    # "theirs" to set as a student number) are the fields both self-service
+    # roles can set.
+    if {"program", "year_level", "college", "id_number"} & sent.keys():
         if user.role not in ("student", "faculty"):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only students and faculty can set these fields")
         if "program" in sent:
@@ -107,6 +123,12 @@ def update_me(body: UpdateProfileRequest, user: UserProfile = Depends(get_curren
             changes["year_level"] = year
         if "college" in sent:
             changes["college"] = (sent["college"] or "").strip() or None
+        if "id_number" in sent:
+            id_number = (sent["id_number"] or "").strip()
+            if not id_number:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "ID number can't be empty")
+            _check_id_number_conflict(id_number, user.id)
+            changes["id_number"] = id_number
 
     get_admin_client().table("profiles").update(changes).eq("id", user.id).execute()
     invalidate_profile(user.id)
@@ -118,6 +140,7 @@ def update_me(body: UpdateProfileRequest, user: UserProfile = Depends(get_curren
         program=changes.get("program", user.program),
         year_level=changes.get("year_level", user.year_level),
         college=changes["college"] if "college" in changes else user.college,
+        id_number=changes.get("id_number", user.id_number),
     )
 
 # Settings' Account tab "Change Password". current_password is verified by

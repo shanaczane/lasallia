@@ -1,8 +1,10 @@
 // components/ui/profile/CompleteProfileModal.tsx
-// Shown once to a student whose program or year level is still empty — e.g.
-// someone who signed in with Google but wasn't in the librarian's card
-// enrollment spreadsheet, so no account was pre-filled for them. Saves via
-// PATCH /auth/me; never asks for a card (only a librarian assigns those).
+// Shown once to a student/faculty account missing program/year level/college
+// or id_number — e.g. someone who signed in with Google but wasn't in the
+// librarian's card enrollment spreadsheet, so no account was pre-filled for
+// them, or (for id_number specifically) any account that predates that
+// column. Saves via PATCH /auth/me; never asks for a card (only a librarian
+// assigns those).
 //
 // The password offer (a Google sign-in never has one) used to live here
 // too, stacked under these fields — too much on one screen for a brand-new
@@ -26,12 +28,24 @@ const fieldClass = cn(
   "focus:outline-none focus:border-green-700 focus:shadow-(--shadow-focus-green)"
 )
 
-export function CompleteProfileModal({ role, onDone }: { role: "student" | "faculty"; onDone: () => void }) {
+type Seed = {
+  program?: string | null
+  year_level?: number | null
+  college?: string | null
+  id_number?: string | null
+}
+
+// Only id_number is ever guaranteed missing here — isIncomplete (see
+// StudentLayout.tsx) also re-opens this for an otherwise-complete account
+// that predates that column, so program/year_level/college (already set)
+// need to come in pre-filled rather than forcing a redundant re-entry.
+export function CompleteProfileModal({ role, initial, onDone }: { role: "student" | "faculty"; initial?: Seed; onDone: () => void }) {
   const isFaculty = role === "faculty"
 
-  const [program, setProgram] = useState("")
-  const [college, setCollege] = useState("")
-  const [yearLevel, setYearLevel] = useState("")
+  const [idNumber, setIdNumber] = useState(initial?.id_number ?? "")
+  const [program, setProgram] = useState(initial?.program ?? "")
+  const [college, setCollege] = useState(initial?.college ?? "")
+  const [yearLevel, setYearLevel] = useState(initial?.year_level != null ? String(initial.year_level) : "")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
 
@@ -42,7 +56,7 @@ export function CompleteProfileModal({ role, onDone }: { role: "student" | "facu
   const suggested = isFaculty ? null : collegeForProgram(program)
   const effectiveCollege = college || suggested || ""
 
-  const canSubmit = isFaculty ? !!effectiveCollege : !!program.trim() && !!yearLevel
+  const canSubmit = !!idNumber.trim() && (isFaculty ? !!effectiveCollege : !!program.trim() && !!yearLevel)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -51,8 +65,8 @@ export function CompleteProfileModal({ role, onDone }: { role: "student" | "facu
     try {
       await updateAcademicProfile(
         isFaculty
-          ? { college: effectiveCollege }
-          : { program: program.trim(), year_level: Number(yearLevel), college: effectiveCollege || null }
+          ? { id_number: idNumber.trim(), college: effectiveCollege }
+          : { id_number: idNumber.trim(), program: program.trim(), year_level: Number(yearLevel), college: effectiveCollege || null }
       )
       onDone()
     } catch (err: unknown) {
@@ -76,6 +90,21 @@ export function CompleteProfileModal({ role, onDone }: { role: "student" | "facu
         </p>
 
         <div className="mt-4 flex flex-col gap-3">
+          <div>
+            <label htmlFor="cp-id-number" className="mb-1 block font-semibold text-ink-900" style={labelStyle}>
+              {isFaculty ? "Faculty number" : "Student number"}
+            </label>
+            <input
+              id="cp-id-number"
+              required
+              value={idNumber}
+              onChange={(e) => setIdNumber(e.target.value)}
+              placeholder={isFaculty ? "e.g. F-2024-0123" : "e.g. 21-00456"}
+              className={fieldClass}
+              style={labelStyle}
+            />
+          </div>
+
           {!isFaculty && (
             <div>
               <label htmlFor="cp-program" className="mb-1 block font-semibold text-ink-900" style={labelStyle}>Program</label>
