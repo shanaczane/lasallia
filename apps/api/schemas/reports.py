@@ -75,6 +75,11 @@ class FineEntryRow(BaseModel):
     kind: str  # "unsettled" | "accruing" | "paid"
     amount: float
     detail: str
+    # Lets the frontend call PATCH /loans/{loan_id}/settle-fine directly
+    # from this report, same action PatronProfileModal already offers
+    # per-patron — without this, recording a payment here wasn't possible
+    # at all (the aggregate totals have nowhere to point the write at).
+    loan_id: str
 
 
 class FineRow(BaseModel):
