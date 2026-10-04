@@ -6,7 +6,7 @@ from routers import auth, book_requests, books, borrow, chat, holds, inhouse, lo
 
 app = FastAPI(
     title="Lasallia API",
-    description="AI-Powered Smart Library System for De La Salle Lipa",
+    description="AI-Powered Smart Library System for DLSL",
     version="1.0.0",
 )
 
