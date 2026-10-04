@@ -188,6 +188,25 @@ def send_message(
             return
 
         messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        # The caller's own profile (already resolved above — live, not
+        # cached) — lets "books for my program" or "my college" resolve
+        # without the student restating what the system already knows
+        # about them. Guests and librarians (no program/college) simply
+        # don't get this message.
+        if user is not None and (user.program or user.college):
+            profile_bits = [f"program: {user.program}" if user.program else None,
+                             f"year level: {user.year_level}" if user.year_level else None,
+                             f"college: {user.college}" if user.college else None]
+            messages.append({
+                "role": "system",
+                "content": (
+                    "The current student's own profile — " + ", ".join(b for b in profile_bits if b) + ". "
+                    "When they refer to \"my program\", \"my college\", or \"my year level\" without "
+                    "spelling it out, use these values yourself (e.g. include the program/college name "
+                    "in your search_catalog query) rather than asking them to repeat what you already know. "
+                    "This applies only to this logged-in student, never to anyone else they mention."
+                ),
+            })
         messages += [{"role": m.role, "content": m.content} for m in prior_history]
         messages.append({"role": "user", "content": body.message})
         tools = [spec.schema for spec in registry.available_tools()]
