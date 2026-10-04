@@ -6,7 +6,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, CheckCircle2, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UserProfile } from "@lasallia/types"
 import { fetchPatrons, updatePatronStatus } from "@/lib/users"
@@ -127,6 +127,26 @@ function Paginator({
   )
 }
 
+// ─── Toast ────────────────────────────────────────────────────────────────────
+// Same pattern as app/librarian/catalog/page.tsx's Toast — this screen had
+// none, so an outstanding-loan rejection from handleToggleStatus used to
+// fail completely silently.
+
+function Toast({ message, variant }: { message: string; variant: "success" | "error" }) {
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] flex items-center gap-2 px-4 py-2.5 bg-ink-900 text-white rounded-full shadow-(--shadow-lg) pointer-events-none max-w-[90vw]">
+      {variant === "success" ? (
+        <CheckCircle2 size={15} className="text-green-400 shrink-0" />
+      ) : (
+        <AlertCircle size={15} className="text-danger shrink-0" />
+      )}
+      <span style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+        {message}
+      </span>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function PatronsPageContent() {
@@ -148,6 +168,12 @@ function PatronsPageContent() {
 
   const [viewing, setViewing] = useState<UserProfile | null>(null)
   const [confirmingStatus, setConfirmingStatus] = useState<UserProfile | null>(null)
+  const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null)
+
+  function showToast(message: string, variant: "success" | "error") {
+    setToast({ message, variant })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   // Deep link from elsewhere (e.g. the dashboard's activity panel) — opens
   // straight to that patron's profile once the list has loaded, instead of
@@ -197,9 +223,16 @@ function PatronsPageContent() {
 
     try {
       await updatePatronStatus(userId, nextStatus)
-    } catch {
-      // Revert on failure — the optimistic update above was wrong.
+      showToast(
+        `${current?.full_name ?? "Patron"} ${nextStatus === "inactive" ? "deactivated" : "activated"}.`,
+        "success"
+      )
+    } catch (err) {
+      // Revert on failure — the optimistic update above was wrong (e.g. the
+      // API refused because this patron still has an outstanding loan).
       setPatrons((prev) => prev.map((p) => (p.id === userId ? { ...p, status: current?.status } : p)))
+      setViewing((v) => (v && v.id === userId ? { ...v, status: current?.status } : v))
+      showToast(err instanceof Error ? err.message : "Could not update this patron.", "error")
     }
   }
 
@@ -250,6 +283,8 @@ function PatronsPageContent() {
           onConfirm={handleToggleStatus}
         />
       )}
+
+      {toast && <Toast message={toast.message} variant={toast.variant} />}
     </div>
   )
 }
