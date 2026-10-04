@@ -16,6 +16,7 @@ import { Loader2, AlertCircle } from "lucide-react"
 import { updateAcademicProfile } from "@/lib/auth"
 import { COLLEGES } from "@/lib/colleges"
 import { collegeForProgram } from "@/lib/collegeForProgram"
+import { PROGRAM_GROUPS } from "@/lib/programs"
 import { cn } from "@/lib/utils"
 
 const YEAR_LEVELS = [1, 2, 3, 4, 5, 6]
@@ -34,7 +35,7 @@ export function CompleteProfileModal({ role, onDone }: { role: "student" | "facu
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
 
-  // Suggest a college from the program as they type, until they pick one.
+  // Suggest a college once a program is picked, until they override it.
   // Faculty have no program field to guess from — they pick their college
   // directly (see routers/patrons.py: a faculty row's "program" column
   // holds a college name, not a degree program, same as the mock data).
@@ -78,15 +79,23 @@ export function CompleteProfileModal({ role, onDone }: { role: "student" | "facu
           {!isFaculty && (
             <div>
               <label htmlFor="cp-program" className="mb-1 block font-semibold text-ink-900" style={labelStyle}>Program</label>
-              <input
+              <select
                 id="cp-program"
                 required
                 value={program}
                 onChange={(e) => setProgram(e.target.value)}
-                placeholder="e.g. BS Computer Science"
                 className={fieldClass}
                 style={labelStyle}
-              />
+              >
+                <option value="">Select your program</option>
+                {PROGRAM_GROUPS.map((g) => (
+                  <optgroup key={g.college} label={g.college}>
+                    {g.programs.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
             </div>
           )}
 

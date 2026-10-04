@@ -7,14 +7,16 @@
 // patron's college should read the same way the catalog itself organizes
 // collections, not a second, inconsistent spelling of the same college.
 //
-// Keyword-matched rather than an exact lookup table: real `program` values
-// vary in how they're typed ("BS Information Tech" vs "BSIT" vs "BS
-// Information Technology"), and DLSL's exact program roster isn't captured
-// anywhere in this codebase to build an exact table from. Extend the list
-// below if a real program/college string comes through unresolved.
+// Checks the exact DLSL program roster (lib/programs.ts) first — every
+// program picked from CompleteProfileModal's dropdown resolves this way.
+// Falls back to keyword matching for older free-typed values already on
+// file ("BS Information Tech" vs "BSIT" vs "BS Information Technology")
+// that predate the fixed dropdown. Extend the list below if a real
+// program/college string comes through unresolved.
 // Returns null rather than guessing when nothing matches — same fallback
 // shape as apps/api/scripts/shelf_location.py's UNASSIGNED.
 import { COLLEGES } from './colleges'
+import { collegeCodeForProgram } from './programs'
 
 const KEYWORD_TO_COLLEGE: [RegExp, string][] = [
   // Order matters: "engineering"/"business" are broad fallbacks (a faculty
@@ -35,6 +37,8 @@ export function collegeForProgram(program: string | null | undefined): string | 
   const trimmed = program.trim()
   const exact = COLLEGES.find((c) => c.toLowerCase() === trimmed.toLowerCase())
   if (exact) return exact
+  const fromRoster = collegeCodeForProgram(trimmed)
+  if (fromRoster) return fromRoster
   for (const [pattern, college] of KEYWORD_TO_COLLEGE) {
     if (pattern.test(trimmed)) return college
   }
