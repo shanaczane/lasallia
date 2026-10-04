@@ -1122,7 +1122,7 @@ function ActiveBorrowersList({
               )
             })}
           </div>
-          <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+          <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} className="mt-8" />
         </>
       )}
     </div>
@@ -1217,7 +1217,7 @@ function ReshelvingQueueList({
               )
             })}
           </div>
-          <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+          <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} className="mt-8" />
         </>
       )}
     </div>
@@ -1370,7 +1370,7 @@ function SessionList({ tab, records }: { tab: "borrow" | "return" | "reshelving"
           </div>
         ))}
       </div>
-      <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+      <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} className="mt-8" />
     </>
   )
 }
