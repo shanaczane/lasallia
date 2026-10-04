@@ -4,9 +4,10 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from core.deps import get_optional_user, require_librarian
+from core.loans import find_removal_blocker
 from core.supabase import get_admin_client, get_client
 from schemas.auth import UserProfile
-from schemas.book import Book, BookCopy, BookSearchResponse, BookUpdate, BookWrite
+from schemas.book import AddCopiesRequest, Book, BookCopy, BookSearchResponse, BookUpdate, BookWrite
 
 router = APIRouter(prefix="/books", tags=["books"])
 
@@ -160,6 +161,23 @@ def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends
     book = _apply_real_availability(res.data, copies_res.data)
     return book[0]
 
+@router.post("/{book_id}/add-copies", response_model=Book)
+def add_copies(book_id: str, body: AddCopiesRequest, librarian: UserProfile = Depends(require_librarian)):
+    admin = get_admin_client()
+    existing = admin.table("books").select("total_copies, available_copies").eq("id", book_id).execute()
+    if not existing.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
+    book = existing.data[0]
+
+    payload = {
+        "total_copies": (book.get("total_copies") or 0) + body.count,
+        "available_copies": (book.get("available_copies") or 0) + body.count,
+    }
+    res = admin.table("books").update(payload).eq("id", book_id).execute()
+
+    copies_res = admin.table("book_copies").select("book_id, status").eq("book_id", book_id).execute()
+    return _apply_real_availability(res.data, copies_res.data)[0]
+
 @router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_book(book_id: str, librarian: UserProfile = Depends(require_librarian)):
     admin = get_admin_client()
@@ -168,24 +186,12 @@ def delete_book(book_id: str, librarian: UserProfile = Depends(require_librarian
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
     title = book_res.data[0]["title"]
 
-    copy_ids = [c["id"] for c in admin.table("book_copies").select("id").eq("book_id", book_id).execute().data]
-    if copy_ids:
-        outstanding = (
-            admin.table("loans")
-            .select("id", count="exact")
-            .in_("book_copy_id", copy_ids)
-            .in_("status", ["active", "overdue"])
-            .execute()
-        )
-        if outstanding.count:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                f'"{title}" cannot be deleted — it has an outstanding loan. Return the book first or archive it instead.',
-            )
+    blocker = find_removal_blocker(admin, book_id)
+    if blocker:
+        raise HTTPException(status.HTTP_409_CONFLICT, f'"{title}" cannot be deleted — it {blocker}.')
 
     try:
-        if copy_ids:
-            admin.table("book_copies").delete().eq("book_id", book_id).execute()
+        admin.table("book_copies").delete().eq("book_id", book_id).execute()
         admin.table("books").delete().eq("id", book_id).execute()
     except Exception:
         raise HTTPException(
