@@ -8,7 +8,7 @@
 // footer summary + pagination — so the tabs read as one system.
 "use client"
 
-import { Fragment, Suspense, cloneElement, useCallback, useEffect, useRef, useState } from "react"
+import { Fragment, Suspense, cloneElement, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart2,
@@ -1113,6 +1113,25 @@ function WeedingPanel() {
 
   useEffect(() => { load() }, [])
 
+  // Each "archived" row is a historical log entry, not current state — a
+  // book archived, then later restored, still has that old "archived" row
+  // on record. Only the most recent event for a given book reflects
+  // whether it's actually still archived right now, so Restore should only
+  // ever appear on that one row, computed over the full history (not just
+  // whatever the search box currently has visible).
+  const currentEventIdByBook = useMemo(() => {
+    const latestAt = new Map<string, string>()
+    const current = new Map<string, string>()
+    for (const e of events) {
+      const prev = latestAt.get(e.book_id)
+      if (!prev || e.occurred_at > prev) {
+        latestAt.set(e.book_id, e.occurred_at)
+        current.set(e.book_id, e.id)
+      }
+    }
+    return current
+  }, [events])
+
   async function handleArchive(c: WeedingCandidate) {
     setBusyId(c.book_id)
     try {
@@ -1288,7 +1307,7 @@ function WeedingPanel() {
                           {new Date(e.occurred_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
                         </td>
                         <td className="py-2.5 px-4">
-                          {e.event_type === "archived" && (
+                          {e.event_type === "archived" && currentEventIdByBook.get(e.book_id) === e.id && (
                             <button
                               onClick={() => handleRestore(e.book_id, e.book_title)}
                               disabled={busyId === e.book_id}
