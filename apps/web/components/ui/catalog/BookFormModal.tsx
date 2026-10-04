@@ -63,6 +63,12 @@ type BookFormModalProps = {
   isOpen: boolean
   onClose: () => void
   onSubmit: (data: BookFormData) => void
+  // Already-loaded catalog rows, so a duplicate accession number is caught
+  // live as the librarian types rather than only after a 409 from the API.
+  existingAccessionNumbers?: { id: string; accession_no?: string | null }[]
+  // A server-side rejection (e.g. the same duplicate check, re-run
+  // authoritatively on submit) surfaced inline instead of only as a toast.
+  externalError?: { field: keyof BookFormData; message: string } | null
 }
 
 const EMPTY_FORM: BookFormData = {
@@ -394,12 +400,27 @@ function CoverUpload({
 
 type FormErrors = Partial<Record<keyof BookFormData, string>>
 
-function validate(data: BookFormData): FormErrors {
+function validate(
+  data: BookFormData,
+  existingAccessionNumbers: { id: string; accession_no?: string | null }[],
+  currentBookId?: string,
+): FormErrors {
   const errors: FormErrors = {}
   if (!data.title.trim())       errors.title       = 'Title is required'
   if (data.authors.length === 0) errors.authors    = 'At least one author is required'
   if (!data.call_number.trim()) errors.call_number = 'Call number is required'
-  if (!data.accession_no.trim()) errors.accession_no = 'Accession number is required'
+
+  const trimmedAccession = data.accession_no.trim()
+  if (!trimmedAccession) {
+    errors.accession_no = 'Accession number is required'
+  } else if (
+    existingAccessionNumbers.some(
+      (b) => b.id !== currentBookId && (b.accession_no ?? '').trim().toLowerCase() === trimmedAccession.toLowerCase()
+    )
+  ) {
+    errors.accession_no = 'This accession number is already in use by another book'
+  }
+
   if (!data.floor.trim())       errors.floor       = 'Floor is required'
   if (!data.aisle.trim())       errors.aisle       = 'Aisle is required'
   if (!data.format)             errors.format      = 'Format is required'
@@ -435,7 +456,9 @@ function firstErrorTab(errors: FormErrors): TabKey | null {
 
 // ─── Main modal ───────────────────────────────────────────────────────────────
 
-export function BookFormModal({ mode, book, isOpen, onClose, onSubmit }: BookFormModalProps) {
+export function BookFormModal({
+  mode, book, isOpen, onClose, onSubmit, existingAccessionNumbers = [], externalError,
+}: BookFormModalProps) {
   const [form, setForm] = useState<BookFormData>(EMPTY_FORM)
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitted, setSubmitted] = useState(false)
@@ -499,6 +522,16 @@ export function BookFormModal({ mode, book, isOpen, onClose, onSubmit }: BookFor
     return () => window.removeEventListener('keydown', handler)
   }, [isOpen, onClose])
 
+  // A 409 from the create/update call (e.g. another book claimed the same
+  // accession number between page load and submit) — shown on the right
+  // field/tab, same as a locally-caught validation error.
+  useEffect(() => {
+    if (!externalError) return
+    setErrors((e) => ({ ...e, [externalError.field]: externalError.message }))
+    const badTab = TAB_FOR_FIELD[externalError.field]
+    if (badTab) setTab(badTab)
+  }, [externalError])
+
   function set<K extends keyof BookFormData>(key: K, value: BookFormData[K]) {
     setForm((f) => ({ ...f, [key]: value }))
     if (submitted) {
@@ -523,7 +556,7 @@ export function BookFormModal({ mode, book, isOpen, onClose, onSubmit }: BookFor
 
   function handleSubmit() {
     setSubmitted(true)
-    const errs = validate(form)
+    const errs = validate(form, existingAccessionNumbers, book?.id)
     if (Object.keys(errs).length > 0) {
       setErrors(errs)
       const badTab = firstErrorTab(errs)
