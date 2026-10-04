@@ -46,7 +46,7 @@ import { CSS } from "@dnd-kit/utilities"
 import { cn } from "@/lib/utils"
 import { fetchBooks } from "@/lib/books"
 import { fetchPatrons, updatePatronStatus } from "@/lib/users"
-import { fetchLoans, type Loan } from "@/lib/kiosk"
+import { fetchLoans, settleFine, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
 import { buildFeed, TX_CONFIG, type FeedItem } from "@/lib/activity"
 import { fetchBookRequests, updateBookRequest, type BookRequest, type BookRequestStatus } from "@/lib/bookRequests"
@@ -72,6 +72,7 @@ import {
   type TopPatron,
   type OverdueRow,
   type FineRow,
+  type FineEntry,
   type LibraryStats,
   type ProgramUsage,
   type TransactionTrendPoint,
@@ -129,6 +130,7 @@ function ReportTableCard({
   query,
   onQueryChange,
   searchPlaceholder = "Search this report…",
+  headerExtra,
   onExport,
   exportDisabled,
   children,
@@ -142,6 +144,11 @@ function ReportTableCard({
   query?: string
   onQueryChange?: (v: string) => void
   searchPlaceholder?: string
+  // An extra filter control (e.g. a checkbox) rendered in the header row,
+  // between the title and the search box — for a filter beyond plain text
+  // search that still belongs with the other header-level controls, not
+  // floating as its own row above the table.
+  headerExtra?: React.ReactNode
   onExport: () => void
   exportDisabled: boolean
   children: React.ReactNode
@@ -161,7 +168,8 @@ function ReportTableCard({
             {subtitle}
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-3 shrink-0 flex-wrap">
+          {headerExtra}
           {onQueryChange && (
             <div className="relative">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none" />
@@ -1334,6 +1342,31 @@ function WeedingPanel() {
 // ─── Activity log table ─────────────────────────────────────────────────────
 const ACTIVITY_PAGE_SIZE = 10
 
+type ActivityStatusFilter = "all" | "active_borrow" | "recent_return" | "ongoing_reserve"
+
+const ACTIVITY_STATUS_LABEL: Record<ActivityStatusFilter, string> = {
+  all: "activity",
+  active_borrow: "active borrowing",
+  recent_return: "recent returns",
+  ongoing_reserve: "ongoing reservations",
+}
+
+function matchesStatus(tx: FeedItem, filter: ActivityStatusFilter): boolean {
+  switch (filter) {
+    case "all":
+      return true
+    case "active_borrow":
+      // Still checked out — not yet returned.
+      return tx.type === "checkout" && !!tx.loan && tx.loan.status !== "returned"
+    case "recent_return":
+      return tx.type === "return"
+    case "ongoing_reserve":
+      // Still waiting on the hold shelf or in the queue — not yet picked
+      // up, cancelled, or expired.
+      return tx.type === "reserve" && !!tx.reservation && (tx.reservation.status === "pending" || tx.reservation.status === "ready")
+  }
+}
+
 function ActivityLogTable({
   feed,
   onExport,
@@ -1356,7 +1389,26 @@ function ActivityLogTable({
   dateTo?: string
 }) {
   const [query, setQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState<ActivityStatusFilter>("all")
   const [page, setPage] = useState(1)
+
+  // Three statuses a librarian actually watches for, distinct from the
+  // Type column's plain checkout/return/reserve split: a checkout only
+  // counts here while it's still out (not yet returned), and a
+  // reservation only while it's still pending/ready — not every row of
+  // that type regardless of where it ended up. Derived from the feed's
+  // own rows (each already carries its full Loan/Reservation record)
+  // rather than a second fetch, same "no second source of truth" rule
+  // buildFeed itself follows.
+  const statusCounts = useMemo(() => {
+    const counts: Record<ActivityStatusFilter, number> = { all: feed.length, active_borrow: 0, recent_return: 0, ongoing_reserve: 0 }
+    for (const tx of feed) {
+      if (matchesStatus(tx, "active_borrow")) counts.active_borrow++
+      if (matchesStatus(tx, "recent_return")) counts.recent_return++
+      if (matchesStatus(tx, "ongoing_reserve")) counts.ongoing_reserve++
+    }
+    return counts
+  }, [feed])
 
   const fromTs = dateFrom ? new Date(dateFrom).getTime() : null
   const toTs = dateTo ? new Date(dateTo).getTime() : null
@@ -1364,12 +1416,13 @@ function ActivityLogTable({
   const filtered = feed.filter((tx) => {
     if (fromTs !== null && tx.timestamp < fromTs) return false
     if (toTs !== null && tx.timestamp > toTs) return false
+    if (!matchesStatus(tx, statusFilter)) return false
     if (!query.trim()) return true
     const q = query.toLowerCase()
     return tx.user.toLowerCase().includes(q) || tx.item.toLowerCase().includes(q)
   })
 
-  const filterKey = `${query}|${dateFrom}|${dateTo}`
+  const filterKey = `${query}|${statusFilter}|${dateFrom}|${dateTo}`
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
   if (filterKey !== prevFilterKey) {
     setPrevFilterKey(filterKey)
@@ -1386,6 +1439,25 @@ function ActivityLogTable({
       query={query}
       onQueryChange={setQuery}
       searchPlaceholder="Search patron or title…"
+      headerExtra={
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as ActivityStatusFilter)}
+          className="appearance-none pl-3 pr-8 py-1.5 rounded border border-ink-300 bg-white text-ink-800 focus:outline-none focus:ring-2 focus:ring-green-500 cursor-pointer"
+          style={{
+            fontFamily: "var(--font-body)",
+            fontSize: "var(--text-sm-body)",
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "right 10px center",
+          }}
+        >
+          <option value="all">All activity ({statusCounts.all})</option>
+          <option value="active_borrow">Active Borrow ({statusCounts.active_borrow})</option>
+          <option value="recent_return">Recent Return ({statusCounts.recent_return})</option>
+          <option value="ongoing_reserve">Ongoing Reserve ({statusCounts.ongoing_reserve})</option>
+        </select>
+      }
       onExport={onExport}
       exportDisabled={filtered.length === 0}
       footerLeft={`${filtered.length} ${filtered.length === 1 ? "event" : "events"} in range`}
@@ -1394,7 +1466,7 @@ function ActivityLogTable({
       onPageChange={setPage}
     >
       {paged.length === 0 ? (
-        <EmptyState text="No activity found." />
+        <EmptyState text={statusFilter === "all" ? "No activity found." : `No ${ACTIVITY_STATUS_LABEL[statusFilter]} found.`} />
       ) : (
         <div className="rounded border border-ink-200 overflow-x-auto">
           <table className="w-full min-w-150">
@@ -1668,7 +1740,19 @@ function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => 
 }
 
 // ─── Fines table — library-wide, not just currently-overdue loans ─────────────
-function FinesTable({ rows, onExport }: { rows: FineRow[]; onExport: () => void }) {
+function FinesTable({
+  rows,
+  onExport,
+  onSettled,
+}: {
+  rows: FineRow[]
+  onExport: () => void
+  // Librarian-side "we already collected this in person" record-keeping
+  // (same action PatronProfileModal offers per-patron) — only "unsettled"
+  // entries get it; "accruing" isn't final until the book is actually
+  // returned, and "paid" ones already show their receipt number.
+  onSettled: (loanId: string, receiptNumber: string) => void
+}) {
   const [query, setQuery] = useState("")
 
   const filtered = query.trim()
@@ -1785,33 +1869,8 @@ function FinesTable({ rows, onExport }: { rows: FineRow[]; onExport: () => void 
                             </p>
                           ) : (
                             <ul className="flex flex-col gap-2">
-                              {row.entries.map((entry, i) => (
-                                <li key={i} className="flex items-center justify-between gap-3 bg-white rounded border border-ink-200 px-3 py-2">
-                                  <div className="min-w-0">
-                                    <p className="text-ink-900 font-medium truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                                      {entry.title}
-                                    </p>
-                                    <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-                                      {entry.detail}
-                                    </p>
-                                  </div>
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    <span
-                                      className={cn(
-                                        "px-2 py-0.5 rounded-sm border font-semibold",
-                                        entry.kind === "unsettled" && "bg-danger-bg text-danger border-danger/30",
-                                        entry.kind === "accruing" && "bg-warn-bg text-warn border-warn/30",
-                                        entry.kind === "paid" && "bg-success-bg text-success border-success/30"
-                                      )}
-                                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
-                                    >
-                                      {entry.kind === "unsettled" ? "Unsettled" : entry.kind === "accruing" ? "Accruing" : "Paid"}
-                                    </span>
-                                    <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                                      ₱{entry.amount.toFixed(2)}
-                                    </span>
-                                  </div>
-                                </li>
+                              {row.entries.map((entry) => (
+                                <FineEntryActionRow key={entry.loan_id} entry={entry} onSettled={onSettled} />
                               ))}
                             </ul>
                           )}
@@ -1826,6 +1885,121 @@ function FinesTable({ rows, onExport }: { rows: FineRow[]; onExport: () => void 
         </div>
       )}
     </ReportTableCard>
+  )
+}
+
+// Same "Record Payment" flow as PatronProfileModal's per-patron Fines
+// tab (receipt number required, PATCH /loans/{id}/settle-fine) — this is
+// the library-wide aggregate view of the same underlying loans, so it
+// gets the same action rather than only being able to look.
+function FineEntryActionRow({
+  entry,
+  onSettled,
+}: {
+  entry: FineEntry
+  onSettled: (loanId: string, receiptNumber: string) => void
+}) {
+  const [settling, setSettling] = useState(false)
+  const [receiptNumber, setReceiptNumber] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState("")
+
+  async function handleConfirm() {
+    const trimmed = receiptNumber.trim()
+    if (!trimmed) {
+      setError("A receipt number is required")
+      return
+    }
+    setSubmitting(true)
+    setError("")
+    try {
+      await settleFine(entry.loan_id, trimmed)
+      onSettled(entry.loan_id, trimmed)
+      setSettling(false)
+      setReceiptNumber("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not record this payment")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <li className="flex flex-col gap-2 bg-white rounded border border-ink-200 px-3 py-2">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <p className="text-ink-900 font-medium truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            {entry.title}
+          </p>
+          <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            {entry.detail}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span
+            className={cn(
+              "px-2 py-0.5 rounded-sm border font-semibold",
+              entry.kind === "unsettled" && "bg-danger-bg text-danger border-danger/30",
+              entry.kind === "accruing" && "bg-warn-bg text-warn border-warn/30",
+              entry.kind === "paid" && "bg-success-bg text-success border-success/30"
+            )}
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+          >
+            {entry.kind === "unsettled" ? "Unsettled" : entry.kind === "accruing" ? "Accruing" : "Paid"}
+          </span>
+          <span className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            ₱{entry.amount.toFixed(2)}
+          </span>
+          {entry.kind === "unsettled" && !settling && (
+            <button
+              type="button"
+              onClick={() => setSettling(true)}
+              className="px-2.5 py-1 rounded-sm border border-ink-300 text-ink-700 hover:bg-ink-50 font-medium transition-colors"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+            >
+              Record Payment
+            </button>
+          )}
+        </div>
+      </div>
+
+      {settling && (
+        <div className="flex items-center gap-2 pt-2 border-t border-ink-100">
+          <input
+            type="text"
+            placeholder="Receipt number, e.g. OR-2026-0001"
+            value={receiptNumber}
+            onChange={(e) => setReceiptNumber(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleConfirm()}
+            autoFocus
+            className="flex-1 px-2.5 py-1.5 rounded-sm border border-ink-200 focus:outline-none focus:ring-1 focus:ring-green-700 focus:border-green-700"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+          />
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={submitting || !receiptNumber.trim()}
+            className="px-3 py-1.5 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+          >
+            {submitting ? "Saving…" : "Confirm Paid"}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setSettling(false); setError(""); setReceiptNumber("") }}
+            className="px-2.5 py-1.5 text-ink-500 hover:text-ink-700 font-medium transition-colors"
+            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {error && (
+        <p className="text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+          {error}
+        </p>
+      )}
+    </li>
   )
 }
 
@@ -2105,6 +2279,30 @@ function ReportsPageContent() {
     paid: r.paid,
     outstanding: r.outstanding,
   })))
+
+  // Patched locally from settleFine's own inputs, same reasoning
+  // PatronProfileModal's own handleFineSettled gives — moves the amount
+  // from unsettled to paid on whichever row/entry holds this loan, rather
+  // than refetching the whole Reports bundle for one settled fine.
+  function handleFineSettled(loanId: string, receiptNumber: string) {
+    const round2 = (n: number) => Math.round(n * 100) / 100
+    setFinesData((prev) =>
+      prev.map((row) => {
+        const entry = row.entries.find((e) => e.loan_id === loanId)
+        if (!entry) return row
+        const amount = entry.amount
+        return {
+          ...row,
+          unsettled: Math.max(0, round2(row.unsettled - amount)),
+          paid: round2(row.paid + amount),
+          outstanding: Math.max(0, round2(row.outstanding - amount)),
+          entries: row.entries.map((e) =>
+            e.loan_id === loanId ? { ...e, kind: "paid" as const, detail: `Paid — receipt ${receiptNumber}` } : e
+          ),
+        }
+      })
+    )
+  }
 
   const exportActivityCsv = () => downloadCsv("activity-log.csv", activityFeed.map((tx) => ({
     date: tx.date,
@@ -2513,7 +2711,7 @@ function ReportsPageContent() {
             </p>
           )}
           <OverdueTable rows={overdueRowsData} onExport={exportOverdueCsv} />
-          <FinesTable rows={finesData} onExport={exportFinesCsv} />
+          <FinesTable rows={finesData} onExport={exportFinesCsv} onSettled={handleFineSettled} />
         </div>
       )}
 
