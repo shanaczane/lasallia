@@ -160,6 +160,39 @@ def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends
     book = _apply_real_availability(res.data, copies_res.data)
     return book[0]
 
+@router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_book(book_id: str, librarian: UserProfile = Depends(require_librarian)):
+    admin = get_admin_client()
+    book_res = admin.table("books").select("id, title").eq("id", book_id).execute()
+    if not book_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
+    title = book_res.data[0]["title"]
+
+    copy_ids = [c["id"] for c in admin.table("book_copies").select("id").eq("book_id", book_id).execute().data]
+    if copy_ids:
+        outstanding = (
+            admin.table("loans")
+            .select("id", count="exact")
+            .in_("book_copy_id", copy_ids)
+            .in_("status", ["active", "overdue"])
+            .execute()
+        )
+        if outstanding.count:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f'"{title}" cannot be deleted — it has an outstanding loan. Return the book first or archive it instead.',
+            )
+
+    try:
+        if copy_ids:
+            admin.table("book_copies").delete().eq("book_id", book_id).execute()
+        admin.table("books").delete().eq("id", book_id).execute()
+    except Exception:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f'"{title}" has related records and can\'t be deleted — try archiving it instead.',
+        )
+
 @router.get("/{book_id}", response_model=Book)
 def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)):
     db = get_client()
