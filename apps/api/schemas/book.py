@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 BookStatus = Literal["available", "borrowed", "reserved", "misplaced"]
 BookFormat = Literal["print", "digital", "reference"]
@@ -49,6 +49,11 @@ class Book(BaseModel):
     vendor: str | None = None
     funding_source: FundingSource | None = None
     notes: str | None = None
+    # core/loans.NON_BORROWABLE_COLLECTION_TYPES ("Reference", "Thesis",
+    # "Capstone", "MTR", "Archives") already blocks borrow/reserve for these
+    # server-side; this field is what lets the frontend hide those actions
+    # up front instead of only failing once clicked.
+    collection_type: str | None = None
     created_at: str
     updated_at: str
 
@@ -106,6 +111,15 @@ class BookWrite(BaseModel):
     vendor: str | None = None
     funding_source: FundingSource | None = None
     notes: str | None = None
+    collection_type: str | None = None
 
 class BookUpdate(BookWrite):
     pass
+
+# POST /books/{book_id}/add-copies — bumps total_copies/available_copies on
+# an existing title rather than cataloging a near-duplicate as a second
+# book. Plain counters, same as a freshly-created book uses (see create_book's
+# own comment) — not book_copies rows, which stay a separate, not-yet-built
+# per-copy tracking feature.
+class AddCopiesRequest(BaseModel):
+    count: int = Field(ge=1)
