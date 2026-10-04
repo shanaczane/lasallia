@@ -1,5 +1,6 @@
 // apps/web/app/librarian/catalog/[bookId]/page.tsx
-// Fix: Add Copy wired to state, responsive layout, bigger cover
+// Fix: Copy Management now shows real book_copies rows (GET /books/{id}/
+// copies) instead of fabricated ones — see CopyManagementTable.tsx.
 
 'use client'
 
@@ -14,13 +15,14 @@ import { programLabel } from '@/lib/programLabels'
 import { useBook } from '@/lib/hooks/useBooks'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
 import type { Book } from '@lasallia/types'
-import { CopyManagementTable, type BookCopy as MockCopy, type CopyStatus } from '@/components/ui/catalog/CopyManagementTable'
+import { CopyManagementTable } from '@/components/ui/catalog/CopyManagementTable'
 import { BookFormModal, type BookFormData } from '@/components/ui/catalog/BookFormModal'
 import { DeleteBookModal } from '@/components/ui/catalog/DeleteBookModal'
 import { useRouter } from 'next/navigation'
 import { archiveBook } from '@/lib/weeding'
-import { fetchBookCopies, markCopyFound, updateBook, uploadBookCover, type BookCopy as RealCopy } from '@/lib/books'
+import { fetchBookCopies, markCopyFound, updateBook, uploadBookCover, type BookCopy } from '@/lib/books'
 import { bookFormDataToPayload } from '@/lib/bookForm'
+import { copyStatusConfig, COPY_STATUSES } from '@/lib/copyStatus'
 
 // ─── Cover color helper ───────────────────────────────────────────────────────
 
@@ -34,26 +36,6 @@ function getCoverColor(id: string, override?: string): string {
   if (override) return override
   const idx = id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
   return COVER_COLORS[idx % COVER_COLORS.length]
-}
-
-// ─── Mock copy data ───────────────────────────────────────────────────────────
-
-function generateMockCopies(book: Book): MockCopy[] {
-  const total = book.total_copies ?? 2
-  const avail = book.available_copies ?? 1
-  return Array.from({ length: total }, (_, i) => {
-    const copyNum = i + 1
-    const isCheckedOut = copyNum > avail
-    return {
-      id:            `${book.id.padStart(4, '0')}-C${String(copyNum).padStart(3, '0')}`,
-      copy_number:   copyNum,
-      status:        isCheckedOut ? 'checked_out' : 'available',
-      borrower_name: isCheckedOut ? 'Juan Dela Cruz' : undefined,
-      due_date:      isCheckedOut
-        ? new Date(Date.now() + 5 * 86400000).toISOString()
-        : undefined,
-    } satisfies MockCopy
-  })
 }
 
 // ─── Meta row ─────────────────────────────────────────────────────────────────
@@ -117,41 +99,33 @@ export default function LibrarianBookDetailPage({
 
   const [editOpen,   setEditOpen]   = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [copies, setCopies] = useState<MockCopy[]>([])
   const [archiveError, setArchiveError] = useState('')
   const [editError, setEditError] = useState('')
 
-  // Per-copy tracking isn't backed by a real table yet — this regenerates
-  // placeholder copy rows from total_copies/available_copies once the real
-  // book loads. Replace once Sprint 5.2.4's copies table exists.
+  // Real book_copies rows (accession_number/status/shelf_location) — one
+  // fetch feeds both the Copy Management table below and the missing-copies
+  // banner (derived from it, not a second fetch).
+  const [copies, setCopies] = useState<BookCopy[]>([])
   useEffect(() => {
-    if (book) setCopies(generateMockCopies(book))
-  }, [book])
-
-  // Real book_copies rows flagged missing/lost/damaged — separate from the
-  // mock table above, which has no concept of these side-states at all.
-  const isMissing = book?.status === 'misplaced'
-  const [missingCopies, setMissingCopies] = useState<RealCopy[]>([])
-  const [resolvingCopyId, setResolvingCopyId] = useState<string | null>(null)
-  const [resolveError, setResolveError] = useState('')
-
-  useEffect(() => {
-    if (!book || !isMissing) { setMissingCopies([]); return }
+    if (!book) return
     let cancelled = false
     fetchBookCopies(book.id)
-      .then((all) => {
-        if (!cancelled) setMissingCopies(all.filter((c) => ['missing', 'lost', 'damaged'].includes(c.status)))
-      })
-      .catch(() => { /* best-effort — the pill still shows the aggregate status either way */ })
+      .then((all) => { if (!cancelled) setCopies(all) })
+      .catch(() => { /* best-effort — the book's own aggregate status still shows either way */ })
     return () => { cancelled = true }
-  }, [book, isMissing])
+  }, [book?.id])
+
+  const isMissing = book?.status === 'misplaced'
+  const missingCopies = copies.filter((c) => ['missing', 'lost', 'damaged'].includes(c.status))
+  const [resolvingCopyId, setResolvingCopyId] = useState<string | null>(null)
+  const [resolveError, setResolveError] = useState('')
 
   async function handleMarkFound(copyId: string) {
     setResolvingCopyId(copyId)
     setResolveError('')
     try {
       await markCopyFound(copyId)
-      setMissingCopies((prev) => prev.filter((c) => c.id !== copyId))
+      setCopies((prev) => prev.map((c) => (c.id === copyId ? { ...c, status: 'for_reshelving' } : c)))
       refetch()
     } catch (err) {
       setResolveError(err instanceof Error ? err.message : 'Could not mark this copy as found.')
@@ -201,16 +175,6 @@ export default function LibrarianBookDetailPage({
 
   // ── Handlers ──
 
-  function handleCopyStatusChange(copyId: string, newStatus: CopyStatus) {
-    setCopies((prev) =>
-      prev.map((c) => (c.id === copyId ? { ...c, status: newStatus } : c))
-    )
-  }
-
-  function handleAddCopy(copy: MockCopy) {
-    setCopies((prev) => [...prev, copy])
-  }
-
   async function handleEditSubmit(data: BookFormData) {
     if (!book) return
     try {
@@ -241,9 +205,12 @@ export default function LibrarianBookDetailPage({
     router.push('/librarian/catalog')
   }
 
-  const available   = copies.filter((c) => c.status === 'available').length
-  const checkedOut  = copies.filter((c) => c.status === 'checked_out').length
-  const underRepair = copies.filter((c) => c.status === 'under_repair').length
+  // Only the statuses actually present on this title's copies get a pill —
+  // most books never see 'overdue'/'lost'/'damaged', so always showing all
+  // 8 would just be empty noise.
+  const copyStatusCounts = COPY_STATUSES
+    .map((status) => ({ status, count: copies.filter((c) => c.status === status).length }))
+    .filter((s) => s.count > 0)
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-5xl mx-auto">
@@ -448,20 +415,19 @@ export default function LibrarianBookDetailPage({
 
           {/* Copy summary pills */}
           <div className="flex flex-wrap items-center gap-2 mt-3">
-            {[
-              { label: 'Available',    count: available,   cls: 'text-[#16A34A] bg-[#DCFCE7]' },
-              { label: 'Checked Out',  count: checkedOut,  cls: 'text-[#0369A1] bg-[#E0F2FE]' },
-              { label: 'Under Repair', count: underRepair, cls: 'text-[#C2730A] bg-[#FEF3C7]' },
-            ].map(({ label, count, cls }) => (
-              <span
-                key={label}
-                className={cn('flex items-center gap-1.5 px-3 py-1 rounded-full font-semibold', cls)}
-                style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
-              >
-                <Copy size={11} />
-                {count} {label}
-              </span>
-            ))}
+            {copyStatusCounts.map(({ status, count }) => {
+              const cfg = copyStatusConfig(status)
+              return (
+                <span
+                  key={status}
+                  className={cn('flex items-center gap-1.5 px-3 py-1 rounded-full font-semibold', cfg.bg, cfg.text)}
+                  style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
+                >
+                  <Copy size={11} />
+                  {count} {cfg.label}
+                </span>
+              )
+            })}
           </div>
         </div>
       </div>
@@ -505,9 +471,9 @@ export default function LibrarianBookDetailPage({
               label="Copies"
               value={
                 <span>
-                  <span className="font-bold">{available}</span>
+                  <span className="font-bold">{book.available_copies ?? 0}</span>
                   {' / '}
-                  {copies.length} available
+                  {book.total_copies} available
                 </span>
               }
             />
@@ -548,12 +514,7 @@ export default function LibrarianBookDetailPage({
           <SectionHeading>Copy Management</SectionHeading>
         </div>
 
-        <CopyManagementTable
-          copies={copies}
-          bookId={book.id}
-          onStatusChange={handleCopyStatusChange}
-          onAddCopy={handleAddCopy}
-        />
+        <CopyManagementTable copies={copies} shelfLocation={book.shelf_location} />
       </div>
 
       {/* Modals */}

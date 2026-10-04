@@ -94,14 +94,23 @@ export async function addCopiesToBook(id: string, count: number): Promise<Book> 
   return res.json()
 }
 
-// ── Librarian-only: real per-copy data (book_copies), not the mock rows
-// CopyManagementTable still generates from total_copies/available_copies.
+// ── Librarian-only: real per-copy data (book_copies) — see
+// components/ui/catalog/CopyManagementTable.tsx.
 
 export type BookCopy = {
   id: string
   accession_number: string
   status: string
+  // book_copies.shelf_location is never actually populated (every row in
+  // the DB is the literal string "Unassigned") — a copy shelves wherever
+  // its title does, so the book's own shelf_location is what's accurate,
+  // not this column. Kept on the type since the API still returns it, but
+  // CopyManagementTable ignores it in favor of a `shelfLocation` prop.
   shelf_location: string | null
+  // Set only when status is on_loan/overdue — who has it and when it's
+  // due, joined in server-side from the matching loan. Null otherwise.
+  borrower_name: string | null
+  due_date: string | null
 }
 
 function authHeaders(): HeadersInit {

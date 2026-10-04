@@ -68,6 +68,11 @@ class BookCopy(BaseModel):
     accession_number: str
     status: str
     shelf_location: str | None = None
+    # Set only for a copy currently on_loan/overdue — who has it and when
+    # it's due, joined in from loans (see routers/books.py's
+    # list_book_copies). None for every other status.
+    borrower_name: str | None = None
+    due_date: str | None = None
 
 # ── Librarian write endpoints ───────────────────────────────────────────
 # Mirrors BookFormData (apps/web/components/ui/catalog/BookFormModal.tsx) —

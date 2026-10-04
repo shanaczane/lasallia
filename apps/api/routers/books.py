@@ -313,7 +313,40 @@ def list_book_copies(book_id: str, librarian: UserProfile = Depends(require_libr
         .order("accession_number")
         .execute()
     )
-    return res.data
+    copies = res.data
+
+    # book_copies.shelf_location is never actually populated per copy — every
+    # row in the database reads the literal string "Unassigned" (a copy
+    # shelves wherever its title does; apps/web's Copy Management table uses
+    # the book's own shelf_location instead). Borrower/due date aren't
+    # columns on book_copies at all — joined in here from the matching
+    # active/overdue loan, same two-step profiles join routers/loans.py's
+    # list_loans already uses, so a librarian looking at a copy marked
+    # "On Loan" can see who actually has it instead of nothing.
+    on_loan_ids = [c["id"] for c in copies if c["status"] in ("on_loan", "overdue")]
+    if on_loan_ids:
+        loans = (
+            admin.table("loans")
+            .select("book_copy_id, student_id, due_date")
+            .in_("book_copy_id", on_loan_ids)
+            .in_("status", ["active", "overdue"])
+            .execute()
+        ).data
+        student_ids = [loan["student_id"] for loan in loans]
+        profiles = (
+            admin.table("profiles").select("id, full_name").in_("id", student_ids).execute().data
+            if student_ids else []
+        )
+        names_by_id = {p["id"]: p["full_name"] for p in profiles}
+        loan_by_copy_id = {loan["book_copy_id"]: loan for loan in loans}
+
+        for copy in copies:
+            loan = loan_by_copy_id.get(copy["id"])
+            if loan:
+                copy["borrower_name"] = names_by_id.get(loan["student_id"])
+                copy["due_date"] = loan["due_date"]
+
+    return copies
 
 # Reverse of holds.py's report_missing. Per the status machine enforced in
 # migration 0004, a side-state copy (lost/damaged/missing) can only exit

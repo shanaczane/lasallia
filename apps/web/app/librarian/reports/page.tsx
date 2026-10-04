@@ -92,6 +92,7 @@ import {
 } from "@/lib/weeding"
 import type { Book, UserProfile, Reservation } from "@lasallia/types"
 import { programLabel } from "@/lib/programLabels"
+import { copyStatusConfig } from "@/lib/copyStatus"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ReportTab = "overview" | "catalogue" | "shelf-list" | "circulation" | "overdue" | "requests" | "weeding" | "activity"
@@ -511,16 +512,10 @@ function ProgramUsageList({ data }: { data: ProgramUsage[] }) {
 }
 
 // ─── Shelf copy status pill — matches book_copies.status values ───────────────
-const SHELF_STATUS_CFG: Record<string, { label: string; text: string; bg: string }> = {
-  available:       { label: "Available",       text: "text-[#16A34A]", bg: "bg-[#DCFCE7]" },
-  on_loan:         { label: "On Loan",         text: "text-[#0369A1]", bg: "bg-[#E0F2FE]" },
-  reserved:        { label: "Reserved",        text: "text-[#C2730A]", bg: "bg-[#FEF3C7]" },
-  for_reshelving:  { label: "For Reshelving",  text: "text-ink-600",   bg: "bg-ink-100"    },
-  missing:         { label: "Missing",         text: "text-[#6D28D9]", bg: "bg-[#EDE9FE]" },
-}
-
+// Shared with the librarian catalog's Copy Management table (lib/copyStatus.ts)
+// so a copy's status reads identically on both screens.
 function ShelfStatusBadge({ status }: { status: string }) {
-  const cfg = SHELF_STATUS_CFG[status] ?? { label: status, text: "text-ink-600", bg: "bg-ink-100" }
+  const cfg = copyStatusConfig(status)
   return (
     <span
       className={cn("inline-flex items-center px-2 py-0.5 rounded-pill font-medium whitespace-nowrap", cfg.bg, cfg.text)}
