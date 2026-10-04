@@ -240,7 +240,7 @@ function KioskCatalogContent() {
               hasActiveFilters={hasActive || !!query}
               onClearFilters={clearAll}
             />
-            <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} className="mt-8" />
           </>
         )}
       </div>
