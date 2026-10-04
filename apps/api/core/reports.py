@@ -297,6 +297,7 @@ def fines_report(admin: Client, filters: ReportFilters) -> list[FineRow]:
                     "kind": "paid",
                     "amount": round(amount, 2),
                     "detail": f"Paid — receipt {receipt}" if receipt else "Paid at the circulation desk",
+                    "loan_id": loan["id"],
                 })
             else:
                 entry["unsettled"] += amount
@@ -305,6 +306,7 @@ def fines_report(admin: Client, filters: ReportFilters) -> list[FineRow]:
                     "kind": "unsettled",
                     "amount": round(amount, 2),
                     "detail": "Returned late — not yet settled at the desk",
+                    "loan_id": loan["id"],
                 })
         elif loan["status"] == "overdue":
             collection_type = book.get("collection_type") or "General"
@@ -315,6 +317,7 @@ def fines_report(admin: Client, filters: ReportFilters) -> list[FineRow]:
                 "kind": "accruing",
                 "amount": round(fine, 2),
                 "detail": f"{days_overdue} day{'s' if days_overdue != 1 else ''} overdue — still out, not yet returned",
+                "loan_id": loan["id"],
             })
 
     rows = []
