@@ -208,6 +208,15 @@ function LibrarianCatalogContent() {
       setBooks((prev) => [newBook, ...prev])
       setAddOpen(false)
       showToast(`"${newBook.title}" added to the catalog.`)
+
+      // Covers are uploaded separately (multipart, not part of the JSON
+      // create body) — the book needs an id first, so this can only happen
+      // after createBook resolves, same as the edit flow below.
+      if (data.cover_image_file) {
+        const coverUrl = await uploadBookCover(newBook.id, data.cover_image_file)
+        setBooks((prev) => prev.map((b) => (b.id === newBook.id ? { ...b, cover_url: coverUrl } : b)))
+        showToast(`Cover added for "${newBook.title}".`)
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not add this book.'
       if (message.toLowerCase().includes('accession number')) {
