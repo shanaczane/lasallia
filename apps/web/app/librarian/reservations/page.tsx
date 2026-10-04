@@ -378,7 +378,7 @@ function StatusBadge({ status }: { status: ReservationStatus }) {
   const cfg = STATUS_CONFIG[status]
   return (
     <span
-      className={cn("inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-semibold whitespace-nowrap flex-shrink-0", cfg.badge)}
+      className={cn("inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-semibold leading-none whitespace-nowrap flex-shrink-0", cfg.badge)}
       style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
     >
       <span className={cn("flex-shrink-0", cfg.iconColor)}>{cfg.icon}</span>
@@ -426,11 +426,15 @@ function EmptyState() {
 interface ReservationRowProps {
   reservation: Reservation
   isLast: boolean
+  // The status pill is redundant on a tab already filtered to one status
+  // (Pending, Ready, etc.) — only the All tab mixes statuses, so only
+  // there does the row need to say which one this is.
+  showStatus: boolean
   onReject: (r: Reservation) => void
   onProcessBorrow: (r: Reservation) => void
 }
 
-function ReservationRow({ reservation: r, isLast, onReject, onProcessBorrow }: ReservationRowProps) {
+function ReservationRow({ reservation: r, isLast, showStatus, onReject, onProcessBorrow }: ReservationRowProps) {
   const cfg = STATUS_CONFIG[r.status]
   const isPending = r.status === "pending"
   const isReady = r.status === "ready"
@@ -450,16 +454,16 @@ function ReservationRow({ reservation: r, isLast, onReject, onProcessBorrow }: R
 
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-ink-900 font-semibold leading-snug" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}>
+          <p className="text-ink-900 font-semibold leading-none" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-body)" }}>
             {patronName(r)}
           </p>
-          <span className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+          <span className="text-ink-400 leading-none" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
             {patronEmail(r)}
           </span>
-          <StatusBadge status={r.status} />
+          {showStatus && <StatusBadge status={r.status} />}
           {isReady && r.pickup_by && (
             <span
-              className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold whitespace-nowrap", pickupUrgency(r.pickup_by).badgeClass)}
+              className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold leading-none whitespace-nowrap", pickupUrgency(r.pickup_by).badgeClass)}
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
             >
               <Clock size={10} />
@@ -704,7 +708,7 @@ export default function LibrarianReservationsPage() {
             </p>
             <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
               {filtered.map((r, i) => (
-                <ReservationRow key={r.id} reservation={r} isLast={i === filtered.length - 1} onReject={setRejectTarget} onProcessBorrow={setBorrowTarget} />
+                <ReservationRow key={r.id} reservation={r} isLast={i === filtered.length - 1} showStatus={activeTab === "all"} onReject={setRejectTarget} onProcessBorrow={setBorrowTarget} />
               ))}
             </div>
           </div>
