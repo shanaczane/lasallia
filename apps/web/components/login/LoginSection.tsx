@@ -3,7 +3,8 @@
 // determines the role from the login response and the redirect follows it.
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Mail, Lock, Eye, EyeOff, Loader2, Check, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSignIn } from '@/lib/hooks/useSignIn'
@@ -15,6 +16,17 @@ const DLSL_EMAIL_PATTERN = /^[^\s@]+@dlsl\.edu\.ph$/i
 
 export default function LoginSection() {
   const { signIn, loading, error, setError } = useSignIn()
+  const searchParams = useSearchParams()
+
+  // A session that got force-logged-out (TopNav's periodic check, see
+  // lib/auth.verifySessionActive) lands back here with this flag — the
+  // account was deactivated while the tab stayed open, so there's no login
+  // failure to otherwise explain why they were kicked out.
+  useEffect(() => {
+    if (searchParams.get('deactivated') === '1') {
+      setError('Your account has been deactivated. Please contact a librarian.')
+    }
+  }, [searchParams, setError])
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

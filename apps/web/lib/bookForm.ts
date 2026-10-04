@@ -55,5 +55,6 @@ export function bookFormDataToPayload(
     funding_source:         data.funding_source || undefined,
     status:                 data.status || fallback.status || 'available',
     cover_url:              data.cover_url || undefined,
+    collection_type:        data.collection_type || 'General',
   }
 }

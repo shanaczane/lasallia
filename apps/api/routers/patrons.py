@@ -61,6 +61,27 @@ def update_patron(
         changes["college"] = changes["college"].strip() or None
 
     admin = get_admin_client()
+
+    # A patron currently holding a book is still accountable for it — losing
+    # access (and showing up as "inactive" everywhere) shouldn't be a way to
+    # dodge that. Same active/overdue definition reservations.py's own
+    # same-account check uses.
+    if changes.get("status") == "inactive":
+        outstanding = (
+            admin.table("loans")
+            .select("id", count="exact")
+            .eq("student_id", user_id)
+            .in_("status", ["active", "overdue"])
+            .execute()
+        )
+        count = outstanding.count or 0
+        if count:
+            plural = "s" if count != 1 else ""
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Cannot deactivate this patron — they have {count} outstanding loan{plural}. They must return their book{plural} first.",
+            )
+
     res = admin.table("profiles").update(changes).eq("id", user_id).execute()
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Patron not found")

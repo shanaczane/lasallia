@@ -53,6 +53,7 @@ export type BookFormData = {
   circulation_type: string
   vendor: string
   funding_source: FundingSource | ''
+  collection_type: string
   cover_image_file?: File | null
   cover_url?: string
 }
@@ -63,6 +64,17 @@ type BookFormModalProps = {
   isOpen: boolean
   onClose: () => void
   onSubmit: (data: BookFormData) => void
+  // Already-loaded catalog rows — a duplicate accession number is caught
+  // live as the librarian types rather than only after a 409 from the API,
+  // and (mode: 'add' only) a same title/author or same-ISBN match offers
+  // "add copies to that title" instead of cataloging a near-duplicate.
+  existingBooks?: Book[]
+  // A server-side rejection (e.g. the same accession check, re-run
+  // authoritatively on submit) surfaced inline instead of only as a toast.
+  externalError?: { field: keyof BookFormData; message: string } | null
+  // mode: 'add' only — called when the librarian confirms adding copies to
+  // an existing title instead of creating a new one.
+  onAddCopies?: (existingBook: Book, count: number) => void
 }
 
 const EMPTY_FORM: BookFormData = {
@@ -99,6 +111,7 @@ const EMPTY_FORM: BookFormData = {
   circulation_type: '',
   vendor: '',
   funding_source: '',
+  collection_type: 'General',
   cover_image_file: null,
   cover_url: '',
 }
@@ -123,6 +136,16 @@ const FUNDING_SOURCE_OPTIONS: Array<{ value: FundingSource; label: string }> = [
 ]
 
 const FLOOR_OPTIONS = ['Floor 1', 'Floor 2', 'Floor 3', 'Floor 4']
+
+// Mirrors apps/api/core/loans.py's NON_BORROWABLE_COLLECTION_TYPES (Reference,
+// Thesis, Capstone, MTR, Archives — library use only, Borrow/Reserve hidden
+// on every catalog view) plus HOURLY_FINE_COLLECTION_TYPES (Reserve, Story
+// book, Bible — borrowable, just on a stricter fine schedule) and the
+// General default. Distinct from "Format" above (print/digital/reference,
+// lowercase) despite the similar-sounding "reference" value.
+const COLLECTION_TYPE_OPTIONS = [
+  'General', 'Reference', 'Reserve', 'Thesis', 'Capstone', 'MTR', 'Archives', 'Story book', 'Bible',
+]
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
@@ -394,12 +417,27 @@ function CoverUpload({
 
 type FormErrors = Partial<Record<keyof BookFormData, string>>
 
-function validate(data: BookFormData): FormErrors {
+function validate(
+  data: BookFormData,
+  existingBooks: Book[],
+  currentBookId?: string,
+): FormErrors {
   const errors: FormErrors = {}
   if (!data.title.trim())       errors.title       = 'Title is required'
   if (data.authors.length === 0) errors.authors    = 'At least one author is required'
   if (!data.call_number.trim()) errors.call_number = 'Call number is required'
-  if (!data.accession_no.trim()) errors.accession_no = 'Accession number is required'
+
+  const trimmedAccession = data.accession_no.trim()
+  if (!trimmedAccession) {
+    errors.accession_no = 'Accession number is required'
+  } else if (
+    existingBooks.some(
+      (b) => b.id !== currentBookId && (b.accession_no ?? '').trim().toLowerCase() === trimmedAccession.toLowerCase()
+    )
+  ) {
+    errors.accession_no = 'This accession number is already in use by another book'
+  }
+
   if (!data.floor.trim())       errors.floor       = 'Floor is required'
   if (!data.aisle.trim())       errors.aisle       = 'Aisle is required'
   if (!data.format)             errors.format      = 'Format is required'
@@ -433,14 +471,46 @@ function firstErrorTab(errors: FormErrors): TabKey | null {
   return null
 }
 
+// ─── Duplicate-title detection (Add only) ──────────────────────────────────────
+// Catches a librarian re-cataloging a title that's already in the system as
+// a second, separate book — same ISBN (when both sides have one), else same
+// title and same set of authors (order-insensitive, so "A, B" matches "B, A").
+
+function normalize(s: string): string {
+  return s.trim().toLowerCase()
+}
+
+function sameAuthors(formAuthors: string[], bookAuthorField: string): boolean {
+  const a = formAuthors.map(normalize).filter(Boolean).sort()
+  const b = bookAuthorField.split(',').map(normalize).filter(Boolean).sort()
+  return a.length > 0 && a.length === b.length && a.every((v, i) => v === b[i])
+}
+
+function findDuplicateBook(data: BookFormData, existingBooks: Book[], currentBookId?: string): Book | null {
+  const title = normalize(data.title)
+  const isbn = data.isbn.replace(/[\s-]/g, '').toLowerCase()
+  if (!title) return null
+
+  return existingBooks.find((b) => {
+    if (b.id === currentBookId) return false
+    if (isbn && b.isbn && b.isbn.replace(/[\s-]/g, '').toLowerCase() === isbn) return true
+    return normalize(b.title) === title && sameAuthors(data.authors, b.author)
+  }) ?? null
+}
+
 // ─── Main modal ───────────────────────────────────────────────────────────────
 
-export function BookFormModal({ mode, book, isOpen, onClose, onSubmit }: BookFormModalProps) {
+export function BookFormModal({
+  mode, book, isOpen, onClose, onSubmit, existingBooks = [], externalError, onAddCopies,
+}: BookFormModalProps) {
   const [form, setForm] = useState<BookFormData>(EMPTY_FORM)
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitted, setSubmitted] = useState(false)
   const [tab, setTab] = useState<TabKey>('titleAuthors')
   const [authorDraft, setAuthorDraft] = useState('')
+  // Set when handleSubmit finds an existing title matching this one (Add
+  // mode only) — swaps the footer to "add copies instead?" until resolved.
+  const [duplicate, setDuplicate] = useState<Book | null>(null)
 
   // Pre-populate when editing
   useEffect(() => {
@@ -479,6 +549,7 @@ export function BookFormModal({ mode, book, isOpen, onClose, onSubmit }: BookFor
         circulation_type:       book.circulation_type ?? '',
         vendor:                 book.vendor ?? '',
         funding_source:         book.funding_source ?? '',
+        collection_type:        book.collection_type ?? 'General',
         cover_image_file:       null,
         cover_url:              book.cover_url ?? '',
       })
@@ -489,6 +560,7 @@ export function BookFormModal({ mode, book, isOpen, onClose, onSubmit }: BookFor
     setSubmitted(false)
     setTab('titleAuthors')
     setAuthorDraft('')
+    setDuplicate(null)
   }, [mode, book, isOpen])
 
   // Close on Escape
@@ -498,6 +570,16 @@ export function BookFormModal({ mode, book, isOpen, onClose, onSubmit }: BookFor
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [isOpen, onClose])
+
+  // A 409 from the create/update call (e.g. another book claimed the same
+  // accession number between page load and submit) — shown on the right
+  // field/tab, same as a locally-caught validation error.
+  useEffect(() => {
+    if (!externalError) return
+    setErrors((e) => ({ ...e, [externalError.field]: externalError.message }))
+    const badTab = TAB_FOR_FIELD[externalError.field]
+    if (badTab) setTab(badTab)
+  }, [externalError])
 
   function set<K extends keyof BookFormData>(key: K, value: BookFormData[K]) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -523,13 +605,37 @@ export function BookFormModal({ mode, book, isOpen, onClose, onSubmit }: BookFor
 
   function handleSubmit() {
     setSubmitted(true)
-    const errs = validate(form)
+    const errs = validate(form, existingBooks, book?.id)
     if (Object.keys(errs).length > 0) {
       setErrors(errs)
       const badTab = firstErrorTab(errs)
       if (badTab) setTab(badTab)
       return
     }
+
+    if (mode === 'add') {
+      const match = findDuplicateBook(form, existingBooks)
+      if (match) {
+        setDuplicate(match)
+        return
+      }
+    }
+
+    onSubmit(form)
+  }
+
+  // "Add as copies" — adds this submission's copy count to the matched
+  // title instead of creating a second book for it.
+  function confirmAddCopies() {
+    if (!duplicate) return
+    const count = parseInt(form.total_copies, 10) || 1
+    onAddCopies?.(duplicate, count)
+  }
+
+  // "No, this is a different book" — the librarian knows better than the
+  // title/author/ISBN heuristic; proceed with creating a new book.
+  function confirmCreateAnyway() {
+    setDuplicate(null)
     onSubmit(form)
   }
 
@@ -1007,6 +1113,18 @@ export function BookFormModal({ mode, book, isOpen, onClose, onSubmit }: BookFor
                     ))}
                   </select>
                 </Field>
+                <Field label="Collection Type" hint="Reference/Thesis/Capstone/MTR/Archives are library use only — no borrowing or reservation">
+                  <select
+                    value={form.collection_type}
+                    onChange={(e) => set('collection_type', e.target.value)}
+                    className={cn(inputClass, 'appearance-none cursor-pointer')}
+                    style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)', ...selectArrowStyle }}
+                  >
+                    {COLLECTION_TYPE_OPTIONS.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </Field>
               </div>
 
               <Field label="Vendor" className="sm:max-w-70">
@@ -1063,24 +1181,60 @@ export function BookFormModal({ mode, book, isOpen, onClose, onSubmit }: BookFor
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-8 py-5 border-t border-ink-100 shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-sm border border-ink-200 text-ink-700 hover:bg-ink-50 transition-colors font-medium"
-            style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            className="px-5 py-2 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
-            style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-          >
-            {isEdit ? 'Save Changes' : 'Add Book'}
-          </button>
-        </div>
+        {duplicate ? (
+          <div className="flex flex-col gap-3 px-8 py-5 border-t border-ink-100 shrink-0 bg-gold-100/40">
+            <p className="text-ink-700 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+              This looks like a title already in the catalog — <span className="font-semibold">{duplicate.title}</span> by {duplicate.author}{' '}
+              ({duplicate.total_copies ?? 0} {duplicate.total_copies === 1 ? 'copy' : 'copies'} already catalogued). Add{' '}
+              {parseInt(form.total_copies, 10) || 1} more {(parseInt(form.total_copies, 10) || 1) === 1 ? 'copy' : 'copies'} to it instead of creating a new book?
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDuplicate(null)}
+                className="px-4 py-2 rounded-sm border border-ink-200 text-ink-700 hover:bg-ink-50 transition-colors font-medium"
+                style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+              >
+                Go back
+              </button>
+              <button
+                type="button"
+                onClick={confirmCreateAnyway}
+                className="px-4 py-2 rounded-sm border border-ink-200 text-ink-700 hover:bg-ink-50 transition-colors font-medium"
+                style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+              >
+                No, this is a different book
+              </button>
+              <button
+                type="button"
+                onClick={confirmAddCopies}
+                className="px-5 py-2 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+                style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+              >
+                Add as copies
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-end gap-3 px-8 py-5 border-t border-ink-100 shrink-0">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-sm border border-ink-200 text-ink-700 hover:bg-ink-50 transition-colors font-medium"
+              style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              className="px-5 py-2 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+              style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+            >
+              {isEdit ? 'Save Changes' : 'Add Book'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

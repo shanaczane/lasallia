@@ -25,7 +25,7 @@ import { useBooks } from '@/lib/hooks/useBooks'
 import { deriveCatalogOptions } from '@/lib/catalogOptions'
 import { programLabel } from '@/lib/programLabels'
 import { archiveBook } from '@/lib/weeding'
-import { createBook, updateBook, uploadBookCover } from '@/lib/books'
+import { addCopiesToBook, createBook, deleteBook, updateBook, uploadBookCover } from '@/lib/books'
 import { bookFormDataToPayload } from '@/lib/bookForm'
 
 const PAGE_SIZE = 24
@@ -154,11 +154,13 @@ function LibrarianCatalogContent() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const filtersButtonRef = useRef<HTMLButtonElement>(null)
 
-  const [addOpen,    setAddOpen]    = useState(false)
-  const [editBook,   setEditBook]   = useState<Book | null>(null)
-  const [deleteBook, setDeleteBook] = useState<Book | null>(null)
+  const [addOpen,       setAddOpen]       = useState(false)
+  const [editBook,      setEditBook]      = useState<Book | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<Book | null>(null)
 
   const [toast, setToast] = useState<string | null>(null)
+  const [addFieldError, setAddFieldError]   = useState<{ field: keyof BookFormData; message: string } | null>(null)
+  const [editFieldError, setEditFieldError] = useState<{ field: keyof BookFormData; message: string } | null>(null)
 
   // Seeds local editable state from the fetch. Add/edit now call the real
   // POST/PATCH endpoints below and merge the server's response back in, so
@@ -200,19 +202,46 @@ function LibrarianCatalogContent() {
   // ── Handlers ──
 
   async function handleAddSubmit(data: BookFormData) {
+    setAddFieldError(null)
     try {
       const newBook = await createBook(bookFormDataToPayload(data))
       setBooks((prev) => [newBook, ...prev])
       setAddOpen(false)
       showToast(`"${newBook.title}" added to the catalog.`)
+
+      // Covers are uploaded separately (multipart, not part of the JSON
+      // create body) — the book needs an id first, so this can only happen
+      // after createBook resolves, same as the edit flow below.
+      if (data.cover_image_file) {
+        const coverUrl = await uploadBookCover(newBook.id, data.cover_image_file)
+        setBooks((prev) => prev.map((b) => (b.id === newBook.id ? { ...b, cover_url: coverUrl } : b)))
+        showToast(`Cover added for "${newBook.title}".`)
+      }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not add this book.')
+      const message = err instanceof Error ? err.message : 'Could not add this book.'
+      if (message.toLowerCase().includes('accession number')) {
+        setAddFieldError({ field: 'accession_no', message })
+      } else {
+        showToast(message)
+      }
+    }
+  }
+
+  async function handleAddCopies(existingBook: Book, count: number) {
+    try {
+      const updated = await addCopiesToBook(existingBook.id, count)
+      setBooks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)))
+      setAddOpen(false)
+      showToast(`Added ${count} more ${count === 1 ? 'copy' : 'copies'} to "${updated.title}".`)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not add copies to this book.')
     }
   }
 
   async function handleEditSubmit(data: BookFormData) {
     if (!editBook) return
     const bookId = editBook.id
+    setEditFieldError(null)
 
     try {
       const saved = await updateBook(bookId, bookFormDataToPayload(data, { category: editBook.category, status: editBook.status }))
@@ -227,7 +256,12 @@ function LibrarianCatalogContent() {
         showToast(`Cover updated for "${saved.title}".`)
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not save changes to this book.')
+      const message = err instanceof Error ? err.message : 'Could not save changes to this book.'
+      if (message.toLowerCase().includes('accession number')) {
+        setEditFieldError({ field: 'accession_no', message })
+      } else {
+        showToast(message)
+      }
     }
   }
 
@@ -246,9 +280,14 @@ function LibrarianCatalogContent() {
     }
   }
 
-  function handleDelete(book: Book) {
-    setBooks((prev) => prev.filter((b) => b.id !== book.id))
-    showToast(`"${book.title}" permanently deleted.`)
+  async function handleDelete(book: Book) {
+    try {
+      await deleteBook(book.id)
+      setBooks((prev) => prev.filter((b) => b.id !== book.id))
+      showToast(`"${book.title}" permanently deleted.`)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not delete this book.')
+    }
   }
 
   // ── Render ──
@@ -448,7 +487,7 @@ function LibrarianCatalogContent() {
                   key={book.id}
                   book={book}
                   onEdit={(b) => setEditBook(b)}
-                  onDelete={(b) => setDeleteBook(b)}
+                  onDelete={(b) => setPendingDelete(b)}
                 />
               ))}
             </div>
@@ -461,20 +500,25 @@ function LibrarianCatalogContent() {
       <BookFormModal
         mode="add"
         isOpen={addOpen}
-        onClose={() => setAddOpen(false)}
+        onClose={() => { setAddOpen(false); setAddFieldError(null) }}
         onSubmit={handleAddSubmit}
+        existingBooks={books}
+        externalError={addFieldError}
+        onAddCopies={handleAddCopies}
       />
       <BookFormModal
         mode="edit"
         book={editBook ?? undefined}
         isOpen={editBook !== null}
-        onClose={() => setEditBook(null)}
+        onClose={() => { setEditBook(null); setEditFieldError(null) }}
         onSubmit={handleEditSubmit}
+        existingBooks={books}
+        externalError={editFieldError}
       />
       <DeleteBookModal
-        book={deleteBook}
-        isOpen={deleteBook !== null}
-        onClose={() => setDeleteBook(null)}
+        book={pendingDelete}
+        isOpen={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
         onArchive={handleArchive}
         onDelete={handleDelete}
       />

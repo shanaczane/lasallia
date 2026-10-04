@@ -17,11 +17,13 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { programLabel } from '@/lib/programLabels'
+import { isLibraryUseOnly } from '@/lib/collectionType'
 import { useBook } from '@/lib/hooks/useBooks'
 import { useKioskSession } from '@/components/kiosk/KioskSessionProvider'
 import { BorrowModal } from '@/components/kiosk/BorrowModal'
 import { fetchBorrowEligibility } from '@/lib/kiosk'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
+import type { Book } from '@lasallia/types'
 
 // ─── Cover color helper ───────────────────────────────────────────────────────
 
@@ -74,6 +76,7 @@ function BibGrid({ items }: { items: Array<{ label: string; value?: string | num
 // borrow directly (session), or a "tap your ID" prompt (guest browsing).
 
 function ActionPanel({
+  book,
   available,
   total,
   isAvailable,
@@ -81,6 +84,7 @@ function ActionPanel({
   guestBrowsing,
   onBorrow,
 }: {
+  book: Book
   available: number
   total: number
   isAvailable: boolean
@@ -93,6 +97,21 @@ function ActionPanel({
   const pct = total > 0 ? (available / total) * 100 : 0
   const isNone = available === 0
   const isLow = !isNone && available / total < 0.4
+
+  // Checked before the normal availability/borrow row — otherwise a
+  // guest-browsing (no tapped session) view still says "Tap your school ID
+  // to borrow" on a Reference book, even though claim_hold would refuse it
+  // the moment they actually tapped in.
+  if (isLibraryUseOnly(book)) {
+    return (
+      <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex items-center gap-3">
+        <BookOpen size={16} className="text-ink-400 shrink-0" />
+        <p className="text-ink-600 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+          <span className="font-semibold text-ink-700">Library use only</span> — {book.collection_type?.toLowerCase()} items aren&apos;t available for borrowing or reservation.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -388,6 +407,7 @@ export default function KioskBookDetailPage({
       {/* ── Availability / borrow action ─────────────────────────────────── */}
       <div className="mb-8">
         <ActionPanel
+          book={book}
           available={availableCopies}
           total={totalCopies}
           isAvailable={isAvailable}

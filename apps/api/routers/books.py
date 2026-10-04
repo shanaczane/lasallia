@@ -4,9 +4,11 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from core.deps import get_optional_user, require_librarian
+from core.embeddings import embed_single_book
+from core.loans import find_removal_blocker
 from core.supabase import get_admin_client, get_client
 from schemas.auth import UserProfile
-from schemas.book import Book, BookCopy, BookSearchResponse, BookUpdate, BookWrite
+from schemas.book import AddCopiesRequest, Book, BookCopy, BookSearchResponse, BookUpdate, BookWrite
 
 router = APIRouter(prefix="/books", tags=["books"])
 
@@ -139,6 +141,7 @@ def create_book(body: BookWrite, librarian: UserProfile = Depends(require_librar
     res = admin.table("books").insert(payload).execute()
     if not res.data:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not create the book")
+    embed_single_book(admin, res.data[0])
     return res.data[0]
 
 @router.patch("/{book_id}", response_model=Book)
@@ -152,6 +155,7 @@ def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends
 
     payload = body.model_dump()
     res = admin.table("books").update(payload).eq("id", book_id).execute()
+    embed_single_book(admin, res.data[0])
 
     # Same derivation list_books/get_book use, so an edit to a title that
     # already has real book_copies rows doesn't briefly report the raw
@@ -159,6 +163,44 @@ def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends
     copies_res = admin.table("book_copies").select("book_id, status").eq("book_id", book_id).execute()
     book = _apply_real_availability(res.data, copies_res.data)
     return book[0]
+
+@router.post("/{book_id}/add-copies", response_model=Book)
+def add_copies(book_id: str, body: AddCopiesRequest, librarian: UserProfile = Depends(require_librarian)):
+    admin = get_admin_client()
+    existing = admin.table("books").select("total_copies, available_copies").eq("id", book_id).execute()
+    if not existing.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
+    book = existing.data[0]
+
+    payload = {
+        "total_copies": (book.get("total_copies") or 0) + body.count,
+        "available_copies": (book.get("available_copies") or 0) + body.count,
+    }
+    res = admin.table("books").update(payload).eq("id", book_id).execute()
+
+    copies_res = admin.table("book_copies").select("book_id, status").eq("book_id", book_id).execute()
+    return _apply_real_availability(res.data, copies_res.data)[0]
+
+@router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_book(book_id: str, librarian: UserProfile = Depends(require_librarian)):
+    admin = get_admin_client()
+    book_res = admin.table("books").select("id, title").eq("id", book_id).execute()
+    if not book_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
+    title = book_res.data[0]["title"]
+
+    blocker = find_removal_blocker(admin, book_id)
+    if blocker:
+        raise HTTPException(status.HTTP_409_CONFLICT, f'"{title}" cannot be deleted — it {blocker}.')
+
+    try:
+        admin.table("book_copies").delete().eq("book_id", book_id).execute()
+        admin.table("books").delete().eq("id", book_id).execute()
+    except Exception:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f'"{title}" has related records and can\'t be deleted — try archiving it instead.',
+        )
 
 @router.get("/{book_id}", response_model=Book)
 def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)):

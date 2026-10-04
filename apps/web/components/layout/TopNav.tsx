@@ -5,7 +5,12 @@ import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { Bell, LogOut, Menu, Settings, User } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { clearSession } from "@/lib/auth"
+import { clearSession, verifySessionActive } from "@/lib/auth"
+
+// How often an already-open tab re-checks whether its account is still
+// active. Short enough that a librarian deactivating someone mid-session
+// takes effect quickly, long enough not to hammer /auth/me.
+const SESSION_CHECK_INTERVAL_MS = 45_000
 
 type TopNavProps = {
   userName?: string
@@ -47,6 +52,24 @@ export function TopNav({
 }: TopNavProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // TopNav renders on every authenticated page in all three role layouts,
+  // so this one effect is enough to cover librarian, student, and guest
+  // dashboards — a deactivated account gets signed out here, not just
+  // refused on its next login.
+  useEffect(() => {
+    let cancelled = false
+    async function check() {
+      const active = await verifySessionActive()
+      if (!cancelled && !active) window.location.replace("/login?deactivated=1")
+    }
+    check()
+    const interval = setInterval(check, SESSION_CHECK_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [])
 
   useEffect(() => {
     if (!menuOpen) return

@@ -8,8 +8,10 @@ import Link from 'next/link'
 import { ArrowLeft, MapPin, Hash, Building2, Calendar, BookOpen, GraduationCap, Landmark, BookMarked } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { programLabel } from '@/lib/programLabels'
+import { isLibraryUseOnly } from '@/lib/collectionType'
 import { useBook } from '@/lib/hooks/useBooks'
 import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
+import type { Book } from '@lasallia/types'
 
 // ─── Cover helpers ────────────────────────────────────────────────────────────
 const COVER_COLORS = [
@@ -55,10 +57,21 @@ function BibGrid({ items }: { items: Array<{ label: string; value?: string | num
 }
 
 // ─── Availability callout ─────────────────────────────────────────────────────
-function AvailabilityCallout({ available, total }: { available: number; total: number }) {
+function AvailabilityCallout({ book, available, total }: { book: Book; available: number; total: number }) {
   const pct = total > 0 ? (available / total) * 100 : 0
   const isNone = available === 0
   const isLow  = !isNone && available / total < 0.4
+
+  if (isLibraryUseOnly(book)) {
+    return (
+      <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex items-center gap-3">
+        <BookOpen size={16} className="text-ink-400 shrink-0" />
+        <p className="text-ink-600 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+          <span className="font-semibold text-ink-700">Library use only</span> — {book.collection_type?.toLowerCase()} items aren&apos;t available for borrowing or reservation.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -311,7 +324,7 @@ export default function GuestBookDetailPage({
 
       {/* ── Availability callout ────────────────────────────────────────── */}
       <div className="mb-8">
-        <AvailabilityCallout available={availableCopies} total={totalCopies} />
+        <AvailabilityCallout book={book} available={availableCopies} total={totalCopies} />
         <p
           className="text-ink-400 mt-2 text-center"
           style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}

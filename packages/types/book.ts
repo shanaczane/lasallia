@@ -44,6 +44,7 @@ export type Book = {
   call_number_start?: string // For call number range filter
   expected_back?: string     // soonest due_date among copies out — only set when 0 available
   waiting_count?: number     // pending + ready reservations for this title
+  collection_type?: string | null // e.g. "General", "Reference", "Thesis" — non-"General" values are library-use-only (see lib/collectionType.ts)
 
   // ── Librarian-only administrative record ──────────────────────────────
   // Captured on the Add/Edit Book form for the LRC's own inventory records.

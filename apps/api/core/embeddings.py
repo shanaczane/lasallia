@@ -103,6 +103,32 @@ def semantic_search(admin: Client, query: str, limit: int = 10) -> list[dict]:
     return [by_id[bid] for bid in book_ids if bid in by_id]
 
 
+def embed_single_book(admin: Client, book: dict) -> None:
+    """Keeps book_embeddings current the instant a book is created or
+    edited (routers/books.py's create_book/update_book), rather than
+    waiting for someone to manually trigger reembed_books() — otherwise a
+    brand-new or just-edited title is invisible to search_catalog's
+    relevance filter (core/tools/catalog.py's SIMILARITY_THRESHOLD) for
+    anything but an exact title/call-number match. Best-effort: embedding
+    failure (e.g. OpenAI briefly down) must never block the catalog write
+    that triggered this.
+    """
+    text = build_embedded_text(book)
+    if not text:
+        return
+    try:
+        vector = embed_text(text)
+        admin.table("book_embeddings").upsert({
+            "book_id": book["id"],
+            "embedding": vector,
+            "embedded_text": text,
+            "model": DEFAULT_MODEL,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+    except Exception as e:
+        print(f"embed_single_book: could not embed book {book.get('id')}: {e}")
+
+
 def reembed_books(admin: Client, force_all: bool = False) -> int:
     """Plan 1.6's re-embedding job. Skips books whose catalog row hasn't
     changed since they were last embedded (unless force_all, or the

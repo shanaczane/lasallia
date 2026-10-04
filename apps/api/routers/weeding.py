@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.deps import require_librarian
+from core.loans import find_removal_blocker
 from core.supabase import get_admin_client
 from core.weeding import (
     archive_book,
@@ -62,9 +63,14 @@ def get_events(limit: int = 50, librarian: UserProfile = Depends(require_librari
 @router.post("/{book_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
 def archive(book_id: str, reason: str | None = None, librarian: UserProfile = Depends(require_librarian)):
     admin = get_admin_client()
-    book = admin.table("books").select("id").eq("id", book_id).execute().data
+    book = admin.table("books").select("id, title").eq("id", book_id).execute().data
     if not book:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
+
+    blocker = find_removal_blocker(admin, book_id)
+    if blocker:
+        raise HTTPException(status.HTTP_409_CONFLICT, f'"{book[0]["title"]}" cannot be archived — it {blocker}.')
+
     archive_book(admin, book_id, librarian.id, reason=reason)
 
 

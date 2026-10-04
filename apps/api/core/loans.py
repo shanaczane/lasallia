@@ -71,6 +71,33 @@ def check_borrow_eligibility(db, student_id: str, book_id: str) -> None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You have an unpaid fine — please settle it with the librarian")
 
 
+def find_removal_blocker(admin, book_id: str) -> str | None:
+    """None if this title is safe to archive/delete; otherwise the reason it
+    isn't — an outstanding loan on one of its copies, or a returned loan
+    that still has an unsettled fine (a real, reachable state: see
+    routers/loans.py's return-loan handler, which can set status="returned"
+    and fine_status="unsettled" in the same update). Shared by the archive
+    route (routers/weeding.py) and the delete route (routers/books.py) so
+    neither escape hatch skips the other's check.
+    """
+    copy_ids = [c["id"] for c in admin.table("book_copies").select("id").eq("book_id", book_id).execute().data]
+    if not copy_ids:
+        return None
+
+    loans = (
+        admin.table("loans")
+        .select("status, fine_status")
+        .in_("book_copy_id", copy_ids)
+        .execute()
+    ).data
+
+    if any(l["status"] in ("active", "overdue") for l in loans):
+        return "has an outstanding loan — return the book before archiving or deleting it"
+    if any(l.get("fine_status") == "unsettled" for l in loans):
+        return "has an unpaid fine — settle it with the patron before archiving or deleting it"
+    return None
+
+
 def create_loan_and_notify(
     db,
     student_id: str,
