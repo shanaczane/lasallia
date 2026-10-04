@@ -1,6 +1,6 @@
 # Lasallia
 
-[![Live Demo](https://img.shields.io/badge/demo-lasallia.vercel.app-green)](https://lasallia.vercel.app)
+[![Live Demo](https://img.shields.io/badge/demo-lasallia.vercel.app-green)](www.lasallia.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python-009688?logo=fastapi)](https://fastapi.tiangolo.com)
@@ -8,7 +8,7 @@
 
 AI-powered hybrid rule-based and NLP-driven library assistant with personalized content-based book recommendations and a real-time catalog, built for De La Salle Lipa's Learning Resource Center.
 
-**Live demo:** [lasallia.vercel.app](https://lasallia.vercel.app)
+**Live demo:** [lasallia.vercel.app](www.lasallia.com)
 
 ## Overview
 

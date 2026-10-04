@@ -16,6 +16,7 @@ import type { Loan as ApiLoan } from "@/lib/kiosk"
 import { useStudentCounts } from "@/components/layout/StudentCountsContext"
 import { ForYouSection } from "@/components/ui/dashboard/ForYouSection"
 import { CatalogHighlights } from "@/components/ui/dashboard/CatalogHighlights"
+import { SetPasswordBanner } from "@/components/ui/profile/SetPasswordBanner"
 import type { Reservation } from "@lasallia/types"
 
 type BorrowStatus = "due_soon" | "overdue" | "active"
@@ -122,6 +123,8 @@ export default function StudentDashboard() {
       >
         <Search size={22} />
       </Link>
+
+      <SetPasswordBanner />
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 sm:flex gap-3 sm:gap-4 sm:flex-wrap">
