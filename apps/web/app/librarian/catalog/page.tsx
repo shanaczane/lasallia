@@ -25,7 +25,7 @@ import { useBooks } from '@/lib/hooks/useBooks'
 import { deriveCatalogOptions } from '@/lib/catalogOptions'
 import { programLabel } from '@/lib/programLabels'
 import { archiveBook } from '@/lib/weeding'
-import { createBook, deleteBook, updateBook, uploadBookCover } from '@/lib/books'
+import { addCopiesToBook, createBook, deleteBook, updateBook, uploadBookCover } from '@/lib/books'
 import { bookFormDataToPayload } from '@/lib/bookForm'
 
 const PAGE_SIZE = 24
@@ -215,6 +215,17 @@ function LibrarianCatalogContent() {
       } else {
         showToast(message)
       }
+    }
+  }
+
+  async function handleAddCopies(existingBook: Book, count: number) {
+    try {
+      const updated = await addCopiesToBook(existingBook.id, count)
+      setBooks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)))
+      setAddOpen(false)
+      showToast(`Added ${count} more ${count === 1 ? 'copy' : 'copies'} to "${updated.title}".`)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not add copies to this book.')
     }
   }
 
@@ -482,8 +493,9 @@ function LibrarianCatalogContent() {
         isOpen={addOpen}
         onClose={() => { setAddOpen(false); setAddFieldError(null) }}
         onSubmit={handleAddSubmit}
-        existingAccessionNumbers={books}
+        existingBooks={books}
         externalError={addFieldError}
+        onAddCopies={handleAddCopies}
       />
       <BookFormModal
         mode="edit"
@@ -491,7 +503,7 @@ function LibrarianCatalogContent() {
         isOpen={editBook !== null}
         onClose={() => { setEditBook(null); setEditFieldError(null) }}
         onSubmit={handleEditSubmit}
-        existingAccessionNumbers={books}
+        existingBooks={books}
         externalError={editFieldError}
       />
       <DeleteBookModal
