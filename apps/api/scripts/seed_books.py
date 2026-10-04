@@ -19,12 +19,21 @@ from core.supabase import get_admin_client
 # (and the matching .xlsx in data/) when a new college's collection is
 # onboarded — see scripts/backfill_college.py for tagging rows that were
 # already seeded before this mapping existed.
+#
+# CON's file is "CON_Nursing.xlsx", not "CON.xlsx" — CON, PRN, AUX, NUL,
+# COM1-9 and LPT1-9 are reserved Windows device names, and git for Windows
+# (core.protectNTFS) refuses to track a file whose base name matches one
+# exactly, regardless of extension. A plain "CON.xlsx" can exist on disk
+# (Explorer/Python/openpyxl don't block it) but `git add` fails on it with
+# a misleading "No such file or directory". The college CODE is still
+# "CON" everywhere else (colleges.ts, the database) — only this filename
+# needs to dodge the reserved name.
 SOURCE_FILES = {
     "CITE.xlsx": "CITE",
     "CBEAM.xlsx": "CBEAM",
     "CEAS.xlsx": "CEAS",
     "CITHM.xlsx": "CITHM",
-    "HEALTH-ALLIED.xlsx": "HEALTH-ALLIED",
+    "CON_Nursing.xlsx": "CON",
     "GEN-AD.xlsx": "GEN-AD",
     "GRADUATE SCHOOL.xlsx": "GRADUATE SCHOOL",
 }
