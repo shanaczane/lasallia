@@ -21,6 +21,11 @@ class UserProfile(BaseModel):
     program: str | None = None
     year_level: int | None = None
     college: str | None = None
+    # Mirrors schemas/patron.PatronStatus. get_current_user/login reject a
+    # request outright when this is "inactive" (see core/deps.py), so any
+    # caller that actually receives a UserProfile is implicitly active —
+    # carried here mainly so the frontend never has to special-case it.
+    status: Literal["active", "inactive"] | None = None
 
 class TokenResponse(BaseModel):
     access_token: str
