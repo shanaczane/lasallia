@@ -30,22 +30,22 @@ export function Pagination({ page, totalPages, onChange }: PaginationProps) {
   if (totalPages <= 1) return null
 
   return (
-    <nav aria-label="Catalog pages" className="flex items-center justify-center gap-1 mt-8">
+    <nav aria-label="Catalog pages" className="flex items-center justify-center gap-2 mt-8">
       <button
         type="button"
         onClick={() => onChange(page - 1)}
         disabled={page === 1}
         aria-label="Previous page"
-        className="flex items-center justify-center w-8 h-8 rounded-sm text-ink-500 hover:bg-ink-100 disabled:opacity-30 disabled:pointer-events-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+        className="flex items-center justify-center w-9 h-9 rounded-lg text-ink-500 hover:bg-ink-100 disabled:opacity-30 disabled:pointer-events-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
       >
-        <ChevronLeft size={15} />
+        <ChevronLeft size={16} />
       </button>
 
       {pageWindow(page, totalPages).map((p, i) =>
         p === 'ellipsis' ? (
           <span
             key={`ellipsis-${i}`}
-            className="w-8 h-8 flex items-center justify-center text-ink-400"
+            className="w-9 h-9 flex items-center justify-center text-ink-400"
             style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
           >
             …
@@ -57,8 +57,8 @@ export function Pagination({ page, totalPages, onChange }: PaginationProps) {
             onClick={() => onChange(p)}
             aria-current={p === page ? 'page' : undefined}
             className={cn(
-              'w-8 h-8 rounded-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1',
-              p === page ? 'bg-green-700 text-white' : 'text-ink-600 hover:bg-ink-100'
+              'w-9 h-9 rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1',
+              p === page ? 'bg-green-700 text-white font-semibold' : 'text-ink-600 hover:bg-ink-100'
             )}
             style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
           >
@@ -72,9 +72,9 @@ export function Pagination({ page, totalPages, onChange }: PaginationProps) {
         onClick={() => onChange(page + 1)}
         disabled={page === totalPages}
         aria-label="Next page"
-        className="flex items-center justify-center w-8 h-8 rounded-sm text-ink-500 hover:bg-ink-100 disabled:opacity-30 disabled:pointer-events-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+        className="flex items-center justify-center w-9 h-9 rounded-lg text-ink-500 hover:bg-ink-100 disabled:opacity-30 disabled:pointer-events-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
       >
-        <ChevronRight size={15} />
+        <ChevronRight size={16} />
       </button>
     </nav>
   )
