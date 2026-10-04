@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from core.deps import get_optional_user, require_librarian
+from core.embeddings import embed_single_book
 from core.loans import find_removal_blocker
 from core.supabase import get_admin_client, get_client
 from schemas.auth import UserProfile
@@ -140,6 +141,7 @@ def create_book(body: BookWrite, librarian: UserProfile = Depends(require_librar
     res = admin.table("books").insert(payload).execute()
     if not res.data:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not create the book")
+    embed_single_book(admin, res.data[0])
     return res.data[0]
 
 @router.patch("/{book_id}", response_model=Book)
@@ -153,6 +155,7 @@ def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends
 
     payload = body.model_dump()
     res = admin.table("books").update(payload).eq("id", book_id).execute()
+    embed_single_book(admin, res.data[0])
 
     # Same derivation list_books/get_book use, so an edit to a title that
     # already has real book_copies rows doesn't briefly report the raw
