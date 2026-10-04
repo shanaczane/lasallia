@@ -2,7 +2,7 @@
 -- profiles.program already holds a student's specific degree program (or,
 -- for faculty, a free-text college name typed however the enrollment data
 -- had it) — but nothing stores which of the catalog's actual college codes
--- (apps/web/lib/colleges.ts: CITE, CBEAM, CEAS, CITHM, HEALTH-ALLIED,
+-- (apps/web/lib/colleges.ts: CITE, CBEAM, CEAS, CITHM, CON,
 -- GEN-AD, GRADUATE SCHOOL) a patron belongs to. The frontend has been
 -- guessing this from `program` via lib/collegeForProgram.ts's keyword
 -- heuristic; this column lets it be set for real instead, same as `program`

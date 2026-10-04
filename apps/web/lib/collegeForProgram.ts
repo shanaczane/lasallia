@@ -27,7 +27,7 @@ const KEYWORD_TO_COLLEGE: [RegExp, string][] = [
   [/\bcbeam\b|accountancy|business admin|management accounting|marketing|financial management|\beconomics\b|entrepreneur|\bbusiness\b/i, 'CBEAM'],
   [/\bceas\b|education|psychology|communication|political science|criminology|\bbiology\b|arts and sciences|arts & sciences/i, 'CEAS'],
   [/\bcithm\b|tourism|hospitality/i, 'CITHM'],
-  [/health-allied|allied health|\bnursing\b|pharmacy|medical tech|medical laboratory|physical therapy/i, 'HEALTH-ALLIED'],
+  [/college of nursing|\bnursing\b|pharmacy|medical tech|medical laboratory|physical therapy/i, 'CON'],
   [/graduate school|\bmasters?\b|\bdoctor(al)? of|\bphd\b/i, 'GRADUATE SCHOOL'],
   [/gen-ad|general admission|general academics|undeclared/i, 'GEN-AD'],
 ]

@@ -23,7 +23,7 @@ class Patron(BaseModel):
     # School-issued student/faculty number (0045) — unique same as email.
     id_number: str | None = None
     # One of the catalog's fixed college codes (apps/web/lib/colleges.ts:
-    # CITE, CBEAM, CEAS, CITHM, HEALTH-ALLIED, GEN-AD, GRADUATE SCHOOL).
+    # CITE, CBEAM, CEAS, CITHM, CON, GEN-AD, GRADUATE SCHOOL).
     # Nullable — not backfilled for every existing row; the frontend falls
     # back to guessing from `program` (lib/collegeForProgram.ts) when null.
     college: str | None = None

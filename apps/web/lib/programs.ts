@@ -7,13 +7,13 @@
 // every new value exactly one of these strings.
 //
 // `collegeCode` is the code lib/colleges.ts already uses to tag catalog
-// books (CITE/CBEAM/CEAS/CITHM/HEALTH-ALLIED/GEN-AD/GRADUATE SCHOOL) — a
-// separate, closed taxonomy tied to the Excel source files in
-// apps/api/data. Several real DLSL colleges below (Nursing, Law, Criminal
-// Justice Education) don't have their own catalog code, so they fold into
-// the closest existing one (see per-group comments) purely so "for you"
-// book recommendations keep working; it has no bearing on the program
-// label itself. See collegeForProgram.ts, which consumes this list.
+// books (CITE/CBEAM/CEAS/CITHM/CON/GEN-AD/GRADUATE SCHOOL) — a separate,
+// closed taxonomy tied to the Excel source files in apps/api/data. Two real
+// DLSL colleges below (Law, Criminal Justice Education) don't have their
+// own catalog code, so they fold into the closest existing one (see
+// per-group comments) purely so "for you" book recommendations keep
+// working; it has no bearing on the program label itself. See
+// collegeForProgram.ts, which consumes this list.
 //
 // "Graduate Programs" in the source roster was a cross-college summary
 // (its entries already appear under their home college above), so it's
@@ -86,9 +86,7 @@ export const PROGRAM_GROUPS: ProgramGroup[] = [
   },
   {
     college: "College of Nursing",
-    // No dedicated catalog code for Nursing — HEALTH-ALLIED is the closest
-    // existing one (see the "allied health" keyword in collegeForProgram.ts).
-    collegeCode: "HEALTH-ALLIED",
+    collegeCode: "CON",
     programs: ["BS Nursing"],
   },
   {
