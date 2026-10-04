@@ -222,6 +222,27 @@ export async function setPassword(newPassword: string): Promise<void> {
   }
 }
 
+// Polled by TopNav (mounted on every authenticated page across all three
+// role layouts) so a patron deactivated mid-session loses access without
+// waiting for their token to expire or for them to hit an API call that
+// happens to need get_current_user. false only means "the server
+// confirmed this account is inactive" — any other failure (expired token,
+// flaky connection) is left for the normal auth flow to handle, not this.
+export async function verifySessionActive(): Promise<boolean> {
+  const token = getToken()
+  if (!token) return true
+  try {
+    const res = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+    if (res.status === 403) {
+      clearSession()
+      return false
+    }
+    return true
+  } catch {
+    return true
+  }
+}
+
 export function clearSession(): void {
   for (const key of SESSION_KEYS) {
     localStorage.removeItem(key)
