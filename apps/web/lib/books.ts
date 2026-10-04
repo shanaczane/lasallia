@@ -81,6 +81,19 @@ export async function deleteBook(id: string): Promise<void> {
   if (!res.ok) return parseErrorOrThrow(res, 'Could not delete this book')
 }
 
+// Bumps total_copies/available_copies on an existing title instead of
+// cataloging a near-duplicate as a second book — used when BookFormModal's
+// Add form detects the title being added already exists.
+export async function addCopiesToBook(id: string, count: number): Promise<Book> {
+  const res = await fetch(`${API_URL}/books/${id}/add-copies`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ count }),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not add copies to this book')
+  return res.json()
+}
+
 // ── Librarian-only: real per-copy data (book_copies), not the mock rows
 // CopyManagementTable still generates from total_copies/available_copies.
 
