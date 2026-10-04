@@ -86,9 +86,16 @@ def get_current_user(
     # routers/auth.py's login/refresh use to build the role a client
     # sees (_build_token_response) — this makes server-side authorization
     # agree with that instead of trusting a claim nothing keeps in sync.
-    profile_res = get_admin_client().table("profiles").select("role, full_name, program, year_level, college").eq("id", payload["sub"]).execute()
+    profile_res = get_admin_client().table("profiles").select("role, full_name, program, year_level, college, status").eq("id", payload["sub"]).execute()
     profile = profile_res.data[0] if profile_res.data else {}
     role: Role = profile.get("role") or meta.get("role", "guest")
+
+    # A librarian deactivating a patron must actually end their access, not
+    # just hide them from the Patrons table — checked on every authenticated
+    # request (not only at login) so an already-open session loses access
+    # the moment the account is deactivated, not just on its next login.
+    if profile.get("status") == "inactive":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This account has been deactivated. Please contact a librarian.")
 
     return UserProfile(
         id=payload["sub"],
@@ -98,6 +105,7 @@ def get_current_user(
         program=profile.get("program"),
         year_level=profile.get("year_level"),
         college=profile.get("college"),
+        status=profile.get("status"),
     )
 
 # A kiosk tap never produces a JWT — the station session IS the identity (its id
