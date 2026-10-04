@@ -35,7 +35,7 @@ export type OverdueRow = {
   daysOverdue: number
   fine: number
 }
-export type FineEntry = { title: string; kind: "unsettled" | "accruing" | "paid"; amount: number; detail: string }
+export type FineEntry = { title: string; kind: "unsettled" | "accruing" | "paid"; amount: number; detail: string; loan_id: string }
 export type FineRow = {
   patron_id: string
   patron: string
