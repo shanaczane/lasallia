@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { programLabel } from '@/lib/programLabels'
+import { isLibraryUseOnly } from '@/lib/collectionType'
 import { useBook } from '@/lib/hooks/useBooks'
 import { fetchSimilarBooks } from '@/lib/books'
 import { useReservations } from '@/lib/hooks/useReservations'
@@ -140,6 +141,20 @@ function ActionPanel({
     } finally {
       setPending(false)
     }
+  }
+
+  // Reference/Thesis/Capstone/MTR/Archives — library use only, checked
+  // before everything else below (including an existing loan, which
+  // shouldn't be reachable for one of these in the first place).
+  if (isLibraryUseOnly(book)) {
+    return (
+      <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex items-center gap-3">
+        <BookOpen size={16} className="text-ink-400 shrink-0" />
+        <p className="text-ink-600 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+          <span className="font-semibold text-ink-700">Library use only</span> — {book.collection_type?.toLowerCase()} items aren&apos;t available for borrowing or reservation.
+        </p>
+      </div>
+    )
   }
 
   // Hard rule: an active loan on this exact book always wins — never offer
