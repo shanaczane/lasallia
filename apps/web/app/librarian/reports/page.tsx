@@ -2142,8 +2142,6 @@ function ReportsPageContent() {
       .catch(() => {})
   }, [])
 
-  const activityFeed = buildFeed(loans, reservations)
-
   // Filter state – Sprint 5.6.2, now actually wired (Reports plan Phase 1)
   const [dateRange, setDateRange]   = useState<DateRangePreset>("month")
   const [fromDate, setFromDate]     = useState("")
@@ -2151,6 +2149,34 @@ function ReportsPageContent() {
   const [category, setCategory]     = useState("All Categories")
   const [program, setProgram]       = useState("All Programs")
   const [yearLevel, setYearLevel]   = useState("All Year Levels")
+
+  // Circulation/Activity Log are the two tabs built client-side from
+  // loans+reservations (lib/activity.ts) rather than a server-filtered
+  // /reports/* endpoint — without this, the Category/Program/Year Level
+  // controls in the filter bar above would visibly sit over these two tabs
+  // but silently do nothing, since buildFeed's output was never run back
+  // through them. Program/year level come from `patrons` (already loaded
+  // for the activity table's own click-to-view-account lookup) rather
+  // than a second fetch, matched by each transaction's userId.
+  const activityFeed = useMemo(() => {
+    const full = buildFeed(loans, reservations)
+    const wantedYear = YEAR_LEVEL_LABELS[yearLevel]
+    if (category === "All Categories" && program === "All Programs" && !wantedYear) return full
+
+    const patronsById = new Map(patrons.map((p) => [p.id, p]))
+    return full.filter((tx) => {
+      if (category !== "All Categories") {
+        const cat = tx.loan?.books?.category ?? tx.reservation?.books?.category
+        if (cat !== category) return false
+      }
+      if (program !== "All Programs" || wantedYear) {
+        const patron = tx.userId ? patronsById.get(tx.userId) : undefined
+        if (program !== "All Programs" && patron?.program !== program) return false
+        if (wantedYear && patron?.year_level !== wantedYear) return false
+      }
+      return true
+    })
+  }, [loans, reservations, category, program, yearLevel, patrons])
 
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
@@ -2570,7 +2596,8 @@ function ReportsPageContent() {
               <select
                 value={f.value}
                 onChange={(e) => f.setter(e.target.value)}
-                className="appearance-none pl-3 pr-8 py-1.5 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-ink-800"
+                title={programLabel(f.value)}
+                className="appearance-none w-36 truncate pl-3 pr-8 py-1.5 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-ink-800"
                 style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
               >
                 {f.options.map((o) => (
