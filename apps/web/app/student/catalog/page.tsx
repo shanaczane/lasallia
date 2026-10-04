@@ -266,7 +266,7 @@ function StudentCatalogContent() {
               savedBookIds={savedBookIds}
               onToggleSave={handleToggleSave}
             />
-            <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} className="mt-8" />
           </>
         )}
       </div>
