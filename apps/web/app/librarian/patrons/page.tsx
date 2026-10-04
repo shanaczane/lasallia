@@ -6,12 +6,12 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { ChevronLeft, ChevronRight, CheckCircle2, AlertCircle } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { CheckCircle2, AlertCircle } from "lucide-react"
 import type { UserProfile } from "@lasallia/types"
 import { fetchPatrons, updatePatronStatus } from "@/lib/users"
 import { downloadCsv } from "@/lib/reports"
 import { ROLE_LABEL } from "@/lib/mock/patrons"
+import { Pagination } from "@/components/ui/catalog"
 import {
   PatronsToolbar,
   type RoleFilter,
@@ -45,6 +45,10 @@ function usePagination<T>(items: T[], resetKey?: unknown) {
   return { page: clampedPage, totalPages, pageItems, goTo }
 }
 
+// Delegates to the same shared Pagination component (components/ui/catalog)
+// the Reports tab's ReportTableCard uses, laid out the same way — a count
+// on the left, the pager on the right — rather than a second hand-rolled
+// implementation that can drift from it.
 function Paginator({
   page,
   totalPages,
@@ -61,68 +65,13 @@ function Paginator({
   const start = (page - 1) * PAGE_SIZE + 1
   const end = Math.min(page * PAGE_SIZE, totalItems)
 
-  function pageNumbers(): (number | "…")[] {
-    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1)
-    const nums: (number | "…")[] = [1]
-    if (page > 3) nums.push("…")
-    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) nums.push(i)
-    if (page < totalPages - 2) nums.push("…")
-    nums.push(totalPages)
-    return nums
-  }
-
   return (
-    <div className="flex items-center justify-between gap-4 flex-wrap">
+    <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
       <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
         Showing <span className="font-medium text-ink-600">{start}–{end}</span> of{" "}
         <span className="font-medium text-ink-600">{totalItems}</span>
       </p>
-
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => goTo(page - 1)}
-          disabled={page === 1}
-          aria-label="Previous page"
-          className={cn(
-            "flex items-center justify-center w-8 h-8 rounded-[8px] border transition-colors",
-            page === 1 ? "border-ink-100 text-ink-300 cursor-not-allowed" : "border-ink-200 text-ink-600 hover:bg-ink-50 hover:border-ink-300"
-          )}
-        >
-          <ChevronLeft size={14} />
-        </button>
-
-        {pageNumbers().map((n, i) =>
-          n === "…" ? (
-            <span key={`ellipsis-${i}`} className="flex items-center justify-center w-8 h-8 text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-              …
-            </span>
-          ) : (
-            <button
-              key={n}
-              onClick={() => goTo(n as number)}
-              className={cn(
-                "flex items-center justify-center w-8 h-8 rounded-[8px] border font-medium transition-colors",
-                n === page ? "bg-green-700 border-green-700 text-white font-semibold" : "border-ink-200 text-ink-600 hover:bg-ink-50 hover:border-ink-300"
-              )}
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
-            >
-              {n}
-            </button>
-          )
-        )}
-
-        <button
-          onClick={() => goTo(page + 1)}
-          disabled={page === totalPages}
-          aria-label="Next page"
-          className={cn(
-            "flex items-center justify-center w-8 h-8 rounded-[8px] border transition-colors",
-            page === totalPages ? "border-ink-100 text-ink-300 cursor-not-allowed" : "border-ink-200 text-ink-600 hover:bg-ink-50 hover:border-ink-300"
-          )}
-        >
-          <ChevronRight size={14} />
-        </button>
-      </div>
+      <Pagination page={page} totalPages={totalPages} onChange={goTo} />
     </div>
   )
 }
