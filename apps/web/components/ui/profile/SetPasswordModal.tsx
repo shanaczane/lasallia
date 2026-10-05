@@ -9,7 +9,7 @@
 "use client"
 
 import { useState } from "react"
-import { Loader2, AlertCircle } from "lucide-react"
+import { Loader2, AlertCircle, Eye, EyeOff } from "lucide-react"
 import { setPassword } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 
@@ -27,6 +27,8 @@ const fieldClass = cn(
 export function SetPasswordModal({ step, onDone }: { step?: { current: number; total: number }; onDone: () => void }) {
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
 
@@ -80,31 +82,51 @@ export function SetPasswordModal({ step, onDone }: { step?: { current: number; t
         <div className="mt-4 flex flex-col gap-3">
           <div>
             <label htmlFor="sp-new" className="mb-1 block font-semibold text-ink-900" style={labelStyle}>Password</label>
-            <input
-              id="sp-new"
-              type="password"
-              autoComplete="new-password"
-              required
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
-              className={fieldClass}
-              style={labelStyle}
-            />
+            <div className="relative">
+              <input
+                id="sp-new"
+                type={showPassword ? "text" : "password"}
+                autoComplete="new-password"
+                required
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+                className={cn(fieldClass, "pr-10")}
+                style={labelStyle}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-sm text-ink-400 transition-colors hover:text-ink-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </div>
           <div>
             <label htmlFor="sp-confirm" className="mb-1 block font-semibold text-ink-900" style={labelStyle}>Confirm password</label>
-            <input
-              id="sp-confirm"
-              type="password"
-              autoComplete="new-password"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Re-enter your password"
-              className={fieldClass}
-              style={labelStyle}
-            />
+            <div className="relative">
+              <input
+                id="sp-confirm"
+                type={showConfirm ? "text" : "password"}
+                autoComplete="new-password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter your password"
+                className={cn(fieldClass, "pr-10")}
+                style={labelStyle}
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirm((v) => !v)}
+                aria-label={showConfirm ? "Hide password" : "Show password"}
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-sm text-ink-400 transition-colors hover:text-ink-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+              >
+                {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </div>
         </div>
 

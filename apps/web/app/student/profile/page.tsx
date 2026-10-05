@@ -17,7 +17,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { AlertCircle, ChevronDown } from "lucide-react"
+import { AlertCircle, ChevronDown, Eye, EyeOff } from "lucide-react"
 import { cn, ordinal } from "@/lib/utils"
 import { getUser, updateProfile, changePassword, fetchPasswordStatus, setPassword, type UserProfile as AuthUser } from "@/lib/auth"
 import { fetchLoans, type Loan as ApiLoan } from "@/lib/kiosk"
@@ -540,6 +540,8 @@ function Field({
   disabled?: boolean
   placeholder?: string
 }) {
+  const isPassword = type === "password"
+  const [revealed, setRevealed] = useState(false)
   return (
     <div className="flex flex-col gap-1.5">
       <label
@@ -548,19 +550,32 @@ function Field({
       >
         {label}
       </label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        placeholder={placeholder}
-        className={cn(
-          "w-full px-3 py-2 rounded-sm border border-ink-200 text-ink-900 outline-none transition-colors",
-          "focus:border-green-700 focus:ring-1 focus:ring-green-700",
-          disabled && "bg-ink-50 text-ink-400 cursor-not-allowed"
+      <div className="relative">
+        <input
+          type={isPassword && revealed ? "text" : type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          placeholder={placeholder}
+          className={cn(
+            "w-full px-3 py-2 rounded-sm border border-ink-200 text-ink-900 outline-none transition-colors",
+            "focus:border-green-700 focus:ring-1 focus:ring-green-700",
+            isPassword && "pr-10",
+            disabled && "bg-ink-50 text-ink-400 cursor-not-allowed"
+          )}
+          style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+        />
+        {isPassword && (
+          <button
+            type="button"
+            onClick={() => setRevealed((v) => !v)}
+            aria-label={revealed ? "Hide password" : "Show password"}
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-sm text-ink-400 transition-colors hover:text-ink-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+          >
+            {revealed ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
         )}
-        style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-      />
+      </div>
     </div>
   )
 }
