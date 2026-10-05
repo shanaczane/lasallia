@@ -2,9 +2,10 @@
 // Second step of the first-login flow (after CompleteProfileModal) for a
 // Google-only account that has no password yet (GET /auth/password-status).
 // Kept as its own modal instead of more fields under CompleteProfileModal so
-// neither screen gets too long. "Skip for now" is remembered on this device
-// (SKIP_KEY) so it doesn't re-open on every page; SetPasswordBanner on the
-// dashboard still reminds them until they set one or dismiss that too.
+// neither screen gets too long. "Skip for now" is remembered for this
+// browser session only (sessionStorage), so it asks again on the next login;
+// SetPasswordBanner on the dashboard still reminds them until they set one
+// or dismiss that too.
 "use client"
 
 import { useState } from "react"
@@ -55,7 +56,7 @@ export function SetPasswordModal({ step, onDone }: { step?: { current: number; t
   }
 
   function handleSkip() {
-    try { localStorage.setItem(PASSWORD_PROMPT_SKIP_KEY, "true") } catch {}
+    try { sessionStorage.setItem(PASSWORD_PROMPT_SKIP_KEY, "true") } catch {}
     onDone()
   }
 

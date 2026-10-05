@@ -3,7 +3,7 @@
 
 "use client"
 
-import { useState, useEffect, useLayoutEffect } from "react"
+import { useState, useEffect, useLayoutEffect, useRef } from "react"
 
 const useLayoutEffectSafe = typeof window !== "undefined" ? useLayoutEffect : useEffect
 import { TopNav } from "./TopNav"
@@ -84,6 +84,23 @@ export function StudentLayout({ children, userName, userInitials, initialUnread 
   )
 }
 
+// Whether to show the first-login "Set a password" step. true/false from
+// GET /auth/password-status; null if it still failed after a few tries —
+// on a slow phone connection one failed request used to silently drop
+// step 2 entirely. "Skip for now" only lasts this browser session.
+async function checkNeedsPassword(): Promise<boolean | null> {
+  try { if (sessionStorage.getItem(PASSWORD_PROMPT_SKIP_KEY) === "true") return false } catch {}
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetchPasswordStatus()
+      return !res.has_password
+    } catch {
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
+    }
+  }
+  return null
+}
+
 function getInitials(name: string): string {
   return name.split(" ").map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase()
 }
@@ -110,6 +127,7 @@ function StudentLayoutInner({
   // Fixed once both checks resolve, so the "Step N of M" label doesn't
   // shift from "1 of 2" to "1 of 1" mid-flow.
   const [setupSteps, setSetupSteps] = useState(0)
+  const passwordUnknown = useRef(false)
   const [isFaculty, setIsFaculty] = useState(false)
 
   useLayoutEffectSafe(() => {
@@ -162,20 +180,26 @@ function StudentLayoutInner({
           fresh && isIncomplete(fresh) && (fresh.role === "student" || fresh.role === "faculty") ? fresh : null)
       : Promise.resolve(null)
 
-    let skipped = false
-    try { skipped = localStorage.getItem(PASSWORD_PROMPT_SKIP_KEY) === "true" } catch {}
-    const passwordCheck: Promise<boolean> = skipped
-      ? Promise.resolve(false)
-      : fetchPasswordStatus().then((res) => !res.has_password).catch(() => false)
-
-    Promise.all([profileCheck, passwordCheck]).then(([seed, noPassword]) => {
+    Promise.all([profileCheck, checkNeedsPassword()]).then(([seed, noPassword]) => {
       if (cancelled) return
-      setSetupSteps((seed ? 1 : 0) + (noPassword ? 1 : 0))
+      // null = the check failed (e.g. a flaky mobile connection) — still
+      // count step 2 after a profile step, and re-check once step 1 is done.
+      setSetupSteps((seed ? 1 : 0) + (noPassword === true || (seed && noPassword === null) ? 1 : 0))
       setProfileSeed(seed)
-      setNeedsPassword(noPassword)
+      setNeedsPassword(noPassword === true)
+      passwordUnknown.current = noPassword === null
     })
     return () => { cancelled = true }
   }, [])
+
+  function handleProfileDone() {
+    setProfileSeed(null)
+    if (!passwordUnknown.current) return
+    checkNeedsPassword().then((noPassword) => {
+      passwordUnknown.current = noPassword === null
+      if (noPassword) setNeedsPassword(true)
+    })
+  }
 
   const renderSidebarContent = (isCollapsed: boolean) => (
     <>
@@ -339,7 +363,7 @@ function StudentLayoutInner({
           role={profileSeed.role}
           initial={profileSeed}
           step={{ current: 1, total: setupSteps }}
-          onDone={() => setProfileSeed(null)}
+          onDone={handleProfileDone}
         />
       )}
       {!profileSeed && needsPassword && (
