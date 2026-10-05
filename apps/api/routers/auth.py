@@ -160,7 +160,7 @@ def change_password(body: ChangePasswordRequest, user: UserProfile = Depends(get
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
 
     try:
-        get_admin_client().auth.admin.update_user_by_id(user.id, {"password": body.new_password})
+        get_admin_client().auth.admin.update_user_by_id(user.id, _password_update(body.new_password))
     except AuthApiError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
@@ -173,9 +173,22 @@ def change_password(body: ChangePasswordRequest, user: UserProfile = Depends(get
 # here rather than cached on the JWT/profile: it can change mid-session
 # (a student sets a password after already being logged in), and this is
 # only called from the Settings page, not every request.
+#
+# In practice the 'email' identity did NOT reliably appear after
+# set_password, so the dashboard banner / first-login modal kept asking
+# after a password was already set. Every password write now also stamps
+# app_metadata.has_password (service-role only — a user can't set
+# app_metadata on themselves), and that flag counts too.
 def _has_password_identity(user_id: str) -> bool:
     sb_user = get_admin_client().auth.admin.get_user_by_id(user_id).user
+    if (sb_user.app_metadata or {}).get("has_password"):
+        return True
     return any(i.provider == "email" for i in (sb_user.identities or []))
+
+# Shared by change_password/set_password. app_metadata is merged by
+# Supabase, not replaced, so 'provider'/'providers' are left intact.
+def _password_update(new_password: str) -> dict:
+    return {"password": new_password, "app_metadata": {"has_password": True}}
 
 # Settings' Account tab — tells the frontend whether to show "Set a
 # password" (Google-only account, no current password to verify) or the
@@ -203,6 +216,6 @@ def set_password(body: SetPasswordRequest, user: UserProfile = Depends(get_curre
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account already has a password — use Change Password instead")
 
     try:
-        get_admin_client().auth.admin.update_user_by_id(user.id, {"password": body.new_password})
+        get_admin_client().auth.admin.update_user_by_id(user.id, _password_update(body.new_password))
     except AuthApiError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
