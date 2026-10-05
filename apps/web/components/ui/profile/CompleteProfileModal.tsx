@@ -29,6 +29,16 @@ const fieldClass = cn(
   "focus:outline-none focus:border-green-700 focus:shadow-(--shadow-focus-green)"
 )
 
+// The native <select> arrow hugs the right edge and differs per browser —
+// hide it and draw our own chevron with the same inset as the text
+// (same approach as the Reports page filters).
+const selectClass = cn(fieldClass, "appearance-none cursor-pointer pr-10")
+const selectArrowStyle: React.CSSProperties = {
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 14px center",
+}
+
 type Seed = {
   program?: string | null
   year_level?: number | null
@@ -119,8 +129,8 @@ export function CompleteProfileModal({ role, initial, step, onDone }: { role: "s
                 required
                 value={program}
                 onChange={(e) => setProgram(e.target.value)}
-                className={fieldClass}
-                style={labelStyle}
+                className={selectClass}
+                style={{ ...labelStyle, ...selectArrowStyle }}
               >
                 <option value="">Select your program</option>
                 {PROGRAM_GROUPS.map((g) => (
@@ -141,8 +151,8 @@ export function CompleteProfileModal({ role, initial, step, onDone }: { role: "s
               required={isFaculty}
               value={effectiveCollege}
               onChange={(e) => setCollege(e.target.value)}
-              className={fieldClass}
-              style={labelStyle}
+              className={selectClass}
+              style={{ ...labelStyle, ...selectArrowStyle }}
             >
               <option value="">Select your college</option>
               {COLLEGES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -157,8 +167,8 @@ export function CompleteProfileModal({ role, initial, step, onDone }: { role: "s
                 required
                 value={yearLevel}
                 onChange={(e) => setYearLevel(e.target.value)}
-                className={fieldClass}
-                style={labelStyle}
+                className={selectClass}
+                style={{ ...labelStyle, ...selectArrowStyle }}
               >
                 <option value="">Select your year</option>
                 {YEAR_LEVELS.map((y) => <option key={y} value={y}>{y}{y === 1 ? "st" : y === 2 ? "nd" : y === 3 ? "rd" : "th"} year</option>)}
