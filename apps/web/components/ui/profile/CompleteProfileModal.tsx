@@ -9,7 +9,8 @@
 // The password offer (a Google sign-in never has one) used to live here
 // too, stacked under these fields — too much on one screen for a brand-new
 // student's very first look at the dashboard. Moved out to its own
-// dismissible dashboard banner instead (SetPasswordBanner.tsx) — optional
+// dismissible dashboard banner instead (SetPasswordBanner.tsx), and now also
+// its own follow-up modal (SetPasswordModal.tsx, step 2 of 2) — optional
 // things shouldn't share a blocking modal with required ones.
 "use client"
 
@@ -39,7 +40,7 @@ type Seed = {
 // StudentLayout.tsx) also re-opens this for an otherwise-complete account
 // that predates that column, so program/year_level/college (already set)
 // need to come in pre-filled rather than forcing a redundant re-entry.
-export function CompleteProfileModal({ role, initial, onDone }: { role: "student" | "faculty"; initial?: Seed; onDone: () => void }) {
+export function CompleteProfileModal({ role, initial, step, onDone }: { role: "student" | "faculty"; initial?: Seed; step?: { current: number; total: number }; onDone: () => void }) {
   const isFaculty = role === "faculty"
 
   const [idNumber, setIdNumber] = useState(initial?.id_number ?? "")
@@ -80,6 +81,11 @@ export function CompleteProfileModal({ role, initial, onDone }: { role: "student
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4" role="dialog" aria-modal="true" aria-labelledby="complete-profile-title">
       <form onSubmit={handleSubmit} className="w-full max-w-md rounded-3xl bg-white p-6" style={{ boxShadow: "var(--shadow-lg)" }}>
+        {step && step.total > 1 && (
+          <p className="mb-1 font-semibold text-green-700 uppercase" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-section)" }}>
+            Step {step.current} of {step.total}
+          </p>
+        )}
         <h2 id="complete-profile-title" className="text-ink-900 font-bold" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-2xl)" }}>
           Finish setting up
         </h2>

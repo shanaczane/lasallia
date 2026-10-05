@@ -12,8 +12,9 @@ import { usePathname } from "next/navigation"
 import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
 import { StudentCountsProvider, useStudentCounts } from "./StudentCountsContext"
 import { cn } from "@/lib/utils"
-import { getUser, refreshCachedUser, type UserProfile } from "@/lib/auth"
+import { fetchPasswordStatus, getUser, refreshCachedUser, type UserProfile } from "@/lib/auth"
 import { CompleteProfileModal } from "@/components/ui/profile/CompleteProfileModal"
+import { PASSWORD_PROMPT_SKIP_KEY, SetPasswordModal } from "@/components/ui/profile/SetPasswordModal"
 import {
   LayoutDashboard,
   BookOpen,
@@ -105,6 +106,10 @@ function StudentLayoutInner({
   const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
   const [displayEmail, setDisplayEmail] = useState("")
   const [profileSeed, setProfileSeed] = useState<UserProfile | null>(null)
+  const [needsPassword, setNeedsPassword] = useState(false)
+  // Fixed once both checks resolve, so the "Step N of M" label doesn't
+  // shift from "1 of 2" to "1 of 1" mid-flow.
+  const [setupSteps, setSetupSteps] = useState(0)
   const [isFaculty, setIsFaculty] = useState(false)
 
   useLayoutEffectSafe(() => {
@@ -143,13 +148,31 @@ function StudentLayoutInner({
     : u.role === "faculty" ? !u.college || !u.id_number
     : false
 
+  // First-login setup runs as two separate modals, one after the other, so
+  // neither gets too long: step 1 = academic details (CompleteProfileModal),
+  // step 2 = set a password for a Google-only account (SetPasswordModal).
+  // Either step is left out when it doesn't apply. Sprint 5.4
   useEffect(() => {
     const cached = getUser()
-    if (!cached || !isIncomplete(cached)) return
+    if (!cached) return
     let cancelled = false
-    refreshCachedUser().then((fresh) => {
-      if (cancelled || !fresh || !isIncomplete(fresh)) return
-      if (fresh.role === "student" || fresh.role === "faculty") setProfileSeed(fresh)
+
+    const profileCheck: Promise<UserProfile | null> = isIncomplete(cached)
+      ? refreshCachedUser().then((fresh) =>
+          fresh && isIncomplete(fresh) && (fresh.role === "student" || fresh.role === "faculty") ? fresh : null)
+      : Promise.resolve(null)
+
+    let skipped = false
+    try { skipped = localStorage.getItem(PASSWORD_PROMPT_SKIP_KEY) === "true" } catch {}
+    const passwordCheck: Promise<boolean> = skipped
+      ? Promise.resolve(false)
+      : fetchPasswordStatus().then((res) => !res.has_password).catch(() => false)
+
+    Promise.all([profileCheck, passwordCheck]).then(([seed, noPassword]) => {
+      if (cancelled) return
+      setSetupSteps((seed ? 1 : 0) + (noPassword ? 1 : 0))
+      setProfileSeed(seed)
+      setNeedsPassword(noPassword)
     })
     return () => { cancelled = true }
   }, [])
@@ -312,7 +335,18 @@ function StudentLayoutInner({
       </main>
 
       {profileSeed && (profileSeed.role === "student" || profileSeed.role === "faculty") && (
-        <CompleteProfileModal role={profileSeed.role} initial={profileSeed} onDone={() => setProfileSeed(null)} />
+        <CompleteProfileModal
+          role={profileSeed.role}
+          initial={profileSeed}
+          step={{ current: 1, total: setupSteps }}
+          onDone={() => setProfileSeed(null)}
+        />
+      )}
+      {!profileSeed && needsPassword && (
+        <SetPasswordModal
+          step={{ current: setupSteps, total: setupSteps }}
+          onDone={() => setNeedsPassword(false)}
+        />
       )}
     </div>
   )

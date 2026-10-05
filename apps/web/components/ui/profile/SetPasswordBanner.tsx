@@ -13,6 +13,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { KeyRound, X } from "lucide-react"
 import { fetchPasswordStatus } from "@/lib/auth"
+import { PASSWORD_SET_EVENT } from "./SetPasswordModal"
 
 const DISMISS_KEY = "password-banner-dismissed"
 
@@ -24,6 +25,13 @@ export function SetPasswordBanner() {
     fetchPasswordStatus()
       .then((res) => { if (!res.has_password) setVisible(true) })
       .catch(() => {}) // fail silent — a nudge, not core page content
+  }, [])
+
+  // Hide right away if the first-login SetPasswordModal sets one meanwhile.
+  useEffect(() => {
+    const hide = () => setVisible(false)
+    window.addEventListener(PASSWORD_SET_EVENT, hide)
+    return () => window.removeEventListener(PASSWORD_SET_EVENT, hide)
   }, [])
 
   function dismiss() {
