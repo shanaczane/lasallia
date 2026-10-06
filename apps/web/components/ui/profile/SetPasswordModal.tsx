@@ -49,6 +49,9 @@ export function SetPasswordModal({ step, onDone }: { step?: { current: number; t
     setSaving(true)
     try {
       await setPassword(newPassword)
+      // Same key as "Skip for now" — so a refresh right after never re-asks
+      // even if password-status is slow to reflect the change.
+      try { sessionStorage.setItem(PASSWORD_PROMPT_SKIP_KEY, "true") } catch {}
       window.dispatchEvent(new Event(PASSWORD_SET_EVENT))
       onDone()
     } catch (err: unknown) {
