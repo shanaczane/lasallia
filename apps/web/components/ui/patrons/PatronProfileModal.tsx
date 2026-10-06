@@ -25,6 +25,9 @@ type PatronProfileModalProps = {
   patron: UserProfile
   onClose: () => void
   onToggleStatus: () => void
+  // The signed-in librarian viewing their own profile — Deactivate is
+  // disabled (PATCH /patrons/{id} rejects it too). Sprint 5.5.3
+  isSelf?: boolean
 }
 
 const DUE_SOON_DAYS = 3
@@ -95,9 +98,10 @@ type FineEntry = {
   reasonLines: string[]
 }
 
-export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronProfileModalProps) {
+export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = false }: PatronProfileModalProps) {
   const [tab, setTab] = useState<Tab>("loans")
   const isActive = patron.status !== "inactive"
+  const blockSelfDeactivate = isActive && isSelf
 
   const [loans, setLoans] = useState<Loan[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
@@ -441,11 +445,17 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus }: PatronPr
           >
             Close
           </button>
+          {blockSelfDeactivate && (
+            <p className="text-ink-400 sm:mr-auto text-center sm:text-left" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+              You can&apos;t deactivate your own account.
+            </p>
+          )}
           <button
             type="button"
             onClick={onToggleStatus}
+            disabled={blockSelfDeactivate}
             className={cn(
-              "flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-sm transition-colors font-semibold",
+              "flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-sm transition-colors font-semibold disabled:opacity-50 disabled:pointer-events-none",
               isActive ? "bg-danger/10 text-danger hover:bg-danger/20" : "bg-green-700 text-white hover:bg-green-800"
             )}
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}

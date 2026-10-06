@@ -79,6 +79,14 @@ def update_patron(
         if changes["id_number"]:
             _check_id_number_conflict(admin, changes["id_number"], user_id)
 
+    # A librarian deactivating themselves would lock their own session out
+    # immediately (core/deps.py rejects inactive accounts on every request),
+    # and could leave the library with no librarian able to undo it. The
+    # Patrons screen disables the option too, but this is the real guard.
+    # Sprint 5.5.3
+    if changes.get("status") == "inactive" and user_id == librarian.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You can't deactivate your own account.")
+
     # A patron currently holding a book is still accountable for it — losing
     # access (and showing up as "inactive" everywhere) shouldn't be a way to
     # dodge that. Same active/overdue definition reservations.py's own
