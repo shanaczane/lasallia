@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { MapPin } from "lucide-react"
 import { AvailabilityPill } from "@/components/ui/pills/availability-pill"
@@ -11,12 +12,17 @@ export interface BookCardData {
   callNumber: string
   availability: "available" | "borrowed" | "reserved" | "missing"
   location: string
+  coverUrl?: string
   // The role's own book page (/student, /guest or /kiosk catalog) — set by
   // ChatWindow, which knows which portal the chat is running in.
   href?: string
 }
 
-export default function BookCard({ title, author, callNumber, availability, location, href }: BookCardData) {
+export default function BookCard({ title, author, callNumber, availability, location, href, coverUrl }: BookCardData) {
+  // A broken cover link falls back to the plain banner, same as no cover.
+  const [coverFailed, setCoverFailed] = useState(false)
+  const showCover = !!coverUrl && !coverFailed
+
   const body = (
     <>
       {/* Cover gradient — 120px height */}
@@ -35,9 +41,23 @@ export default function BookCard({ title, author, callNumber, availability, loca
             backgroundSize: "8px 8px",
           }}
         />
-        <div className="absolute bottom-0 left-0 right-0 p-3 pl-5">
+        <div className="absolute bottom-0 left-0 right-0 flex items-end gap-3 p-3 pl-5">
+          {showCover && (
+            // Portrait thumbnail rather than filling the banner — a 2:3
+            // cover cropped to 300×120 loses most of the artwork. Sprint 5.4
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={coverUrl}
+              alt={`Cover of ${title}`}
+              loading="lazy"
+              decoding="async"
+              onError={() => setCoverFailed(true)}
+              className="h-24 w-16 shrink-0 rounded-sm object-cover bg-white/10"
+              style={{ boxShadow: "var(--shadow)" }}
+            />
+          )}
           <p
-            className="text-white font-semibold leading-tight line-clamp-2"
+            className="min-w-0 text-white font-semibold leading-tight line-clamp-2"
             style={{ fontFamily: "var(--font-display)", fontSize: 13, textShadow: "0 1px 3px rgba(0,0,0,.4)" }}
           >
             {title}

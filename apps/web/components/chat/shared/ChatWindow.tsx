@@ -60,6 +60,7 @@ function bookToCardData(book: Book, catalogBase: string): BookCardData {
     callNumber: book.call_number,
     availability: book.status === "misplaced" ? "missing" : book.status,
     location: book.shelf_location,
+    coverUrl: book.cover_url,
     // ?from=assistant makes the book page's Back link return to this chat.
     href: `${catalogBase}/${book.id}?from=assistant`,
   }
