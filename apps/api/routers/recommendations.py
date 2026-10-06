@@ -18,6 +18,7 @@ from core.rate_limit import check_and_record
 from core.recommendation_events import log_events
 from core.recommendations import get_currently_excluded_book_ids
 from core.supabase import get_admin_client
+from routers.books import _apply_real_availability, _redact_accession
 from schemas.auth import UserProfile
 from schemas.recommendation import (
     LogEventsRequest,
@@ -69,6 +70,28 @@ def get_my_recommendations(
     return _recommend_for(db, user.id, max(1, min(limit, STORED_LIMIT)))
 
 
+def _with_live_availability(rows: list[dict]) -> list[dict]:
+    """The book:books!book_id(*) embeds carry books.status /
+    available_copies as stored, which go stale as soon as a copy is
+    borrowed — so a dashboard card said Available while the book page
+    (GET /books/{id}) said Borrowed. Recompute them from book_copies the
+    same way routers/books.py does for every catalog response. Also nulls
+    accession_no like the catalog: no librarian ever gets recommendations
+    (students/faculty, kiosk sessions, and the public /popular only)."""
+    books = [r["book"] for r in rows if r.get("book")]
+    if not books:
+        return rows
+    copies = (
+        get_admin_client().table("book_copies")
+        .select("book_id, status")
+        .in_("book_id", list({b["id"] for b in books}))
+        .execute()
+    ).data
+    _apply_real_availability(books, copies)
+    _redact_accession(books, None)
+    return rows
+
+
 def _recommend_for(db: Client, user_id: str, limit: int) -> RecommendationsResponse:
     """The whole ladder for one student. db is the caller's RLS-scoped client
     for GET /me and the admin client for the kiosk (which has no JWT) — both
@@ -103,6 +126,7 @@ def _recommend_for(db: Client, user_id: str, limit: int) -> RecommendationsRespo
     if not live or _is_stale(stored[0]["generated_at"]):
         return _fallback_response(get_admin_client(), user_id, limit)
 
+    _with_live_availability(live)
     items = [
         RecommendationItem(
             book=row["book"],
@@ -118,6 +142,7 @@ def _recommend_for(db: Client, user_id: str, limit: int) -> RecommendationsRespo
 
 
 def _rows_to_response(rows: list[dict], rung: Literal["program", "popular"]) -> RecommendationsResponse:
+    _with_live_availability(rows)
     items = [
         RecommendationItem(book=r["book"], rank=r["rank"], score=0.0, reason=r["reason"], reason_book_id=None)
         for r in rows
