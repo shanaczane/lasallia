@@ -13,9 +13,12 @@ type PatronActionsMenuProps = {
   patron: UserProfile
   onView: () => void
   onToggleStatus: () => void
+  // The signed-in librarian's own row — Deactivate is shown disabled
+  // (PATCH /patrons/{id} rejects it too). Sprint 5.5.3
+  isSelf?: boolean
 }
 
-export function PatronActionsMenu({ patron, onView, onToggleStatus }: PatronActionsMenuProps) {
+export function PatronActionsMenu({ patron, onView, onToggleStatus, isSelf = false }: PatronActionsMenuProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -55,7 +58,15 @@ export function PatronActionsMenu({ patron, onView, onToggleStatus }: PatronActi
         >
           <MenuItem icon={<Eye size={14} />} label="View profile" onClick={() => { setOpen(false); onView() }} />
           <div className="my-1 border-t border-ink-100" />
-          {isActive ? (
+          {isActive && isSelf ? (
+            <MenuItem
+              icon={<UserX size={14} />}
+              label="Deactivate account"
+              hint="You can't deactivate your own account"
+              disabled
+              onClick={() => {}}
+            />
+          ) : isActive ? (
             <MenuItem
               icon={<UserX size={14} />}
               label="Deactivate account"
@@ -80,25 +91,36 @@ function MenuItem({
   label,
   onClick,
   danger,
+  disabled,
+  hint,
 }: {
   icon: React.ReactNode
   label: string
   onClick: () => void
   danger?: boolean
+  disabled?: boolean
+  hint?: string
 }) {
   return (
     <button
       type="button"
       role="menuitem"
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "flex items-center gap-2.5 w-full px-3 py-2 text-left transition-colors",
-        danger ? "text-danger hover:bg-danger-bg" : "text-ink-700 hover:bg-ink-50"
+        "flex items-start gap-2.5 w-full px-3 py-2 text-left transition-colors",
+        disabled ? "text-ink-300 cursor-not-allowed"
+        : danger ? "text-danger hover:bg-danger-bg" : "text-ink-700 hover:bg-ink-50"
       )}
       style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
     >
-      <span className={danger ? "text-danger" : "text-ink-400"}>{icon}</span>
-      {label}
+      <span className={cn("mt-0.5", disabled ? "text-ink-300" : danger ? "text-danger" : "text-ink-400")}>{icon}</span>
+      <span>
+        {label}
+        {hint && (
+          <span className="block text-ink-400" style={{ fontSize: "var(--text-xs)" }}>{hint}</span>
+        )}
+      </span>
     </button>
   )
 }

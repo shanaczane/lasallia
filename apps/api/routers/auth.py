@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from supabase_auth.errors import AuthApiError
+from postgrest.exceptions import APIError
 from schemas.auth import ChangePasswordRequest, LoginRequest, PasswordStatusResponse, RefreshRequest, SetPasswordRequest, TokenResponse, UpdateProfileRequest, UserProfile
 from core.supabase import get_client, get_admin_client
 from core.deps import get_current_user, invalidate_profile
@@ -185,12 +186,24 @@ def change_password(body: ChangePasswordRequest, user: UserProfile = Depends(get
 # user_has_password (migration 0046) reads auth.users.encrypted_password
 # directly and is checked first; the older signals stay as a fallback in
 # case the migration hasn't been applied yet.
+#
+# Only a missing function (PGRST202) falls back. Any other RPC failure is
+# retried and then raised: the admin client shares one HTTP/2 connection
+# (see core/supabase.py), which drops calls under the burst of requests a
+# dashboard load sends right after login. Swallowing that used to answer
+# "no password", so the banner showed until the next refresh. A 503 is
+# safe here: the banner fails silent and the first-login modal retries.
 def _has_password_identity(user_id: str) -> bool:
-    try:
-        if get_admin_client().rpc("user_has_password", {"uid": user_id}).execute().data:
-            return True
-    except Exception:
-        pass
+    for attempt in range(3):
+        try:
+            if get_admin_client().rpc("user_has_password", {"uid": user_id}).execute().data:
+                return True
+            break
+        except Exception as e:
+            if isinstance(e, APIError) and e.code == "PGRST202":
+                break
+            if attempt == 2:
+                raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Could not check your account")
     sb_user = get_admin_client().auth.admin.get_user_by_id(user_id).user
     if (sb_user.app_metadata or {}).get("has_password"):
         return True

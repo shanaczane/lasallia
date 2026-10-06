@@ -11,6 +11,7 @@
 
 import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import {
   ArrowLeft, MapPin, Hash, Building2, Calendar,
   BookOpen, GraduationCap, Landmark, QrCode, AlertCircle,
@@ -192,6 +193,9 @@ export default function KioskBookDetailPage({
   params: Promise<{ bookId: string }>
 }) {
   const { bookId } = use(params)
+  // A card in the assistant chat links here with ?from=assistant, so Back
+  // returns to that conversation instead of the catalog. Sprint 5.4
+  const fromAssistant = useSearchParams().get('from') === 'assistant'
   const { session, guestBrowsing } = useKioskSession()
   const { book, loading, error } = useBook(bookId)
   const [showBorrow, setShowBorrow] = useState(false)
@@ -277,12 +281,12 @@ export default function KioskBookDetailPage({
 
       {/* Back */}
       <Link
-        href="/kiosk/catalog"
+        href={fromAssistant ? '/kiosk/assistant' : '/kiosk/catalog'}
         className="inline-flex items-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors mb-7"
         style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
       >
         <ArrowLeft size={15} />
-        Back to results
+        {fromAssistant ? 'Back to assistant' : 'Back to results'}
       </Link>
 
       {/* ── Two-column hero ────────────────────────────────────────────── */}

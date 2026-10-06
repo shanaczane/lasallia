@@ -19,9 +19,11 @@ type PatronsTableProps = {
   patrons: UserProfile[]
   onView: (patron: UserProfile) => void
   onToggleStatus: (patron: UserProfile) => void
+  // Signed-in librarian's id — their own row can't be deactivated.
+  selfId?: string | null
 }
 
-export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTableProps) {
+export function PatronsTable({ patrons, onView, onToggleStatus, selfId }: PatronsTableProps) {
   return (
     <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
 
@@ -105,6 +107,7 @@ export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTablePr
                   patron={patron}
                   onView={() => onView(patron)}
                   onToggleStatus={() => onToggleStatus(patron)}
+                  isSelf={patron.id === selfId}
                 />
               </div>
 
@@ -132,6 +135,7 @@ export function PatronsTable({ patrons, onView, onToggleStatus }: PatronsTablePr
                   patron={patron}
                   onView={() => onView(patron)}
                   onToggleStatus={() => onToggleStatus(patron)}
+                  isSelf={patron.id === selfId}
                 />
               </div>
             </div>

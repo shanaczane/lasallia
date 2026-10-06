@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, type ReactNode } from "react"
+import { usePathname } from "next/navigation"
 import ChatHeader from "./ChatHeader"
 import ChatInput from "./ChatInput"
 import ChatMessage, { type ChatMessageData } from "./ChatMessage"
@@ -35,13 +36,33 @@ const GREETING_TEXT = "Hi there! I'm Lasallia, your library assistant at De La S
 // it survives a navigate-away-and-back within the same station session.
 const KIOSK_CHAT_STARTED_KEY_PREFIX = "lasallia-kiosk-chat-started-"
 
-function bookToCardData(book: Book): BookCardData {
+// Chat history (GET /chat/sessions/{id}) only replays message text, so the
+// book cards would vanish when a visitor clicks one and comes back. Each
+// reply's cards are kept per session in sessionStorage — one entry per
+// saved assistant reply (failed turns are never saved server-side, so they
+// get no entry either) — and matched back onto the history on hydrate.
+const CHAT_BOOKS_KEY_PREFIX = "lasallia-chat-books-"
+
+function readSavedBooks(sessionId: string): (BookCardData[] | null)[] {
+  try { return JSON.parse(sessionStorage.getItem(`${CHAT_BOOKS_KEY_PREFIX}${sessionId}`) ?? "[]") } catch { return [] }
+}
+
+function appendSavedBooks(sessionId: string, books: BookCardData[] | null) {
+  try {
+    sessionStorage.setItem(`${CHAT_BOOKS_KEY_PREFIX}${sessionId}`, JSON.stringify([...readSavedBooks(sessionId), books]))
+  } catch {}
+}
+
+function bookToCardData(book: Book, catalogBase: string): BookCardData {
   return {
     title: book.title,
     author: book.author,
     callNumber: book.call_number,
     availability: book.status === "misplaced" ? "missing" : book.status,
     location: book.shelf_location,
+    coverUrl: book.cover_url,
+    // ?from=assistant makes the book page's Back link return to this chat.
+    href: `${catalogBase}/${book.id}?from=assistant`,
   }
 }
 
@@ -64,6 +85,13 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const sessionIdRef = useRef<string | null>(sessionId ?? null)
   const messagesRef = useRef<HTMLDivElement>(null)
+  // Shared by the student (faculty too), guest and kiosk assistants — each
+  // card opens that portal's own book page. Sprint 5.4
+  const pathname = usePathname()
+  const catalogBase =
+    surface === "kiosk" ? "/kiosk/catalog"
+    : pathname.startsWith("/guest") ? "/guest/catalog"
+    : "/student/catalog"
 
   useEffect(() => {
     let cancelled = false
@@ -93,12 +121,17 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
           setMessages([greeting()])
           return
         }
+        // Aligned from the end, so a history that was trimmed at the
+        // start still lines up with the newest replies' cards.
+        const savedBooks = readSavedBooks(existingId)
+        let replyIndex = savedBooks.length - history.filter((m) => m.role === "assistant").length
         setMessages(
           history.map((m, i) => ({
             id: `history-${i}`,
             role: m.role === "assistant" ? "bot" : "user",
             content: m.content,
             timestamp: timestamp(),
+            books: m.role === "assistant" ? (savedBooks[replyIndex++] ?? undefined) : undefined,
           }))
         )
       } catch {
@@ -139,12 +172,14 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
         if (surface === "web") sessionStorage.setItem(WEB_CHAT_SESSION_STORAGE_KEY, result.session_id)
         if (surface === "kiosk") sessionStorage.setItem(`${KIOSK_CHAT_STARTED_KEY_PREFIX}${result.session_id}`, "1")
         setTypingStatus(null)
+        const books = result.books.length > 0 ? result.books.map((b) => bookToCardData(b, catalogBase)) : undefined
+        appendSavedBooks(result.session_id, books ?? null)
         setMessages((prev) => [...prev, {
           id: String(Date.now() + 1),
           role: "bot",
           content: result.reply,
           timestamp: timestamp(),
-          books: result.books.length > 0 ? result.books.map(bookToCardData) : undefined,
+          books,
         }])
       },
       onError: (message) => {
@@ -164,6 +199,7 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
     const id = sessionIdRef.current
     if (!id) return
     await deleteChatSession(id).catch(() => {})
+    try { sessionStorage.removeItem(`${CHAT_BOOKS_KEY_PREFIX}${id}`) } catch {}
     sessionIdRef.current = null
     setHasSession(false)
     if (surface === "web") sessionStorage.removeItem(WEB_CHAT_SESSION_STORAGE_KEY)

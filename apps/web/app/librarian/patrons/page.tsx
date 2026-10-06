@@ -9,6 +9,7 @@ import { useSearchParams } from "next/navigation"
 import { CheckCircle2, AlertCircle } from "lucide-react"
 import type { UserProfile } from "@lasallia/types"
 import { fetchPatrons, updatePatronStatus } from "@/lib/users"
+import { getUser } from "@/lib/auth"
 import { downloadCsv } from "@/lib/reports"
 import { ROLE_LABEL } from "@/lib/mock/patrons"
 import { Pagination } from "@/components/ui/catalog"
@@ -119,6 +120,13 @@ function PatronsPageContent() {
   const [confirmingStatus, setConfirmingStatus] = useState<UserProfile | null>(null)
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null)
 
+  // Signed-in librarian — their own row/profile can't be deactivated.
+  // null during SSR (no storage there) — harmless, since rows only exist
+  // once fetchPatrons resolves in the browser. Sprint 5.5.3
+  const [selfId] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : getUser()?.id ?? null
+  )
+
   function showToast(message: string, variant: "success" | "error") {
     setToast({ message, variant })
     setTimeout(() => setToast(null), 3000)
@@ -215,6 +223,7 @@ function PatronsPageContent() {
         patrons={pageItems}
         onView={setViewing}
         onToggleStatus={setConfirmingStatus}
+        selfId={selfId}
       />
 
       <Paginator page={page} totalPages={totalPages} goTo={goTo} totalItems={filtered.length} />
@@ -224,6 +233,7 @@ function PatronsPageContent() {
           patron={viewing}
           onClose={() => setViewing(null)}
           onToggleStatus={() => setConfirmingStatus(viewing)}
+          isSelf={viewing.id === selfId}
         />
       )}
 
