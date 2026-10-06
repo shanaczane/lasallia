@@ -409,7 +409,9 @@ export default function StudentBookDetailPage({
       ? { backHref: libraryTab ? `/student/library?tab=${libraryTab}` : '/student/library', backLabel: 'Back to My Library' }
       : from === 'reservations'
         ? { backHref: '/student/reservations', backLabel: 'Back to reservations' }
-        : { backHref: '/student/catalog', backLabel: 'Back to results' }
+        : from === 'assistant'
+          ? { backHref: '/student/assistant', backLabel: 'Back to assistant' }
+          : { backHref: '/student/catalog', backLabel: 'Back to results' }
 
   const { book, loading } = useBook(bookId)
   const { reservations, refresh: refreshReservations } = useReservations()

@@ -1,7 +1,9 @@
 "use client"
 
+import Link from "next/link"
 import { MapPin } from "lucide-react"
 import { AvailabilityPill } from "@/components/ui/pills/availability-pill"
+import { cn } from "@/lib/utils"
 
 export interface BookCardData {
   title: string
@@ -9,15 +11,14 @@ export interface BookCardData {
   callNumber: string
   availability: "available" | "borrowed" | "reserved" | "missing"
   location: string
+  // The role's own book page (/student, /guest or /kiosk catalog) — set by
+  // ChatWindow, which knows which portal the chat is running in.
+  href?: string
 }
 
-export default function BookCard({ title, author, callNumber, availability, location }: BookCardData) {
-  return (
-    // mt-3, rounded-lg border ink-100, overflow-hidden, w-[300px]
-    <div
-      className="mt-3 rounded-lg overflow-hidden w-[300px] max-w-full"
-      style={{ border: "1px solid var(--color-ink-100)" }}
-    >
+export default function BookCard({ title, author, callNumber, availability, location, href }: BookCardData) {
+  const body = (
+    <>
       {/* Cover gradient — 120px height */}
       <div
         className="relative overflow-hidden"
@@ -60,6 +61,25 @@ export default function BookCard({ title, author, callNumber, availability, loca
           <AvailabilityPill status={availability} />
         </div>
       </div>
-    </div>
+    </>
+  )
+
+  // mt-3, rounded-lg border ink-100, overflow-hidden, w-[300px]
+  const cardClass = "mt-3 block rounded-lg overflow-hidden w-[300px] max-w-full border border-ink-100"
+
+  if (!href) return <div className={cardClass}>{body}</div>
+
+  return (
+    <Link
+      href={href}
+      aria-label={`View details for ${title}`}
+      className={cn(
+        cardClass,
+        "whitespace-normal transition-[border-color,box-shadow] hover:border-green-300 hover:shadow-md",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+      )}
+    >
+      {body}
+    </Link>
   )
 }

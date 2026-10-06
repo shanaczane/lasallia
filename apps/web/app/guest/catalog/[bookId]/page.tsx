@@ -5,6 +5,7 @@
 
 import { use } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { ArrowLeft, MapPin, Hash, Building2, Calendar, BookOpen, GraduationCap, Landmark, BookMarked } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { programLabel } from '@/lib/programLabels'
@@ -130,6 +131,9 @@ export default function GuestBookDetailPage({
   params: Promise<{ bookId: string }>
 }) {
   const { bookId } = use(params)
+  // A card in the assistant chat links here with ?from=assistant, so Back
+  // returns to that conversation instead of the catalog. Sprint 5.4
+  const fromAssistant = useSearchParams().get('from') === 'assistant'
   const { book, loading } = useBook(bookId)
 
   // ── Loading state ────────────────────────────────────────────────────────
@@ -188,12 +192,12 @@ export default function GuestBookDetailPage({
 
       {/* Back */}
       <Link
-        href="/guest/catalog"
+        href={fromAssistant ? '/guest/assistant' : '/guest/catalog'}
         className="inline-flex items-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors mb-7"
         style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
       >
         <ArrowLeft size={15} />
-        Back to results
+        {fromAssistant ? 'Back to assistant' : 'Back to results'}
       </Link>
 
       {/* ── Two-column hero ────────────────────────────────────────────── */}
