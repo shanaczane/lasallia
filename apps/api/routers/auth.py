@@ -179,7 +179,18 @@ def change_password(body: ChangePasswordRequest, user: UserProfile = Depends(get
 # after a password was already set. Every password write now also stamps
 # app_metadata.has_password (service-role only — a user can't set
 # app_metadata on themselves), and that flag counts too.
+#
+# Neither covers a password set before that stamp existed, so the
+# first-login modal still came back on every refresh for those accounts.
+# user_has_password (migration 0046) reads auth.users.encrypted_password
+# directly and is checked first; the older signals stay as a fallback in
+# case the migration hasn't been applied yet.
 def _has_password_identity(user_id: str) -> bool:
+    try:
+        if get_admin_client().rpc("user_has_password", {"uid": user_id}).execute().data:
+            return True
+    except Exception:
+        pass
     sb_user = get_admin_client().auth.admin.get_user_by_id(user_id).user
     if (sb_user.app_metadata or {}).get("has_password"):
         return True
