@@ -33,31 +33,37 @@ export default function BookCard({ title, author, callNumber, availability, loca
           background: "linear-gradient(135deg, var(--color-green-900) 0%, var(--color-green-700) 55%, var(--color-green-300) 100%)",
         }}
       >
-        <div className="absolute left-0 top-0 bottom-0 w-3 bg-black/20" />
-        <div
-          className="absolute inset-0 opacity-[0.06]"
-          style={{
-            backgroundImage: "repeating-linear-gradient(45deg,white 0,white 1px,transparent 0,transparent 50%)",
-            backgroundSize: "8px 8px",
-          }}
-        />
-        <div className="absolute bottom-0 left-0 right-0 flex items-end gap-3 p-3 pl-5">
-          {showCover && (
-            // Portrait thumbnail rather than filling the banner — a 2:3
-            // cover cropped to 300×120 loses most of the artwork. Sprint 5.4
-            // eslint-disable-next-line @next/next/no-img-element
+        {showCover ? (
+          <>
+            {/* Cover fills the banner, anchored to the top where a cover's
+                title/artwork usually is; the bottom fade keeps the title
+                overlay readable over any image. Sprint 5.4 */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={coverUrl}
               alt={`Cover of ${title}`}
               loading="lazy"
               decoding="async"
               onError={() => setCoverFailed(true)}
-              className="h-24 w-16 shrink-0 rounded-sm object-cover bg-white/10"
-              style={{ boxShadow: "var(--shadow)" }}
+              className="absolute inset-0 h-full w-full object-cover object-top"
             />
-          )}
+            <div className="absolute inset-0 bg-linear-to-t from-black/75 via-black/25 to-transparent" />
+          </>
+        ) : (
+          <>
+            <div className="absolute left-0 top-0 bottom-0 w-3 bg-black/20" />
+            <div
+              className="absolute inset-0 opacity-[0.06]"
+              style={{
+                backgroundImage: "repeating-linear-gradient(45deg,white 0,white 1px,transparent 0,transparent 50%)",
+                backgroundSize: "8px 8px",
+              }}
+            />
+          </>
+        )}
+        <div className="absolute bottom-0 left-0 right-0 p-3 pl-5">
           <p
-            className="min-w-0 text-white font-semibold leading-tight line-clamp-2"
+            className="text-white font-semibold leading-tight line-clamp-2"
             style={{ fontFamily: "var(--font-display)", fontSize: 13, textShadow: "0 1px 3px rgba(0,0,0,.4)" }}
           >
             {title}
