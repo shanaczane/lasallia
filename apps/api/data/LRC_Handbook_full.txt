@@ -593,14 +593,9 @@ to pay the charges before the title is ordered.
 of the requesting library client/patron
 3. General Guidelines
 3.1. Hours of Service
-Monday-Friday 7:00 am-5:00 pm
-(IS)
-Wednesday Wednesday
-(SMILES) Per (SMILES) Per
-reservation (IS) reservation
-Monday-Friday 7:00 am-6:00 pm
-(COLLEGE) 8:00 am-5:00 pm
-Saturday
+Monday-Friday: 7:30 am - 6:00 pm
+Saturday: 8:00 am - 5:00 pm
+Sunday: Closed
 3.2. The general guidelines for the use of the LRC are as follows:
 3.2.1. The school ID should be always worn while inside the LRC.
 3.2.2. Everyone is required to disinfect their hands with sanitizer or alcohol upon
@@ -613,9 +608,7 @@ Services Counter.
 -
 
 [Table data on this page]
-Monday-Friday (IS): 7:00 am-5:00 pm
-Wednesday (SMILES) Per reservation (IS): Wednesday (SMILES) Per reservation
-Monday-Friday (COLLEGE) Saturday: 7:00 am-6:00 pm 8:00 am-5:00 pm
+Hours of Service — Monday-Friday: 7:30 am - 6:00 pm. Saturday: 8:00 am - 5:00 pm. Sunday: Closed.
 
 Page: 18 of 35
 
