@@ -24,6 +24,7 @@
 import json
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Iterator
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -65,6 +66,7 @@ Rules — follow these exactly, they are not suggestions:
 13b. If those three tools are NOT in your tool list at all, the student isn't logged in. Answer immediately, in text, with no tool call at all — do not call search_catalog, get_book_details, or search_policy to try to work around the missing account tools, there is nothing in the catalog or handbook that answers an account question. Just tell them plainly they'll need to log in to see account info, whether or not the question also tries to ask about someone else.
 14. When reporting loans/fines/history, keep it to the essentials (title, due date or amount, status) and point to "My Library" in the sidebar for the full record — don't reproduce every field of every loan in prose.
 15. If a student asks for book recommendations for their course, program, major, or degree — "what should I read for my course", "recommend books for my program", etc. — and recommend_for_my_course is in your tool list, call it rather than guessing a search_catalog query from the program name; it returns real recommendations based on what students in the same program actually borrow. Relay each book's own "reason" field naturally instead of inventing your own justification. If it returns an empty list after being called, say plainly that there's nothing on record yet for their program rather than guessing. If recommend_for_my_course is NOT in your tool list: if the student is logged in but has no program on file, tell them to add it in Settings → Profile; if they're not logged in, tell them to log in first. Either way you may still offer to search_catalog by subject/keyword as a fallback.
+16. When get_book_details' result shows the book isn't available (status isn't "available" — checked out, reserved, missing, etc.), proactively mention that too, not just whatever they originally asked about. If its "similar_available_books" field is present and non-empty, offer those as substitutes the student could borrow right now instead — name-drop one or two naturally (e.g. "That one's checked out right now, but [Title] on a similar topic is available"), don't just dump the whole list. If "similar_available_books" is absent or empty, say plainly that it's unavailable with nothing similar on hand right now — don't invent an alternative from your own knowledge.
 """
 
 
@@ -119,6 +121,8 @@ def _book_details_for_model(result) -> dict:
     }
     if result.nearby_by_call_number:
         data["nearby_by_call_number"] = result.nearby_by_call_number
+    if result.similar_available_books:
+        data["similar_available_books"] = [_book_for_model(b.model_dump()) for b in result.similar_available_books]
     return data
 
 
@@ -243,12 +247,29 @@ def send_message(
                 "tool_calls": [tc.model_dump() for tc in choice.message.tool_calls],
             })
 
-            for call in choice.message.tool_calls:
-                args = json.loads(call.function.arguments or "{}")
+            # A round's tool calls are independent of each other (none can
+            # see another's result until the *next* completion call), so
+            # dispatching them concurrently rather than one-by-one cuts
+            # real latency whenever the model asks for more than one in
+            # the same round (e.g. search_catalog + search_policy for a
+            # mixed question) — matches the ThreadPoolExecutor pattern
+            # core/recommendations.py and routers/recommendations.py
+            # already use for the same reason.
+            calls = choice.message.tool_calls
+            parsed_args = [json.loads(c.function.arguments or "{}") for c in calls]
+
+            def _run(call, args):
                 try:
-                    result = registry.dispatch(call.function.name, args)
+                    return registry.dispatch(call.function.name, args)
                 except Exception as e:
-                    tool_content: Any = {"error": str(e)}
+                    return e
+
+            with ThreadPoolExecutor(max_workers=len(calls)) as pool:
+                dispatched = list(pool.map(lambda pair: _run(*pair), zip(calls, parsed_args)))
+
+            for call, result in zip(calls, dispatched):
+                if isinstance(result, Exception):
+                    tool_content: Any = {"error": str(result)}
                 else:
                     if call.function.name == "search_catalog":
                         new_books = [b.model_dump() for b in result]
@@ -256,6 +277,8 @@ def send_message(
                         tool_content = [_book_for_model(b) for b in new_books]
                     elif call.function.name == "get_book_details":
                         books_out.append(result.book.model_dump())
+                        if result.similar_available_books:
+                            books_out.extend(b.model_dump() for b in result.similar_available_books)
                         tool_content = _book_details_for_model(result)
                     elif call.function.name == "search_policy":
                         tool_content = [r.model_dump() for r in result]

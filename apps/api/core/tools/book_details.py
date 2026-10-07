@@ -26,6 +26,13 @@ class BookDetailsResult(BaseModel):
     # when book.abstract is empty — no cost when there's a real
     # description to summarize instead.
     nearby_by_call_number: list[dict] | None = None
+    # Substitute suggestions — only populated when `book` itself isn't
+    # available, so the model has something concrete to offer instead of
+    # just "it's checked out." Reuses book_similarities (core/similarities.py,
+    # the same content-similarity table the "For You" dashboard's rung 1
+    # is built on) rather than leaving the model to guess a related
+    # search_catalog query — same reasoning as recommend_for_my_course.
+    similar_available_books: list[Book] | None = None
 
 
 def _find_nearby_by_call_number(admin, book_id: str, limit: int = 3) -> list[dict]:
@@ -35,6 +42,33 @@ def _find_nearby_by_call_number(admin, book_id: str, limit: int = 3) -> list[dic
         return []
     neighbors = rows[max(0, idx - limit):idx] + rows[idx + 1:idx + 1 + limit]
     return [{"title": r["title"], "call_number": r["call_number"]} for r in neighbors]
+
+
+def _find_similar_available(admin, book_id: str, limit: int = 3) -> list[Book]:
+    """Content-similar neighbors (book_similarities, highest rank first)
+    that are actually available right now — a substitute nobody can
+    borrow either isn't a useful suggestion. Overfetches since some
+    neighbors will be filtered out by availability or archival."""
+    neighbor_rows = (
+        admin.table("book_similarities")
+        .select("neighbor_book_id, rank")
+        .eq("book_id", book_id)
+        .order("rank")
+        .limit(limit * 4)
+        .execute()
+    ).data
+    if not neighbor_rows:
+        return []
+
+    neighbor_ids = [r["neighbor_book_id"] for r in neighbor_rows]
+    books = admin.table("books").select("*").in_("id", neighbor_ids).is_("archived_at", "null").execute().data
+    copies = admin.table("book_copies").select("book_id, status").in_("book_id", neighbor_ids).execute().data
+    books = _apply_real_availability(books, copies)
+    books = _redact_accession(books, None)
+    available_by_id = {b["id"]: b for b in books if b["status"] == "available"}
+
+    ordered = [available_by_id[nid] for nid in neighbor_ids if nid in available_by_id]
+    return [Book(**b) for b in ordered[:limit]]
 
 
 def get_book_details(book_id: str) -> BookDetailsResult:
@@ -59,11 +93,13 @@ def get_book_details(book_id: str) -> BookDetailsResult:
     book = Book(**enriched)
 
     nearby = _find_nearby_by_call_number(admin, book_id) if not book.abstract else None
+    similar_available = _find_similar_available(admin, book_id) if book.status != "available" else None
 
     return BookDetailsResult(
         book=book,
         collection_type=raw.get("collection_type") or "General",
         nearby_by_call_number=nearby,
+        similar_available_books=similar_available,
     )
 
 

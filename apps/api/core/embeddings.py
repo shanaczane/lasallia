@@ -77,15 +77,21 @@ def translate_query_to_english(query: str) -> str:
     return translated or query
 
 
-def semantic_search(admin: Client, query: str, limit: int = 10) -> list[dict]:
+def semantic_search(admin: Client, query_embedding: list[float], query_text: str, limit: int = 10) -> list[dict]:
     """Plan 1.4/1.5's hybrid search, minus availability-joining and
     accession redaction — those differ by caller (routers/search.py's
     public endpoint vs core/tools/catalog.py's chat tool), so each caller
-    applies them itself. Returns raw book rows in rank order."""
-    query_embedding = embed_text(query)
+    applies them itself. Returns raw book rows in rank order.
+
+    Takes an already-computed `query_embedding` rather than embedding
+    `query_text` itself — core/tools/catalog.py's search_catalog needs
+    that same embedding again afterward for its own relevance re-check,
+    and embedding the identical text twice was a real, measured source of
+    chatbot reply latency (one extra OpenAI network round trip on every
+    single catalog search). The caller embeds once and passes it in."""
     ranked = admin.rpc("hybrid_search_books", {
         "query_embedding": query_embedding,
-        "query_text": query,
+        "query_text": query_text,
         "match_count": limit,
     }).execute().data
 

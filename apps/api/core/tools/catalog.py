@@ -75,19 +75,25 @@ def search_catalog(query: str, limit: int = DEFAULT_LIMIT, translate: bool = Fal
     up comparing an English book embedding against a non-English query
     vector inconsistently. Defaults to False — purely additive, decided
     by evals/run_eval.py's A/B, not a behavior change on its own.
+
+    Embeds `effective_query` exactly once — semantic_search's hybrid RPC
+    and this function's own relevance re-check both need the same vector,
+    and embedding identical text twice was a real, measured chunk of
+    chatbot reply latency (one extra OpenAI round trip per catalog
+    search). The embedding is computed up front and reused for both.
     """
     admin = get_admin_client()
     effective_query = translate_query_to_english(query) if translate else query
 
-    ordered = semantic_search(admin, effective_query, limit)
+    query_vec = _parse_vector(embed_text(effective_query))
+    query_vec_norm = np.linalg.norm(query_vec)
+    query_match = _normalize_for_match(effective_query)
+
+    ordered = semantic_search(admin, query_vec.tolist(), effective_query, limit)
     if not ordered:
         return []
 
     book_ids = [b["id"] for b in ordered]
-
-    query_vec = _parse_vector(embed_text(effective_query))
-    query_vec_norm = np.linalg.norm(query_vec)
-    query_match = _normalize_for_match(effective_query)
 
     embeds = admin.table("book_embeddings").select("book_id, embedding").in_("book_id", book_ids).execute().data
     similarity_by_id = {}

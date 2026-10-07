@@ -6,7 +6,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.deps import get_optional_user, require_librarian
-from core.embeddings import reembed_books, semantic_search as run_semantic_search
+from core.embeddings import embed_text, reembed_books, semantic_search as run_semantic_search
 from core.supabase import get_admin_client
 from routers.books import _apply_real_availability, _redact_accession
 from schemas.auth import UserProfile
@@ -23,7 +23,8 @@ def semantic_search(
     admin = get_admin_client()
 
     try:
-        ordered = run_semantic_search(admin, body.query, body.limit)
+        query_embedding = embed_text(body.query)
+        ordered = run_semantic_search(admin, query_embedding, body.query, body.limit)
     except RuntimeError as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e))
 
