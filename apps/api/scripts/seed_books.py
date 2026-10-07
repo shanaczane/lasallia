@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # so `core.*` r
 
 from excel_source import read_records
 from shelf_location import classify_call_number
+from core.embeddings import reembed_books
 from core.supabase import get_admin_client
 
 # filename -> college code. One Excel file per college; the code becomes
@@ -142,6 +143,15 @@ def main(dry_run: bool = False) -> None:
         print(f"  inserted {inserted}/{len(all_rows)}")
 
     print(f"\nDone. {inserted} books inserted into Supabase.")
+
+    # This insert() bypasses routers/books.py's create_book, the only HTTP
+    # path that embeds a book on write — without this, every newly seeded
+    # title would be invisible to the chatbot's search_catalog until
+    # someone happened to run the reembed job by hand (the actual cause of
+    # a real UAT defect: new/edited books not found by the assistant).
+    print("\nEmbedding new books for search...")
+    embedded = reembed_books(client)
+    print(f"Embedded {embedded} book(s).")
 
 if __name__ == "__main__":
     main(dry_run="--dry-run" in sys.argv)

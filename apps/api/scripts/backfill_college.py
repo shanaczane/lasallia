@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # so `core.*` resolves
 
 from excel_source import read_records
+from core.embeddings import reembed_books
 from core.supabase import get_admin_client
 from seed_books import SOURCE_FILES  # same filename -> college mapping seed_books.py uses
 
@@ -90,6 +91,14 @@ def main(dry_run: bool = False) -> None:
             print(f"  {college}: tagged {n} rows (batch of {len(batch)} titles)")
 
     print(f"\nDone. {updated} existing book rows tagged with a college.")
+
+    # subject (college) is part of core/embeddings.py's build_embedded_text
+    # recipe — this update() bypasses routers/books.py's update_book, the
+    # only HTTP path that re-embeds on write, so every tagged row's
+    # embedding went stale relative to its new subject until re-run here.
+    print("\nRe-embedding tagged books so search reflects the new college...")
+    embedded = reembed_books(client)
+    print(f"Re-embedded {embedded} book(s).")
 
 if __name__ == "__main__":
     main(dry_run="--dry-run" in sys.argv)
