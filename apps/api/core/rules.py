@@ -176,6 +176,27 @@ def _citation_name(section_title: str) -> str:
     return tail.split(" - ")[0].strip()
 
 
+# This path never goes through the model, so it never sees the system
+# prompt's "always reply in English" rule — the handbook is English-only
+# today, so in practice this was never visibly broken, but nothing
+# actually guaranteed that. A short blocklist of common Filipino/Taglish
+# function words that have no business appearing in an English handbook
+# excerpt turns "happens to be English" into a real guarantee: if a
+# chunk ever gets edited to include non-English text (or a future intent
+# pulls from somewhere less reliably English), this intent is treated as
+# a miss and falls through to the RAG path below, which enforces English
+# properly via the model.
+_NON_ENGLISH_WORD_RE = re.compile(
+    r"\b(ang|ng|mga|nang|ito|iyon|dito|doon|hindi|oo|opo|hinihiram|libro|aklat|"
+    r"kailangan|pwede|puwede|maaari|bawat|kada|bago|pagkatapos|magkano|ilan|ilang)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_english(text: str) -> bool:
+    return not _NON_ENGLISH_WORD_RE.search(text)
+
+
 def answer_for(intent: str) -> str | None:
     """The cited handbook answer for an intent, or None if the chunk or the
     expected line isn't there (caller falls through to RAG)."""
@@ -195,7 +216,7 @@ def answer_for(intent: str) -> str | None:
     if not rows:
         return None
     extracted = _extract(intent, rows[0]["chunk_text"])
-    if not extracted:
+    if not extracted or not _is_english(extracted):
         return None
     return f"According to the {_citation_name(rows[0]['section_title'])} section:\n{extracted}"
 
