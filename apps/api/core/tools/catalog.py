@@ -6,6 +6,8 @@ POST /search/semantic calls the same underlying pipeline directly, with
 no LLM involved, and that must keep working on its own.
 """
 
+import re
+
 import numpy as np
 
 from core.embeddings import embed_text, semantic_search, translate_query_to_english
@@ -14,6 +16,27 @@ from routers.books import _apply_real_availability, _redact_accession
 from schemas.book import Book
 
 DEFAULT_LIMIT = 5
+
+# A handful of Unicode punctuation variants (smart quotes, en/em dashes)
+# that show up in titles extracted from Word/PDF sources (e.g. "Kozier &
+# ERB's" with a curly apostrophe) but that a student retyping the title
+# themselves almost never reproduces — normalized to their ASCII
+# equivalent before the exact-match check below.
+_PUNCT_NORMALIZE = str.maketrans({
+    "‘": "'", "’": "'",
+    "“": '"', "”": '"',
+    "–": "-", "—": "-",
+})
+
+
+def _normalize_for_match(text: str) -> str:
+    """Collapses whitespace/punctuation-spacing differences for the exact
+    title/call-number comparison below — "Title : Subtitle" vs "Title:
+    Subtitle" (or any other spacing around punctuation) must still count
+    as the same title. Whitespace is removed entirely rather than just
+    collapsed, since even a single stray space changes the comparison
+    otherwise; only used for this equality check, never for display."""
+    return re.sub(r"\s+", "", text.translate(_PUNCT_NORMALIZE)).lower()
 
 # Reciprocal Rank Fusion's score is purely rank-based (1/(60+rank)) — it
 # always hands back *something* in top-N order, even when nothing is
@@ -63,20 +86,24 @@ def search_catalog(query: str, limit: int = DEFAULT_LIMIT, translate: bool = Fal
     book_ids = [b["id"] for b in ordered]
 
     query_vec = _parse_vector(embed_text(effective_query))
-    query_norm = np.linalg.norm(query_vec)
-    query_lower = effective_query.strip().lower()
+    query_vec_norm = np.linalg.norm(query_vec)
+    query_match = _normalize_for_match(effective_query)
 
     embeds = admin.table("book_embeddings").select("book_id, embedding").in_("book_id", book_ids).execute().data
     similarity_by_id = {}
     for row in embeds:
         book_vec = _parse_vector(row["embedding"])
-        similarity_by_id[row["book_id"]] = float(query_vec @ book_vec / (query_norm * np.linalg.norm(book_vec)))
+        similarity_by_id[row["book_id"]] = float(query_vec @ book_vec / (query_vec_norm * np.linalg.norm(book_vec)))
 
     def is_relevant(book: dict) -> bool:
         # Exact title/call-number matches are kept regardless of cosine
         # similarity — that's the RPC's own boost (short exact strings can
         # score low on raw embedding similarity despite being correct).
-        if query_lower == (book.get("title") or "").lower() or query_lower == (book.get("call_number") or "").lower():
+        # Normalized on both sides first so "Title : Subtitle" vs "Title:
+        # Subtitle" (or a curly vs straight apostrophe) still counts as
+        # the same title, not a miss that falls through to the threshold
+        # check below.
+        if query_match == _normalize_for_match(book.get("title") or "") or query_match == _normalize_for_match(book.get("call_number") or ""):
             return True
         return similarity_by_id.get(book["id"], 0.0) >= SIMILARITY_THRESHOLD
 
