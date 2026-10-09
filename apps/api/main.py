@@ -10,11 +10,27 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
+# Add the www/non-www twin of each origin, so both work the same.
+def _www_variant(origin: str) -> str | None:
+    if "://www." in origin:
+        return origin.replace("://www.", "://", 1)
+    scheme, _, rest = origin.partition("://")
+    if not rest or rest.startswith("localhost"):
+        return None
+    return f"{scheme}://www.{rest}"
+
+# lasallia.vercel.app is the project's raw Vercel URL — also allowed.
+_configured_origins = [FRONTEND_URL, "https://dev.lasallia.com", "https://lasallia.vercel.app", "http://localhost:3000"]
+_allow_origins = list(dict.fromkeys(
+    _configured_origins + [v for o in _configured_origins if (v := _www_variant(o))]
+))
+
 # The catalog list is ~45 KB gzipped vs ~200 KB raw; compress anything sizeable.
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL, "https://dev.lasallia.com", "http://localhost:3000"],
+    allow_origins=_allow_origins,
     allow_origin_regex=FRONTEND_ORIGIN_REGEX or None,
     allow_credentials=True,
     allow_methods=["*"],
