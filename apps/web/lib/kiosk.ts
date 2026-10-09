@@ -10,6 +10,17 @@ import type { Book } from '@lasallia/types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
+// fetch() itself rejects (a bare TypeError: "Failed to fetch") only when no
+// response arrived at all — API down, no signal on the phone, or blocked by
+// CORS. Say that in words a student can act on instead.
+async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init)
+  } catch {
+    throw new Error("Can't reach the library server — check your internet connection and try again.")
+  }
+}
+
 async function parseErrorOrThrow(res: Response, fallback: string): Promise<never> {
   const body = await res.json().catch(() => ({}))
   // A FastAPI validation error (422) sends detail as an array of objects,
@@ -42,7 +53,7 @@ export type StationSession = {
 export async function openSessionFromToken(): Promise<StationSession> {
   const token = getToken()
   if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/station-sessions/from-token`, {
+  const res = await apiFetch(`${API_URL}/station-sessions/from-token`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
   })
@@ -78,7 +89,7 @@ export async function openSession(
     headers.Authorization = `Bearer ${token}`
   }
 
-  const res = await fetch(`${API_URL}/station-sessions`, {
+  const res = await apiFetch(`${API_URL}/station-sessions`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
@@ -91,18 +102,21 @@ export async function openSession(
 // (Phase 6). Not behind auth, same reasoning as openSession — an
 // rfid-tapped session has no JWT to authenticate this call with.
 export async function endSession(sessionId: string): Promise<void> {
-  const res = await fetch(`${API_URL}/station-sessions/${sessionId}/end`, { method: 'POST' })
+  const res = await apiFetch(`${API_URL}/station-sessions/${sessionId}/end`, { method: 'POST' })
   if (!res.ok && res.status !== 404) return parseErrorOrThrow(res, 'Could not end this session')
 }
 
 export type ClaimHoldResponse = {
   token: string
   expires_at: string
+  // Measured on the API's clock — count down from this, not expires_at,
+  // which a device with a wrong clock would misread.
+  seconds_left: number
   qr_url: string
 }
 
 export async function claimHold(bookId: string, stationSessionId: string): Promise<ClaimHoldResponse> {
-  const res = await fetch(`${API_URL}/holds`, {
+  const res = await apiFetch(`${API_URL}/holds`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ book_id: bookId, station_session_id: stationSessionId }),
@@ -117,20 +131,20 @@ export type BorrowEligibility = { can_borrow: boolean; reason: string | null }
 // student can't borrow a book instead of offering a button that fails.
 export async function fetchBorrowEligibility(bookId: string, stationSessionId: string): Promise<BorrowEligibility> {
   const params = new URLSearchParams({ book_id: bookId, station_session_id: stationSessionId })
-  const res = await fetch(`${API_URL}/holds/eligibility?${params}`)
+  const res = await apiFetch(`${API_URL}/holds/eligibility?${params}`)
   if (!res.ok) return parseErrorOrThrow(res, 'Could not check whether you can borrow this book')
   return res.json()
 }
 
 export async function releaseHold(token: string): Promise<void> {
-  const res = await fetch(`${API_URL}/holds/${token}/release`, { method: 'POST' })
+  const res = await apiFetch(`${API_URL}/holds/${token}/release`, { method: 'POST' })
   if (!res.ok && res.status !== 404) return parseErrorOrThrow(res, 'Could not release the hold')
 }
 
-// "I'm getting the book" — extends the soft hold (and the QR's validity
-// window with it) to ~5 minutes.
-export async function extendHold(token: string): Promise<{ expires_at: string }> {
-  const res = await fetch(`${API_URL}/holds/${token}/extend`, { method: 'POST' })
+// "Add time" — tops the soft hold back up to 3 minutes. The API only
+// accepts it in the last 45 seconds, and caps a hold's total lifetime.
+export async function extendHold(token: string): Promise<{ expires_at: string; seconds_left: number; can_extend: boolean }> {
+  const res = await apiFetch(`${API_URL}/holds/${token}/extend`, { method: 'POST' })
   if (!res.ok) return parseErrorOrThrow(res, 'Could not extend this hold')
   return res.json()
 }
@@ -139,13 +153,16 @@ export async function extendHold(token: string): Promise<{ expires_at: string }>
 // `missing` for librarian attention rather than silently freeing it back
 // to available.
 export async function reportMissing(token: string): Promise<void> {
-  const res = await fetch(`${API_URL}/holds/${token}/report-missing`, { method: 'POST' })
+  const res = await apiFetch(`${API_URL}/holds/${token}/report-missing`, { method: 'POST' })
   if (!res.ok && res.status !== 404) return parseErrorOrThrow(res, 'Could not report this copy as missing')
 }
 
 export type HoldDetail = {
   token: string
   expires_at: string
+  seconds_left: number
+  // False once the hold has used up all the extra time it's allowed
+  can_extend: boolean
   book: {
     id: string
     title: string
@@ -163,7 +180,7 @@ export type HoldDetail = {
 }
 
 export async function fetchHold(token: string): Promise<HoldDetail> {
-  const res = await fetch(`${API_URL}/holds/${token}`)
+  const res = await apiFetch(`${API_URL}/holds/${token}`)
   if (!res.ok) return parseErrorOrThrow(res, 'This hold could not be found')
   return res.json()
 }
@@ -225,7 +242,7 @@ export async function fetchLoans(
   if (dateFilters?.returnedFrom) params.set('returned_from', dateFilters.returnedFrom)
   if (dateFilters?.returnedTo) params.set('returned_to', dateFilters.returnedTo)
   const qs = params.toString()
-  const res = await fetch(`${API_URL}/loans${qs ? `?${qs}` : ''}`, { headers: { Authorization: `Bearer ${token}` } })
+  const res = await apiFetch(`${API_URL}/loans${qs ? `?${qs}` : ''}`, { headers: { Authorization: `Bearer ${token}` } })
   if (!res.ok) return parseErrorOrThrow(res, 'Failed to load your loans')
   return res.json()
 }
@@ -237,7 +254,7 @@ export async function confirmLoan(params: {
   purpose?: string
   notes?: string
 }): Promise<Loan> {
-  const res = await fetch(`${API_URL}/loans`, {
+  const res = await apiFetch(`${API_URL}/loans`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -259,7 +276,7 @@ export async function confirmLoan(params: {
 export async function settleFine(loanId: string, receiptNumber: string): Promise<Loan> {
   const token = getToken()
   if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/loans/${loanId}/settle-fine`, {
+  const res = await apiFetch(`${API_URL}/loans/${loanId}/settle-fine`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ receipt_number: receiptNumber }),
@@ -282,7 +299,7 @@ export async function createAssistedLoan(params: {
 }): Promise<Loan> {
   const token = getToken()
   if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/loans/librarian-assisted`, {
+  const res = await apiFetch(`${API_URL}/loans/librarian-assisted`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({

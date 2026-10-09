@@ -33,21 +33,26 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
-function useCountdown(expiresAt: string | undefined) {
+// Counts down from the server's own seconds_left, anchored to when this
+// device received it. Only the elapsed time on this device matters, so a
+// phone or kiosk PC whose clock is minutes off no longer sees every hold
+// as already expired (comparing expires_at to Date.now() did exactly that).
+function useCountdown(deadline: number | null) {
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
 
   useEffect(() => {
-    if (!expiresAt) return
-    const tick = () => {
-      const diff = Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000)
-      setSecondsLeft(Math.max(0, diff))
-    }
+    if (deadline === null) return
+    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)))
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [expiresAt])
+  }, [deadline])
 
   return secondsLeft
+}
+
+function deadlineFrom(secondsLeft: number): number {
+  return Date.now() + secondsLeft * 1000
 }
 
 function BibRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
@@ -94,15 +99,17 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   const [reportingMissing, setReportingMissing] = useState(false)
   const [reportedMissing, setReportedMissing] = useState(false)
 
-  const secondsLeft = useCountdown(hold?.expires_at)
+  const [deadline, setDeadline] = useState<number | null>(null)
+  const secondsLeft = useCountdown(deadline)
 
   async function handleExtend() {
     if (!hold || extending) return
     setExtending(true)
     setSubmitError('')
     try {
-      const { expires_at } = await extendHold(token)
-      setHold({ ...hold, expires_at })
+      const { expires_at, seconds_left, can_extend } = await extendHold(token)
+      setHold({ ...hold, expires_at, seconds_left, can_extend })
+      setDeadline(deadlineFrom(seconds_left))
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not extend — please rescan at the kiosk')
     } finally {
@@ -125,11 +132,33 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   useEffect(() => {
     let cancelled = false
     fetchHold(token)
-      .then((d) => { if (!cancelled) setHold(d) })
+      .then((d) => {
+        if (cancelled) return
+        setHold(d)
+        setDeadline(deadlineFrom(d.seconds_left))
+      })
       .catch((err) => { if (!cancelled) setLoadError(err instanceof Error ? err.message : 'This hold could not be found') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [token])
+
+  // Phones throttle or freeze timers while the screen is off (walking to
+  // the shelf), so re-sync with the server whenever the page is visible
+  // again rather than trusting the local countdown alone.
+  useEffect(() => {
+    if (!hold || confirmed || reportedMissing) return
+    function resync() {
+      if (document.visibilityState !== 'visible') return
+      fetchHold(token)
+        .then((d) => {
+          setHold(d)
+          setDeadline(deadlineFrom(d.seconds_left))
+        })
+        .catch(() => setDeadline(Date.now()))
+    }
+    document.addEventListener('visibilitychange', resync)
+    return () => document.removeEventListener('visibilitychange', resync)
+  }, [token, hold, confirmed, reportedMissing])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -260,6 +289,9 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   }
 
   const isExpired = secondsLeft === 0
+  // Mirrors routers/holds.py's EXTEND_WINDOW_SECONDS — the API rejects
+  // earlier requests, so the offer only appears once it can succeed.
+  const showAddTime = !isExpired && hold.can_extend && secondsLeft !== null && secondsLeft <= 45
   const minutes = secondsLeft !== null ? Math.floor(secondsLeft / 60) : 0
   const seconds = secondsLeft !== null ? secondsLeft % 60 : 0
 
@@ -279,19 +311,28 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
           {isExpired ? 'Expired — please rescan at the kiosk' : `${minutes}:${String(seconds).padStart(2, '0')} remaining`}
         </div>
 
-        {/* Walk-to-the-shelf actions (2.3) */}
-        {!isExpired && (
-          <div className="flex items-center justify-center gap-4">
+        {/* Running out of time — offer to add more (3-minute hold, 45s warning) */}
+        {showAddTime && (
+          <div className="flex items-center gap-3 rounded-(--radius) border border-gold-500 bg-gold-100 p-3">
+            <Clock size={16} className="text-gold-600 shrink-0" />
+            <p className="flex-1 text-ink-800" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}>
+              Almost out of time. Need more?
+            </p>
             <button
               type="button"
               onClick={handleExtend}
               disabled={extending}
-              className="text-green-700 font-medium hover:text-green-800 disabled:opacity-50 disabled:pointer-events-none"
+              className="shrink-0 h-9 px-3 rounded-lg bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors disabled:opacity-50 disabled:pointer-events-none"
               style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}
             >
-              {extending ? 'Extending…' : "I'm getting the book"}
+              {extending ? 'Adding…' : 'Add 3 minutes'}
             </button>
-            <span className="text-ink-200">·</span>
+          </div>
+        )}
+
+        {/* Walk-to-the-shelf action (2.3) */}
+        {!isExpired && (
+          <div className="flex items-center justify-center">
             <button
               type="button"
               onClick={handleCantFindIt}
