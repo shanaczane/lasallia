@@ -13,6 +13,7 @@ import { NotificationProvider, useNotifications } from "@/components/ui/notifica
 import { StudentCountsProvider, useStudentCounts } from "./StudentCountsContext"
 import { cn } from "@/lib/utils"
 import { fetchPasswordStatus, getUser, refreshCachedUser, type UserProfile } from "@/lib/auth"
+import { useRequireSession } from "@/lib/hooks/useRequireSession"
 import { CompleteProfileModal } from "@/components/ui/profile/CompleteProfileModal"
 import { PASSWORD_PROMPT_SKIP_KEY, SetPasswordModal } from "@/components/ui/profile/SetPasswordModal"
 import {
@@ -129,6 +130,10 @@ function StudentLayoutInner({
   const [setupSteps, setSetupSteps] = useState(0)
   const passwordUnknown = useRef(false)
   const [isFaculty, setIsFaculty] = useState(false)
+
+  // No session (e.g. signed out, then Back) → /login, including pages
+  // restored from the browser's back/forward cache.
+  useRequireSession()
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("sidebar-collapsed") === "true") setCollapsed(true)
