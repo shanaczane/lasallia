@@ -14,6 +14,7 @@ class ClaimHoldResponse(BaseModel):
 class HoldDetail(BaseModel):
     token: str
     expires_at: str
+    can_extend: bool  # False once the hold has reached MAX_HOLD_SECONDS (routers/holds.py)
     book: Book  # accession_no always nulled — this is student-reachable, no exceptions
     student_first_name: str
     active_loan_count: int
@@ -25,3 +26,4 @@ class BorrowEligibility(BaseModel):
 
 class HoldExtendResponse(BaseModel):
     expires_at: str
+    can_extend: bool

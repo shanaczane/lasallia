@@ -127,9 +127,9 @@ export async function releaseHold(token: string): Promise<void> {
   if (!res.ok && res.status !== 404) return parseErrorOrThrow(res, 'Could not release the hold')
 }
 
-// "I'm getting the book" — extends the soft hold (and the QR's validity
-// window with it) to ~5 minutes.
-export async function extendHold(token: string): Promise<{ expires_at: string }> {
+// "Add time" — tops the soft hold back up to 3 minutes. The API only
+// accepts it in the last 45 seconds, and caps a hold's total lifetime.
+export async function extendHold(token: string): Promise<{ expires_at: string; can_extend: boolean }> {
   const res = await fetch(`${API_URL}/holds/${token}/extend`, { method: 'POST' })
   if (!res.ok) return parseErrorOrThrow(res, 'Could not extend this hold')
   return res.json()
@@ -146,6 +146,8 @@ export async function reportMissing(token: string): Promise<void> {
 export type HoldDetail = {
   token: string
   expires_at: string
+  // False once the hold has used up all the extra time it's allowed
+  can_extend: boolean
   book: {
     id: string
     title: string

@@ -101,8 +101,8 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
     setExtending(true)
     setSubmitError('')
     try {
-      const { expires_at } = await extendHold(token)
-      setHold({ ...hold, expires_at })
+      const { expires_at, can_extend } = await extendHold(token)
+      setHold({ ...hold, expires_at, can_extend })
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not extend — please rescan at the kiosk')
     } finally {
@@ -260,6 +260,9 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   }
 
   const isExpired = secondsLeft === 0
+  // Mirrors routers/holds.py's EXTEND_WINDOW_SECONDS — the API rejects
+  // earlier requests, so the offer only appears once it can succeed.
+  const showAddTime = !isExpired && hold.can_extend && secondsLeft !== null && secondsLeft <= 45
   const minutes = secondsLeft !== null ? Math.floor(secondsLeft / 60) : 0
   const seconds = secondsLeft !== null ? secondsLeft % 60 : 0
 
@@ -279,19 +282,28 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
           {isExpired ? 'Expired — please rescan at the kiosk' : `${minutes}:${String(seconds).padStart(2, '0')} remaining`}
         </div>
 
-        {/* Walk-to-the-shelf actions (2.3) */}
-        {!isExpired && (
-          <div className="flex items-center justify-center gap-4">
+        {/* Running out of time — offer to add more (3-minute hold, 45s warning) */}
+        {showAddTime && (
+          <div className="flex items-center gap-3 rounded-(--radius) border border-gold-500 bg-gold-100 p-3">
+            <Clock size={16} className="text-gold-600 shrink-0" />
+            <p className="flex-1 text-ink-800" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}>
+              Almost out of time. Need more?
+            </p>
             <button
               type="button"
               onClick={handleExtend}
               disabled={extending}
-              className="text-green-700 font-medium hover:text-green-800 disabled:opacity-50 disabled:pointer-events-none"
+              className="shrink-0 h-9 px-3 rounded-lg bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors disabled:opacity-50 disabled:pointer-events-none"
               style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}
             >
-              {extending ? 'Extending…' : "I'm getting the book"}
+              {extending ? 'Adding…' : 'Add 3 minutes'}
             </button>
-            <span className="text-ink-200">·</span>
+          </div>
+        )}
+
+        {/* Walk-to-the-shelf action (2.3) */}
+        {!isExpired && (
+          <div className="flex items-center justify-center">
             <button
               type="button"
               onClick={handleCantFindIt}

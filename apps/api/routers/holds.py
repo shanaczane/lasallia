@@ -11,6 +11,7 @@ from core.loans import (
     SESSION_ENDED,
     SESSION_INVALID,
     check_borrow_eligibility,
+    ensure_initial_copy,
 )
 from core.notify import notify_librarians
 from core.settings import get_library_settings
@@ -19,8 +20,18 @@ from schemas.hold import BorrowEligibility, ClaimHoldRequest, ClaimHoldResponse,
 
 router = APIRouter(prefix="/holds", tags=["holds"])
 
-# 2.3: "'I'm getting the book' button extends the session to ~5 minutes."
-EXTEND_SECONDS = 300
+# A hold lasts 3 minutes. Once 45 seconds or less remain, /borrow offers
+# "Add time", which tops it back up to a fresh 3 minutes — but never past
+# MAX_HOLD_SECONDS from when it was claimed, so one student can't park on a
+# copy indefinitely. The wrong-accession-number attempt limit
+# (routers/loans.py) is separate and unchanged.
+HOLD_SECONDS = 180
+EXTEND_WINDOW_SECONDS = 45
+MAX_HOLD_SECONDS = 540
+
+
+def _hold_deadline(hold: dict) -> datetime:
+    return datetime.fromisoformat(hold["created_at"]) + timedelta(seconds=MAX_HOLD_SECONDS)
 
 def _open_session_student(db, station_session_id: str) -> str:
     session_res = db.table("station_sessions").select("student_id, ended_at").eq("id", station_session_id).execute()
@@ -65,6 +76,7 @@ def claim_hold(body: ClaimHoldRequest):
     student_id = _open_session_student(db, body.station_session_id)
 
     check_borrow_eligibility(db, student_id, body.book_id)
+    ensure_initial_copy(db, body.book_id)
 
     token = secrets.token_urlsafe(24)
 
@@ -86,18 +98,20 @@ def claim_hold(body: ClaimHoldRequest):
     ).data
 
     if ready_reservation and ready_reservation[0]["book_copy_id"]:
-        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=120)).isoformat()
+        now = datetime.now(timezone.utc)
+        expires_at = (now + timedelta(seconds=HOLD_SECONDS)).isoformat()
         db.table("soft_holds").upsert({
             "book_copy_id": ready_reservation[0]["book_copy_id"],
             "station_session_id": body.station_session_id,
             "token": token,
             "attempt_count": 0,
             "expires_at": expires_at,
+            "created_at": now.isoformat(),
         }, on_conflict="book_copy_id").execute()
     else:
         # A hold this same session left behind on this title (closed the
         # popup, went back) would otherwise block its own new claim for up
-        # to 2 minutes — release it first.
+        # to 3 minutes — release it first.
         own_copy_ids = [
             c["id"] for c in
             db.table("book_copies").select("id").eq("book_id", body.book_id).execute().data
@@ -109,12 +123,16 @@ def claim_hold(body: ClaimHoldRequest):
             "p_book_id": body.book_id,
             "p_station_session_id": body.station_session_id,
             "p_token": token,
+            "p_ttl_seconds": HOLD_SECONDS,
         }).execute()
 
         if not res.data:
             raise HTTPException(status.HTTP_409_CONFLICT, _availability_problem(db, body.book_id, body.station_session_id) or NO_COPIES)
 
         expires_at = res.data[0]["expires_at"]
+        # claim_copy_for_book can reuse an expired hold row without touching
+        # created_at, and extend_hold's cap is measured from it — restart it.
+        db.table("soft_holds").update({"created_at": datetime.now(timezone.utc).isoformat()}).eq("token", token).execute()
 
     return ClaimHoldResponse(
         token=token,
@@ -135,6 +153,7 @@ def borrow_eligibility(book_id: str, station_session_id: str):
         check_borrow_eligibility(db, student_id, book_id)
     except HTTPException as e:
         return BorrowEligibility(can_borrow=False, reason=str(e.detail))
+    ensure_initial_copy(db, book_id)
 
     # A ready reservation has its own pulled copy (see claim_hold), so the
     # general-circulation availability check doesn't apply to it.
@@ -188,6 +207,7 @@ def get_hold(token: str):
     return HoldDetail(
         token=token,
         expires_at=hold["expires_at"],
+        can_extend=datetime.fromisoformat(hold["expires_at"]) < _hold_deadline(hold),
         book=book,
         student_first_name=first_name,
         active_loan_count=active_loans.count or 0,
@@ -204,18 +224,28 @@ def release_hold(token: str):
 @router.post("/{token}/extend", response_model=HoldExtendResponse)
 def extend_hold(token: str):
     db = get_admin_client()
-    hold_res = db.table("soft_holds").select("id, expires_at").eq("token", token).execute()
+    hold_res = db.table("soft_holds").select("id, expires_at, created_at").eq("token", token).execute()
     if not hold_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, HOLD_GONE)
     hold = hold_res.data[0]
 
-    if datetime.fromisoformat(hold["expires_at"]) < datetime.now(timezone.utc):
+    now = datetime.now(timezone.utc)
+    expires_at = datetime.fromisoformat(hold["expires_at"])
+    if expires_at < now:
         db.table("soft_holds").delete().eq("id", hold["id"]).execute()
         raise HTTPException(status.HTTP_410_GONE, HOLD_GONE)
 
-    new_expiry = (datetime.now(timezone.utc) + timedelta(seconds=EXTEND_SECONDS)).isoformat()
-    db.table("soft_holds").update({"expires_at": new_expiry}).eq("id", hold["id"]).execute()
-    return HoldExtendResponse(expires_at=new_expiry)
+    # Enforced here, not just by when /borrow shows the button.
+    if (expires_at - now).total_seconds() > EXTEND_WINDOW_SECONDS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You can add time once 45 seconds or less are left")
+
+    deadline = _hold_deadline(hold)
+    new_expiry = min(now + timedelta(seconds=HOLD_SECONDS), deadline)
+    if new_expiry <= expires_at:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No more time can be added — please start over at the kiosk")
+
+    db.table("soft_holds").update({"expires_at": new_expiry.isoformat()}).eq("id", hold["id"]).execute()
+    return HoldExtendResponse(expires_at=new_expiry.isoformat(), can_extend=new_expiry < deadline)
 
 # 2.3: "'I can't find it' button flags the copy for librarian attention and
 # releases the hold." Flagging means the copy transitions available ->
