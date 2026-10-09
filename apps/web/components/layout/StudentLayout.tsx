@@ -13,6 +13,7 @@ import { NotificationProvider, useNotifications } from "@/components/ui/notifica
 import { StudentCountsProvider, useStudentCounts } from "./StudentCountsContext"
 import { cn } from "@/lib/utils"
 import { getUser, refreshCachedUser, type UserProfile } from "@/lib/auth"
+import { useRequireSession } from "@/lib/hooks/useRequireSession"
 import { CompleteProfileModal } from "@/components/ui/profile/CompleteProfileModal"
 import {
   LayoutDashboard,
@@ -106,6 +107,10 @@ function StudentLayoutInner({
   const [displayEmail, setDisplayEmail] = useState("")
   const [profileSeed, setProfileSeed] = useState<UserProfile | null>(null)
   const [isFaculty, setIsFaculty] = useState(false)
+
+  // No session (e.g. signed out, then Back) → /login, including pages
+  // restored from the browser's back/forward cache.
+  useRequireSession()
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("sidebar-collapsed") === "true") setCollapsed(true)
