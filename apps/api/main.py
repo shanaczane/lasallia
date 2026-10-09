@@ -1,4 +1,7 @@
-from fastapi import FastAPI
+import logging
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from core.config import FRONTEND_URL, FRONTEND_ORIGIN_REGEX
@@ -25,6 +28,27 @@ _configured_origins = [FRONTEND_URL, "https://dev.lasallia.com", "https://lasall
 _allow_origins = list(dict.fromkeys(
     _configured_origins + [v for o in _configured_origins if (v := _www_variant(o))]
 ))
+
+logger = logging.getLogger("lasallia")
+
+
+# An unhandled exception normally becomes Starlette's bare 500 from its
+# outermost error middleware — outside CORSMiddleware, so the response has
+# no Access-Control-Allow-Origin header and the browser reports only
+# "Failed to fetch", hiding the real failure. Catching it here, registered
+# first so it sits *inside* CORS, turns it into a JSON error the frontend
+# can actually read. Must stay above the add_middleware calls below.
+@app.middleware("http")
+async def json_errors_inside_cors(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception:
+        logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Something went wrong on our side — please try again."},
+        )
+
 
 # The catalog list is ~45 KB gzipped vs ~200 KB raw; compress anything sizeable.
 app.add_middleware(GZipMiddleware, minimum_size=1000)

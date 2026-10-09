@@ -144,7 +144,14 @@ def claim_hold(body: ClaimHoldRequest):
         # extend_hold's cap is measured from it.
         now = datetime.now(timezone.utc)
         expires_at = (now + timedelta(seconds=HOLD_SECONDS)).isoformat()
-        db.table("soft_holds").update({"created_at": now.isoformat(), "expires_at": expires_at}).eq("token", token).execute()
+        try:
+            db.table("soft_holds").update({"created_at": now.isoformat(), "expires_at": expires_at}).eq("token", token).execute()
+        except Exception:
+            # The copy is already held but the student will only see an
+            # error, never this token — free the copy rather than leave it
+            # blocking their retry as "someone else is borrowing".
+            db.table("soft_holds").delete().eq("token", token).execute()
+            raise
 
     return ClaimHoldResponse(
         token=token,
