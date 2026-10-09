@@ -16,6 +16,10 @@ type PaginationProps = {
   // with its siblings. Pass "mt-8" explicitly for the standalone-below-a-
   // grid usage (catalog pages, borrow-return) that wants that spacing.
   className?: string
+  // Catalog grids opt in so a page change brings the reader back to the top
+  // of the new results instead of leaving them mid-page. Off by default:
+  // inline uses (reports tables, patrons) shouldn't yank the whole window.
+  scrollToTop?: boolean
 }
 
 function pageWindow(page: number, totalPages: number): Array<number | 'ellipsis'> {
@@ -32,14 +36,21 @@ function pageWindow(page: number, totalPages: number): Array<number | 'ellipsis'
   return range
 }
 
-export function Pagination({ page, totalPages, onChange, className }: PaginationProps) {
+export function Pagination({ page, totalPages, onChange, className, scrollToTop = false }: PaginationProps) {
   if (totalPages <= 1) return null
+
+  function go(p: number) {
+    onChange(p)
+    if (!scrollToTop) return
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' })
+  }
 
   return (
     <nav aria-label="Catalog pages" className={cn('flex items-center justify-center gap-2', className)}>
       <button
         type="button"
-        onClick={() => onChange(page - 1)}
+        onClick={() => go(page - 1)}
         disabled={page === 1}
         aria-label="Previous page"
         className="flex items-center justify-center w-9 h-9 rounded-lg text-ink-500 hover:bg-ink-100 disabled:opacity-30 disabled:pointer-events-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
@@ -60,7 +71,7 @@ export function Pagination({ page, totalPages, onChange, className }: Pagination
           <button
             key={p}
             type="button"
-            onClick={() => onChange(p)}
+            onClick={() => go(p)}
             aria-current={p === page ? 'page' : undefined}
             className={cn(
               'w-9 h-9 rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1',
@@ -75,7 +86,7 @@ export function Pagination({ page, totalPages, onChange, className }: Pagination
 
       <button
         type="button"
-        onClick={() => onChange(page + 1)}
+        onClick={() => go(page + 1)}
         disabled={page === totalPages}
         aria-label="Next page"
         className="flex items-center justify-center w-9 h-9 rounded-lg text-ink-500 hover:bg-ink-100 disabled:opacity-30 disabled:pointer-events-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
