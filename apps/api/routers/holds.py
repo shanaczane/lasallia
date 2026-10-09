@@ -33,6 +33,12 @@ MAX_HOLD_SECONDS = 540
 def _hold_deadline(hold: dict) -> datetime:
     return datetime.fromisoformat(hold["created_at"]) + timedelta(seconds=MAX_HOLD_SECONDS)
 
+
+def _seconds_left(expires_at: datetime | str) -> int:
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    return max(0, int((expires_at - datetime.now(timezone.utc)).total_seconds()))
+
 def _open_session_student(db, station_session_id: str) -> str:
     session_res = db.table("station_sessions").select("student_id, ended_at").eq("id", station_session_id).execute()
     if not session_res.data:
@@ -129,14 +135,21 @@ def claim_hold(body: ClaimHoldRequest):
         if not res.data:
             raise HTTPException(status.HTTP_409_CONFLICT, _availability_problem(db, body.book_id, body.station_session_id) or NO_COPIES)
 
-        expires_at = res.data[0]["expires_at"]
-        # claim_copy_for_book can reuse an expired hold row without touching
-        # created_at, and extend_hold's cap is measured from it — restart it.
-        db.table("soft_holds").update({"created_at": datetime.now(timezone.utc).isoformat()}).eq("token", token).execute()
+        # claim_copy_for_book stamps expires_at with the database's clock,
+        # but every later check (get_hold, extend_hold, confirm_loan) runs on
+        # this API's clock — if the two disagree by more than the hold's
+        # length, every hold reads as expired the instant it's made. Restamp
+        # both columns here so one clock owns them. created_at also has to
+        # restart because the function can reuse an old expired row, and
+        # extend_hold's cap is measured from it.
+        now = datetime.now(timezone.utc)
+        expires_at = (now + timedelta(seconds=HOLD_SECONDS)).isoformat()
+        db.table("soft_holds").update({"created_at": now.isoformat(), "expires_at": expires_at}).eq("token", token).execute()
 
     return ClaimHoldResponse(
         token=token,
         expires_at=expires_at,
+        seconds_left=_seconds_left(expires_at),
         qr_url=f"{FRONTEND_URL}/borrow/{token}",
     )
 
@@ -207,6 +220,7 @@ def get_hold(token: str):
     return HoldDetail(
         token=token,
         expires_at=hold["expires_at"],
+        seconds_left=_seconds_left(hold["expires_at"]),
         can_extend=datetime.fromisoformat(hold["expires_at"]) < _hold_deadline(hold),
         book=book,
         student_first_name=first_name,
@@ -245,7 +259,11 @@ def extend_hold(token: str):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No more time can be added — please start over at the kiosk")
 
     db.table("soft_holds").update({"expires_at": new_expiry.isoformat()}).eq("id", hold["id"]).execute()
-    return HoldExtendResponse(expires_at=new_expiry.isoformat(), can_extend=new_expiry < deadline)
+    return HoldExtendResponse(
+        expires_at=new_expiry.isoformat(),
+        seconds_left=_seconds_left(new_expiry),
+        can_extend=new_expiry < deadline,
+    )
 
 # 2.3: "'I can't find it' button flags the copy for librarian attention and
 # releases the hold." Flagging means the copy transitions available ->
