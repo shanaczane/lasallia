@@ -17,6 +17,7 @@ import {
   Users,
   Bell,
   Settings,
+  DatabaseZap,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react"
@@ -50,6 +51,7 @@ const librarianNav: NavSection[] = [
     items: [
       { label: "Catalog",       icon: <Library size={16} />,  href: "/librarian/catalog" },
       { label: "Patrons",       icon: <Users size={16} />,    href: "/librarian/patrons" },
+      { label: "Catalog Import", icon: <DatabaseZap size={16} />, href: "/librarian/sync" },
       { label: "Notifications", icon: <Bell size={16} />,     href: "/librarian/notifications" },
       { label: "Settings",      icon: <Settings size={16} />, href: "/librarian/settings" },
     ],

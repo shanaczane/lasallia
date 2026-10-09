@@ -1,0 +1,7 @@
+catalog_changed.mrc differs from catalog.mrc as follows:
+
+- Title edited: record 1 is now "Developing useful computer applications for today's world: fundamentals of e-commerce application development. Second edition. (Revised edition)"
+- Call number edited: record 2 is now '005.133 B197j 2021 c.2'
+- New copy T9990001 added to record 3 ('Cloud native security')
+- New titles added: 2 (copies T9990002, T9990003, T9990004)
+- Broken record added: no title (245), copy T9990005, reported as an error
