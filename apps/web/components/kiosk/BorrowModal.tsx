@@ -2,7 +2,7 @@
 // The QR-claim modal shown when a student taps "Borrow this book" —
 // claims a 3-minute soft hold on the earliest available copy the instant
 // it opens, then shows a QR the student's phone can scan (or "Continue on
-// this laptop" for the same device) to reach /borrow/[token], where they
+// this device" for the same device) to reach /borrow/[token], where they
 // type the accession number themselves. Never shows it here: the whole
 // point is proving they have the actual physical book.
 //
@@ -174,7 +174,7 @@ export function BorrowModal({
               style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
             >
               <Monitor size={15} />
-              Continue on this laptop
+              Continue on this device
             </a>
           </>
         )}

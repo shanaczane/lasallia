@@ -1,6 +1,6 @@
 // apps/web/app/borrow/[token]/page.tsx
 // Sprint: Phase 2 borrow happy path — the form opened via QR scan (phone)
-// or "Continue on this laptop" (same device). Public route, no app login
+// or "Continue on this device" (same device). Public route, no app login
 // required — the hold token in the URL is the only credential this page
 // needs (see apps/api's routers/holds.py, routers/loans.py).
 //
@@ -72,7 +72,7 @@ function BibRow({ icon, label, value }: { icon: React.ReactNode; label: string; 
 export default function BorrowFormPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params)
 
-  // The kiosk's "Continue on this laptop" link carries ?from=kiosk. That
+  // The kiosk's "Continue on this device" link carries ?from=kiosk. That
   // student was identified by an ID tap, not a web login, so /student/* would
   // bounce them to a login — send them back to the kiosk instead.
   const [fromKiosk, setFromKiosk] = useState(false)
