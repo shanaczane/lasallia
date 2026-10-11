@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 
+from core.accession import normalize_accession_number
 from core.notify import notify, notify_librarians
 from core.settings import get_library_settings
 
@@ -69,6 +70,28 @@ def check_borrow_eligibility(db, student_id: str, book_id: str) -> None:
     )
     if (unsettled.count or 0) > 0:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You have an unpaid fine — please settle it with the librarian")
+
+
+def ensure_initial_copy(admin, book_id: str) -> None:
+    """Gives a title its first physical book_copies row if it has none yet.
+    The catalog form only ever wrote the books row, so a freshly added title
+    showed as available (from the plain total_copies fallback) but had no
+    copy for claim_copy_for_book to hold — "Borrow" always failed. Same row
+    shape as scripts/backfill_missing_copies.py: the book's own accession_no,
+    status available. Idempotent, so claim_hold can also call it to heal
+    titles added before this existed."""
+    if admin.table("book_copies").select("id").eq("book_id", book_id).limit(1).execute().data:
+        return
+    book_res = admin.table("books").select("accession_no, shelf_location").eq("id", book_id).execute()
+    if not book_res.data or not book_res.data[0].get("accession_no"):
+        return
+    book = book_res.data[0]
+    admin.table("book_copies").upsert({
+        "book_id": book_id,
+        "accession_number": normalize_accession_number(book["accession_no"]),
+        "status": "available",
+        "shelf_location": book.get("shelf_location") or "Unassigned",
+    }, on_conflict="accession_number", ignore_duplicates=True).execute()
 
 
 def find_removal_blocker(admin, book_id: str) -> str | None:

@@ -241,7 +241,7 @@ function StudentProfileContent() {
   }
 
   return (
-    <div className="flex flex-col gap-6 px-4 py-5 sm:px-8 sm:py-6">
+    <div className="flex flex-col gap-6 px-4 py-5 sm:px-8 sm:py-6 w-full max-w-2xl mx-auto">
 
       {/* Header */}
       <div>
@@ -285,7 +285,7 @@ function StudentProfileContent() {
       </div>
 
       {/* Tab content */}
-      <div className="flex flex-col gap-4 max-w-2xl">
+      <div className="flex flex-col gap-4">
         {activeTab === "profile" ? (
           !profile ? (
             <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>

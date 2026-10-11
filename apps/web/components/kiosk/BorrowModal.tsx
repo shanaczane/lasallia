@@ -1,6 +1,6 @@
 // apps/web/components/kiosk/BorrowModal.tsx
 // The QR-claim modal shown when a student taps "Borrow this book" —
-// claims a 2-minute soft hold on the earliest available copy the instant
+// claims a 3-minute soft hold on the earliest available copy the instant
 // it opens, then shows a QR the student's phone can scan (or "Continue on
 // this laptop" for the same device) to reach /borrow/[token], where they
 // type the accession number themselves. Never shows it here: the whole

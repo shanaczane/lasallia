@@ -491,7 +491,7 @@ function LibrarianCatalogContent() {
                 />
               ))}
             </div>
-            <Pagination page={page} totalPages={totalPages} onChange={setPage} className="mt-8" />
+            <Pagination page={page} totalPages={totalPages} onChange={setPage} className="mt-8" scrollToTop />
           </>
         )}
       </div>

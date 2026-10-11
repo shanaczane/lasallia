@@ -83,8 +83,8 @@ Never use Tailwind's `text-sm` etc. for font sizes — use the CSS variables.
 - `cn()` from `@/lib/utils` (re-exports `clsx` + `tailwind-merge`) is used for conditional class merging everywhere.
 - Types from `@lasallia/types` are imported as `import { Book } from '@lasallia/types'`.
 - Mock data lives in `apps/web/lib/mock/catalog.ts` and `lib/mock/patrons.ts` — comments mark where real API calls replace them.
-- Sprint annotations in comments (e.g. `// Sprint 5.4`) track feature ownership — include these when adding new features.
-- Commit messages append the sprint number: `feat: description (sprint 5.4)`.
+- Don't add sprint numbers or ticket tags (e.g. `// Sprint 5.4`, `F18`) to new comments — describe the behavior plainly. Existing `// Sprint …` comments are legacy; leave them unless you're already editing that code.
+- Commit messages are plain conventional commits with no sprint or ticket suffix: `fix: scroll to top on catalog pagination`.
 
 ### Key components
 

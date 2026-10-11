@@ -3,14 +3,13 @@ import { StudentLayout } from "@/components/layout/StudentLayout"
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
-    // userName/userInitials are just an SSR-safe fallback — StudentLayoutInner
-    // immediately overrides them from getUser() on mount. initialUnread has no
-    // such override (NotificationContext only ever gets a real count from its
-    // own fetch), so a hardcoded placeholder here isn't harmless the same way —
-    // it was showing every student a fake "4" unread badge. Omitted, so it
-    // defaults to 0 (NotificationProvider's own default) until the real count
-    // loads, same as LibrarianLayout already does.
-    <StudentLayout userName="Shan Cruz" userInitials="SC">
+    // No hardcoded userName/userInitials/initialUnread — StudentLayoutInner
+    // fills the name from getUser() on mount, and a placeholder name stayed
+    // on screen whenever there was no session (e.g. Back after sign-out)
+    // until useRequireSession redirected. initialUnread defaults to 0
+    // (NotificationProvider's own default) until the real count loads; a
+    // hardcoded value once showed every student a fake "4" unread badge.
+    <StudentLayout>
       {children}
     </StudentLayout>
   )
