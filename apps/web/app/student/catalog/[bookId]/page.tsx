@@ -177,16 +177,23 @@ function ActionPanel({
       <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
         {/* Just the count and where it is — the borrow modal explains the
             QR-at-the-counter step, so it isn't repeated here. */}
-        <div className="flex-1 min-w-0 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+        {/* Stacked on phones; one line with a divider on wider screens so
+            the panel doesn't leave a big empty gap before the button. */}
+        <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
           <p className="flex items-center gap-2 font-semibold text-green-900">
-            <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+            <span className="w-3.5 flex justify-center shrink-0">
+              <span className="w-2 h-2 rounded-full bg-green-500" />
+            </span>
             {availableCopies} of {totalCopies} {totalCopies === 1 ? 'copy' : 'copies'} available
           </p>
           {hasKnownShelfLocation(book) && (
-            <p className="mt-1 flex items-center gap-2 text-green-800">
-              <MapPin size={14} className="text-green-600 shrink-0" />
-              {book.shelf_location}
-            </p>
+            <>
+              <span className="hidden sm:block w-px h-4 bg-green-200" />
+              <p className="flex items-center gap-2 text-green-800">
+                <MapPin size={14} className="text-green-600 shrink-0" />
+                {book.shelf_location}
+              </p>
+            </>
           )}
         </div>
         {/* Borrow button — stays on the right, shorter label on phones */}
@@ -286,12 +293,15 @@ function ActionPanel({
     <div className="flex flex-col gap-2">
       <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex items-center gap-3">
         <div className="flex-1 min-w-0">
-          <div className="text-ink-600 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-            <p className="flex items-center gap-2 font-semibold text-ink-700">
-              <span className="w-2 h-2 rounded-full bg-ink-300 shrink-0" />
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-ink-600 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+            <p className="flex items-center gap-2 font-semibold text-ink-700 shrink-0">
+              <span className="w-3.5 flex justify-center shrink-0">
+                <span className="w-2 h-2 rounded-full bg-ink-300" />
+              </span>
               0 of {totalCopies} available
             </p>
-            <p className="mt-1">
+            <span className="hidden sm:block w-px h-4 bg-ink-200 shrink-0" />
+            <p className="pl-[22px] sm:pl-0">
               {expectedBack
                 ? expectedBackIsPast
                   ? <>Was due {formatDate(book.expected_back!)} · not yet returned</>
