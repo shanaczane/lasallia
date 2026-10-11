@@ -1,6 +1,8 @@
  import { cn } from "@/lib/utils"
+import { isLibraryUseOnly } from "@/lib/collectionType"
+import type { Book } from "@lasallia/types"
 
-type AvailabilityStatus = "available" | "borrowed" | "reserved" | "missing"
+export type AvailabilityStatus = "available" | "borrowed" | "reserved" | "missing" | "reference"
 
 type AvailabilityPillProps = {
   status: AvailabilityStatus
@@ -24,6 +26,17 @@ const statusConfig: Record<AvailabilityStatus, { label: string; style: string }>
     label: "Missing",
     style: "bg-[#EDE9FE] text-[#6D28D9]",
   },
+  reference: {
+    label: "Reference",
+    style: "bg-ink-100 text-ink-600",
+  },
+}
+
+// Library-use-only items (Reference, Thesis, …) can't be borrowed, so
+// "Available" would be misleading — they always show as "Reference".
+export function pillStatusFor(book: Book): AvailabilityStatus {
+  if (isLibraryUseOnly(book)) return "reference"
+  return book.status === "misplaced" ? "missing" : book.status
 }
 
 export function AvailabilityPill({ status, className }: AvailabilityPillProps) {

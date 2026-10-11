@@ -10,14 +10,14 @@ import type { Notification } from '@lasallia/types'
 export default function StudentNotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
-  const { refresh } = useNotifications()
+  const { refresh, revision } = useNotifications()
 
   useEffect(() => {
     fetchNotifications()
       .then(setNotifications)
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }, [revision]) // refetch when the bell dropdown marks something read
 
   async function handleMarkRead(id: string) {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)))

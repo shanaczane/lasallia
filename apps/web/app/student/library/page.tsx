@@ -19,7 +19,7 @@ import {
   ChevronLeft, ChevronRight, ArrowRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { AvailabilityPill } from "@/components/ui/pills/availability-pill"
+import { AvailabilityPill, pillStatusFor } from "@/components/ui/pills/availability-pill"
 import { fetchLoans, type Loan as ApiLoan } from "@/lib/kiosk"
 import { fetchSavedBooks, unsaveBook } from "@/lib/saved"
 import { useSwipeTabs } from "@/lib/hooks/useSwipeTabs"
@@ -541,7 +541,7 @@ function SavedCard({
         <Cover book={book}>
           <div className="absolute top-2 left-2">
             <AvailabilityPill
-              status={book.status === "misplaced" ? "missing" : book.status}
+              status={pillStatusFor(book)}
               className="shadow-sm"
             />
           </div>

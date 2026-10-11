@@ -7,7 +7,7 @@
 import Link from 'next/link'
 import { Copy, Calendar, Pencil, Trash2 } from 'lucide-react'
 import { Book } from '@lasallia/types'
-import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
+import { AvailabilityPill, pillStatusFor } from '@/components/ui/pills/availability-pill'
 import { cn } from '@/lib/utils'
 
 const COVER_COLORS = [
@@ -31,7 +31,7 @@ type LibrarianBookCardProps = {
 
 export function LibrarianBookCard({ book, onEdit, onDelete, className }: LibrarianBookCardProps) {
   const coverColor = getCoverColor(book)
-  const pillStatus = book.status === 'misplaced' ? 'missing' : book.status
+  const pillStatus = pillStatusFor(book)
 
   return (
     <div

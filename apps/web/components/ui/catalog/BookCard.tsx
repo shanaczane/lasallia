@@ -7,7 +7,7 @@
 import { useState } from 'react'
 import { Bookmark } from 'lucide-react'
 import { Book } from '@lasallia/types'
-import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
+import { AvailabilityPill, pillStatusFor } from '@/components/ui/pills/availability-pill'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
 
@@ -163,7 +163,7 @@ export function BookCard({ book, href, className, showBookmark = false, isSaved,
             </p>
           )}
           <div className="mt-auto pt-1.5">
-            <AvailabilityPill status={book.status === 'misplaced' ? 'missing' : book.status} />
+            <AvailabilityPill status={pillStatusFor(book)} />
           </div>
           {reason && (
             // line-clamp wraps at word boundaries and clips whole lines,

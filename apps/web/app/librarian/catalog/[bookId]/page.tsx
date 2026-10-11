@@ -13,7 +13,7 @@ import {
 import { cn } from '@/lib/utils'
 import { programLabel } from '@/lib/programLabels'
 import { useBook } from '@/lib/hooks/useBooks'
-import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
+import { AvailabilityPill, pillStatusFor } from '@/components/ui/pills/availability-pill'
 import type { Book } from '@lasallia/types'
 import { CopyManagementTable } from '@/components/ui/catalog/CopyManagementTable'
 import { BookFormModal, type BookFormData } from '@/components/ui/catalog/BookFormModal'
@@ -171,7 +171,7 @@ export default function LibrarianBookDetailPage({
   }
 
   const coverColor = getCoverColor(book.id, book.cover_color)
-  const pillStatus = book.status === 'misplaced' ? 'missing' : book.status
+  const pillStatus = pillStatusFor(book)
 
   // ── Handlers ──
 

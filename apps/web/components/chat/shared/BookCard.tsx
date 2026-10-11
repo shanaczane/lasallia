@@ -3,14 +3,14 @@
 import { useState } from "react"
 import Link from "next/link"
 import { MapPin } from "lucide-react"
-import { AvailabilityPill } from "@/components/ui/pills/availability-pill"
+import { AvailabilityPill, type AvailabilityStatus } from "@/components/ui/pills/availability-pill"
 import { cn } from "@/lib/utils"
 
 export interface BookCardData {
   title: string
   author: string
   callNumber: string
-  availability: "available" | "borrowed" | "reserved" | "missing"
+  availability: AvailabilityStatus
   location: string
   coverUrl?: string
   // The role's own book page (/student, /guest or /kiosk catalog) — set by
