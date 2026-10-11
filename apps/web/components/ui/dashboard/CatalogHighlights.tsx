@@ -17,6 +17,7 @@ import { fetchBooks } from "@/lib/books"
 import { getUser } from "@/lib/auth"
 import { collegeForProgram } from "@/lib/collegeForProgram"
 import { programLabel } from "@/lib/programLabels"
+import { ScrollRow } from "./ScrollRow"
 
 const SECTION_SIZE = 12
 // 8, not 4 — same reasoning as ForYouSection.tsx's SKELETON_COUNT: a wide
@@ -33,20 +34,6 @@ function SkeletonCard() {
         <div className="h-2.5 bg-ink-100 rounded w-3/5" />
         <div className="h-5 bg-ink-100 rounded-full w-16 mt-1" />
       </div>
-    </div>
-  )
-}
-
-function CardRow({ children }: { children: React.ReactNode }) {
-  // Always a single horizontally-scrolling row, at every breakpoint — no
-  // grid wrap into extra rows on wide screens. no-scrollbar (globals.css,
-  // already used by FilterChips.tsx) hides the browser's own scrollbar
-  // chrome — its styling varies by OS/browser and isn't reliably
-  // reskinnable via ::-webkit-scrollbar, so hiding it is the consistent
-  // choice. The row still scrolls fine by drag, trackpad, or wheel.
-  return (
-    <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar">
-      {children}
     </div>
   )
 }
@@ -108,11 +95,11 @@ function Section({
       </div>
 
       {loading ? (
-        <CardRow>
+        <ScrollRow label={title}>
           {Array.from({ length: SKELETON_COUNT }).map((_, i) => <SkeletonCard key={i} />)}
-        </CardRow>
+        </ScrollRow>
       ) : (
-        <CardRow>
+        <ScrollRow label={title}>
           {books.map((book) => (
             <BookCard
               key={book.id}
@@ -122,7 +109,7 @@ function Section({
             />
           ))}
           <ViewMoreCard href={viewMoreHref} />
-        </CardRow>
+        </ScrollRow>
       )}
     </div>
   )

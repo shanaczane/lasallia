@@ -14,6 +14,7 @@ import { BookCard } from "@/components/ui/catalog/BookCard"
 import { fetchRecommendations } from "@/lib/recommendations"
 import { logEvent, logImpressions } from "@/lib/recommendationEvents"
 import type { RecommendationItem, RecommendationsResponse } from "@lasallia/types"
+import { ScrollRow } from "./ScrollRow"
 
 // 8, not 4 — a wide viewport fits more than 4 of the 140px cards before the
 // row needs to scroll, so 4 skeletons visibly under-filled the row and the
@@ -30,20 +31,6 @@ function SkeletonCard() {
         <div className="h-5 bg-ink-100 rounded-full w-16 mt-1" />
         <div className="h-2 bg-ink-100 rounded w-full mt-1" />
       </div>
-    </div>
-  )
-}
-
-function CardRow({ children }: { children: React.ReactNode }) {
-  // Always a single horizontally-scrolling row, at every breakpoint — no
-  // grid wrap into extra rows on wide screens. no-scrollbar (globals.css,
-  // already used by FilterChips.tsx) hides the browser's own scrollbar
-  // chrome — its styling varies by OS/browser and isn't reliably
-  // reskinnable via ::-webkit-scrollbar, so hiding it is the consistent
-  // choice. The row still scrolls fine by drag, trackpad, or wheel.
-  return (
-    <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar">
-      {children}
     </div>
   )
 }
@@ -152,11 +139,11 @@ export function ForYouSection({
       </div>
 
       {loading ? (
-        <CardRow>
+        <ScrollRow label={copy.title}>
           {Array.from({ length: SKELETON_COUNT }).map((_, i) => <SkeletonCard key={i} />)}
-        </CardRow>
+        </ScrollRow>
       ) : items && items.length > 0 ? (
-        <CardRow>
+        <ScrollRow label={copy.title}>
           {items.map((item) => (
             <BookCard
               key={item.book.id}
@@ -174,7 +161,7 @@ export function ForYouSection({
             />
           ))}
           <ViewMoreCard href={hrefPrefix} />
-        </CardRow>
+        </ScrollRow>
       ) : (
         // Only reachable now if the nightly job has never run at all for
         // this account (brand-new, or popular_recommendations itself is
