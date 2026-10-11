@@ -5,6 +5,13 @@ import { useState } from "react"
 import { cn } from "@/lib/utils"
 import type { Notification, NotificationType } from "@lasallia/types"
 import { NotificationItemCard } from "./NotificationItemCard"
+import {
+  NotificationFilters,
+  DEFAULT_NOTIFICATION_FILTERS,
+  filterNotifications,
+  isFilterActive,
+  type NotificationFilterState,
+} from "./NotificationFilters"
 import { useSwipeTabs } from "@/lib/hooks/useSwipeTabs"
 import { useStickyBelowNav } from "@/lib/hooks/useStickyBelowNav"
 import { Bell } from "lucide-react"
@@ -66,15 +73,17 @@ export function NotificationFeed({
   onMarkAllRead,
 }: NotificationFeedProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("all")
+  const [filters, setFilters] = useState<NotificationFilterState>(DEFAULT_NOTIFICATION_FILTERS)
   const { direction, changeTo, touchHandlers } = useSwipeTabs(TAB_ORDER, activeTab, setActiveTab)
   const { sentinelRef, isStuck } = useStickyBelowNav(64) // matches globals.css's --height-nav
 
   const unreadCount = notifications.filter((n) => !n.is_read).length
 
+  const matching = filterNotifications(notifications, filters)
   const filtered =
     activeTab === "all"
-      ? notifications
-      : notifications.filter((n) => {
+      ? matching
+      : matching.filter((n) => {
           const tab = TABS.find((t) => t.key === activeTab)
           return tab?.types?.includes(n.type)
         })
@@ -159,6 +168,8 @@ export function NotificationFeed({
             <span className="hidden sm:inline">Mark all as read</span>
           </button>
         </div>
+
+        <NotificationFilters value={filters} onChange={setFilters} className="mt-4" />
       </div>
 
       {/* ── Tab filters — see student/library/page.tsx's matching note:
@@ -201,8 +212,18 @@ export function NotificationFeed({
           <div className="flex flex-col items-center justify-center py-16 text-ink-400">
             <Bell size={28} className="mb-2 opacity-30" />
             <p style={{ fontSize: "var(--text-body)", fontFamily: "var(--font-body)" }}>
-              No notifications here
+              {isFilterActive(filters) ? "No notifications match these filters" : "No notifications here"}
             </p>
+            {isFilterActive(filters) && (
+              <button
+                type="button"
+                onClick={() => setFilters(DEFAULT_NOTIFICATION_FILTERS)}
+                className="mt-2 text-green-700 font-medium hover:underline"
+                style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-4">

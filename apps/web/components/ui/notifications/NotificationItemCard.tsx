@@ -17,7 +17,7 @@ type TypeConfig = {
   iconColor: string
 }
 
-const typeConfig: Record<NotificationType, TypeConfig> = {
+export const notificationTypeConfig: Record<NotificationType, TypeConfig> = {
   due_reminder: {
     icon: () => <Clock size={15} />,
     iconBg: "bg-warn-bg",
@@ -100,7 +100,7 @@ const typeConfig: Record<NotificationType, TypeConfig> = {
   },
 }
 
-const fallbackConfig: TypeConfig = {
+export const fallbackNotificationConfig: TypeConfig = {
   icon: () => <Bell size={15} />,
   iconBg: "bg-ink-100",
   iconColor: "text-ink-400",
@@ -120,7 +120,7 @@ export function NotificationItemCard({
   showTime = true,
   isLast = false,
 }: NotificationItemCardProps) {
-  const config = typeConfig[notification.type] ?? fallbackConfig
+  const config = notificationTypeConfig[notification.type] ?? fallbackNotificationConfig
 
   return (
     <div

@@ -3,9 +3,10 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { Bell, LogOut, Menu, Settings, User } from "lucide-react"
+import { LogOut, Menu, Settings, User } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { clearSession, verifySessionActive } from "@/lib/auth"
+import { NotificationBellMenu } from "@/components/ui/notifications/NotificationBellMenu"
 
 // How often an already-open tab re-checks whether its account is still
 // active. Short enough that a librarian deactivating someone mid-session
@@ -146,23 +147,9 @@ export function TopNav({
       {/* Right side */}
       <div className="flex items-center gap-1 shrink-0">
 
-        {/* Bell */}
+        {/* Bell — dropdown preview with a "View all" link to the full page */}
         {showNotifications && (
-          <Link
-            href={notificationsHref}
-            className="relative flex items-center justify-center w-9 h-9 rounded-full text-ink-500 hover:bg-ink-100 hover:text-ink-900 active:bg-ink-200 transition-colors"
-            aria-label="Notifications"
-          >
-            <Bell size={17} />
-            {notificationCount > 0 && (
-              <span
-                className="absolute top-1 right-1 flex items-center justify-center rounded-full bg-green-700 text-white ring-2 ring-white font-semibold"
-                style={{ width: 15, height: 15, fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
-              >
-                {notificationCount > 9 ? "9+" : notificationCount}
-              </span>
-            )}
-          </Link>
+          <NotificationBellMenu count={notificationCount} href={notificationsHref} />
         )}
 
         {/* Divider */}

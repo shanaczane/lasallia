@@ -7,6 +7,13 @@ import { cn } from "@/lib/utils"
 import { AlertCircle, Bookmark, BookOpen, RotateCcw, PackageCheck, Bell } from "lucide-react"
 import { fetchNotifications, markNotificationRead, markAllNotificationsRead } from "@/lib/notifications"
 import { useNotifications } from "@/components/ui/notifications/NotificationContext"
+import {
+  NotificationFilters,
+  DEFAULT_NOTIFICATION_FILTERS,
+  filterNotifications,
+  isFilterActive,
+  type NotificationFilterState,
+} from "@/components/ui/notifications/NotificationFilters"
 import { usePolling } from "@/lib/hooks/usePolling"
 import type { Notification } from "@lasallia/types"
 
@@ -90,7 +97,8 @@ export default function LibrarianNotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabKey>("all")
-  const { refresh } = useNotifications()
+  const [filters, setFilters] = useState<NotificationFilterState>(DEFAULT_NOTIFICATION_FILTERS)
+  const { refresh, revision } = useNotifications()
 
   // Polled every 20s (same interval as the sidebar bell's NotificationContext,
   // and the same reason — no websocket/Realtime in this codebase, so a
@@ -104,12 +112,21 @@ export default function LibrarianNotificationsPage() {
       .finally(() => setLoading(false))
   }, 60_000)
 
+  // Refetch when the bell dropdown marks something read, so this list
+  // doesn't keep showing it as unread until the next poll.
+  useEffect(() => {
+    if (revision === 0) return
+    fetchNotifications().then(setNotifications).catch(() => {})
+  }, [revision])
+
   const categorized = notifications.map((n) => ({ n, category: categoryOf(n) }))
 
   const unreadCount = notifications.filter((n) => !n.is_read).length
 
+  const matchingIds = new Set(filterNotifications(notifications, filters).map((n) => n.id))
+  const matching = categorized.filter((x) => matchingIds.has(x.n.id))
   const filtered =
-    activeTab === "all" ? categorized : categorized.filter((x) => x.category === activeTab)
+    activeTab === "all" ? matching : matching.filter((x) => x.category === activeTab)
 
   const tabCounts: Record<TabKey, number> = {
     all: categorized.filter((x) => !x.n.is_read).length,
@@ -184,6 +201,8 @@ export default function LibrarianNotificationsPage() {
         </button>
       </div>
 
+      <NotificationFilters value={filters} onChange={setFilters} className="px-4 sm:px-8 pb-4" />
+
       {/* Tab filters */}
       <div className="flex border-b border-ink-200 px-4 sm:px-8 overflow-x-auto [&::-webkit-scrollbar]:hidden">
         {TABS.map((tab) => {
@@ -224,8 +243,18 @@ export default function LibrarianNotificationsPage() {
           <div className="flex flex-col items-center justify-center py-16 text-ink-400">
             <Bell size={28} className="mb-2 opacity-30" />
             <p style={{ fontSize: "var(--text-body)", fontFamily: "var(--font-body)" }}>
-              No notifications here
+              {isFilterActive(filters) ? "No notifications match these filters" : "No notifications here"}
             </p>
+            {isFilterActive(filters) && (
+              <button
+                type="button"
+                onClick={() => setFilters(DEFAULT_NOTIFICATION_FILTERS)}
+                className="mt-2 text-green-700 font-medium hover:underline"
+                style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-4">

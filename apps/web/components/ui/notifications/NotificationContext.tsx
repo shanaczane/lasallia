@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useContext, useState } from "react"
 import { fetchNotifications } from "@/lib/notifications"
 import { usePolling } from "@/lib/hooks/usePolling"
 
@@ -9,6 +9,10 @@ type NotificationContextType = {
   markAllRead: () => void
   markRead: () => void
   refresh: () => void
+  /** Bumped whenever notifications change outside the page showing them
+   * (e.g. marked read from the bell dropdown), so that page can refetch. */
+  revision: number
+  notifyChanged: () => void
 }
 
 const NotificationContext = createContext<NotificationContextType>({
@@ -16,6 +20,8 @@ const NotificationContext = createContext<NotificationContextType>({
   markAllRead: () => {},
   markRead: () => {},
   refresh: () => {},
+  revision: 0,
+  notifyChanged: () => {},
 })
 
 export function useNotifications() {
@@ -45,6 +51,7 @@ export function NotificationProvider({
   initialUnread?: number
 }) {
   const [unreadCount, setUnreadCount] = useState(initialUnread)
+  const [revision, setRevision] = useState(0)
 
   function refresh() {
     fetchNotifications()
@@ -61,6 +68,11 @@ export function NotificationProvider({
         markAllRead: () => setUnreadCount(0),
         markRead: () => setUnreadCount((p) => Math.max(0, p - 1)),
         refresh,
+        revision,
+        notifyChanged: () => {
+          setRevision((r) => r + 1)
+          refresh()
+        },
       }}
     >
       {children}
