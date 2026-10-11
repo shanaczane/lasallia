@@ -23,7 +23,7 @@ import { useBook } from '@/lib/hooks/useBooks'
 import { useKioskSession } from '@/components/kiosk/KioskSessionProvider'
 import { BorrowModal } from '@/components/kiosk/BorrowModal'
 import { fetchBorrowEligibility } from '@/lib/kiosk'
-import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
+import { AvailabilityPill, pillStatusFor } from '@/components/ui/pills/availability-pill'
 import type { Book } from '@lasallia/types'
 
 // ─── Cover color helper ───────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ function ActionPanel({
       <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex items-center gap-3">
         <BookOpen size={16} className="text-ink-400 shrink-0" />
         <p className="text-ink-600 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-          <span className="font-semibold text-ink-700">Library use only</span> — {book.collection_type?.toLowerCase()} items aren&apos;t available for borrowing or reservation.
+          <span className="font-semibold text-ink-700">Library use only</span> — read it here in the library; it can&apos;t be borrowed or reserved.
         </p>
       </div>
     )
@@ -377,7 +377,7 @@ export default function KioskBookDetailPage({
 
           {/* Badges */}
           <div className="flex flex-wrap items-center gap-2 mb-6">
-            <AvailabilityPill status={book.status === 'misplaced' ? 'missing' : book.status} />
+            <AvailabilityPill status={pillStatusFor(book)} />
             {book.format && (
               <span
                 className="px-2.5 py-0.5 rounded-full bg-ink-100 text-ink-500 font-medium capitalize"

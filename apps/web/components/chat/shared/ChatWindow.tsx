@@ -10,6 +10,7 @@ import TypingIndicator, { type TypingStatus } from "./TypingIndicator"
 import { sendChatMessage, fetchChatHistory, deleteChatSession, WEB_CHAT_SESSION_STORAGE_KEY, type ChatSurface } from "@/lib/chat"
 import type { BookCardData } from "./BookCard"
 import type { Book } from "@lasallia/types"
+import { pillStatusFor } from "@/components/ui/pills/availability-pill"
 
 interface ChatWindowProps {
   onMenuClick: () => void
@@ -58,7 +59,7 @@ function bookToCardData(book: Book, catalogBase: string): BookCardData {
     title: book.title,
     author: book.author,
     callNumber: book.call_number,
-    availability: book.status === "misplaced" ? "missing" : book.status,
+    availability: pillStatusFor(book),
     location: book.shelf_location,
     coverUrl: book.cover_url,
     // ?from=assistant makes the book page's Back link return to this chat.
