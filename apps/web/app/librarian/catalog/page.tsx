@@ -430,6 +430,8 @@ function LibrarianCatalogContent() {
 
         {/* Mobile quick-chip row (above results list) */}
         <QuickChipRow
+          genres={genres}
+          subjects={subjects}
           filters={filters}
           activeCount={activeCount}
           onOpenSheet={() => setSheetOpen(true)}

@@ -5,13 +5,17 @@
 
 'use client'
 
+import { useEffect, useMemo, useState } from 'react'
 import { SlidersHorizontal, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getUser } from '@/lib/auth'
+import { catalogProgramFor } from '@/lib/catalogProgram'
+import { collegeForProgram } from '@/lib/collegeForProgram'
 import {
   CatalogFilters,
   DEFAULT_FILTERS,
   FilterSectionConfig,
-  QUICK_CHIPS,
+  buildQuickChips,
   callNoSummary,
   isSectionActive,
   labelForValue,
@@ -25,6 +29,9 @@ type QuickChipRowProps = {
   onOpenSheet: () => void
   setFilter: <K extends keyof CatalogFilters>(key: K, value: CatalogFilters[K]) => void
   filtersButtonRef?: React.RefObject<HTMLButtonElement | null>
+  /** The catalog's Program and College values, to match the patron's own against. */
+  genres: string[]
+  subjects: string[]
 }
 
 export function QuickChipRow({
@@ -33,7 +40,34 @@ export function QuickChipRow({
   onOpenSheet,
   setFilter,
   filtersButtonRef,
+  genres,
+  subjects,
 }: QuickChipRowProps) {
+  // getUser() reads browser storage, so it's only read after mount — reading
+  // it during render would differ between the server and client HTML.
+  const [profile, setProfile] = useState<{ program: string | null; college: string | null }>({
+    program: null,
+    college: null,
+  })
+  useEffect(() => {
+    const user = getUser()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time read of browser storage after mount
+    setProfile({
+      program: user?.program ?? null,
+      college: user?.college || collegeForProgram(user?.program),
+    })
+  }, [])
+
+  const chips = useMemo(
+    () =>
+      buildQuickChips({
+        program: catalogProgramFor(profile.program, genres),
+        college: profile.college,
+        subjects,
+      }),
+    [profile, genres, subjects]
+  )
+
   return (
     <div className="lg:hidden flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 mb-4">
       <button
@@ -47,7 +81,7 @@ export function QuickChipRow({
         {activeCount > 0 ? `Filters · ${activeCount}` : 'Filters'}
       </button>
 
-      {QUICK_CHIPS.map((chip) => {
+      {chips.map((chip) => {
         const active = filters[chip.key] === chip.value
         return (
           <button

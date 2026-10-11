@@ -239,6 +239,8 @@ function StudentCatalogContent() {
 
         {/* Mobile quick-chip row (above results grid) */}
         <QuickChipRow
+          genres={genres}
+          subjects={subjects}
           filters={filters}
           activeCount={activeCount}
           onOpenSheet={() => setSheetOpen(true)}

@@ -80,11 +80,25 @@ export function buildFilterSections(source: {
 
 export type QuickChipDef = { key: RadioFilterKey; value: string; label: string }
 
-export const QUICK_CHIPS: QuickChipDef[] = [
-  { key: 'availability', value: 'available', label: 'Available' },
-  { key: 'genre', value: 'Computer Science', label: 'Computer Science' },
-  { key: 'format', value: 'digital', label: 'E-Book' },
-]
+// Shortcut chips on the phone catalog. The Program and College chips come
+// from the signed-in patron's own profile, so a Nursing student sees
+// "Nursing · CON" rather than a fixed program everyone shares. Each is left
+// out when the patron has none, or when the catalog has no books under it.
+export function buildQuickChips(source: {
+  program: string | null
+  college: string | null
+  subjects: string[]
+}): QuickChipDef[] {
+  const chips: QuickChipDef[] = [{ key: 'availability', value: 'available', label: 'Available' }]
+  if (source.program) {
+    chips.push({ key: 'genre', value: source.program, label: programLabel(source.program) })
+  }
+  if (source.college && source.subjects.includes(source.college)) {
+    chips.push({ key: 'subject', value: source.college, label: source.college })
+  }
+  chips.push({ key: 'format', value: 'digital', label: 'E-Book' })
+  return chips
+}
 
 export function isSectionActive(section: FilterSectionConfig, filters: CatalogFilters): boolean {
   if (section.type === 'range') {
