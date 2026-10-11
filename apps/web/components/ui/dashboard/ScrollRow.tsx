@@ -7,11 +7,13 @@ import { cn } from "@/lib/utils"
 
 // Single horizontally-scrolling row of cards. The browser scrollbar stays
 // hidden (no-scrollbar — its look varies by OS and can't be reliably
-// restyled), so mouse users get ‹ › buttons instead: a plain wheel only
-// scrolls vertically, which left these rows stuck past the first few cards.
-// Touch screens keep native swipe and never see the buttons. Edge fades
-// hint that more cards sit off-screen; each button and fade only shows
-// while there's something to scroll toward on that side.
+// restyled), so every device gets ‹ › buttons instead: a plain wheel only
+// scrolls vertically, which left these rows stuck past the first few cards,
+// and on touch screens they make it obvious the row scrolls at all (swipe
+// still works too). Slightly smaller below sm so they cover less of the
+// cards on narrow screens. Edge fades hint that more cards sit off-screen;
+// each button and fade only shows while there's something to scroll toward
+// on that side.
 export function ScrollRow({
   children,
   label,
@@ -57,7 +59,7 @@ export function ScrollRow({
   }
 
   const arrowClass =
-    "absolute top-1/2 -translate-y-1/2 z-10 hidden [@media(hover:hover)_and_(pointer:fine)]:flex items-center justify-center size-9 rounded-full bg-white border border-ink-200 text-ink-700 shadow-(--shadow) hover:bg-ink-50 hover:text-ink-900 transition-colors"
+    "absolute top-1/2 -translate-y-1/2 z-10 flex items-center justify-center size-8 sm:size-9 rounded-full bg-white border border-ink-200 text-ink-700 shadow-(--shadow) hover:bg-ink-50 hover:text-ink-900 transition-colors"
 
   return (
     <div className="relative">
