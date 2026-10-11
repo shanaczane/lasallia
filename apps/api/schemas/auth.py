@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from datetime import datetime
 from typing import Literal
 
 Role = Literal["librarian", "student", "faculty", "guest"]
@@ -29,6 +30,9 @@ class UserProfile(BaseModel):
     # caller that actually receives a UserProfile is implicitly active —
     # carried here mainly so the frontend never has to special-case it.
     status: Literal["active", "inactive"] | None = None
+    # First-login privacy notice (0047). None = not accepted yet.
+    privacy_accepted_at: datetime | None = None
+    privacy_notice_version: str | None = None
 
 class TokenResponse(BaseModel):
     access_token: str

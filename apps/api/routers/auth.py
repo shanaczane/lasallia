@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status, Depends
 from supabase_auth.errors import AuthApiError
 from postgrest.exceptions import APIError
@@ -9,6 +10,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 MIN_PASSWORD_LENGTH = 8
 MAX_YEAR_LEVEL = 8  # same ceiling routers/patrons.py enforces for a librarian's edit
+
+# Stamped on each privacy-notice acceptance. "placeholder" until the
+# official DPA text replaces the placeholder in PrivacyNoticeModal — bump it
+# then, so acceptances given during testing can be told apart from real ones.
+PRIVACY_NOTICE_VERSION = "placeholder"
 
 # Same shape as routers/books.py's _check_accession_conflict — pre-checked
 # with a SELECT rather than relying on the DB's unique index (0045) to
@@ -24,7 +30,7 @@ def _check_id_number_conflict(id_number: str, exclude_user_id: str) -> None:
         raise HTTPException(status.HTTP_409_CONFLICT, f'ID number "{id_number}" is already in use by another account')
 
 def _fetch_profile(user_id: str) -> dict:
-    res = get_admin_client().table("profiles").select("role, full_name, program, year_level, college, id_number, status").eq("id", user_id).single().execute()
+    res = get_admin_client().table("profiles").select("role, full_name, program, year_level, college, id_number, status, privacy_accepted_at, privacy_notice_version").eq("id", user_id).single().execute()
     return res.data or {}
 
 def _build_token_response(session, sb_user) -> TokenResponse:
@@ -50,6 +56,8 @@ def _build_token_response(session, sb_user) -> TokenResponse:
             college=profile.get("college"),
             id_number=profile.get("id_number"),
             status=profile.get("status"),
+            privacy_accepted_at=profile.get("privacy_accepted_at"),
+            privacy_notice_version=profile.get("privacy_notice_version"),
         ),
     )
 
@@ -78,6 +86,22 @@ def refresh(body: RefreshRequest):
 @router.get("/me", response_model=UserProfile)
 def me(user: UserProfile = Depends(get_current_user)):
     return user
+
+# First-login privacy notice (PrivacyNoticeModal). No request body — the
+# server stamps the time and notice version, not the client. Already
+# accepted → returned unchanged, so a retry or a second tab never overwrites
+# the date of the first acceptance.
+@router.post("/accept-privacy", response_model=UserProfile)
+def accept_privacy(user: UserProfile = Depends(get_current_user)):
+    if user.privacy_accepted_at:
+        return user
+    accepted_at = datetime.now(timezone.utc)
+    get_admin_client().table("profiles").update({
+        "privacy_accepted_at": accepted_at.isoformat(),
+        "privacy_notice_version": PRIVACY_NOTICE_VERSION,
+    }).eq("id", user.id).execute()
+    invalidate_profile(user.id)
+    return user.model_copy(update={"privacy_accepted_at": accepted_at, "privacy_notice_version": PRIVACY_NOTICE_VERSION})
 
 # Settings' Account tab. Self-service only — scoped to user.id from the
 # caller's own verified token, same as every other "me" endpoint; there's
@@ -142,6 +166,8 @@ def update_me(body: UpdateProfileRequest, user: UserProfile = Depends(get_curren
         year_level=changes.get("year_level", user.year_level),
         college=changes["college"] if "college" in changes else user.college,
         id_number=changes.get("id_number", user.id_number),
+        privacy_accepted_at=user.privacy_accepted_at,
+        privacy_notice_version=user.privacy_notice_version,
     )
 
 # Settings' Account tab "Change Password". current_password is verified by
