@@ -33,7 +33,7 @@ import { fetchLoans, type Loan as ApiLoan } from '@/lib/kiosk'
 import { logEvent } from '@/lib/recommendationEvents'
 import { useStudentCounts } from '@/components/layout/StudentCountsContext'
 import { BorrowModal } from '@/components/kiosk/BorrowModal'
-import { AvailabilityPill } from '@/components/ui/pills/availability-pill'
+import { AvailabilityPill, pillStatusFor } from '@/components/ui/pills/availability-pill'
 import { BookCard } from '@/components/ui/catalog'
 import type { Book, Reservation } from '@lasallia/types'
 
@@ -101,7 +101,6 @@ function ActionPanel({
   const [pending, setPending] = useState(false)
   const [actionError, setActionError] = useState('')
   const reserved = !!reservation
-  const pct = totalCopies > 0 ? (availableCopies / totalCopies) * 100 : 0
   const { refreshReservationCount } = useStudentCounts()
 
   // Recommendations plan Phase 9 — a reserve here can only be
@@ -151,7 +150,7 @@ function ActionPanel({
       <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex items-center gap-3">
         <BookOpen size={16} className="text-ink-400 shrink-0" />
         <p className="text-ink-600 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-          <span className="font-semibold text-ink-700">Library use only</span> — {book.collection_type?.toLowerCase()} items aren&apos;t available for borrowing or reservation.
+          <span className="font-semibold text-ink-700">Library use only</span> — read it here in the library; it can&apos;t be borrowed or reserved.
         </p>
       </div>
     )
@@ -175,33 +174,31 @@ function ActionPanel({
 
   if (isAvailable) {
     return (
-      <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex-1 flex items-center gap-3 min-w-0">
-          <div className="w-14 h-1.5 rounded-full bg-white/60 overflow-hidden shrink-0">
-            <div
-              className="h-full rounded-full bg-green-500 transition-all"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <p
-            className="text-green-800 leading-snug"
-            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
-          >
-            <span className="font-semibold">
-              {availableCopies} of {totalCopies} {totalCopies === 1 ? 'copy' : 'copies'}
-            </span>{' '}
-            available —{hasKnownShelfLocation(book) && <> go to <span className="font-semibold">{book.shelf_location}</span> and</>} show the QR code at the counter.
+      <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
+        {/* Just the count and where it is — the borrow modal explains the
+            QR-at-the-counter step, so it isn't repeated here. */}
+        <div className="flex-1 min-w-0 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+          <p className="flex items-center gap-2 font-semibold text-green-900">
+            <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+            {availableCopies} of {totalCopies} {totalCopies === 1 ? 'copy' : 'copies'} available
           </p>
+          {hasKnownShelfLocation(book) && (
+            <p className="mt-1 flex items-center gap-2 text-green-800">
+              <MapPin size={14} className="text-green-600 shrink-0" />
+              {book.shelf_location}
+            </p>
+          )}
         </div>
-        {/* Borrow button */}
+        {/* Borrow button — stays on the right, shorter label on phones */}
         <button
           type="button"
           onClick={onBorrow}
-          className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-green-700 text-white font-semibold hover:bg-green-800 active:scale-95 transition-all"
+          className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[8px] bg-green-700 text-white font-semibold hover:bg-green-800 active:scale-95 transition-all"
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
         >
           <QrCode size={15} />
-          Borrow this book
+          <span className="sm:hidden">Borrow</span>
+          <span className="hidden sm:inline">Borrow this book</span>
         </button>
       </div>
     )
@@ -223,10 +220,10 @@ function ActionPanel({
       // shelf and borrowing, not to manage the reservation itself.
       const urgency = reservation.pickup_by ? pickupUrgency(reservation.pickup_by) : null
       return (
-        <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
           <div className="flex-1 flex items-center gap-3 min-w-0">
             <CheckCircle2 size={18} className="text-green-600 shrink-0" />
-            <div className="text-green-800 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+            <div className="min-w-0 text-green-800 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
               <p>
                 <span className="font-semibold text-green-900">Ready for pickup</span>
                 {urgency && <> · <span className={cn('font-semibold', urgency.textClass)}>{urgency.shortLabel}</span></>}
@@ -240,11 +237,12 @@ function ActionPanel({
           <button
             type="button"
             onClick={onBorrow}
-            className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-green-700 text-white font-semibold hover:bg-green-800 active:scale-95 transition-all"
+            className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[8px] bg-green-700 text-white font-semibold hover:bg-green-800 active:scale-95 transition-all"
             style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
           >
             <QrCode size={15} />
-            Borrow this book
+            <span className="sm:hidden">Borrow</span>
+            <span className="hidden sm:inline">Borrow this book</span>
           </button>
         </div>
       )
@@ -252,24 +250,21 @@ function ActionPanel({
 
     return (
       <div className="flex flex-col gap-2">
-        <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex items-center gap-2.5 flex-1 min-w-0">
-            <CheckCircle2 size={16} className="text-green-600 shrink-0" />
-            <p
-              className="text-green-800 leading-snug"
-              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
-            >
-              <span className="font-semibold">
+        <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <CheckCircle2 size={18} className="text-green-600 shrink-0" />
+            <div className="min-w-0 text-green-800 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+              <p className="font-semibold text-green-900">
                 {reservation.queue_position ? `You're #${reservation.queue_position} in line` : "You're in line"}
-              </span>{' '}
-              for this title — we'll hold a copy for you the moment it's your turn.
-            </p>
+              </p>
+              <p className="mt-0.5">We&apos;ll hold a copy when it&apos;s your turn.</p>
+            </div>
           </div>
           <button
             type="button"
             onClick={leaveQueue}
             disabled={pending}
-            className="shrink-0 text-green-600 hover:text-green-800 underline underline-offset-2 transition-colors sm:ml-auto disabled:opacity-50"
+            className="shrink-0 text-green-600 hover:text-green-800 underline underline-offset-2 transition-colors disabled:opacity-50"
             style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
           >
             {pending ? 'Cancelling…' : 'Leave queue'}
@@ -289,16 +284,14 @@ function ActionPanel({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex-1 flex items-center gap-3 min-w-0">
-          <div className="w-14 h-1.5 rounded-full bg-ink-200 overflow-hidden shrink-0">
-            <div className="h-full rounded-full bg-ink-300" style={{ width: '0%' }} />
-          </div>
+      <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex items-center gap-3">
+        <div className="flex-1 min-w-0">
           <div className="text-ink-600 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-            <p>
-              <span className="font-semibold text-ink-700">{totalCopies} {totalCopies === 1 ? 'copy' : 'copies'} · 0 available</span>
+            <p className="flex items-center gap-2 font-semibold text-ink-700">
+              <span className="w-2 h-2 rounded-full bg-ink-300 shrink-0" />
+              0 of {totalCopies} available
             </p>
-            <p className="mt-0.5">
+            <p className="mt-1">
               {expectedBack
                 ? expectedBackIsPast
                   ? <>Was due {formatDate(book.expected_back!)} · not yet returned</>
@@ -314,11 +307,11 @@ function ActionPanel({
           type="button"
           onClick={reserveBook}
           disabled={pending}
-          className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-ink-900 text-white font-semibold hover:bg-ink-700 transition-colors disabled:opacity-50"
+          className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[8px] bg-ink-900 text-white font-semibold hover:bg-ink-700 transition-colors disabled:opacity-50"
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
         >
           <Bell size={15} />
-          {pending ? 'Reserving…' : 'Reserve this book'}
+          {pending ? 'Reserving…' : <><span className="sm:hidden">Reserve</span><span className="hidden sm:inline">Reserve this book</span></>}
         </button>
       </div>
       {actionError && (
@@ -620,7 +613,7 @@ export default function StudentBookDetailPage({
 
             {/* Availability + format + category pills */}
             <div className="flex flex-wrap items-center gap-2 mb-6">
-              <AvailabilityPill status={book.status === 'misplaced' ? 'missing' : book.status} />
+              <AvailabilityPill status={pillStatusFor(book)} />
               {book.format && (
                 <span
                   className="px-2.5 py-0.5 rounded-full bg-ink-100 text-ink-500 font-medium capitalize"
