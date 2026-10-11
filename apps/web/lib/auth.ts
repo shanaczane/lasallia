@@ -13,6 +13,9 @@ export type UserProfile = {
   year_level?: number | null
   college?: string | null
   id_number?: string | null
+  // First-login privacy notice — null/absent = not accepted yet.
+  privacy_accepted_at?: string | null
+  privacy_notice_version?: string | null
 }
 
 type TokenResponse = {
@@ -222,6 +225,19 @@ export async function setPassword(newPassword: string): Promise<void> {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.detail ?? "Could not set your password")
   }
+}
+
+// First-login privacy notice (PrivacyNoticeModal). No body — the API
+// stamps the time and notice version itself.
+export async function acceptPrivacyNotice(): Promise<UserProfile> {
+  const res = await fetch(`${API_URL}/auth/accept-privacy`, { method: "POST", headers: authHeaders() })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? "Could not record your acceptance")
+  }
+  const user: UserProfile = await res.json()
+  setCachedUser(user)
+  return user
 }
 
 // Polled by TopNav (mounted on every authenticated page across all three

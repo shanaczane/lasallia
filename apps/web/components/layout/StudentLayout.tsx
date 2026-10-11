@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils"
 import { fetchPasswordStatus, getUser, refreshCachedUser, type UserProfile } from "@/lib/auth"
 import { useRequireSession } from "@/lib/hooks/useRequireSession"
 import { CompleteProfileModal } from "@/components/ui/profile/CompleteProfileModal"
+import { PrivacyNoticeModal } from "@/components/ui/profile/PrivacyNoticeModal"
 import { PASSWORD_PROMPT_SKIP_KEY, SetPasswordModal } from "@/components/ui/profile/SetPasswordModal"
 import {
   LayoutDashboard,
@@ -125,9 +126,13 @@ function StudentLayoutInner({
   const [displayEmail, setDisplayEmail] = useState("")
   const [profileSeed, setProfileSeed] = useState<UserProfile | null>(null)
   const [needsPassword, setNeedsPassword] = useState(false)
-  // Fixed once both checks resolve, so the "Step N of M" label doesn't
+  // Fixed once all checks resolve, so the "Step N of M" label doesn't
   // shift from "1 of 2" to "1 of 1" mid-flow.
   const [setupSteps, setSetupSteps] = useState(0)
+  // Page content stays unrendered (no dashboard fetches) until this is
+  // "accepted". 1 when the privacy notice is part of this login's steps.
+  const [privacy, setPrivacy] = useState<"checking" | "required" | "accepted">("checking")
+  const [privacyStep, setPrivacyStep] = useState(0)
   const passwordUnknown = useRef(false)
   const [isFaculty, setIsFaculty] = useState(false)
 
@@ -143,6 +148,8 @@ function StudentLayoutInner({
     // that session even while it's still active.
     const user = getUser()
     if (user) {
+      // Already accepted per the cached login copy → no wait, no flash.
+      if (user.privacy_accepted_at) setPrivacy("accepted")
       if (user.full_name) {
         setDisplayName(user.full_name)
         setDisplayInitials(getInitials(user.full_name))
@@ -171,25 +178,42 @@ function StudentLayoutInner({
     : u.role === "faculty" ? !u.college || !u.id_number
     : false
 
-  // First-login setup runs as two separate modals, one after the other, so
-  // neither gets too long: step 1 = academic details (CompleteProfileModal),
-  // step 2 = set a password for a Google-only account (SetPasswordModal).
-  // Either step is left out when it doesn't apply. Sprint 5.4
+  // First-login setup runs as separate modals, one after the other, so none
+  // gets too long: the privacy notice (PrivacyNoticeModal) first, then
+  // academic details (CompleteProfileModal), then set a password for a
+  // Google-only account (SetPasswordModal). Any step is left out when it
+  // doesn't apply.
   useEffect(() => {
     const cached = getUser()
     if (!cached) return
     let cancelled = false
 
+    // One /auth/me round trip serves both checks — the cached login copy can
+    // be stale for either (accepted on another device, details filled in by
+    // a librarian).
+    const latest: Promise<UserProfile | null> =
+      isIncomplete(cached) || !cached.privacy_accepted_at ? refreshCachedUser() : Promise.resolve(cached)
+
+    // A failed refresh (null) counts as not accepted — the notice shows
+    // rather than letting the dashboard through unconfirmed.
+    const privacyCheck: Promise<boolean> = cached.privacy_accepted_at
+      ? Promise.resolve(false)
+      : latest.then((fresh) => !fresh?.privacy_accepted_at)
+
     const profileCheck: Promise<UserProfile | null> = isIncomplete(cached)
-      ? refreshCachedUser().then((fresh) =>
+      ? latest.then((fresh) =>
           fresh && isIncomplete(fresh) && (fresh.role === "student" || fresh.role === "faculty") ? fresh : null)
       : Promise.resolve(null)
 
-    Promise.all([profileCheck, checkNeedsPassword()]).then(([seed, noPassword]) => {
+    Promise.all([privacyCheck, profileCheck, checkNeedsPassword()]).then(([needsPrivacy, seed, noPassword]) => {
       if (cancelled) return
+      const privacySteps = needsPrivacy ? 1 : 0
       // null = the check failed (e.g. a flaky mobile connection) — still
-      // count step 2 after a profile step, and re-check once step 1 is done.
-      setSetupSteps((seed ? 1 : 0) + (noPassword === true || (seed && noPassword === null) ? 1 : 0))
+      // count the password step after a profile step, and re-check once the
+      // profile step is done.
+      setSetupSteps(privacySteps + (seed ? 1 : 0) + (noPassword === true || (seed && noPassword === null) ? 1 : 0))
+      setPrivacyStep(privacySteps)
+      setPrivacy(needsPrivacy ? "required" : "accepted")
       setProfileSeed(seed)
       setNeedsPassword(noPassword === true)
       passwordUnknown.current = noPassword === null
@@ -360,18 +384,24 @@ function StudentLayoutInner({
         className={cn("min-h-screen transition-all duration-200", collapsed ? "md:pl-14" : "md:pl-(--width-side)")}
         style={{ paddingTop: "var(--height-nav)" }}
       >
-        <div className="w-full">{children}</div>
+        <div className="w-full">{privacy === "accepted" && children}</div>
       </main>
 
-      {profileSeed && (profileSeed.role === "student" || profileSeed.role === "faculty") && (
+      {privacy === "required" && (
+        <PrivacyNoticeModal
+          step={{ current: 1, total: setupSteps }}
+          onDone={() => setPrivacy("accepted")}
+        />
+      )}
+      {privacy === "accepted" && profileSeed && (profileSeed.role === "student" || profileSeed.role === "faculty") && (
         <CompleteProfileModal
           role={profileSeed.role}
           initial={profileSeed}
-          step={{ current: 1, total: setupSteps }}
+          step={{ current: privacyStep + 1, total: setupSteps }}
           onDone={handleProfileDone}
         />
       )}
-      {!profileSeed && needsPassword && (
+      {privacy === "accepted" && !profileSeed && needsPassword && (
         <SetPasswordModal
           step={{ current: setupSteps, total: setupSteps }}
           onDone={() => setNeedsPassword(false)}

@@ -7,6 +7,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { getUser } from "@/lib/auth"
+import { useRequireSession } from "@/lib/hooks/useRequireSession"
 import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
 import {
   LayoutDashboard,
@@ -90,6 +91,10 @@ function LibrarianLayoutInner({
   const [displayName, setDisplayName] = useState(userName ?? "")
   const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
   const [displayEmail, setDisplayEmail] = useState("")
+
+  // No session (e.g. signed out, then Back) → /login, including pages
+  // restored from the browser's back/forward cache.
+  useRequireSession()
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("librarian-sidebar-collapsed") === "true") setCollapsed(true)
