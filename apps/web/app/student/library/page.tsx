@@ -752,7 +752,7 @@ function HistoryCard({ loan, status }: { loan: ApiLoan; status: HistoryStatus })
             className="text-warn font-semibold"
             style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
           >
-            ₱{loan.fine_amount.toFixed(2)} fine{loan.fine_status === "unsettled" ? " (unsettled)" : ""}
+            ₱{loan.fine_amount.toFixed(2)} {fineTypeLabel(loan, status)} · {loan.fine_status === "unsettled" ? "Unpaid" : "Paid"}
           </p>
         )}
       </div>
@@ -760,19 +760,43 @@ function HistoryCard({ loan, status }: { loan: ApiLoan; status: HistoryStatus })
   )
 }
 
-// Most recent fine only, not a running total — the full breakdown (every
-// fine, paid or not) lives on the profile page's Outstanding Fines
-// section (StudentProfilePage). Lives in the page header (MyLibraryPage),
-// shown once at the top of the History tab, rather than in HistoryTab's
-// own filter row.
-function getMostRecentFine(loans: ApiLoan[]) {
-  return loans
-    .filter((loan) => loan.status === "returned" && loan.books && (loan.fine_amount ?? 0) > 0)
-    .sort((a, b) => new Date(b.returned_at ?? 0).getTime() - new Date(a.returned_at ?? 0).getTime())[0]
+// Only the combined amount is stored per loan, so the type is inferred the
+// same way return_loan (routers/loans.py) charges it: late if returned
+// after the due date, damage if it went out in good condition and came
+// back damaged or incomplete.
+function fineTypeLabel(loan: ApiLoan, status: HistoryStatus): string {
+  const late = status === "overdue_returned"
+  const damage =
+    loan.condition_at_borrow === "good" &&
+    (loan.condition_at_return === "damaged" || loan.condition_at_return === "incomplete")
+  if (late && damage) return "late + damage fine"
+  if (damage) return "damage fine"
+  if (late) return "late fine"
+  return "fine"
 }
 
-function FineChip({ loan }: { loan: ApiLoan }) {
-  const isPaid = loan.fine_status === "paid"
+// Newest return first. Loans come back ordered by borrow date, which
+// doesn't match return order once loans overlap.
+function byReturnedDesc(a: ApiLoan, b: ApiLoan): number {
+  return new Date(b.returned_at ?? 0).getTime() - new Date(a.returned_at ?? 0).getTime()
+}
+
+// Every fine across the student's history, not just the latest one — a
+// paid damage fine shouldn't hide an older late fine. The per-loan
+// breakdown is on each History card; the profile page's Outstanding
+// Fines section has the full list.
+function getFineSummary(loans: ApiLoan[]) {
+  const fined = loans.filter((loan) => loan.status === "returned" && loan.books && (loan.fine_amount ?? 0) > 0)
+  if (fined.length === 0) return null
+  const total = fined.reduce((sum, loan) => sum + (loan.fine_amount ?? 0), 0)
+  const unpaid = fined
+    .filter((loan) => loan.fine_status === "unsettled")
+    .reduce((sum, loan) => sum + (loan.fine_amount ?? 0), 0)
+  return { count: fined.length, total, unpaid }
+}
+
+function FineChip({ summary }: { summary: NonNullable<ReturnType<typeof getFineSummary>> }) {
+  const isPaid = summary.unpaid === 0
   return (
     <Link
       href="/student/profile"
@@ -788,7 +812,9 @@ function FineChip({ loan }: { loan: ApiLoan }) {
         className={cn("font-semibold", isPaid ? "text-success" : "text-danger")}
         style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
       >
-        ₱{loan.fine_amount!.toFixed(2)} fine · {isPaid ? "Paid" : "Unpaid"}
+        {isPaid
+          ? <>₱{summary.total.toFixed(2)} in {summary.count === 1 ? "fine" : `${summary.count} fines`} · All paid</>
+          : <>₱{summary.unpaid.toFixed(2)} unpaid · ₱{summary.total.toFixed(2)} total</>}
       </span>
     </Link>
   )
@@ -799,6 +825,7 @@ function HistoryTab({ loans, loading, error }: { loans: ApiLoan[]; loading: bool
 
   const entries = loans
     .filter((loan) => loan.status === "returned" && loan.books)
+    .sort(byReturnedDesc)
     .map((loan) => ({ loan, status: deriveHistoryStatus(loan) }))
 
   const counts = {
@@ -830,7 +857,7 @@ function HistoryTab({ loans, loading, error }: { loans: ApiLoan[]; loading: bool
     <div className="flex flex-col gap-4">
 
       {/* Filter pills — scroll horizontally on mobile instead of wrapping
-          (same fix as the Borrowed tab). The most recent fine chip lives
+          (same fix as the Borrowed tab). The fines summary chip lives
           in the page header now, not here. */}
       <div className="flex gap-2 overflow-x-auto no-scrollbar flex-nowrap sm:flex-wrap sm:overflow-visible">
         {filterBtns.map((f) => {
@@ -956,7 +983,7 @@ function MyLibraryPage() {
 
   const activeLoanCount = loans.filter((l) => l.status !== "returned").length
   const returnedLoanCount = loans.filter((l) => l.status === "returned").length
-  const mostRecentFine = getMostRecentFine(loans)
+  const fineSummary = getFineSummary(loans)
 
   const TAB_SUB: Record<Tab, string> = {
     borrowed: `${activeLoanCount} active loan${activeLoanCount === 1 ? "" : "s"} · Limit: ${BORROW_LIMIT_PLACEHOLDER} books`,
@@ -1020,7 +1047,7 @@ function MyLibraryPage() {
             {TAB_SUB[tab]}
           </p>
         </div>
-        {tab === "history" && mostRecentFine && <FineChip loan={mostRecentFine} />}
+        {tab === "history" && fineSummary && <FineChip summary={fineSummary} />}
       </div>
 
       {/* Tab bar — sticky under the fixed TopNav so it stays reachable
