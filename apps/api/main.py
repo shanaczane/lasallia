@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import logging
 
 from fastapi import FastAPI, Request
@@ -5,12 +7,28 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from core.config import FRONTEND_URL, FRONTEND_ORIGIN_REGEX
+from core.reservations import run_expiry_loop
 from routers import auth, book_requests, books, borrow, chat, holds, inhouse, loans, notifications, patrons, recommendations, reports, reservations, saved_books, search, sessions, settings, support_tickets, sync, weeding
+
+# Expires lapsed reservation pickups on a timer, so the student is
+# notified and the copy handed on without waiting for someone to load a
+# page that happens to trigger the sweep.
+@contextlib.asynccontextmanager
+async def lifespan(_: FastAPI):
+    task = asyncio.create_task(run_expiry_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
 
 app = FastAPI(
     title="Lasallia API",
     description="AI-Powered Smart Library System for DLSL",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 

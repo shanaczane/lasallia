@@ -10,6 +10,10 @@ from core.settings import get_library_settings
 
 logger = logging.getLogger(__name__)
 
+# Philippine time has no DST, so a fixed offset is exact — and avoids
+# zoneinfo, which needs the tzdata package on Windows.
+MANILA = timezone(timedelta(hours=8))
+
 
 def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
     """Hands a freshly-freed copy to the oldest pending reservation on this
@@ -63,19 +67,22 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
 
     hold_days = get_library_settings(admin)["reservation_hold_period_days"]
     now = datetime.now(timezone.utc)
+    pickup_by = now + timedelta(days=hold_days)
     admin.table("reservations").update({
         "book_copy_id": copy_id,
         "status": "ready",
         "confirmed_at": now.isoformat(),
-        "pickup_by": (now + timedelta(days=hold_days)).isoformat(),
+        "pickup_by": pickup_by.isoformat(),
     }).eq("id", pending[0]["id"]).execute()
 
     book_res = admin.table("books").select("title").eq("id", book_id).execute()
     book_title = book_res.data[0]["title"] if book_res.data else "A book"
+    pickup_label = pickup_by.astimezone(MANILA).strftime("%B %d, %Y at %I:%M %p").replace(" 0", " ")
     notify(
         pending[0]["user_id"], "reservation_confirmed",
         "Your reserved book is ready for pickup",
-        f'"{book_title}" is waiting for you at the LRC counter.',
+        f'"{book_title}" is waiting for you at the LRC counter. Pick it up by {pickup_label} '
+        "— after that the reservation expires and the copy goes to the next student in line.",
         link="/student/reservations",
     )
 
@@ -138,15 +145,23 @@ def sweep_expired_reservations(admin: Client) -> int:
             continue
         expired_count += 1
 
-        advance_or_release(admin, row)
+        # The expired student is notified before the copy is handed on, so
+        # a failure in the handoff can't swallow their notice — the row is
+        # already 'expired' and won't be picked up by a later sweep.
         book_res = admin.table("books").select("title").eq("id", row["book_id"]).execute()
-        book_title = book_res.data[0]["title"] if book_res.data else "Your reservation"
+        book_title = book_res.data[0]["title"] if book_res.data else "your reserved book"
         notify(
             row["user_id"], "reservation_cancelled",
-            "Pickup window expired",
-            f'"{book_title}" was not picked up in time and the hold has been released.',
-            link="/student/reservations",
+            "Your reservation has expired",
+            f'You didn\'t pick up "{book_title}" before the pickup deadline, so your reservation has expired '
+            "and the copy has been released. If you still want it, reserve it again "
+            "— you'll join the end of the queue.",
+            link=f"/student/catalog/{row['book_id']}?from=reservations",
         )
+        try:
+            advance_or_release(admin, row)
+        except Exception:
+            logger.exception("Could not hand on the copy of expired reservation %s", row["id"])
     return expired_count
 
 
@@ -203,11 +218,27 @@ def estimate_ready_at(admin: Client, book_id: str, ahead: int, cfg: dict | None 
     return free_at[0]
 
 
-# No scheduler exists in this repo, so the sweep piggybacks on ordinary
-# traffic (catalog, book page, kiosk borrow, loans list). Throttled per
-# process so those hot paths pay for the query at most once a minute.
+# The sweep runs on a timer (run_expiry_loop, started from main.py) so a
+# lapsed pickup is expired, emailed and handed on within about a minute
+# even when nobody is using the app. It also still piggybacks on ordinary
+# traffic (catalog, book page, kiosk borrow, loans list, notifications) as
+# a backstop, throttled per process so those hot paths pay for the query
+# at most once a minute.
 SWEEP_MIN_INTERVAL_SECONDS = 60
 _last_sweep_at: float | None = None
+
+
+async def run_expiry_loop() -> None:
+    """Runs the expiry sweep every SWEEP_MIN_INTERVAL_SECONDS for the life
+    of the API process. The sweep itself is blocking (supabase-py is sync),
+    so it runs in a worker thread to keep the event loop free."""
+    import asyncio
+
+    from core.supabase import get_admin_client
+
+    while True:
+        await asyncio.to_thread(maybe_sweep_expired_reservations, get_admin_client())
+        await asyncio.sleep(SWEEP_MIN_INTERVAL_SECONDS)
 
 
 def maybe_sweep_expired_reservations(admin: Client) -> None:

@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from core.deps import get_current_user, get_user_supabase
+from core.reservations import maybe_sweep_expired_reservations
+from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.notification import Notification
 
@@ -17,6 +19,9 @@ def list_notifications(
     user: UserProfile = Depends(get_current_user),
     db: Client = Depends(get_user_supabase),
 ):
+    # So a "your reservation has expired" notice is already here when the
+    # student opens the bell, not only after someone loads the catalog.
+    maybe_sweep_expired_reservations(get_admin_client())
     res = db.table("notifications").select("*").order("created_at", desc=True).limit(50).execute()
     return res.data
 
