@@ -153,7 +153,9 @@ def setup_test_student(admin) -> tuple[str, dict]:
     now = datetime.now(timezone.utc)
     due_date = (now + timedelta(days=BORROW_PERIOD_DAYS)).isoformat()
 
-    admin.table("book_copies").update({"status": "on_loan"}).eq("id", active_copy["id"]).execute()
+    # Loan first, then the copy status — a crash in between must never
+    # leave the copy On Loan with no loan behind it (migration 0050 also
+    # refuses that order).
     active_loan = admin.table("loans").insert({
         "book_copy_id": active_copy["id"],
         "student_id": student_id,
@@ -161,6 +163,7 @@ def setup_test_student(admin) -> tuple[str, dict]:
         "condition_at_borrow": "good",
         "status": "active",
     }).execute().data[0]
+    admin.table("book_copies").update({"status": "on_loan"}).eq("id", active_copy["id"]).execute()
 
     returned_loan = admin.table("loans").insert({
         "book_copy_id": returned_copy["id"],
