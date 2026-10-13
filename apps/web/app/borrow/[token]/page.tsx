@@ -12,12 +12,13 @@
 
 import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   MapPin, Hash, Clock, CheckCircle2, AlertCircle,
-  User, ArrowLeft,
+  User, ArrowLeft, XCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { fetchHold, confirmLoan, extendHold, reportMissing, type HoldDetail, type Condition } from '@/lib/kiosk'
+import { fetchHold, confirmLoan, extendHold, reportMissing, releaseHold, type HoldDetail, type Condition } from '@/lib/kiosk'
 
 // Placeholder pending real LRC policy (plan doc's open question #2) —
 // display only, not enforced anywhere yet (that's Phase 3).
@@ -98,6 +99,22 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   const [extending, setExtending] = useState(false)
   const [reportingMissing, setReportingMissing] = useState(false)
   const [reportedMissing, setReportedMissing] = useState(false)
+  const [releasing, setReleasing] = useState(false)
+  const router = useRouter()
+
+  // Leaving without borrowing frees the copy right away (or hands it to
+  // the next student in the reservation queue) instead of leaving it
+  // blocked until the hold times out.
+  async function handleCancel() {
+    if (releasing) return
+    setReleasing(true)
+    try {
+      await releaseHold(token)
+    } catch {
+      // Best-effort — the hold still times out on its own.
+    }
+    router.push(catalogHref)
+  }
 
   const [deadline, setDeadline] = useState<number | null>(null)
   const secondsLeft = useCountdown(deadline)
@@ -496,14 +513,27 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
           </button>
         </form>
 
-        <Link
-          href={catalogHref}
-          className="flex items-center justify-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors"
+        <button
+          type="button"
+          onClick={handleCancel}
+          disabled={releasing || submitting}
+          className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-ink-200 bg-white text-ink-600 font-semibold hover:bg-ink-50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+        >
+          <XCircle size={15} />
+          {releasing ? 'Releasing…' : 'Cancel borrowing'}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleCancel}
+          disabled={releasing || submitting}
+          className="flex items-center justify-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors disabled:opacity-50"
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
         >
           <ArrowLeft size={14} />
           {catalogLabel}
-        </Link>
+        </button>
       </div>
     </div>
   )

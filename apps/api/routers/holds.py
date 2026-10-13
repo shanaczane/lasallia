@@ -14,7 +14,7 @@ from core.loans import (
     ensure_initial_copy,
 )
 from core.notify import notify_librarians
-from core.reservations import maybe_sweep_expired_reservations
+from core.reservations import maybe_sweep_expired_reservations, promote_next_reservation
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.hold import BorrowEligibility, ClaimHoldRequest, ClaimHoldResponse, HoldDetail, HoldExtendResponse
@@ -119,15 +119,26 @@ def claim_hold(body: ClaimHoldRequest):
             "created_at": now.isoformat(),
         }, on_conflict="book_copy_id").execute()
     else:
-        # A hold this same session left behind on this title (closed the
-        # popup, went back) would otherwise block its own new claim for up
-        # to 3 minutes — release it first.
+        # A hold this same student left behind on this title (closed the
+        # popup, went back) would otherwise block their own new claim for
+        # up to 3 minutes — release it first. Matched by student, not just
+        # session: the student portal opens a fresh station session for
+        # every claim, so a session match alone never finds it.
         own_copy_ids = [
             c["id"] for c in
             db.table("book_copies").select("id").eq("book_id", body.book_id).execute().data
         ]
         if own_copy_ids:
-            db.table("soft_holds").delete().eq("station_session_id", body.station_session_id).in_("book_copy_id", own_copy_ids).execute()
+            existing = db.table("soft_holds").select("id, station_session_id").in_("book_copy_id", own_copy_ids).execute().data
+            if existing:
+                session_ids = list({h["station_session_id"] for h in existing})
+                mine = {
+                    s["id"] for s in
+                    db.table("station_sessions").select("id").in_("id", session_ids).eq("student_id", student_id).execute().data
+                }
+                stale = [h["id"] for h in existing if h["station_session_id"] in mine]
+                if stale:
+                    db.table("soft_holds").delete().in_("id", stale).execute()
 
         res = db.rpc("claim_copy_for_book", {
             "p_book_id": body.book_id,
@@ -242,10 +253,30 @@ def get_hold(token: str):
 
 @router.post("/{token}/release", status_code=status.HTTP_204_NO_CONTENT)
 def release_hold(token: str):
+    """The student backed out of borrowing — free the copy right away
+    instead of leaving it blocked until the hold times out."""
     db = get_admin_client()
     res = db.table("soft_holds").delete().eq("token", token).execute()
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Hold not found")
+    _hand_on_released_copy(db, res.data[0]["book_copy_id"])
+
+
+def _hand_on_released_copy(db, copy_id: str) -> None:
+    """Same handoff a return or reshelve does: a general-circulation copy
+    goes to the first student waiting in the reservation queue (who's
+    notified and emailed by promote_next_reservation), or simply stays
+    available if nobody is waiting.
+
+    A 'reserved' copy was held for this student's own ready reservation —
+    backing out of the borrow form doesn't give that up; it stays theirs
+    until they borrow it, cancel it, or the pickup window lapses."""
+    copy_res = db.table("book_copies").select("id, book_id, status").eq("id", copy_id).execute()
+    if not copy_res.data or copy_res.data[0]["status"] != "available":
+        return
+    copy = copy_res.data[0]
+    if promote_next_reservation(db, copy["book_id"], copy["id"]):
+        db.table("book_copies").update({"status": "reserved"}).eq("id", copy["id"]).execute()
 
 @router.post("/{token}/extend", response_model=HoldExtendResponse)
 def extend_hold(token: str):
