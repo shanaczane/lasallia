@@ -113,7 +113,12 @@ def _recommend_for(db: Client, user_id: str, limit: int) -> RecommendationsRespo
             .limit(STORED_LIMIT)
             .execute()
         )
-        excluded_future = pool.submit(get_currently_excluded_book_ids, db, user_id)
+        # Admin client on purpose: the exclusion check reads loans ->
+        # book_copies to find which books are borrowed, and book_copies
+        # has no RLS policy for students, so the caller's own client got
+        # every copy back empty and never excluded a borrowed book. Only
+        # a set of book ids leaves this call.
+        excluded_future = pool.submit(get_currently_excluded_book_ids, get_admin_client(), user_id)
         stored = stored_future.result().data
         excluded = excluded_future.result()
 
@@ -122,9 +127,9 @@ def _recommend_for(db: Client, user_id: str, limit: int) -> RecommendationsRespo
     # rather than handing back an empty section. Phase 9: a job that
     # hasn't run in a week is the same problem in slow motion — don't
     # serve week-old "personalization" either.
-    live = [row for row in stored if row["book"]["id"] not in excluded][:limit] if stored else []
+    live = _without_excluded(stored, excluded, limit) if stored else []
     if not live or _is_stale(stored[0]["generated_at"]):
-        return _fallback_response(get_admin_client(), user_id, limit)
+        return _fallback_response(get_admin_client(), user_id, limit, excluded)
 
     _with_live_availability(live)
     items = [
@@ -150,7 +155,11 @@ def _rows_to_response(rows: list[dict], rung: Literal["program", "popular"]) -> 
     return RecommendationsResponse(recommendations=items, generated_at=rows[0]["generated_at"], rung=rung)
 
 
-def _fallback_response(admin: Client, user_id: str, limit: int) -> RecommendationsResponse:
+def _without_excluded(rows: list[dict], excluded: set[str], limit: int) -> list[dict]:
+    return [r for r in rows if r["book"]["id"] not in excluded][:limit]
+
+
+def _fallback_response(admin: Client, user_id: str, limit: int, excluded: set[str]) -> RecommendationsResponse:
     """Rung 2 then rung 3/4 (core/recommendations.py's docstrings) — a
     student with no personal recommendations at all, or none left after
     live exclusion, lands here. Public-read tables (migrations/0019), so
@@ -158,7 +167,12 @@ def _fallback_response(admin: Client, user_id: str, limit: int) -> Recommendatio
     program lookup just below already needs the admin client (no
     self-select policy on `profiles` — same reason routers/sessions.py's
     _insert_session looks up full_name via the admin client), so the
-    whole fallback path stays on one client for consistency."""
+    whole fallback path stays on one client for consistency.
+
+    The program and popular lists are shared, so the student's own
+    borrowed/reserved books are filtered out here — over-fetching by the
+    size of `excluded` so the section still fills up after filtering."""
+    fetch = limit + len(excluded)
     profile_res = admin.table("profiles").select("program").eq("id", user_id).execute()
     program = profile_res.data[0]["program"] if profile_res.data else None
 
@@ -168,19 +182,21 @@ def _fallback_response(admin: Client, user_id: str, limit: int) -> Recommendatio
             .select("rank, reason, generated_at, book:books!book_id(*)")
             .eq("program", program)
             .order("rank")
-            .limit(limit)
+            .limit(fetch)
             .execute()
         ).data
-        if rows and not _is_stale(rows[0]["generated_at"]):
+        rows = _without_excluded(rows, excluded, limit) if rows and not _is_stale(rows[0]["generated_at"]) else []
+        if rows:
             return _rows_to_response(rows, rung="program")
 
     rows = (
         admin.table("popular_recommendations")
         .select("rank, reason, generated_at, book:books!book_id(*)")
         .order("rank")
-        .limit(limit)
+        .limit(fetch)
         .execute()
     ).data
+    rows = _without_excluded(rows, excluded, limit)
     if rows:
         return _rows_to_response(rows, rung="popular")
 
