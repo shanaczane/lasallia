@@ -1,9 +1,13 @@
+import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 from supabase import Client
 
 from core.notify import notify
 from core.settings import get_library_settings
+
+logger = logging.getLogger(__name__)
 
 
 def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
@@ -78,8 +82,89 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
         notify(
             pending[1]["user_id"], "reservation_queue_advanced",
             "You're now first in line",
-            f'The reservation ahead of you for "{book_title}" was just fulfilled — you\'re up next.',
+            # Neutral on purpose: this runs after a pickup, a cancellation or
+            # an expired pickup window alike, so "fulfilled" was often wrong.
+            f'You\'re now first in line for "{book_title}" — we\'ll notify you when it\'s ready for pickup.',
             link="/student/reservations",
         )
 
     return True
+
+
+def advance_or_release(admin: Client, reservation: dict) -> None:
+    """A 'ready' reservation whose copy is no longer going to be picked up
+    by that student — either its pickup_by passed, or they cancelled.
+    Hands the copy to the next pending reservation on the same title (and
+    notifies whoever that leaves at the new front of the queue), or
+    releases it back toward general circulation if nobody's waiting.
+
+    The reservation must already be marked expired/cancelled before this
+    runs: promote_next_reservation treats any 'ready' row on the copy as
+    "already held" and would otherwise skip the queue, leaving the copy
+    stuck as 'reserved'."""
+    promoted = promote_next_reservation(admin, reservation["book_id"], reservation["book_copy_id"])
+    if not promoted and reservation.get("book_copy_id"):
+        # available -> for_reshelving isn't legal, but reserved -> for_reshelving
+        # is — same "never straight to available" rule Phase 4 already follows.
+        admin.table("book_copies").update({"status": "for_reshelving"}).eq("id", reservation["book_copy_id"]).execute()
+
+
+def sweep_expired_reservations(admin: Client) -> int:
+    """Expires every 'ready' reservation whose pickup_by has passed and
+    hands its copy on. Returns how many were expired."""
+    now = datetime.now(timezone.utc)
+    overdue = (
+        admin.table("reservations")
+        .select("id, user_id, book_id, book_copy_id")
+        .eq("status", "ready")
+        .lt("pickup_by", now.isoformat())
+        .execute()
+    ).data
+
+    expired_count = 0
+    for row in overdue:
+        # Conditional on still being 'ready', so two sweeps racing on the
+        # same row (two requests landing at once) only expire, notify and
+        # hand the copy on once — the loser's update matches nothing.
+        claimed = (
+            admin.table("reservations")
+            .update({"status": "expired"})
+            .eq("id", row["id"])
+            .eq("status", "ready")
+            .execute()
+        ).data
+        if not claimed:
+            continue
+        expired_count += 1
+
+        advance_or_release(admin, row)
+        book_res = admin.table("books").select("title").eq("id", row["book_id"]).execute()
+        book_title = book_res.data[0]["title"] if book_res.data else "Your reservation"
+        notify(
+            row["user_id"], "reservation_cancelled",
+            "Pickup window expired",
+            f'"{book_title}" was not picked up in time and the hold has been released.',
+            link="/student/reservations",
+        )
+    return expired_count
+
+
+# No scheduler exists in this repo, so the sweep piggybacks on ordinary
+# traffic (catalog, book page, kiosk borrow, loans list). Throttled per
+# process so those hot paths pay for the query at most once a minute.
+SWEEP_MIN_INTERVAL_SECONDS = 60
+_last_sweep_at: float | None = None
+
+
+def maybe_sweep_expired_reservations(admin: Client) -> None:
+    """Throttled, never-raising sweep for endpoints whose real job is
+    something else — an expiry hiccup must not break the catalog."""
+    global _last_sweep_at
+    now = time.monotonic()
+    if _last_sweep_at is not None and now - _last_sweep_at < SWEEP_MIN_INTERVAL_SECONDS:
+        return
+    _last_sweep_at = now
+    try:
+        sweep_expired_reservations(admin)
+    except Exception:
+        logger.exception("Expired-reservation sweep failed")

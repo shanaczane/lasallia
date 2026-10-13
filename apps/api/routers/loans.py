@@ -8,7 +8,7 @@ from core.calendar import compute_fine
 from core.deps import get_current_user, get_user_supabase, require_librarian
 from core.loans import HOLD_GONE, check_borrow_eligibility, create_loan_and_notify
 from core.notify import notify, notify_librarians
-from core.reservations import promote_next_reservation
+from core.reservations import maybe_sweep_expired_reservations, promote_next_reservation
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.loan import (
@@ -63,6 +63,8 @@ def list_loans(
     # already-full view to one patron (the Patrons profile modal) — RLS
     # already stops a student from passing someone else's id here, since
     # their own query is scoped to their own rows regardless.
+    # Student dashboard and the librarian desk both load this.
+    maybe_sweep_expired_reservations(get_admin_client())
     query = db.table("loans").select("*").order("borrowed_at", desc=True)
     if student_id:
         query = query.eq("student_id", student_id)

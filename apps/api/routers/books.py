@@ -7,6 +7,7 @@ from core.deps import get_optional_user, require_librarian
 from core.embeddings import embed_single_book
 from core.accession import normalize_accession_number
 from core.loans import ensure_initial_copy, find_removal_blocker
+from core.reservations import maybe_sweep_expired_reservations
 from core.supabase import get_admin_client, get_client
 from schemas.auth import UserProfile
 from schemas.book import AddCopiesRequest, Book, BookCopy, BookSearchResponse, BookUpdate, BookWrite
@@ -77,6 +78,7 @@ def list_books(
     user: UserProfile | None = Depends(get_optional_user),
 ):
     db = get_client()
+    maybe_sweep_expired_reservations(get_admin_client())
     # Reports plan Phase 2: an archived book is meant to disappear from
     # every catalog view (student, guest, kiosk, librarian alike) — this
     # is the one query every one of those surfaces shares.
@@ -219,6 +221,9 @@ def delete_book(book_id: str, librarian: UserProfile = Depends(require_librarian
 def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)):
     db = get_client()
     admin = get_admin_client()
+    # Before reading copies, so a copy freed by an expired pickup shows its
+    # real status (or its new holder's) on this page.
+    maybe_sweep_expired_reservations(admin)
     # Book row and its copies don't depend on each other — fetch side by side.
     with ThreadPoolExecutor(max_workers=2) as pool:
         res_future = pool.submit(lambda: db.table("books").select("*").eq("id", book_id).execute())

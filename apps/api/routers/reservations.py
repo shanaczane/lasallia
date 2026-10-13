@@ -5,7 +5,7 @@ from supabase import Client
 
 from core.deps import get_current_user, get_user_supabase
 from core.notify import notify, notify_librarians
-from core.reservations import promote_next_reservation
+from core.reservations import advance_or_release, promote_next_reservation, sweep_expired_reservations
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
@@ -20,41 +20,6 @@ router = APIRouter(prefix="/reservations", tags=["reservations"])
 NON_BORROWABLE_COLLECTION_TYPES = {"Reference", "Thesis", "Capstone", "MTR", "Archives"}
 
 
-def _advance_or_release(admin: Client, expired: dict) -> None:
-    """A 'ready' reservation whose copy is no longer going to be picked up
-    by that student — either its pickup_by passed, or they cancelled.
-    Hands the copy to the next pending reservation on the same title (and
-    notifies whoever that leaves at the new front of the queue), or
-    releases it back toward general circulation if nobody's waiting."""
-    promoted = promote_next_reservation(admin, expired["book_id"], expired["book_copy_id"])
-    if not promoted and expired.get("book_copy_id"):
-        # available -> for_reshelving isn't legal, but reserved -> for_reshelving
-        # is — same "never straight to available" rule Phase 4 already follows.
-        admin.table("book_copies").update({"status": "for_reshelving"}).eq("id", expired["book_copy_id"]).execute()
-
-
-def _sweep_expired_reservations(admin: Client) -> None:
-    now = datetime.now(timezone.utc)
-    expired = (
-        admin.table("reservations")
-        .select("id, user_id, book_id, book_copy_id")
-        .eq("status", "ready")
-        .lt("pickup_by", now.isoformat())
-        .execute()
-    ).data
-    for row in expired:
-        _advance_or_release(admin, row)
-        admin.table("reservations").update({"status": "expired"}).eq("id", row["id"]).execute()
-        book_res = admin.table("books").select("title").eq("id", row["book_id"]).execute()
-        book_title = book_res.data[0]["title"] if book_res.data else "Your reservation"
-        notify(
-            row["user_id"], "reservation_cancelled",
-            "Pickup window expired",
-            f'"{book_title}" was not picked up in time and the hold has been released.',
-            link="/student/reservations",
-        )
-
-
 @router.get("", response_model=list[Reservation])
 def list_reservations(
     user_id: str | None = None,
@@ -65,7 +30,7 @@ def list_reservations(
     # Runs regardless of who's asking — the only way to catch another
     # student's expired reservation without a cron (none exists anywhere
     # in this repo; see the loan-overdue-status precedent in loans.py).
-    _sweep_expired_reservations(admin)
+    sweep_expired_reservations(admin)
 
     # RLS scopes this automatically: students see only their own rows,
     # librarians see every reservation. No role branching needed here.
@@ -247,7 +212,7 @@ def update_reservation(
     # Cancelling a 'ready' reservation frees a specific copy — same
     # handoff as letting the pickup window expire.
     if row["status"] == "ready" and row["book_copy_id"]:
-        _advance_or_release(get_admin_client(), row)
+        advance_or_release(get_admin_client(), row)
 
     # Only notify on the student's own cancellation — a librarian cancelling
     # a reservation on someone's behalf shouldn't notify librarians about

@@ -14,6 +14,7 @@ from core.loans import (
     ensure_initial_copy,
 )
 from core.notify import notify_librarians
+from core.reservations import maybe_sweep_expired_reservations
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.hold import BorrowEligibility, ClaimHoldRequest, ClaimHoldResponse, HoldDetail, HoldExtendResponse
@@ -74,6 +75,9 @@ def _availability_problem(db, book_id: str, station_session_id: str) -> str | No
 @router.post("", response_model=ClaimHoldResponse, status_code=status.HTTP_201_CREATED)
 def claim_hold(body: ClaimHoldRequest):
     db = get_admin_client()
+    # A copy still held for an expired pickup would otherwise look
+    # unavailable to this walk-in.
+    maybe_sweep_expired_reservations(db)
 
     # claim_copy_for_book only knows book_id + station_session_id — it has
     # no concept of a student, so eligibility has to be decided here,
@@ -167,6 +171,7 @@ def claim_hold(body: ClaimHoldRequest):
 @router.get("/eligibility", response_model=BorrowEligibility)
 def borrow_eligibility(book_id: str, station_session_id: str):
     db = get_admin_client()
+    maybe_sweep_expired_reservations(db)
     student_id = _open_session_student(db, station_session_id)
 
     try:
