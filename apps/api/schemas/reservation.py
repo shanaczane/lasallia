@@ -33,6 +33,8 @@ class ReservationEstimate(BaseModel):
     queue_position: int
     estimated_ready_at: str | None = None  # None when no copy is expected back at all
     hold_period_days: int  # how long a ready copy waits on the hold shelf
+    can_reserve: bool = True
+    reason: str | None = None  # why not, when can_reserve is False — same message POST /reservations would give
 
 class UpdateReservationRequest(BaseModel):
     status: Literal["cancelled"]

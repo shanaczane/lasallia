@@ -32,6 +32,8 @@ export type ReservationEstimate = {
   queue_position: number
   estimated_ready_at: string | null // null when no copy is expected back at all
   hold_period_days: number
+  can_reserve: boolean
+  reason: string | null // why not, when can_reserve is false
 }
 
 // Where the student would land in the queue if they reserved this title

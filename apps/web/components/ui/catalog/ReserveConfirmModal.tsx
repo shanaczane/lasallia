@@ -56,6 +56,10 @@ export function ReserveConfirmModal({
     return () => { cancelled = true }
   }, [book.id])
 
+  const blocked = state.status === 'ready' && !state.estimate.can_reserve
+    ? state.estimate.reason ?? "You can't reserve this book right now."
+    : null
+
   return (
     <div
       className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4"
@@ -129,7 +133,18 @@ export function ReserveConfirmModal({
           </div>
         )}
 
-        {state.status === 'ready' && (
+        {/* Checked before Confirm, so an ineligible student sees why up
+            front instead of getting the same error after tapping it. */}
+        {blocked && (
+          <div className="flex items-start gap-2 rounded-[10px] bg-danger-bg border border-danger/20 p-3">
+            <AlertCircle size={14} className="text-danger shrink-0 mt-0.5" />
+            <p style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)', color: 'var(--color-danger-dark)' }}>
+              {blocked}
+            </p>
+          </div>
+        )}
+
+        {state.status === 'ready' && !blocked && (
           <div className="flex flex-col rounded-[10px] border border-ink-200 divide-y divide-ink-100">
             <div className="flex items-center gap-3 px-4 py-3">
               <Users size={16} className="text-green-700 shrink-0" />
@@ -164,12 +179,14 @@ export function ReserveConfirmModal({
         )}
 
         {/* Estimate disclaimer */}
+        {!blocked && (
         <div className="w-full flex items-start gap-2 p-3 rounded-[10px] bg-warn-bg border border-warn/30">
           <Info size={14} className="text-warn shrink-0 mt-0.5" />
           <p className="text-ink-700" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}>
             This date is only an estimate. It can move earlier or later depending on when borrowers return the book and whether those ahead of you pick it up. We&apos;ll notify you when it&apos;s actually ready.
           </p>
         </div>
+        )}
 
         {error && (
           <p className="text-danger" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}>
@@ -185,17 +202,19 @@ export function ReserveConfirmModal({
             className="flex-1 py-2.5 rounded-[10px] border border-ink-200 text-ink-600 font-semibold hover:bg-ink-50 transition-colors disabled:opacity-50"
             style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
           >
-            Not now
+            {blocked ? 'Close' : 'Not now'}
           </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={pending || state.status === 'loading'}
-            className="flex-1 py-2.5 rounded-[10px] bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors disabled:opacity-50"
-            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
-          >
-            {pending ? 'Reserving…' : 'Confirm reservation'}
-          </button>
+          {!blocked && (
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={pending || state.status === 'loading'}
+              className="flex-1 py-2.5 rounded-[10px] bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors disabled:opacity-50"
+              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+            >
+              {pending ? 'Reserving…' : 'Confirm reservation'}
+            </button>
+          )}
         </div>
       </div>
     </div>

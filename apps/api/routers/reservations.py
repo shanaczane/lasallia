@@ -73,53 +73,26 @@ def list_reservations(
 
     return reservations
 
-@router.get("/estimate", response_model=ReservationEstimate)
-def estimate_reservation(book_id: str, user: UserProfile = Depends(get_current_user)):
-    """Where the caller would land in the queue for this title if they
-    reserved it now, and roughly when a copy would be ready for them —
-    shown before they confirm the reservation."""
-    admin = get_admin_client()
-    cfg = get_library_settings(admin)
-    ahead_count = (
-        admin.table("reservations")
-        .select("id", count="exact")
-        .eq("book_id", book_id)
-        .eq("status", "pending")
-        .execute()
-    ).count or 0
-    ready_at = estimate_ready_at(admin, book_id, ahead_count, cfg)
-    return {
-        "queue_position": ahead_count + 1,
-        "estimated_ready_at": ready_at.isoformat() if ready_at else None,
-        "hold_period_days": cfg["reservation_hold_period_days"],
-    }
+def _reservation_problem(admin: Client, user_id: str, book_id: str, cfg: dict) -> str | None:
+    """Why this student can't reserve this title right now, or None if they
+    can. Shared by create_reservation (which rejects with it) and the
+    estimate endpoint (which shows it in the confirmation popup before the
+    student taps Confirm, rather than after). Raises 404 for an unknown book.
 
-@router.post("", response_model=Reservation, status_code=status.HTTP_201_CREATED)
-def create_reservation(
-    body: CreateReservationRequest,
-    user: UserProfile = Depends(get_current_user),
-    db: Client = Depends(get_user_supabase),
-):
-    # Plan 5.2: "Same account checks as borrowing" — mirrors holds.py's
-    # claim_hold, duplicated rather than imported (matches this codebase's
-    # existing convention for small per-router constants).
-    admin = get_admin_client()
-    cfg = get_library_settings(admin)
-
-    book_res = admin.table("books").select("collection_type").eq("id", body.book_id).execute()
+    Plan 5.2: "Same account checks as borrowing" — mirrors holds.py's
+    claim_hold, duplicated rather than imported (matches this codebase's
+    existing convention for small per-router constants)."""
+    book_res = admin.table("books").select("collection_type").eq("id", book_id).execute()
     if not book_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
     collection_type = book_res.data[0]["collection_type"]
     if collection_type in NON_BORROWABLE_COLLECTION_TYPES:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            f"{collection_type} items are for library use only and can't be reserved",
-        )
+        return f"{collection_type} items are for library use only and can't be reserved"
 
     current_loans = (
         admin.table("loans")
         .select("id, due_date, book_copy_id")
-        .eq("student_id", user.id)
+        .eq("student_id", user_id)
         .in_("status", ["active", "overdue"])
         .execute()
     ).data
@@ -132,34 +105,34 @@ def create_reservation(
     copy_ids = [loan["book_copy_id"] for loan in current_loans]
     if copy_ids:
         borrowed_copies = admin.table("book_copies").select("id, book_id").in_("id", copy_ids).execute().data
-        if any(c["book_id"] == body.book_id for c in borrowed_copies):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "You currently have this book borrowed — return it before reserving another copy")
+        if any(c["book_id"] == book_id for c in borrowed_copies):
+            return "You currently have this book borrowed — return it before reserving another copy"
 
     if any(datetime.fromisoformat(loan["due_date"]) < now for loan in current_loans):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You have an overdue book — please return it before reserving another")
+        return "You have an overdue book — please return it before reserving another"
     if len(current_loans) >= cfg["max_books_per_borrower"]:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"You've reached your borrowing limit of {cfg['max_books_per_borrower']} books")
+        return f"You've reached your borrowing limit of {cfg['max_books_per_borrower']} books"
 
     unsettled = (
         admin.table("loans")
         .select("id", count="exact")
-        .eq("student_id", user.id)
+        .eq("student_id", user_id)
         .eq("fine_status", "unsettled")
         .execute()
     )
     if (unsettled.count or 0) > 0:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You have an unpaid fine — please settle it with the librarian")
+        return "You have an unpaid fine — please settle it with the librarian"
 
     existing = (
         admin.table("reservations")
         .select("id")
-        .eq("user_id", user.id)
-        .eq("book_id", body.book_id)
+        .eq("user_id", user_id)
+        .eq("book_id", book_id)
         .in_("status", ["pending", "ready"])
         .execute()
     )
     if existing.data:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You already have a reservation for this title")
+        return "You already have a reservation for this title"
 
     # Settings' "Maximum Active Reservations per User" — previously
     # persisted nowhere and enforced nowhere; a student could queue up an
@@ -167,15 +140,72 @@ def create_reservation(
     active_reservations = (
         admin.table("reservations")
         .select("id", count="exact")
-        .eq("user_id", user.id)
+        .eq("user_id", user_id)
         .in_("status", ["pending", "ready"])
         .execute()
     )
     if (active_reservations.count or 0) >= cfg["max_active_reservations"]:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            f"You've reached your limit of {cfg['max_active_reservations']} active reservations",
-        )
+        return f"You've reached your limit of {cfg['max_active_reservations']} active reservations"
+
+    # A reservation is for a title with no copy on the shelf. With one free
+    # right now, reserving would put the student in a queue that walk-ins
+    # can skip by just borrowing it — tell them to borrow instead. A copy
+    # soft-held by someone mid-borrow doesn't count as free: if they back
+    # out, release_hold hands it to the queue.
+    available = (
+        admin.table("book_copies").select("id").eq("book_id", book_id).eq("status", "available").execute()
+    ).data
+    if available:
+        held_rows = (
+            admin.table("soft_holds")
+            .select("book_copy_id")
+            .in_("book_copy_id", [c["id"] for c in available])
+            .gt("expires_at", now.isoformat())
+            .execute()
+        ).data
+        held = {h["book_copy_id"] for h in held_rows}
+        if any(c["id"] not in held for c in available):
+            return "A copy is available right now — borrow it instead of reserving"
+
+    return None
+
+
+@router.get("/estimate", response_model=ReservationEstimate)
+def estimate_reservation(book_id: str, user: UserProfile = Depends(get_current_user)):
+    """Where the caller would land in the queue for this title if they
+    reserved it now, and roughly when a copy would be ready for them —
+    shown before they confirm the reservation, along with anything that
+    would stop the reservation going through."""
+    admin = get_admin_client()
+    cfg = get_library_settings(admin)
+    problem = _reservation_problem(admin, user.id, book_id, cfg)
+    ahead_count = (
+        admin.table("reservations")
+        .select("id", count="exact")
+        .eq("book_id", book_id)
+        .eq("status", "pending")
+        .execute()
+    ).count or 0
+    ready_at = estimate_ready_at(admin, book_id, ahead_count, cfg)
+    return {
+        "queue_position": ahead_count + 1,
+        "estimated_ready_at": ready_at.isoformat() if ready_at else None,
+        "hold_period_days": cfg["reservation_hold_period_days"],
+        "can_reserve": problem is None,
+        "reason": problem,
+    }
+
+@router.post("", response_model=Reservation, status_code=status.HTTP_201_CREATED)
+def create_reservation(
+    body: CreateReservationRequest,
+    user: UserProfile = Depends(get_current_user),
+    db: Client = Depends(get_user_supabase),
+):
+    admin = get_admin_client()
+    cfg = get_library_settings(admin)
+    problem = _reservation_problem(admin, user.id, body.book_id, cfg)
+    if problem:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, problem)
 
     # Counted before the insert below, so this is exactly how many pending
     # reservations are already ahead of the one about to be created —

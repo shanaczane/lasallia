@@ -53,6 +53,10 @@ class Loan(BaseModel):
     condition_at_return: ReturnCondition | None = None
     condition_notes: str | None = None
     fine_amount: float | None = None
+    # The two parts of fine_amount, recorded at return (migrations/0052).
+    # Null on loans returned before that migration.
+    overdue_fine_amount: float | None = None
+    damage_fine_amount: float | None = None
     fine_status: FineStatus | None = None
     receipt_number: str | None = None
     # Set only for a desk-side librarian-assisted checkout (the librarian's

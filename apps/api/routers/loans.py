@@ -366,7 +366,7 @@ def return_loan(
     if body.fine_settlement == "paid" and not body.receipt_number:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A receipt number is required to mark a fine as paid")
 
-    update_res = admin.table("loans").update({
+    return_fields = {
         "returned_at": datetime.now(timezone.utc).isoformat(),
         "status": "returned",
         "condition_at_return": body.condition_at_return,
@@ -374,7 +374,19 @@ def return_loan(
         "fine_amount": total_fine,
         "fine_status": body.fine_settlement if total_fine > 0 else "none",
         "receipt_number": body.receipt_number if body.fine_settlement == "paid" else None,
-    }).eq("id", loan_id).execute()
+    }
+    # Each part recorded separately so the student's history can say what
+    # the fine was for (migrations/0052). A database without that migration
+    # yet rejects the unknown columns — fall back to the total alone rather
+    # than fail the return.
+    try:
+        update_res = admin.table("loans").update({
+            **return_fields,
+            "overdue_fine_amount": round(overdue_fine, 2),
+            "damage_fine_amount": damage_fine,
+        }).eq("id", loan_id).execute()
+    except Exception:
+        update_res = admin.table("loans").update(return_fields).eq("id", loan_id).execute()
     loan = update_res.data[0]
 
     # Reservation-aware routing (4.6): first-in-queue for this title, if

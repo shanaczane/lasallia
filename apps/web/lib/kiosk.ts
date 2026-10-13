@@ -209,6 +209,10 @@ export type Loan = {
   condition_at_return: ReturnCondition | null
   condition_notes: string | null
   fine_amount: number | null
+  // The two parts of fine_amount — null on loans returned before they
+  // were recorded separately.
+  overdue_fine_amount?: number | null
+  damage_fine_amount?: number | null
   fine_status: FineStatus | null
   profiles: Borrower | null
   receipt_number: string | null
