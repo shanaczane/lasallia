@@ -28,6 +28,20 @@ export async function fetchReservations(userId?: string): Promise<Reservation[]>
   return res.json()
 }
 
+export type ReservationEstimate = {
+  queue_position: number
+  estimated_ready_at: string | null // null when no copy is expected back at all
+  hold_period_days: number
+}
+
+// Where the student would land in the queue if they reserved this title
+// now, and roughly when a copy would be ready — shown before they confirm.
+export async function fetchReservationEstimate(bookId: string): Promise<ReservationEstimate> {
+  const res = await fetch(`${API_URL}/reservations/estimate?book_id=${encodeURIComponent(bookId)}`, { headers: authHeaders() })
+  if (!res.ok) return parseErrorOrThrow(res, 'Failed to estimate your wait')
+  return res.json()
+}
+
 export async function createReservation(bookId: string): Promise<Reservation> {
   const res = await fetch(`${API_URL}/reservations`, {
     method: 'POST',

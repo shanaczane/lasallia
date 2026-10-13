@@ -35,6 +35,7 @@ import { useStudentCounts } from '@/components/layout/StudentCountsContext'
 import { BorrowModal } from '@/components/kiosk/BorrowModal'
 import { AvailabilityPill, pillStatusFor } from '@/components/ui/pills/availability-pill'
 import { BookCard } from '@/components/ui/catalog'
+import { ReserveConfirmModal, relativeWait } from '@/components/ui/catalog/ReserveConfirmModal'
 import type { Book, Reservation } from '@lasallia/types'
 
 // ─── Cover color helper ───────────────────────────────────────────────────────
@@ -100,6 +101,7 @@ function ActionPanel({
 }) {
   const [pending, setPending] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [confirmingReserve, setConfirmingReserve] = useState(false)
   const reserved = !!reservation
   const { refreshReservationCount } = useStudentCounts()
 
@@ -118,6 +120,7 @@ function ActionPanel({
     try {
       await createReservation(book.id)
       if (fromRec) logEvent('reserve', book.id, recRank ? Number(recRank) : undefined)
+      setConfirmingReserve(false)
       onReservationChange()
       refreshReservationCount()
     } catch (err) {
@@ -264,7 +267,11 @@ function ActionPanel({
               <p className="font-semibold text-green-900">
                 {reservation.queue_position ? `You're #${reservation.queue_position} in line` : "You're in line"}
               </p>
-              <p className="mt-0.5">We&apos;ll hold a copy when it&apos;s your turn.</p>
+              <p className="mt-0.5">
+                {reservation.estimated_ready_at
+                  ? <>Estimated ready around {formatDate(reservation.estimated_ready_at)} ({relativeWait(reservation.estimated_ready_at)}) — an estimate only, we&apos;ll notify you.</>
+                  : <>We&apos;ll hold a copy when it&apos;s your turn.</>}
+              </p>
             </div>
           </div>
           <button
@@ -315,7 +322,7 @@ function ActionPanel({
         </div>
         <button
           type="button"
-          onClick={reserveBook}
+          onClick={() => { setActionError(''); setConfirmingReserve(true) }}
           disabled={pending}
           className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[8px] bg-ink-900 text-white font-semibold hover:bg-ink-700 transition-colors disabled:opacity-50"
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
@@ -324,10 +331,14 @@ function ActionPanel({
           {pending ? 'Reserving…' : <><span className="sm:hidden">Reserve</span><span className="hidden sm:inline">Reserve this book</span></>}
         </button>
       </div>
-      {actionError && (
-        <p className="text-danger" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}>
-          {actionError}
-        </p>
+      {confirmingReserve && (
+        <ReserveConfirmModal
+          book={book}
+          pending={pending}
+          error={actionError}
+          onConfirm={reserveBook}
+          onClose={() => setConfirmingReserve(false)}
+        />
       )}
     </div>
   )

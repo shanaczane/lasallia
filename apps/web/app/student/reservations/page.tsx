@@ -79,7 +79,7 @@ const STATUS_CONFIG: Record<ReservationStatus, StatusConfig> = {
     iconColor: "text-warn",
     title: "In queue",
     message: (r) =>
-      `"${bookTitle(r)}" by ${bookAuthor(r)}${r.queue_position ? ` — you're #${r.queue_position} in line` : ""}. We'll hold a copy the moment it's your turn.`,
+      `"${bookTitle(r)}" by ${bookAuthor(r)}${r.queue_position ? ` — you're #${r.queue_position} in line` : ""}.${r.estimated_ready_at ? ` Estimated ready around ${formatDate(r.estimated_ready_at)} (estimate only).` : ""} We'll hold a copy the moment it's your turn.`,
   },
   fulfilled: {
     icon: () => <PackageCheck size={15} />,

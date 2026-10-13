@@ -5,13 +5,19 @@ from supabase import Client
 
 from core.deps import get_current_user, get_user_supabase
 from core.notify import notify, notify_librarians
-from core.reservations import advance_or_release, promote_next_reservation, sweep_expired_reservations
+from core.reservations import (
+    advance_or_release,
+    estimate_ready_at,
+    promote_next_reservation,
+    sweep_expired_reservations,
+)
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.reservation import (
     CreateReservationRequest,
     Reservation,
+    ReservationEstimate,
     UpdateReservationRequest,
 )
 
@@ -47,6 +53,9 @@ def list_reservations(
     # queue_position needs to count *other* students' pending reservations
     # too, which the caller's own RLS-scoped client can't see — the admin
     # client is required here, but only a computed integer ever leaves it.
+    # The ready-date estimate is only for a student's own list — a
+    # librarian's full list would pay for it on every pending row.
+    cfg = get_library_settings(admin) if user.role != "librarian" else None
     for r in reservations:
         if r["status"] == "pending":
             ahead = (
@@ -58,8 +67,32 @@ def list_reservations(
                 .execute()
             )
             r["queue_position"] = (ahead.count or 0) + 1
+            if cfg is not None:
+                ready_at = estimate_ready_at(admin, r["book_id"], ahead.count or 0, cfg)
+                r["estimated_ready_at"] = ready_at.isoformat() if ready_at else None
 
     return reservations
+
+@router.get("/estimate", response_model=ReservationEstimate)
+def estimate_reservation(book_id: str, user: UserProfile = Depends(get_current_user)):
+    """Where the caller would land in the queue for this title if they
+    reserved it now, and roughly when a copy would be ready for them —
+    shown before they confirm the reservation."""
+    admin = get_admin_client()
+    cfg = get_library_settings(admin)
+    ahead_count = (
+        admin.table("reservations")
+        .select("id", count="exact")
+        .eq("book_id", book_id)
+        .eq("status", "pending")
+        .execute()
+    ).count or 0
+    ready_at = estimate_ready_at(admin, book_id, ahead_count, cfg)
+    return {
+        "queue_position": ahead_count + 1,
+        "estimated_ready_at": ready_at.isoformat() if ready_at else None,
+        "hold_period_days": cfg["reservation_hold_period_days"],
+    }
 
 @router.post("", response_model=Reservation, status_code=status.HTTP_201_CREATED)
 def create_reservation(

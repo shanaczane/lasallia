@@ -20,11 +20,19 @@ class Reservation(BaseModel):
     status: ReservationStatus
     notes: str | None = None
     queue_position: int | None = None  # computed on read, only meaningful while 'pending'
+    estimated_ready_at: str | None = None  # computed on read for a student's own 'pending' rows — an estimate only
     books: Book | None = None       # embedded via the books FK, when selected
     profiles: UserProfile | None = None  # embedded via the user_id FK — the requesting patron
 
 class CreateReservationRequest(BaseModel):
     book_id: str
+
+class ReservationEstimate(BaseModel):
+    """What reserving this title would look like right now, shown to the
+    student before they confirm."""
+    queue_position: int
+    estimated_ready_at: str | None = None  # None when no copy is expected back at all
+    hold_period_days: int  # how long a ready copy waits on the hold shelf
 
 class UpdateReservationRequest(BaseModel):
     status: Literal["cancelled"]

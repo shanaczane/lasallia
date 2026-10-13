@@ -19,6 +19,7 @@ export type Reservation = {
   status: ReservationStatus
   notes?: string
   queue_position?: number     // computed on read, only meaningful while 'pending'
+  estimated_ready_at?: string // rough date a copy should be ready — a student's own 'pending' rows only
   /** Embedded via the books FK — present when the API selects it. */
   books?: Book
   /** Embedded via the user_id FK — the requesting patron (id/email/full_name/role only). */

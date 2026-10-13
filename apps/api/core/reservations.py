@@ -1,3 +1,4 @@
+import heapq
 import logging
 import time
 from datetime import datetime, timedelta, timezone
@@ -147,6 +148,59 @@ def sweep_expired_reservations(admin: Client) -> int:
             link="/student/reservations",
         )
     return expired_count
+
+
+def estimate_ready_at(admin: Client, book_id: str, ahead: int, cfg: dict | None = None) -> datetime | None:
+    """Rough date a copy of this title should be ready for whoever has
+    `ahead` pending reservations in front of them. Only an estimate: it
+    assumes every borrower returns on their due date and everyone ahead
+    picks up right away and keeps the book for a full loan period.
+
+    Each usable copy gets a "free at" time — its loan's due date, now for
+    a copy waiting to be reshelved, or one loan period from now for a copy
+    already held for someone. The queue is then played forward: each person
+    ahead takes the earliest-free copy and returns it a loan period later.
+    Returns None when no copy is expected back at all (all lost/missing)."""
+    cfg = cfg or get_library_settings(admin)
+    loan_period = timedelta(days=cfg["standard_loan_period_days"])
+    now = datetime.now(timezone.utc)
+
+    copies = (
+        admin.table("book_copies").select("id, status").eq("book_id", book_id).execute()
+    ).data
+    copies = [c for c in copies if c["status"] not in ("lost", "damaged", "missing")]
+    if not copies:
+        return None
+
+    copy_ids = [c["id"] for c in copies]
+    due_by_copy = {
+        loan["book_copy_id"]: datetime.fromisoformat(loan["due_date"])
+        for loan in (
+            admin.table("loans")
+            .select("book_copy_id, due_date")
+            .in_("book_copy_id", copy_ids)
+            .in_("status", ["active", "overdue"])
+            .execute()
+        ).data
+    }
+
+    free_at: list[datetime] = []
+    for c in copies:
+        due = due_by_copy.get(c["id"])
+        if due is not None:
+            # An overdue copy could come back any time — treat it as due now.
+            free_at.append(max(due, now))
+        elif c["status"] in ("available", "for_reshelving"):
+            free_at.append(now)
+        else:
+            # Held for a ready reservation (or out with no loan record):
+            # assume that student borrows it for a full loan period.
+            free_at.append(now + loan_period)
+
+    heapq.heapify(free_at)
+    for _ in range(ahead):
+        heapq.heappush(free_at, heapq.heappop(free_at) + loan_period)
+    return free_at[0]
 
 
 # No scheduler exists in this repo, so the sweep piggybacks on ordinary
