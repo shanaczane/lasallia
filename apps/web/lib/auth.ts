@@ -54,6 +54,41 @@ export async function signInWithGoogle(): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
+// Google sign-in without the Supabase redirect: Google's own button
+// (components/login/GoogleIdentityButton.tsx) hands back an ID token on
+// www.lasallia.com, so Google's screen names our site instead of the
+// Supabase project address. Supabase verifies the token and the nonce.
+// Used when NEXT_PUBLIC_GOOGLE_CLIENT_ID is set; signInWithGoogle above
+// stays as the fallback.
+export async function signInWithGoogleIdToken(idToken: string, rawNonce: string): Promise<UserProfile> {
+  const { data, error } = await getSupabaseAuth().auth.signInWithIdToken({
+    provider: "google",
+    token: idToken,
+    nonce: rawNonce,
+  })
+  if (error || !data.session) throw new Error(error?.message ?? "Google sign-in didn't complete")
+  return adoptSupabaseSession(data.session)
+}
+
+// Hands a Supabase session (from either Google flow) to this app's own
+// session store, then drops supabase-js's copy so only lib/auth.ts owns
+// the tokens. Google sign-in has no "remember me" box, so it's remembered.
+export async function adoptSupabaseSession(session: {
+  access_token: string
+  refresh_token: string
+  expires_in: number
+}): Promise<UserProfile> {
+  const user = await fetchMe(session.access_token)
+  saveSession({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+    expires_in: session.expires_in,
+    user,
+  })
+  await getSupabaseAuth().auth.signOut({ scope: "local" })
+  return user
+}
+
 // Profile (role included) for a Supabase access token that didn't come
 // from /auth/login — i.e. the Google callback.
 export async function fetchMe(accessToken: string): Promise<UserProfile> {

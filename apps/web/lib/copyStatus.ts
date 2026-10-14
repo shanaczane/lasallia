@@ -2,7 +2,7 @@
 // Shared display config for book_copies.status (apps/api migration 0004's
 // status machine — a DB trigger enforces these transitions, so this list is
 // exhaustive: available, on_loan, reserved, for_reshelving, overdue, lost,
-// damaged, missing). Single source for label/colors so a copy's status reads
+// damaged, missing, misplaced — misplaced added by 0055). Single source for label/colors so a copy's status reads
 // the same everywhere it's shown (Reports' Shelf List tab, the librarian
 // catalog's Copy Management table) instead of each screen inventing its own.
 
@@ -15,9 +15,10 @@ export type CopyStatus =
   | 'lost'
   | 'damaged'
   | 'missing'
+  | 'misplaced'
 
 export const COPY_STATUSES: CopyStatus[] = [
-  'available', 'on_loan', 'reserved', 'for_reshelving', 'overdue', 'lost', 'damaged', 'missing',
+  'available', 'on_loan', 'reserved', 'for_reshelving', 'overdue', 'lost', 'damaged', 'missing', 'misplaced',
 ]
 
 export const COPY_STATUS_CONFIG: Record<CopyStatus, { label: string; text: string; bg: string }> = {
@@ -29,6 +30,8 @@ export const COPY_STATUS_CONFIG: Record<CopyStatus, { label: string; text: strin
   lost:           { label: 'Lost',            text: 'text-[#B91C1C]', bg: 'bg-[#FEE2E2]' },
   damaged:        { label: 'Damaged',         text: 'text-[#B45309]', bg: 'bg-[#FEF3C7]' },
   missing:        { label: 'Missing',         text: 'text-[#6D28D9]', bg: 'bg-[#EDE9FE]' },
+  // On the wrong shelf — found by an inventory scan somewhere it doesn't belong.
+  misplaced:      { label: 'Misplaced',       text: 'text-[#9D174D]', bg: 'bg-[#FCE7F3]' },
 }
 
 // Falls back to the raw status string rather than throwing — a status this

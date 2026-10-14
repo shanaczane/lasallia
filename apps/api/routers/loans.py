@@ -6,7 +6,7 @@ from supabase import Client
 from core.accession import normalize_accession_number
 from core.calendar import compute_fine
 from core.deps import get_current_user, get_user_supabase, require_librarian
-from core.loans import HOLD_GONE, check_borrow_eligibility, create_loan_and_notify
+from core.loans import HOLD_GONE, check_borrow_eligibility, create_loan_and_notify, reshelve_copy_now
 from core.notify import notify, notify_librarians
 from core.reservations import maybe_sweep_expired_reservations, promote_next_reservation
 from core.supabase import get_admin_client
@@ -528,8 +528,9 @@ def reshelving_queue(librarian: UserProfile = Depends(require_librarian)):
     return items
 
 # Reshelving mode (build plan 4.7) — a separate scan, after the book has
-# actually been walked back to the shelf. Only this transitions a copy to
-# Available; nothing else does, by design.
+# actually been walked back to the shelf. Only reshelve_copy_now transitions
+# a copy to Available — this scan, or an inventory scan that finds the copy
+# on its own shelf (routers/inventory.py).
 @router.post("/reshelve", response_model=dict)
 def reshelve_copy(
     body: ReshelveRequest,
@@ -543,39 +544,8 @@ def reshelve_copy(
     if copy["status"] != "for_reshelving":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This copy isn't awaiting reshelving")
 
-    # A reservation can form after a copy already landed in for_reshelving
-    # (the book shows as "borrowed" the whole time it sits here, so a
-    # student joining the queue is exactly the expected move) — re-check
-    # before opening this copy back up to anyone, so a walk-in can't grab
-    # it out from under someone who's been waiting in line.
-    promoted = promote_next_reservation(admin, copy["book_id"], copy["id"])
-    admin.table("book_copies").update({
-        "status": "reserved" if promoted else "available",
-        # Recorded regardless of which status it lands on — this is a log of
-        # the reshelving scan itself (Borrow & Return's "Reshelved Today"
-        # list), not of the copy's current shelf availability.
-        "reshelved_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("id", copy["id"]).execute()
-
-    # Closes the loop the same way checkout/return already do — every
-    # librarian's activity feed sees the copy actually made it back to the
-    # shelf, not just that it was returned to the desk.
-    book_res = admin.table("books").select("title").eq("id", copy["book_id"]).execute()
-    book_title = book_res.data[0]["title"] if book_res.data else "A book"
-    if promoted:
-        notify_librarians(
-            "Book reshelved — held for next reservation",
-            f'"{book_title}" ({body.accession_number.strip()}) is on hold for the next reservation instead of going back on the shelf.',
-            link="/librarian/reservations",
-        )
-        return {"id": copy["id"], "status": "reserved"}
-
-    notify_librarians(
-        "Book reshelved",
-        f'"{book_title}" ({body.accession_number.strip()}) is back on the shelf and available.',
-        link="/librarian/borrow-return?tab=reshelving",
-    )
-    return {"id": copy["id"], "status": "available"}
+    new_status = reshelve_copy_now(admin, copy, body.accession_number.strip())
+    return {"id": copy["id"], "status": new_status}
 
 # Reshelving tab's "Reshelved Today" list — mirrors Borrow/Return's own
 # day-scoped views (GET /loans's borrowed_from/returned_from). Same

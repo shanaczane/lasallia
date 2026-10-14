@@ -115,8 +115,8 @@ export default function LibrarianBookDetailPage({
     return () => { cancelled = true }
   }, [book?.id])
 
-  const isMissing = book?.status === 'misplaced'
-  const missingCopies = copies.filter((c) => ['missing', 'lost', 'damaged'].includes(c.status))
+  const isMissing = book?.status === 'missing' || book?.status === 'misplaced'
+  const missingCopies = copies.filter((c) => ['missing', 'lost', 'damaged', 'misplaced'].includes(c.status))
   const [resolvingCopyId, setResolvingCopyId] = useState<string | null>(null)
   const [resolveError, setResolveError] = useState('')
 
@@ -255,7 +255,7 @@ export default function LibrarianBookDetailPage({
           style={{ fontFamily: 'var(--font-body)' }}
         >
           <p className="text-[#6D28D9] font-semibold mb-3" style={{ fontSize: 'var(--text-sm-body)' }}>
-            {missingCopies.length} {missingCopies.length === 1 ? 'copy' : 'copies'} reported missing
+            {missingCopies.length} {missingCopies.length === 1 ? 'copy' : 'copies'} reported missing or misplaced
           </p>
           <div className="flex flex-col gap-2">
             {missingCopies.map((copy) => (

@@ -10,11 +10,14 @@ import {
   AlertCircle,
   ScanLine,
   Check,
+  MapPinOff,
+  SearchX,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { fetchLoans, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
 import { fetchBooks } from "@/lib/books"
+import { fetchInventoryCounts, type InventoryCounts } from "@/lib/inventory"
 import { buildFeed, timeLabel, TX_CONFIG, type FeedItem } from "@/lib/activity"
 import { ActivityDetailPanel } from "@/components/dashboard/ActivityDetailPanel"
 import type { Reservation } from "@lasallia/types"
@@ -29,6 +32,7 @@ export default function LibrarianDashboard() {
   const [loans, setLoans] = useState<Loan[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [totalCopies, setTotalCopies] = useState<number | null>(null)
+  const [shelfCounts, setShelfCounts] = useState<InventoryCounts | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedActivity, setSelectedActivity] = useState<FeedItem | null>(null)
 
@@ -41,6 +45,8 @@ export default function LibrarianDashboard() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
+    // Separate from the batch above so a failure here can't blank the rest.
+    fetchInventoryCounts().then(setShelfCounts).catch(() => {})
   }, [])
 
   const today = new Date().toLocaleDateString("en-PH", { weekday: "long", year: "numeric", month: "long", day: "numeric" })
@@ -127,6 +133,22 @@ export default function LibrarianDashboard() {
           value={String(overdueLoans.length)}
           sub={`${deepOverdue} over ${OVERDUE_FLAG_DAYS} days late`}
           subColor="text-danger"
+        />
+        <StatCard
+          icon={<SearchX size={18} className="text-[#6D28D9]" />}
+          iconBg="bg-[#EDE9FE]"
+          label="Missing"
+          value={shelfCounts === null ? "—" : String(shelfCounts.missing)}
+          sub="Copies not found on their shelf"
+          href="/librarian/inventory#flagged"
+        />
+        <StatCard
+          icon={<MapPinOff size={18} className="text-[#9D174D]" />}
+          iconBg="bg-[#FCE7F3]"
+          label="Misplaced"
+          value={shelfCounts === null ? "—" : String(shelfCounts.misplaced)}
+          sub="Copies found on the wrong shelf"
+          href="/librarian/inventory#flagged"
         />
       </div>
 
@@ -363,6 +385,7 @@ function StatCard({
   value,
   sub,
   subColor,
+  href,
 }: {
   icon: React.ReactNode
   iconBg: string
@@ -370,9 +393,10 @@ function StatCard({
   value: string
   sub: string
   subColor?: string
+  href?: string
 }) {
-  return (
-    <div className="min-w-0 sm:flex-1 sm:min-w-50 bg-white rounded-(--radius) border border-ink-200 p-3 sm:p-4 flex flex-col gap-2 sm:gap-3">
+  const content = (
+    <>
       <div className={cn("flex items-center justify-center rounded-sm w-7 h-7 sm:w-9 sm:h-9", iconBg)}>
         {icon}
       </div>
@@ -393,6 +417,10 @@ function StatCard({
           {sub}
         </p>
       </div>
-    </div>
+    </>
   )
+  const box = "min-w-0 sm:flex-1 sm:min-w-50 bg-white rounded-(--radius) border border-ink-200 p-3 sm:p-4 flex flex-col gap-2 sm:gap-3"
+  return href
+    ? <Link href={href} className={cn(box, "hover:border-ink-300 transition-colors")}>{content}</Link>
+    : <div className={box}>{content}</div>
 }

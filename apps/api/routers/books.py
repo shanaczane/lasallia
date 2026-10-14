@@ -38,6 +38,10 @@ def _derive_status(statuses: set[str]) -> str:
     if "reserved" in statuses:
         return "reserved"
     if statuses and statuses <= {"lost", "missing", "damaged"}:
+        return "missing"
+    # In the building but on the wrong shelf (an inventory scan found it
+    # elsewhere) — nothing out on loan, so "borrowed" would be wrong.
+    if "misplaced" in statuses and statuses <= {"misplaced", "lost", "missing", "damaged"}:
         return "misplaced"
     return "borrowed"
 
@@ -379,10 +383,10 @@ def mark_copy_found(copy_id: str, librarian: UserProfile = Depends(require_libra
     if not copy_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Copy not found")
     copy = copy_res.data[0]
-    if copy["status"] not in ("missing", "lost", "damaged"):
+    if copy["status"] not in ("missing", "lost", "damaged", "misplaced"):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            f"This copy is currently '{copy['status']}', not missing/lost/damaged",
+            f"This copy is currently '{copy['status']}', not missing/lost/damaged/misplaced",
         )
     admin.table("book_copies").update({"status": "for_reshelving"}).eq("id", copy_id).execute()
 

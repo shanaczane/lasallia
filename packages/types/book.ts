@@ -1,7 +1,9 @@
 // packages/types/book.ts
 // Extended for Sprint 3.1 — Guest Public Catalog Screen
 
-export type BookStatus = 'available' | 'borrowed' | 'reserved' | 'misplaced'
+// missing: every copy is lost/missing/damaged. misplaced: no copy available,
+// at least one in the building on the wrong shelf (found by an inventory scan).
+export type BookStatus = 'available' | 'borrowed' | 'reserved' | 'missing' | 'misplaced'
 
 export type BookFormat = 'print' | 'digital' | 'reference'
 

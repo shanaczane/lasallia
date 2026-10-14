@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
-import { fetchMe, roleRedirect, saveSession } from "@/lib/auth"
+import { adoptSupabaseSession, roleRedirect } from "@/lib/auth"
 import { getSupabaseAuth } from "@/lib/supabaseBrowser"
 
 export default function AuthCallbackPage() {
@@ -27,15 +27,7 @@ export default function AuthCallbackPage() {
         const session = data.session
         if (sessionError || !session) throw new Error(sessionError?.message ?? "Google sign-in didn't complete")
 
-        const user = await fetchMe(session.access_token)
-        saveSession({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-          expires_in: session.expires_in,
-          user,
-        })
-        // Drop supabase-js's own copy so only lib/auth.ts owns the tokens.
-        await supabase.auth.signOut({ scope: "local" })
+        const user = await adoptSupabaseSession(session)
         router.replace(roleRedirect(user.role))
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : "Google sign-in failed")

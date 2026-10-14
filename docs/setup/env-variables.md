@@ -11,6 +11,7 @@ Never commit actual values to GitHub. Get the values from the lead dev.
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Supabase dashboard → Project Settings → API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase public anon key | Supabase dashboard → Project Settings → API |
 | `NEXT_PUBLIC_API_URL` | FastAPI backend URL | `http://localhost:8000` for local, Railway URL for production |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Optional. The Google OAuth **Web client ID** (the same one in Supabase → Authentication → Providers → Google). When set, the login page uses Google's own sign-in button on our domain instead of redirecting through Supabase. | Google Cloud Console → APIs & Services → Credentials |
 
 ---
 

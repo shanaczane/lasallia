@@ -126,7 +126,8 @@ const STATUS_OPTIONS: Array<{ value: BookStatus; label: string }> = [
   { value: 'available', label: 'Available' },
   { value: 'borrowed',  label: 'Borrowed' },
   { value: 'reserved',  label: 'Reserved' },
-  { value: 'misplaced', label: 'Missing' },
+  { value: 'missing',   label: 'Missing' },
+  { value: 'misplaced', label: 'Misplaced' },
 ]
 
 const FUNDING_SOURCE_OPTIONS: Array<{ value: FundingSource; label: string }> = [

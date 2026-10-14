@@ -6,6 +6,7 @@
 from fastapi import APIRouter, Depends
 
 from core.deps import require_librarian
+from core.inventory import list_sessions, report_items
 from core.report_summaries import summarize_many
 from core.reports import (
     ReportFilters,
@@ -22,6 +23,7 @@ from core.reports import (
 )
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
+from schemas.inventory import InventoryReportItem, InventorySession
 from schemas.reports import (
     Bucket,
     CatalogueSlice,
@@ -132,6 +134,24 @@ def get_shelf_list(
     librarian: UserProfile = Depends(require_librarian),
 ):
     return shelf_list(get_admin_client(), filters, floor=floor, aisle=aisle)
+
+
+# Reports > Inventory — one row per check ("Export summary") and one row
+# per copy per check ("Export details"). Only the date range applies.
+@router.get("/inventory", response_model=list[InventorySession])
+def get_inventory(
+    filters: ReportFilters = Depends(report_filters),
+    librarian: UserProfile = Depends(require_librarian),
+):
+    return list_sessions(get_admin_client(), limit=500, date_from=filters.date_from, date_to=filters.date_to)
+
+
+@router.get("/inventory/items", response_model=list[InventoryReportItem])
+def get_inventory_items(
+    filters: ReportFilters = Depends(report_filters),
+    librarian: UserProfile = Depends(require_librarian),
+):
+    return report_items(get_admin_client(), date_from=filters.date_from, date_to=filters.date_to)
 
 
 @router.get("/summaries", response_model=ReportSummaries)

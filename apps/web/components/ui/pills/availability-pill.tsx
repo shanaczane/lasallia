@@ -2,7 +2,7 @@
 import { isLibraryUseOnly } from "@/lib/collectionType"
 import type { Book } from "@lasallia/types"
 
-export type AvailabilityStatus = "available" | "borrowed" | "reserved" | "missing" | "reference"
+export type AvailabilityStatus = "available" | "borrowed" | "reserved" | "missing" | "misplaced" | "reference"
 
 type AvailabilityPillProps = {
   status: AvailabilityStatus
@@ -26,6 +26,10 @@ const statusConfig: Record<AvailabilityStatus, { label: string; style: string }>
     label: "Missing",
     style: "bg-[#EDE9FE] text-[#6D28D9]",
   },
+  misplaced: {
+    label: "Misplaced",
+    style: "bg-[#FCE7F3] text-[#9D174D]",
+  },
   reference: {
     label: "Reference",
     style: "bg-ink-100 text-ink-600",
@@ -36,7 +40,7 @@ const statusConfig: Record<AvailabilityStatus, { label: string; style: string }>
 // "Available" would be misleading — they always show as "Reference".
 export function pillStatusFor(book: Book): AvailabilityStatus {
   if (isLibraryUseOnly(book)) return "reference"
-  return book.status === "misplaced" ? "missing" : book.status
+  return book.status
 }
 
 export function AvailabilityPill({ status, className }: AvailabilityPillProps) {

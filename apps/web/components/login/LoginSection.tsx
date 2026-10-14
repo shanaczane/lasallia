@@ -10,9 +10,15 @@ import { cn } from '@/lib/utils'
 import { useSignIn } from '@/lib/hooks/useSignIn'
 import { signInWithGoogle } from '@/lib/auth'
 import { ContactSupportModal } from './ContactSupportModal'
+import { GoogleIdentityButton } from './GoogleIdentityButton'
 import { SystemStatusModal } from './SystemStatusModal'
 
 const DLSL_EMAIL_PATTERN = /^[^\s@]+@dlsl\.edu\.ph$/i
+
+// Set -> Google's own button on this site (no Supabase address on Google's
+// screen). Unset -> the original Supabase redirect, so sign-in keeps
+// working until the client ID is configured.
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
 
 export default function LoginSection() {
   const { signIn, loading, error, setError } = useSignIn()
@@ -292,6 +298,9 @@ export default function LoginSection() {
             <span className="text-ink-400" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-2xs)' }}>OR</span>
             <span className="h-px flex-1 bg-ink-100" />
           </div>
+          {GOOGLE_CLIENT_ID ? (
+            <GoogleIdentityButton clientId={GOOGLE_CLIENT_ID} onError={setError} />
+          ) : (
           <button
             type="button"
             suppressHydrationWarning
@@ -312,6 +321,7 @@ export default function LoginSection() {
             )}
             Continue with Google
           </button>
+          )}
 
           {/* Footer */}
           <div className="mt-4 border-t border-ink-100 pt-3 text-center">

@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 
 from core.accession import normalize_accession_number
 from core.notify import notify, notify_librarians
+from core.reservations import promote_next_reservation
 from core.settings import get_library_settings
 
 # These collection types are for library use only and never leave the
@@ -187,3 +188,45 @@ def create_loan_and_notify(
     )
 
     return loan
+
+
+def reshelve_copy_now(admin, copy: dict, accession_display: str) -> str:
+    """The step that puts a for_reshelving copy back into circulation, once
+    it's physically on its shelf. Shared by the Reshelving scan
+    (POST /loans/reshelve) and an inventory scan that finds the copy on its
+    own shelf, so there's still only one path to 'available'.
+
+    A reservation can form after a copy already landed in for_reshelving
+    (the book shows as "borrowed" the whole time it sits there, so a
+    student joining the queue is exactly the expected move) — re-check
+    before opening this copy back up to anyone, so a walk-in can't grab it
+    out from under someone who's been waiting in line. Returns the copy's
+    new status: 'reserved' or 'available'."""
+    promoted = promote_next_reservation(admin, copy["book_id"], copy["id"])
+    admin.table("book_copies").update({
+        "status": "reserved" if promoted else "available",
+        # Recorded regardless of which status it lands on — this is a log of
+        # the reshelving scan itself (Borrow & Return's "Reshelved Today"
+        # list), not of the copy's current shelf availability.
+        "reshelved_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", copy["id"]).execute()
+
+    # Closes the loop the same way checkout/return already do — every
+    # librarian's activity feed sees the copy actually made it back to the
+    # shelf, not just that it was returned to the desk.
+    book_res = admin.table("books").select("title").eq("id", copy["book_id"]).execute()
+    book_title = book_res.data[0]["title"] if book_res.data else "A book"
+    if promoted:
+        notify_librarians(
+            "Book reshelved — held for next reservation",
+            f'"{book_title}" ({accession_display}) is on hold for the next reservation instead of going back on the shelf.',
+            link="/librarian/reservations",
+        )
+        return "reserved"
+
+    notify_librarians(
+        "Book reshelved",
+        f'"{book_title}" ({accession_display}) is back on the shelf and available.',
+        link="/librarian/borrow-return?tab=reshelving",
+    )
+    return "available"

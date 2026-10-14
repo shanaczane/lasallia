@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-BookStatus = Literal["available", "borrowed", "reserved", "misplaced"]
+BookStatus = Literal["available", "borrowed", "reserved", "missing", "misplaced"]
 BookFormat = Literal["print", "digital", "reference"]
 FundingSource = Literal["purchased", "donated", "grant"]
 

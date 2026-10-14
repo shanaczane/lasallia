@@ -6,6 +6,7 @@
 // this file is a data-source swap for that page, not a rewrite of it.
 
 import { getToken } from "@/lib/auth"
+import type { InventorySession } from "@/lib/inventory"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
@@ -217,4 +218,28 @@ export function downloadCsv(filename: string, rows: Record<string, string | numb
   a.download = filename
   a.click()
   URL.revokeObjectURL(url)
+}
+
+// ─── Inventory tab ────────────────────────────────────────────────────────────
+// Only the date range applies. One row per check, and one row per copy per
+// check for "Export details".
+
+export type InventoryReportItem = {
+  session_id: string
+  location: string
+  started_at: string
+  accession_number: string | null
+  title: string | null
+  call_number: string | null
+  result: "pending" | "found" | "misplaced" | "not_found"
+  expected_location: string | null
+  resolution: "marked_missing" | "marked_found" | null
+}
+
+export async function fetchInventoryReport(filters: ReportFilters): Promise<InventorySession[]> {
+  return getReport("inventory", filterParams(filters))
+}
+
+export async function fetchInventoryReportItems(filters: ReportFilters): Promise<InventoryReportItem[]> {
+  return getReport("inventory/items", filterParams(filters))
 }

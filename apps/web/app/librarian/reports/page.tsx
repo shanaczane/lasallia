@@ -65,6 +65,8 @@ import {
   fetchLibraryStats,
   fetchShelfList,
   fetchReportSummaries,
+  fetchInventoryReport,
+  fetchInventoryReportItems,
   resolveDateRange,
   downloadCsv,
   type Bucket,
@@ -93,9 +95,10 @@ import {
 import type { Book, UserProfile, Reservation } from "@lasallia/types"
 import { programLabel } from "@/lib/programLabels"
 import { copyStatusConfig } from "@/lib/copyStatus"
+import { formatWhen, type InventorySession } from "@/lib/inventory"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type ReportTab = "overview" | "catalogue" | "shelf-list" | "circulation" | "overdue" | "requests" | "weeding" | "activity"
+type ReportTab = "overview" | "catalogue" | "shelf-list" | "circulation" | "overdue" | "requests" | "weeding" | "inventory" | "activity"
 type SortDir = "asc" | "desc" | null
 type SortKey = "patron" | "book" | "due" | "days" | "program" | null
 type ShelfSortKey = "call_number" | "title" | "accession_number" | null
@@ -1092,6 +1095,157 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
 // candidate; AI only narrates that finding in plain English (candidate.reason).
 // The librarian makes every real decision — Archive or Keep — nothing here
 // removes a book on its own.
+// ─── Inventory — full report tab, one row per shelf check ────────────────────
+// Self-contained like WeedingPanel: fetches its own rows, honouring only the
+// page's date range (when each check was started). Two exports — the
+// summary (one row per check) and the per-copy details.
+const INVENTORY_STATUS_LABEL: Record<InventorySession["status"], string> = {
+  in_progress: "In progress",
+  completed: "Completed",
+  cancelled: "Cancelled",
+}
+
+const INVENTORY_RESULT_LABEL: Record<string, string> = {
+  pending: "Not scanned yet",
+  found: "Found",
+  misplaced: "Misplaced",
+  not_found: "Not found",
+}
+
+function InventoryPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: string }) {
+  const router = useRouter()
+  const [sessions, setSessions] = useState<InventorySession[]>([])
+  // Which date range `sessions` was fetched for — loading until it matches.
+  const rangeKey = `${dateFrom ?? ""}|${dateTo ?? ""}`
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  const loading = loadedKey !== rangeKey
+  const [query, setQuery] = useState("")
+  const [exportingDetails, setExportingDetails] = useState(false)
+
+  useEffect(() => {
+    fetchInventoryReport({ dateFrom, dateTo })
+      .then(setSessions)
+      .catch(() => setSessions([]))
+      .finally(() => setLoadedKey(`${dateFrom ?? ""}|${dateTo ?? ""}`))
+  }, [dateFrom, dateTo])
+
+  const q = query.trim().toLowerCase()
+  const filtered = q
+    ? sessions.filter((s) => `${s.label} ${s.started_by_name ?? ""}`.toLowerCase().includes(q))
+    : sessions
+
+  const totals = filtered.reduce(
+    (t, s) => ({ found: t.found + s.found, misplaced: t.misplaced + s.misplaced, notFound: t.notFound + s.not_found }),
+    { found: 0, misplaced: 0, notFound: 0 },
+  )
+
+  const exportSummary = () => downloadCsv("inventory-summary.csv", filtered.map((s) => ({
+    location: s.label,
+    status: INVENTORY_STATUS_LABEL[s.status],
+    started_at: s.started_at,
+    started_by: s.started_by_name ?? "",
+    completed_at: s.completed_at ?? "",
+    expected: s.expected,
+    found: s.found,
+    misplaced: s.misplaced,
+    not_found: s.not_found,
+    resolved: s.resolved,
+  })))
+
+  async function exportDetails() {
+    setExportingDetails(true)
+    try {
+      const ids = new Set(filtered.map((s) => s.id))
+      const rows = (await fetchInventoryReportItems({ dateFrom, dateTo })).filter((r) => ids.has(r.session_id))
+      downloadCsv("inventory-details.csv", rows.map((r) => ({
+        check_started_at: r.started_at,
+        check_location: r.location,
+        accession_number: r.accession_number ?? "",
+        call_number: r.call_number ?? "",
+        title: r.title ?? "",
+        result: INVENTORY_RESULT_LABEL[r.result] ?? r.result,
+        belongs_in: r.expected_location ?? "",
+        follow_up: r.resolution === "marked_missing" ? "Marked missing" : r.resolution === "marked_found" ? "Marked found" : "",
+      })))
+    } finally {
+      setExportingDetails(false)
+    }
+  }
+
+  return (
+    <ReportTableCard
+      title="Inventory"
+      subtitle="Shelf checks in the selected date range — click a row to open the check"
+      query={query}
+      onQueryChange={setQuery}
+      searchPlaceholder="Search location or librarian…"
+      headerExtra={
+        <button
+          onClick={exportDetails}
+          disabled={filtered.length === 0 || exportingDetails}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          <Download size={13} /> {exportingDetails ? "Preparing…" : "Export details"}
+        </button>
+      }
+      onExport={exportSummary}
+      exportDisabled={filtered.length === 0}
+      footerLeft={
+        loading
+          ? "Loading…"
+          : `${filtered.length} check${filtered.length === 1 ? "" : "s"} · ${totals.found} found · ${totals.misplaced} misplaced · ${totals.notFound} not found`
+      }
+    >
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-160">
+          <thead>
+            <tr className="border-b border-ink-200 text-left text-ink-400 uppercase" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)" }}>
+              <th className="py-2 pr-4 font-semibold">Location</th>
+              <th className="py-2 pr-4 font-semibold">Status</th>
+              <th className="py-2 pr-4 font-semibold">Started</th>
+              <th className="py-2 pr-4 font-semibold text-right">Expected</th>
+              <th className="py-2 pr-4 font-semibold text-right">Found</th>
+              <th className="py-2 pr-4 font-semibold text-right">Misplaced</th>
+              <th className="py-2 font-semibold text-right">Not found</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!loading && filtered.length === 0 && (
+              <tr>
+                <td colSpan={7} className="py-8 text-center text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                  No shelf checks in this date range.
+                </td>
+              </tr>
+            )}
+            {filtered.map((s) => (
+              <tr
+                key={s.id}
+                onClick={() => router.push(`/librarian/inventory/${s.id}`)}
+                className="border-b border-ink-100 last:border-b-0 hover:bg-ink-50 cursor-pointer text-ink-800"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+              >
+                <td className="py-2.5 pr-4 font-medium text-ink-900">{s.label}</td>
+                <td className="py-2.5 pr-4">{INVENTORY_STATUS_LABEL[s.status]}</td>
+                <td className="py-2.5 pr-4 text-ink-600">
+                  {formatWhen(s.started_at)}
+                  {s.started_by_name && <span className="text-ink-400"> · {s.started_by_name}</span>}
+                </td>
+                <td className="py-2.5 pr-4 text-right">{s.expected}</td>
+                <td className="py-2.5 pr-4 text-right">{s.found}</td>
+                <td className="py-2.5 pr-4 text-right">{s.misplaced}</td>
+                <td className="py-2.5 text-right">
+                  {s.status === "in_progress" ? <span className="text-ink-400">{s.pending} left</span> : s.not_found}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </ReportTableCard>
+  )
+}
+
 function WeedingPanel() {
   const [candidates, setCandidates] = useState<WeedingCandidate[]>([])
   const [events, setEvents] = useState<WeedingEvent[]>([])
@@ -2077,7 +2231,7 @@ function ReportsPageContent() {
   const searchParams = useSearchParams()
   const [tab, setTab] = useState<ReportTab>(() => {
     const t = searchParams.get("tab")
-    const valid: ReportTab[] = ["catalogue", "shelf-list", "circulation", "overdue", "requests", "weeding", "activity"]
+    const valid: ReportTab[] = ["catalogue", "shelf-list", "circulation", "overdue", "requests", "weeding", "inventory", "activity"]
     return (valid as string[]).includes(t ?? "") ? (t as ReportTab) : "overview"
   })
 
@@ -2616,6 +2770,7 @@ function ReportsPageContent() {
           { key: "overdue",     label: "Overdue & Fines" },
           { key: "requests",    label: "Requests" },
           { key: "weeding",     label: "Weeding" },
+          { key: "inventory",   label: "Inventory" },
         ] as { key: ReportTab; label: string }[]).map((t) => (
           <button
             key={t.key}
@@ -2744,6 +2899,11 @@ function ReportsPageContent() {
 
       {/* ── Weeding tab – Reports plan Phase 2 ────────────── */}
       {tab === "weeding" && <WeedingPanel />}
+
+      {/* ── Inventory tab — see InventoryPanel ── */}
+      {tab === "inventory" && (
+        <InventoryPanel dateFrom={activeDateBounds.dateFrom} dateTo={activeDateBounds.dateTo} />
+      )}
 
       {/* ── Activity Log tab ───────────────────────────────── */}
       {tab === "activity" && (

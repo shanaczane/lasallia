@@ -19,6 +19,7 @@ import {
   Bell,
   Settings,
   DatabaseZap,
+  ClipboardCheck,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react"
@@ -44,6 +45,7 @@ const librarianNav: NavSection[] = [
       { label: "Dashboard",       icon: <LayoutDashboard size={16} />, href: "/librarian/dashboard" },
       { label: "Borrow & Return", icon: <ScanLine size={16} />,        href: "/librarian/borrow-return" },
       { label: "Reservations",    icon: <BookOpen size={16} />,        href: "/librarian/reservations" },
+      { label: "Inventory",       icon: <ClipboardCheck size={16} />,  href: "/librarian/inventory" },
       { label: "Reports",         icon: <BarChart2 size={16} />,       href: "/librarian/reports" },
     ],
   },
@@ -135,7 +137,8 @@ function LibrarianLayoutInner({
             )}
             <ul className="flex flex-col gap-0.5">
               {section.items.map((item) => {
-                const isActive = pathname === item.href
+                // Also active on sub-pages (an inventory check, a catalog book).
+                const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
                 // Notifications is the one nav item with a live count —
                 // same unreadCount the bell shows (StudentLayout already
                 // does this for its own Notifications item; this brings
