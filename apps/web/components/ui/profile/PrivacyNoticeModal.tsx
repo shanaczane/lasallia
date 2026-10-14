@@ -81,8 +81,8 @@ export function PrivacyNoticeModal({ step, onDone }: { step?: { current: number;
   const labelStyle = { fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4" role="dialog" aria-modal="true" aria-labelledby="privacy-notice-title">
-      <form onSubmit={handleAccept} className="flex max-h-full w-full max-w-lg flex-col rounded-3xl bg-white p-6" style={{ boxShadow: "var(--shadow-lg)" }}>
+    <div className="fixed inset-x-0 bottom-0 z-50 flex items-center justify-center bg-black/55 p-4" style={{ top: "var(--height-nav)" }} role="dialog" aria-modal="true" aria-labelledby="privacy-notice-title">
+      <form onSubmit={handleAccept} className="flex max-h-full w-full max-w-2xl flex-col rounded-3xl bg-white p-6 sm:p-8" style={{ boxShadow: "var(--shadow-lg)" }}>
         {step && step.total > 1 && (
           <p className="mb-1 font-semibold text-green-700 uppercase" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-section)" }}>
             Step {step.current} of {step.total}
