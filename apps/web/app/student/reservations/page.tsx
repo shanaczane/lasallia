@@ -1,7 +1,7 @@
 // apps/web/app/student/reservations/page.tsx
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { CheckCircle, Clock, XCircle, BookMarked, PackageCheck, AlertCircle, QrCode } from "lucide-react"
@@ -11,6 +11,7 @@ import { useStudentCounts } from "@/components/layout/StudentCountsContext"
 import { useSwipeTabs } from "@/lib/hooks/useSwipeTabs"
 import { useStickyBelowNav } from "@/lib/hooks/useStickyBelowNav"
 import type { Reservation, ReservationStatus } from "@lasallia/types"
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatDate(iso: string): string {
@@ -243,13 +244,15 @@ interface CancelModalProps {
 }
 
 function CancelModal({ reservation, pending, error, onConfirm, onClose }: CancelModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { onClose: pending ? undefined : onClose })
   return (
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="flex flex-col gap-4 bg-white rounded-(--radius) p-6 w-full max-w-sm shadow-2xl"
+        ref={dialogRef} role="dialog" aria-modal="true" className="flex flex-col gap-4 bg-white rounded-(--radius) p-6 w-full max-w-sm shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="size-11 rounded-full bg-danger-bg flex items-center justify-center flex-shrink-0">

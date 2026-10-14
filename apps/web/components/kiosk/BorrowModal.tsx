@@ -17,14 +17,17 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { X, Info, AlertCircle, Monitor } from 'lucide-react'
-import { openSessionFromToken, claimHold, releaseHold, type ClaimHoldResponse } from '@/lib/kiosk'
+import { X, Info, AlertCircle, Monitor, RotateCcw } from 'lucide-react'
+import { openSessionFromToken, claimHold, releaseHold, NetworkError, type ClaimHoldResponse } from '@/lib/kiosk'
 import type { Book } from '@lasallia/types'
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 type ClaimState =
   | { status: 'claiming' }
   | { status: 'ready'; hold: ClaimHoldResponse }
-  | { status: 'error'; message: string }
+  // retryable: the request never got an answer (connection, timeout). An
+  // answer of "no" — no copies left, unpaid fines — won't change on a retry.
+  | { status: 'error'; message: string; retryable: boolean }
 
 export function BorrowModal({
   book,
@@ -36,6 +39,8 @@ export function BorrowModal({
   onClose: () => void
 }) {
   const [claim, setClaim] = useState<ClaimState>({ status: 'claiming' })
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { onClose: () => handleClose() })
 
   // Claiming a hold consumes the only available copy of a single-copy
   // title, so it must run exactly once per modal open. startedRef guards
@@ -49,29 +54,39 @@ export function BorrowModal({
   const startedRef = useRef(false)
   const openRef = useRef(true)
 
+  // Also what "Try again" calls after a failed claim. Safe to repeat: the
+  // API releases any hold this same student left on the title before
+  // claiming a new one (routers/holds.py's claim_hold).
+  async function startClaim() {
+    setClaim({ status: 'claiming' })
+    try {
+      const sessionId = stationSessionId ?? (await openSessionFromToken()).id
+      const hold = await claimHold(book.id, sessionId)
+      if (openRef.current) {
+        setClaim({ status: 'ready', hold })
+      } else {
+        // Closed while the claim was still in flight — don't leave a
+        // copy held with no UI left to release it.
+        releaseHold(hold.token).catch(() => {})
+      }
+    } catch (err) {
+      if (openRef.current) {
+        setClaim({
+          status: 'error',
+          message: err instanceof Error ? err.message : 'Could not start borrowing this book',
+          retryable: err instanceof NetworkError,
+        })
+      }
+    }
+  }
+
   useEffect(() => {
     if (startedRef.current) return
     startedRef.current = true
-
-    async function run() {
-      try {
-        const sessionId = stationSessionId ?? (await openSessionFromToken()).id
-        const hold = await claimHold(book.id, sessionId)
-        if (openRef.current) {
-          setClaim({ status: 'ready', hold })
-        } else {
-          // Closed while the claim was still in flight — don't leave a
-          // copy held with no UI left to release it.
-          releaseHold(hold.token).catch(() => {})
-        }
-      } catch (err) {
-        if (openRef.current) {
-          setClaim({ status: 'error', message: err instanceof Error ? err.message : 'Could not start borrowing this book' })
-        }
-      }
-    }
-    run()
-  }, [book.id, stationSessionId])
+    startClaim()
+    // Runs once per modal open — see startedRef above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function handleClose() {
     openRef.current = false
@@ -86,7 +101,7 @@ export function BorrowModal({
       onClick={handleClose}
     >
       <div
-        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-sm p-6 flex flex-col items-center gap-4"
+        ref={dialogRef} role="dialog" aria-modal="true" aria-label="Borrow this book" className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-sm p-6 flex flex-col items-center gap-4"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -154,6 +169,17 @@ export function BorrowModal({
             <p style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)', color: 'var(--color-danger-dark)' }}>
               {claim.message}
             </p>
+            {claim.retryable && (
+              <button
+                type="button"
+                onClick={startClaim}
+                className="mt-1 flex items-center gap-1.5 px-4 py-2 rounded-[10px] bg-white border border-ink-200 text-ink-900 font-semibold hover:bg-ink-50 transition-colors"
+                style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+              >
+                <RotateCcw size={14} />
+                Try again
+              </button>
+            )}
           </div>
         )}
 

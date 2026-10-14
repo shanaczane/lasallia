@@ -31,13 +31,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
 
-from core import chat_sessions, rules
+from core import chat_sessions, chat_sources, rules
 from core.config import OPENAI_API_KEY
 from core.deps import get_current_user, get_optional_user, kiosk_session_user
 from core.supabase import get_admin_client
 from core.tools.registry import ToolRegistry
 from schemas.auth import UserProfile
-from schemas.chat import ChatHistoryResponse, ChatRequest, ChatSessionSummary
+from schemas.chat import ChatHistoryResponse, ChatRequest, ChatSessionSummary, ChatSource
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -58,7 +58,8 @@ Rules — follow these exactly, they are not suggestions:
 7. search_catalog results never include a book's description — that field only exists in get_book_details' result. If asked what a book is about, or for any detail beyond title/author/call number/availability, you MUST call get_book_details for that specific book_id before answering, even if you already have the book from a search_catalog result. Never conclude a description is missing or absent just because search_catalog didn't show you one — you have to actually call get_book_details and check its "description" field first.
 8. Once you have get_book_details' result: if "description" is a non-empty string, you may summarize, rephrase, or shorten it, but you may NOT add any claim, fact, or opinion that isn't in it — no "this is considered a classic," no "commonly used in undergraduate courses," nothing, unless the description itself says so.
 9. If get_book_details' "description" field is null or empty, you must NOT describe the book from your own knowledge, even if you recognize the exact title and know exactly what it's about — this is the single most important rule in this prompt. Instead say plainly that the catalog has no description for it, then mention what IS on record: its subject headings, call number, and collection type. If "nearby_by_call_number" is present, you may add that similar titles sit nearby on the shelf.
-10. For ANY question about library rules — hours, fines/late fees ("magkano", "fine", "penalty"), borrowing limits, visitor/guest requirements, photocopying rules, or anything else policy-related, in ANY language or phrasing — you MUST call search_policy before answering. This applies even if you think you might already know the answer, even if the question is short or informal, and even in Taglish or Filipino. Do not answer a policy question directly from the conversation alone — always call the tool first, every single time. Answer ONLY from what it returns, and always name the section you got it from (e.g. "According to the Loan Policies section...").
+9a. For ANY question about when the library is open — opening/closing times, a specific day, "bukas ba", "anong oras", in any language — call get_library_hours, not search_policy. Reply with one short lead-in line, then the schedule as a bulleted list, one "- **Days:** hours" line per entry in "schedule", exactly as returned (e.g. "- **Saturday:** 8:00 AM – 12:00 PM"). If they asked about today or a specific day, answer that first in the lead-in (using "today" for today). Never paste raw handbook table text for hours.
+10. For ANY question about library rules — fines/late fees ("magkano", "fine", "penalty"), borrowing limits, visitor/guest requirements, photocopying rules, or anything else policy-related, in ANY language or phrasing — you MUST call search_policy before answering. This applies even if you think you might already know the answer, even if the question is short or informal, and even in Taglish or Filipino. Do not answer a policy question directly from the conversation alone — always call the tool first, every single time. Answer ONLY from what it returns, and always name the section you got it from (e.g. "According to the Loan Policies section...").
 11. If search_policy returns nothing relevant (after actually calling it), say plainly that you're not certain and the student should check with the librarian at the Users and Information Services Counter — do not guess, and do not answer from general knowledge of how libraries "usually" work.
 12. Never do arithmetic on fines (e.g. "3 days late × ₱5 = ₱15"). State the rate from the handbook and let the student do the math themselves, or point them to their account — the school-day calendar (weekends, holidays) makes a naive multiplication wrong more often than right.
 13. For ANY question about the student's own account — due dates, what they currently have borrowed, whether they owe a fine, their past loans — you MUST call the matching tool (get_my_loans, get_my_fines, get_my_history) rather than answering from anything said earlier in the conversation. These tools always resolve to whoever is currently logged in.
@@ -146,6 +147,20 @@ def _loan_for_model(loan) -> dict:
     }
 
 
+# The same tool can run more than once in a turn (two get_book_details
+# calls for the same book, get_my_loans across rounds) — one footer
+# entry each is enough.
+def _dedupe_sources(sources: list[ChatSource]) -> list[ChatSource]:
+    seen: set[tuple] = set()
+    out = []
+    for s in sources:
+        key = (s.kind, s.book_id or s.label, s.detail)
+        if key not in seen:
+            seen.add(key)
+            out.append(s)
+    return out
+
+
 # A single completion call only ever returns the tool calls the model
 # wants *right now* — chaining search_catalog -> get_book_details (the
 # model doesn't have a book_id to call the latter with until it's seen
@@ -179,11 +194,16 @@ def send_message(
         # falls through to the tool-calling path below, unchanged.
         matched = rules.match_and_answer(body.message)
         if matched:
-            intent, rule_reply = matched
+            intent, rule_reply, rule_source = matched
             chat_sessions.append_message(admin, session_id, "user", body.message)
-            chat_sessions.append_message(admin, session_id, "assistant", rule_reply)
+            chat_sessions.append_message(admin, session_id, "assistant", rule_reply, [rule_source])
             rules.record("rule", started_at, intent)
-            yield _sse("done", {"reply": rule_reply, "books": [], "session_id": session_id})
+            yield _sse("done", {
+                "reply": rule_reply,
+                "books": [],
+                "sources": [rule_source.model_dump()],
+                "session_id": session_id,
+            })
             return
 
         try:
@@ -230,6 +250,13 @@ def send_message(
         tools = [spec.schema for spec in registry.available_tools()]
         books_out: list[dict] = []
         reply = ""
+        # Where this reply could have come from, gathered per tool result —
+        # handbook chunks are only filtered down to the cited ones once the
+        # reply text exists (see core/chat_sources.py).
+        policy_chunks: list[tuple[str, int | None]] = []
+        detail_sources: list[ChatSource] = []
+        catalog_hits = 0
+        other_sources: list[ChatSource] = []
 
         for _ in range(MAX_TOOL_ROUNDS):
             response = client.chat.completions.create(model=CHAT_MODEL, messages=messages, tools=tools)
@@ -274,21 +301,30 @@ def send_message(
                     if call.function.name == "search_catalog":
                         new_books = [b.model_dump() for b in result]
                         books_out.extend(new_books)
+                        catalog_hits += len(new_books)
                         tool_content = [_book_for_model(b) for b in new_books]
                     elif call.function.name == "get_book_details":
                         books_out.append(result.book.model_dump())
                         if result.similar_available_books:
                             books_out.extend(b.model_dump() for b in result.similar_available_books)
+                        detail_sources.append(chat_sources.book_source(
+                            result.book.id, result.book.title, result.book.call_number,
+                        ))
                         tool_content = _book_details_for_model(result)
                     elif call.function.name == "search_policy":
+                        policy_chunks.extend((r.section_title, r.source_page) for r in result)
                         tool_content = [r.model_dump() for r in result]
                     elif call.function.name in ("get_my_loans", "get_my_fines", "get_my_history"):
+                        other_sources.append(chat_sources.ACCOUNT_SOURCES[call.function.name])
                         tool_content = [_loan_for_model(l) for l in result]
                     elif call.function.name == "recommend_for_my_course":
                         new_books = [r.book.model_dump() for r in result]
                         books_out.extend(new_books)
+                        catalog_hits += len(new_books)
                         tool_content = [{**_book_for_model(r.book.model_dump()), "reason": r.reason} for r in result]
                     else:
+                        if call.function.name == "get_library_hours":
+                            other_sources.append(chat_sources.HOURS_SOURCE)
                         tool_content = result
 
                 messages.append({
@@ -308,11 +344,22 @@ def send_message(
         # Only a fully-completed turn gets saved — a mid-stream failure
         # (network error, exhausted key) leaves history exactly as it was
         # rather than persisting a half-turn with no reply to replay later.
+        sources = _dedupe_sources(
+            chat_sources.cited_handbook_sources(policy_chunks, reply)
+            + detail_sources
+            + ([chat_sources.catalog_source(catalog_hits)] if catalog_hits else [])
+            + other_sources
+        )
         chat_sessions.append_message(admin, session_id, "user", body.message)
-        chat_sessions.append_message(admin, session_id, "assistant", reply)
+        chat_sessions.append_message(admin, session_id, "assistant", reply, sources)
 
         rules.record("rag", started_at)
-        yield _sse("done", {"reply": reply, "books": books_out, "session_id": session_id})
+        yield _sse("done", {
+            "reply": reply,
+            "books": books_out,
+            "sources": [s.model_dump() for s in sources],
+            "session_id": session_id,
+        })
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 

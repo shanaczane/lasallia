@@ -7,10 +7,11 @@
 
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { X, Info, AlertCircle, CalendarClock, Users } from 'lucide-react'
 import { fetchReservationEstimate, type ReservationEstimate } from '@/lib/reservations'
 import type { Book } from '@lasallia/types'
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 type EstimateState =
   | { status: 'loading' }
@@ -45,6 +46,9 @@ export function ReserveConfirmModal({
   onClose: () => void
 }) {
   const [state, setState] = useState<EstimateState>({ status: 'loading' })
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { onClose: pending ? undefined : onClose })
+
 
   useEffect(() => {
     let cancelled = false
@@ -70,7 +74,7 @@ export function ReserveConfirmModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="reserve-confirm-title"
-        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-sm p-6 flex flex-col gap-4"
+        ref={dialogRef} className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-sm p-6 flex flex-col gap-4"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

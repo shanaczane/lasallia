@@ -54,7 +54,7 @@ TOOL_SCHEMA: dict = {
     "type": "function",
     "function": {
         "name": "search_policy",
-        "description": "Search the LRC handbook for policy answers: borrowing limits, fine rates, guest requirements, hours, and similar rules.",
+        "description": "Search the LRC handbook for policy answers: borrowing limits, fine rates, guest requirements, and similar rules. Not for opening hours — use get_library_hours.",
         "parameters": {
             "type": "object",
             "properties": {

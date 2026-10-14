@@ -11,10 +11,11 @@
 
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useRef, useCallback, useEffect, useState } from 'react'
 import { X, CheckCircle2, XCircle, Loader2, Clock, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fetchPublicLibrarySettings, type PublicLibrarySettings } from '@/lib/settings'
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 const HEALTH_CHECK_TIMEOUT_MS = 4000
@@ -115,6 +116,9 @@ function StatusRow({
 }
 
 export function SystemStatusModal({ onClose }: SystemStatusModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { onClose })
+
   const [apiStatus, setApiStatus] = useState<ApiStatus>('checking')
   const [libraryInfo, setLibraryInfo] = useState<PublicLibrarySettings | null>(null)
   const [libraryError, setLibraryError] = useState(false)
@@ -146,7 +150,7 @@ export function SystemStatusModal({ onClose }: SystemStatusModalProps) {
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-(--shadow-lg) w-full sm:max-w-lg h-[85vh] sm:h-[480px] flex flex-col"
+        ref={dialogRef} role="dialog" aria-modal="true" className="bg-white rounded-t-2xl sm:rounded-2xl shadow-(--shadow-lg) w-full sm:max-w-lg h-[85vh] sm:h-[480px] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header — same padding/shell as ContactSupportModal so the two

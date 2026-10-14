@@ -11,9 +11,10 @@
 // routers/auth.py from "placeholder".
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Loader2, AlertCircle } from "lucide-react"
 import { acceptPrivacyNotice, clearSession } from "@/lib/auth"
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 // DRAFT — pending DPO review. Intro and closing are plain paragraphs; each
 // section renders as a bold heading, a paragraph, and (if present) a list.
@@ -52,6 +53,8 @@ const NOTICE_CLOSING = `By clicking "Accept," you acknowledge that you have read
 const ACCEPT_LABEL = "I have read and understood this Data Privacy Notice, and I consent to the processing of my personal data as described."
 
 export function PrivacyNoticeModal({ step, onDone }: { step?: { current: number; total: number }; onDone: () => void }) {
+  const dialogRef = useRef<HTMLFormElement>(null)
+  useDialogKeyboard(dialogRef)
   const [agreed, setAgreed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
@@ -81,8 +84,8 @@ export function PrivacyNoticeModal({ step, onDone }: { step?: { current: number;
   const labelStyle = { fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4" role="dialog" aria-modal="true" aria-labelledby="privacy-notice-title">
-      <form onSubmit={handleAccept} className="flex max-h-full w-full max-w-lg flex-col rounded-3xl bg-white p-6" style={{ boxShadow: "var(--shadow-lg)" }}>
+    <div className="fixed inset-x-0 bottom-0 z-50 flex items-center justify-center bg-black/55 p-4" style={{ top: "var(--height-nav)" }} role="dialog" aria-modal="true" aria-labelledby="privacy-notice-title">
+      <form ref={dialogRef} onSubmit={handleAccept} className="flex max-h-full w-full max-w-2xl flex-col rounded-3xl bg-white p-6 sm:p-8" style={{ boxShadow: "var(--shadow-lg)" }}>
         {step && step.total > 1 && (
           <p className="mb-1 font-semibold text-green-700 uppercase" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-section)" }}>
             Step {step.current} of {step.total}

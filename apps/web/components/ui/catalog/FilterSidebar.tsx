@@ -25,6 +25,7 @@ import {
   RadioFilterKey,
   isSectionActive,
 } from './filterConfig'
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 export type { CatalogFilters } from './filterConfig'
 export { DEFAULT_FILTERS } from './filterConfig'
@@ -279,6 +280,9 @@ export function FilterSidebar({
   isOpen,
   onClose,
 }: FilterSidebarProps) {
+  // Phone drawer: Esc closes it, Tab stays inside while it's open.
+  const mobileDrawerRef = useRef<HTMLElement>(null)
+  useDialogKeyboard(mobileDrawerRef, { open: !!isOpen, onClose })
   const isDrawer = variant === 'drawer'
   const [collapsed, setCollapsed] = useState(false)
   const [highlightSection, setHighlightSection] = useState<string | null>(null)
@@ -469,6 +473,7 @@ export function FilterSidebar({
 
       {/* Mobile drawer */}
       <aside
+        ref={mobileDrawerRef}
         className={cn(
           'fixed right-0 bottom-0 z-160 flex flex-col bg-white border-l border-ink-200',
           'transition-transform duration-300 ease-in-out lg:hidden w-72',

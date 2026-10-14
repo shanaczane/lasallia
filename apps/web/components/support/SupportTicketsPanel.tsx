@@ -6,7 +6,7 @@
 
 "use client"
 
-import { useMemo, useState } from "react"
+import { useRef, useMemo, useState } from "react"
 import { cn } from "@/lib/utils"
 import {
   Inbox,
@@ -22,6 +22,7 @@ import { useSupportTickets } from "@/lib/hooks/useSupportTickets"
 import { useBodyScrollLock } from "@/lib/hooks/useBodyScrollLock"
 import { updateSupportTicket, type SupportTicket, type TicketCategory, type TicketStatus } from "@/lib/supportTickets"
 import { resolveDateRange, type DateRangePreset } from "@/lib/reports"
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
@@ -84,6 +85,8 @@ function TicketDetailPanel({
   onUpdated: (t: SupportTicket) => void
 }) {
   const [status, setStatus] = useState<TicketStatus>(ticket.status)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { onClose })
   const [note, setNote] = useState(ticket.resolution_note ?? "")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
@@ -109,6 +112,7 @@ function TicketDetailPanel({
     <>
       <div className="fixed inset-0 z-150 bg-black/40" onClick={onClose} aria-hidden="true" />
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Ticket details"

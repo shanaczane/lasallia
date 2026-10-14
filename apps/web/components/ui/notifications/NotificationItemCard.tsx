@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils"
 import type { Notification, NotificationType } from "@lasallia/types"
 import { Clock, BookOpen, BookCheck, BookPlus, CheckCircle, XCircle, Ban, Bell, AlertTriangle, Users, Bookmark, ArrowUpCircle, Banknote, AlertCircle } from "lucide-react"
+import { pressable } from "@/lib/a11y"
 
 type NotificationItemCardProps = {
   notification: Notification
@@ -129,7 +130,8 @@ export function NotificationItemCard({
         !notification.is_read && "hover:bg-green-50/60",
         !isLast && "border-b border-ink-100"
       )}
-      onClick={() => !notification.is_read && onMarkRead?.(notification.id)}
+      // Unread: Tab-reachable, Enter marks it read. Read: nothing to press.
+      {...(!notification.is_read && onMarkRead ? pressable(() => onMarkRead(notification.id)) : {})}
     >
       {/* Icon */}
       <div

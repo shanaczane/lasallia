@@ -257,6 +257,45 @@ body {
   }
 }
 
+/* Keyboard focus outline, everywhere. Many controls set `outline-none` to
+   hide the browser's default ring after a mouse click, which also left
+   keyboard users with no idea where they were. :focus-visible only matches
+   keyboard (not mouse) focus, so this never shows after a click. Unlayered
+   on purpose: Tailwind's utilities live in a cascade layer, and unlayered
+   CSS outranks every layer, so this wins over `outline-none`. Elements that
+   already style their own focus state (a `focus:` / `focus-visible:`
+   border or ring) keep theirs. Containers focused only by code (the main
+   area after "Skip to main content", a dialog with nothing focusable
+   inside) use tabindex="-1" and don't need a box around everything. */
+:focus-visible:not([class*="focus-visible:"]):not([class*="focus:"]):not([tabindex="-1"]) {
+  outline: 2px solid var(--color-green-700);
+  outline-offset: 2px;
+}
+
+[tabindex="-1"]:focus {
+  outline: none;
+}
+
+/* Visually hidden until focused — the "Skip to main content" link. */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--color-green-700);
+  color: white;
+  font-family: var(--font-body);
+  font-weight: 600;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus-visible {
+  transform: none;
+  outline: 2px solid var(--color-gold-500);
+}
+
 aside {
   scrollbar-width: none;
 }

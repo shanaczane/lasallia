@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from postgrest.exceptions import APIError
 from supabase import Client
 
 from core.accession import normalize_accession_number
@@ -43,6 +44,12 @@ def _flatten_loan(loan: dict) -> dict:
     loan["books"] = copy["books"] if copy else None
     loan["accession_number"] = copy["accession_number"] if copy else None
     return loan
+
+
+def _loan_for_hold_token(db: Client, token: str) -> dict | None:
+    """The loan a kiosk hold token was already confirmed into, if any."""
+    res = _embed_book_and_borrower(db, db.table("loans")).eq("hold_token", token).execute()
+    return _flatten_loan(res.data[0]) if res.data else None
 
 
 @router.get("", response_model=list[Loan])
@@ -146,6 +153,13 @@ def list_loans(
 def confirm_loan(body: ConfirmLoanRequest):
     db = get_admin_client()
 
+    # Safe to repeat: if this token already became a loan (the phone gave up
+    # waiting for the reply, then the student tapped Try again), hand back
+    # that loan rather than "hold is gone" — the borrow did go through.
+    existing = _loan_for_hold_token(db, body.token)
+    if existing:
+        return existing
+
     hold_res = db.table("soft_holds").select("*").eq("token", body.token).execute()
     if not hold_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, HOLD_GONE)
@@ -180,10 +194,19 @@ def confirm_loan(body: ConfirmLoanRequest):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Station session not found")
     student_id = session_res.data[0]["student_id"]
 
-    loan = create_loan_and_notify(
-        db, student_id, copy["id"], copy["book_id"], hold["station_session_id"],
-        body.condition, body.purpose, body.notes,
-    )
+    try:
+        loan = create_loan_and_notify(
+            db, student_id, copy["id"], copy["book_id"], hold["station_session_id"],
+            body.condition, body.purpose, body.notes, hold_token=body.token,
+        )
+    except APIError as e:
+        # Two confirms for the same token arrived together and the other one
+        # won the unique index (migration 0054) — return its loan.
+        if e.code == "23505":
+            existing = _loan_for_hold_token(db, body.token)
+            if existing:
+                return existing
+        raise
 
     db.table("soft_holds").delete().eq("id", hold["id"]).execute()
 

@@ -22,6 +22,7 @@ import {
 } from "@/lib/bookRequests"
 import { MyBookRequestModal } from "@/components/ui/requests/MyBookRequestModal"
 import { resolveDateRange, type DateRangePreset } from "@/lib/reports"
+import { pressable } from "@/lib/a11y"
 
 // Same chevron-as-background-image treatment used by the librarian
 // Reservations/Reports pages' own selects, so every select on the site
@@ -434,7 +435,7 @@ export default function RequestABookPage() {
               {visible.map((r, i) => (
                 <div
                   key={r.id}
-                  onClick={() => setSelectedId(r.id)}
+                  {...pressable(() => setSelectedId(r.id))}
                   className={cn(
                     "flex items-center justify-between gap-3 px-4 py-3.5 cursor-pointer hover:bg-ink-50 transition-colors",
                     i !== visible.length - 1 && "border-b border-ink-100"

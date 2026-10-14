@@ -132,6 +132,7 @@ def create_loan_and_notify(
     purpose: str | None,
     notes: str | None,
     assisted_by: str | None = None,
+    hold_token: str | None = None,
 ) -> dict:
     """Writes the loan, flips the copy to on_loan, closes a matching ready
     reservation, and fires the same 2 notifications as the digital kiosk
@@ -149,6 +150,7 @@ def create_loan_and_notify(
         "purpose": purpose,
         "notes": notes,
         "assisted_by": assisted_by,
+        "hold_token": hold_token,
     }).execute()
     if not loan_res.data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not create the loan")

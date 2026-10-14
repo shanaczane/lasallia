@@ -19,6 +19,7 @@ import { useReservations } from "@/lib/hooks/useReservations"
 import { cancelReservation } from "@/lib/reservations"
 import { openSession, createAssistedLoan, endSession, type Condition } from "@/lib/kiosk"
 import type { Reservation, ReservationStatus } from "@lasallia/types"
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 const BORROW_CONDITIONS: { value: Condition; label: string }[] = [
   { value: "good", label: "Good" },
@@ -113,6 +114,8 @@ interface RejectModalProps {
 }
 
 function RejectModal({ reservation, pending, onConfirm, onClose }: RejectModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { onClose: pending ? undefined : onClose })
   // A "ready" reservation already has a copy pulled and sitting on the
   // hold shelf — cancelling it releases that specific copy (to the next
   // person in line, or back toward reshelving), not just a queue spot.
@@ -124,7 +127,7 @@ function RejectModal({ reservation, pending, onConfirm, onClose }: RejectModalPr
       onClick={onClose}
     >
       <div
-        className="flex flex-col gap-4 bg-white rounded-(--radius) p-6 w-full max-w-sm shadow-2xl"
+        ref={dialogRef} role="dialog" aria-modal="true" className="flex flex-col gap-4 bg-white rounded-(--radius) p-6 w-full max-w-sm shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="size-11 rounded-full bg-danger-bg flex items-center justify-center flex-shrink-0">
@@ -189,6 +192,8 @@ interface ProcessBorrowModalProps {
 }
 
 function ProcessBorrowModal({ reservation, onDone, onClose }: ProcessBorrowModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { onClose })
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [sessionError, setSessionError] = useState("")
 
@@ -245,7 +250,7 @@ function ProcessBorrowModal({ reservation, onDone, onClose }: ProcessBorrowModal
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="flex flex-col gap-4 bg-white rounded-(--radius) p-6 w-full max-w-sm shadow-2xl"
+        ref={dialogRef} role="dialog" aria-modal="true" className="flex flex-col gap-4 bg-white rounded-(--radius) p-6 w-full max-w-sm shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {confirmedTitle ? (

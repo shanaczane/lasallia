@@ -10,11 +10,12 @@
 
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { X, Mail, Phone, ChevronDown, Loader2, CheckCircle2, Copy, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fetchPublicLibrarySettings, type PublicLibrarySettings } from '@/lib/settings'
 import { createSupportTicket, trackSupportTicket, type TicketCategory, type TicketStatusView, type SupportTicket } from '@/lib/supportTickets'
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 type ContactSupportModalProps = {
   onClose: () => void
@@ -385,6 +386,9 @@ function TrackTab({ prefill }: { prefill: { ticketNumber: string; email: string 
 }
 
 export function ContactSupportModal({ onClose }: ContactSupportModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { onClose })
+
   const [tab, setTab] = useState<Tab>('faq')
   const [contactInfo, setContactInfo] = useState<PublicLibrarySettings | null>(null)
   const [contactError, setContactError] = useState('')
@@ -405,7 +409,7 @@ export function ContactSupportModal({ onClose }: ContactSupportModalProps) {
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-(--shadow-lg) w-full sm:max-w-lg h-[85vh] sm:h-[480px] flex flex-col"
+        ref={dialogRef} role="dialog" aria-modal="true" className="bg-white rounded-t-2xl sm:rounded-2xl shadow-(--shadow-lg) w-full sm:max-w-lg h-[85vh] sm:h-[480px] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

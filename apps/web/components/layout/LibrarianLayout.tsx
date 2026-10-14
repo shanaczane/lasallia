@@ -1,7 +1,7 @@
 // apps/web/components/layout/LibrarianLayout.tsx
 "use client"
 
-import { useState, useEffect, useLayoutEffect } from "react"
+import { useRef, useState, useEffect, useLayoutEffect } from "react"
 import { TopNav } from "./TopNav"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -23,6 +23,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react"
+import { useDialogKeyboard } from "@/lib/hooks/useDialogKeyboard"
 
 const useLayoutEffectSafe = typeof window !== "undefined" ? useLayoutEffect : useEffect
 
@@ -91,6 +92,10 @@ function LibrarianLayoutInner({
   const { unreadCount } = useNotifications()
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
+  // The phone drawer: Esc closes it, Tab stays inside while it's open, and
+  // focus goes back to the menu button after.
+  const drawerRef = useRef<HTMLElement>(null)
+  useDialogKeyboard(drawerRef, { open: menuOpen, onClose: () => setMenuOpen(false) })
   const [collapsed, setCollapsed] = useState(false)
   const [displayName, setDisplayName] = useState(userName ?? "")
   const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
@@ -197,6 +202,7 @@ function LibrarianLayoutInner({
 
   return (
     <div className="min-h-screen bg-paper">
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="print:hidden">
         <TopNav
           userName={displayName}
@@ -240,9 +246,11 @@ function LibrarianLayoutInner({
 
       {/* Mobile drawer */}
       <aside
+        ref={drawerRef}
+        aria-label="Menu"
         className={cn(
           "fixed left-0 top-0 bottom-0 z-160 flex flex-col bg-white border-r border-ink-200 overflow-y-auto transition-transform duration-300 md:hidden print:hidden",
-          menuOpen ? "translate-x-0" : "-translate-x-full"
+          menuOpen ? "translate-x-0" : "-translate-x-full invisible transition-[transform,visibility]"
         )}
         style={{ width: "var(--width-side)" }}
       >
@@ -270,6 +278,8 @@ function LibrarianLayoutInner({
 
       {/* Page content */}
       <main
+        id="main-content"
+        tabIndex={-1}
         className={cn("min-h-screen transition-all duration-200 print:pl-0", collapsed ? "md:pl-14" : "md:pl-(--width-side)")}
         style={{ paddingTop: "var(--height-nav)" }}
       >
