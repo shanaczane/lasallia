@@ -4,11 +4,17 @@ import { useEffect, useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DeleteChatModal } from "./DeleteChatModal"
-import { fetchChatSessions, deleteChatSession, WEB_CHAT_SESSION_STORAGE_KEY, type ChatSessionSummary } from "@/lib/chat"
+import { fetchChatSessions, deleteChatSession, type ChatSessionSummary } from "@/lib/chat"
 
 interface ChatSidebarProps {
   open: boolean
   onClose?: () => void
+  // The conversation open in the chat window (null = a new, unsaved chat).
+  activeSessionId?: string | null
+  // Opens a conversation in place — null starts a new chat.
+  onSelectSession: (id: string | null) => void
+  // Bumped by the page when a conversation is created or deleted elsewhere.
+  refreshKey?: number
 }
 
 function relativeTime(iso: string): string {
@@ -25,23 +31,13 @@ function relativeTime(iso: string): string {
 // simply renders nothing for a guest rather than an empty/broken list.
 // Not rendered at all on the kiosk assistant page (nothing to list —
 // kiosk history is gone the moment the session ends).
-export default function ChatSidebar({ open, onClose }: ChatSidebarProps) {
+export default function ChatSidebar({ open, activeSessionId, onSelectSession, refreshKey }: ChatSidebarProps) {
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
 
   useEffect(() => {
     fetchChatSessions().then(setSessions).catch(() => setSessions([]))
-  }, [])
-
-  function startNewChat() {
-    sessionStorage.removeItem(WEB_CHAT_SESSION_STORAGE_KEY)
-    window.location.reload()
-  }
-
-  function openSession(id: string) {
-    sessionStorage.setItem(WEB_CHAT_SESSION_STORAGE_KEY, id)
-    window.location.reload()
-  }
+  }, [refreshKey])
 
   async function confirmDelete() {
     const id = deleteTarget
@@ -49,10 +45,7 @@ export default function ChatSidebar({ open, onClose }: ChatSidebarProps) {
     if (!id) return
     await deleteChatSession(id).catch(() => {})
     setSessions((prev) => prev.filter((s) => s.id !== id))
-    if (sessionStorage.getItem(WEB_CHAT_SESSION_STORAGE_KEY) === id) {
-      sessionStorage.removeItem(WEB_CHAT_SESSION_STORAGE_KEY)
-      window.location.reload()
-    }
+    if (activeSessionId === id) onSelectSession(null)
   }
 
   return (
@@ -78,7 +71,7 @@ export default function ChatSidebar({ open, onClose }: ChatSidebarProps) {
       >
         <button
           type="button"
-          onClick={startNewChat}
+          onClick={() => onSelectSession(null)}
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border transition-colors hover:bg-ink-50"
           style={{
             fontFamily: "var(--font-body)",
@@ -110,8 +103,12 @@ export default function ChatSidebar({ open, onClose }: ChatSidebarProps) {
                   {/* px-3 py-2, title ink-900 14px, timestamp ink-400 12px, flex justify-between */}
                   <button
                     type="button"
-                    onClick={() => openSession(s.id)}
-                    className="w-full flex items-center justify-between px-3 py-2 pr-8 rounded-lg transition-colors hover:bg-ink-50 text-left gap-2"
+                    onClick={() => onSelectSession(s.id)}
+                    aria-current={s.id === activeSessionId ? "true" : undefined}
+                    className={cn(
+                      "w-full flex items-center justify-between px-3 py-2 pr-8 rounded-lg transition-colors hover:bg-ink-50 text-left gap-2",
+                      s.id === activeSessionId && "bg-ink-50",
+                    )}
                   >
                     <span
                       className="truncate"
