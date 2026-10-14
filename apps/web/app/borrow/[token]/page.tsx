@@ -15,10 +15,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   MapPin, Hash, Clock, CheckCircle2, AlertCircle,
-  User, ArrowLeft, XCircle,
+  User, ArrowLeft, XCircle, RotateCcw, WifiOff,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { fetchHold, confirmLoan, extendHold, reportMissing, releaseHold, type HoldDetail, type Condition } from '@/lib/kiosk'
+import { fetchHold, confirmLoan, extendHold, reportMissing, releaseHold, NetworkError, type HoldDetail, type Condition } from '@/lib/kiosk'
 
 // Placeholder pending real LRC policy (plan doc's open question #2) —
 // display only, not enforced anywhere yet (that's Phase 3).
@@ -86,6 +86,11 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   const [hold, setHold] = useState<HoldDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  // The hold couldn't be loaded because of the connection, not because the
+  // link is dead — worth a "Try again" instead of sending them back.
+  const [loadFailedOffline, setLoadFailedOffline] = useState(false)
+  // Bumped by "Try again" to rerun the load below.
+  const [loadAttempt, setLoadAttempt] = useState(0)
 
   const [accessionNumber, setAccessionNumber] = useState('')
   const [condition, setCondition] = useState<Condition>('good')
@@ -94,6 +99,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
 
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [submitFailedOffline, setSubmitFailedOffline] = useState(false)
   const [confirmed, setConfirmed] = useState<{ dueDate: string } | null>(null)
 
   const [extending, setExtending] = useState(false)
@@ -154,10 +160,21 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
         setHold(d)
         setDeadline(deadlineFrom(d.seconds_left))
       })
-      .catch((err) => { if (!cancelled) setLoadError(err instanceof Error ? err.message : 'This hold could not be found') })
+      .catch((err) => {
+        if (cancelled) return
+        setLoadFailedOffline(err instanceof NetworkError)
+        setLoadError(err instanceof Error ? err.message : 'This hold could not be found')
+      })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [token])
+  }, [token, loadAttempt])
+
+  function retryLoad() {
+    setLoadError('')
+    setLoadFailedOffline(false)
+    setLoading(true)
+    setLoadAttempt((n) => n + 1)
+  }
 
   // Phones throttle or freeze timers while the screen is off (walking to
   // the shelf), so re-sync with the server whenever the page is visible
@@ -182,12 +199,16 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
     if (!accessionNumber.trim()) return
     setSubmitting(true)
     setSubmitError('')
+    setSubmitFailedOffline(false)
     try {
       const loan = await confirmLoan({ token, accessionNumber, condition, purpose, notes })
       setConfirmed({ dueDate: loan.due_date })
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not confirm this loan')
-      setAccessionNumber('')
+      // A wrong number gets cleared for retyping; after a dropped connection
+      // the number was fine, so keep it and let them just tap Try again.
+      if (!(err instanceof NetworkError)) setAccessionNumber('')
+      setSubmitFailedOffline(err instanceof NetworkError)
     } finally {
       setSubmitting(false)
     }
@@ -198,6 +219,44 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
     return (
       <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: 'var(--color-paper)' }}>
         <div className="w-8 h-8 rounded-full border-2 border-green-700 border-t-transparent animate-spin motion-reduce:animate-none" />
+      </div>
+    )
+  }
+
+  // ── Connection problem loading the hold ──────────────────────────────────
+  // The link may still be perfectly good, so offer a retry rather than the
+  // dead-end screen below.
+  if (loadError && loadFailedOffline) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-4" style={{ backgroundColor: 'var(--color-paper)' }}>
+        <div className="w-14 h-14 rounded-full bg-ink-100 flex items-center justify-center">
+          <WifiOff size={26} className="text-ink-400" />
+        </div>
+        <div>
+          <p className="text-ink-900 font-semibold mb-1" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-xl)' }}>
+            Couldn&apos;t load your borrowing request
+          </p>
+          <p className="text-ink-500 max-w-xs" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+            {loadError}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={retryLoad}
+          className="flex items-center justify-center gap-2 px-6 h-11 rounded-xl bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+        >
+          <RotateCcw size={15} />
+          Try again
+        </button>
+        <Link
+          href={catalogHref}
+          className="flex items-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+        >
+          <ArrowLeft size={14} />
+          {catalogLabel}
+        </Link>
       </div>
     )
   }
@@ -509,7 +568,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
             className="h-12 rounded-xl bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors disabled:opacity-50 disabled:pointer-events-none"
             style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
           >
-            {submitting ? 'Confirming…' : 'Confirm Borrow'}
+            {submitting ? 'Confirming…' : submitFailedOffline ? 'Try again' : 'Confirm Borrow'}
           </button>
         </form>
 

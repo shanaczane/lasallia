@@ -10,14 +10,32 @@ import type { Book } from '@lasallia/types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
+// No response arrived at all — the API is down, the phone has no signal,
+// or the request timed out. Unlike an error the API sent back (expired
+// hold, no copies left), trying the same thing again can work, so pages
+// check for this to offer "Try again" instead of a dead end.
+export class NetworkError extends Error {}
+
+// A request on a weak signal can otherwise hang with no error at all,
+// leaving a spinner that never stops.
+const REQUEST_TIMEOUT_MS = 20_000
+
 // fetch() itself rejects (a bare TypeError: "Failed to fetch") only when no
 // response arrived at all — API down, no signal on the phone, or blocked by
 // CORS. Say that in words a student can act on instead.
 async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
-    return await fetch(input, init)
+    return await fetch(input, { ...init, signal: controller.signal })
   } catch {
-    throw new Error("Can't reach the library server — check your internet connection and try again.")
+    throw new NetworkError(
+      controller.signal.aborted
+        ? 'The library server is taking too long to respond. Please try again.'
+        : "Can't reach the library server — check your internet connection and try again."
+    )
+  } finally {
+    clearTimeout(timer)
   }
 }
 
