@@ -13,7 +13,9 @@
 import re
 import time
 
+from core.chat_sources import citation_name, handbook_source
 from core.supabase import get_admin_client
+from schemas.chat import ChatSource
 
 MAX_MESSAGE_CHARS = 200
 
@@ -170,12 +172,6 @@ def _extract(intent: str, chunk: str) -> str | None:
     return None
 
 
-def _citation_name(section_title: str) -> str:
-    tail = section_title.split("—")[-1].strip()
-    tail = re.sub(r"^[\d.]+\s*", "", tail)
-    return tail.split(" - ")[0].strip()
-
-
 # This path never goes through the model, so it never sees the system
 # prompt's "always reply in English" rule — the handbook is English-only
 # today, so in practice this was never visibly broken, but nothing
@@ -197,13 +193,14 @@ def _is_english(text: str) -> bool:
     return not _NON_ENGLISH_WORD_RE.search(text)
 
 
-def answer_for(intent: str) -> str | None:
-    """The cited handbook answer for an intent, or None if the chunk or the
-    expected line isn't there (caller falls through to RAG)."""
+def answer_for(intent: str) -> tuple[str, ChatSource] | None:
+    """The cited handbook answer for an intent and the section it came
+    from, or None if the chunk or the expected line isn't there (caller
+    falls through to RAG)."""
     try:
         rows = (
             get_admin_client().table("policy_chunks")
-            .select("section_title, chunk_text")
+            .select("section_title, chunk_text, source_page")
             .ilike("section_title", f"%{_SECTION_KEY[intent]}%")
             .order("updated_at", desc=True)
             .limit(1)
@@ -218,16 +215,18 @@ def answer_for(intent: str) -> str | None:
     extracted = _extract(intent, rows[0]["chunk_text"])
     if not extracted or not _is_english(extracted):
         return None
-    return f"According to the {_citation_name(rows[0]['section_title'])} section:\n{extracted}"
+    row = rows[0]
+    reply = f"According to the {citation_name(row['section_title'])} section:\n{extracted}"
+    return reply, handbook_source(row["section_title"], row.get("source_page"))
 
 
-def match_and_answer(message: str) -> tuple[str, str] | None:
-    """(intent, reply) when the rule path can answer, else None."""
+def match_and_answer(message: str) -> tuple[str, str, ChatSource] | None:
+    """(intent, reply, source) when the rule path can answer, else None."""
     intent = match_intent(message)
     if intent is None:
         return None
-    reply = answer_for(intent)
-    return (intent, reply) if reply else None
+    answer = answer_for(intent)
+    return (intent, *answer) if answer else None
 
 
 # ─── Instrumentation ────────────────────────────────────────────────────

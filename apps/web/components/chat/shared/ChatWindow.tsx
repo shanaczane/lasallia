@@ -7,8 +7,9 @@ import ChatInput from "./ChatInput"
 import ChatMessage, { type ChatMessageData } from "./ChatMessage"
 import { DeleteChatModal } from "./DeleteChatModal"
 import TypingIndicator, { type TypingStatus } from "./TypingIndicator"
-import { sendChatMessage, fetchChatHistory, deleteChatSession, WEB_CHAT_SESSION_STORAGE_KEY, type ChatSurface } from "@/lib/chat"
+import { sendChatMessage, fetchChatHistory, deleteChatSession, WEB_CHAT_SESSION_STORAGE_KEY, type ChatSource, type ChatSurface } from "@/lib/chat"
 import type { BookCardData } from "./BookCard"
+import type { SourceData } from "./SourceList"
 import type { Book } from "@lasallia/types"
 import { pillStatusFor } from "@/components/ui/pills/availability-pill"
 
@@ -65,6 +66,14 @@ function bookToCardData(book: Book, catalogBase: string): BookCardData {
     // ?from=assistant makes the book page's Back link return to this chat.
     href: `${catalogBase}/${book.id}?from=assistant`,
   }
+}
+
+// A book record source links to the same page its card does.
+function toSourceData(sources: ChatSource[] | undefined, catalogBase: string): SourceData[] | undefined {
+  if (!sources || sources.length === 0) return undefined
+  return sources.map((s) => (
+    s.kind === "book" && s.book_id ? { ...s, href: `${catalogBase}/${s.book_id}?from=assistant` } : s
+  ))
 }
 
 function timestamp(): string {
@@ -133,6 +142,7 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
             content: m.content,
             timestamp: timestamp(),
             books: m.role === "assistant" ? (savedBooks[replyIndex++] ?? undefined) : undefined,
+            sources: m.role === "assistant" ? toSourceData(m.sources, catalogBase) : undefined,
           }))
         )
       } catch {
@@ -181,6 +191,7 @@ export default function ChatWindow({ onMenuClick, quickRepliesSlot, surface = "w
           content: result.reply,
           timestamp: timestamp(),
           books,
+          sources: toSourceData(result.sources, catalogBase),
         }])
       },
       onError: (message) => {

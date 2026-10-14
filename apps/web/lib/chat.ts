@@ -16,14 +16,24 @@ export const WEB_CHAT_SESSION_STORAGE_KEY = "lasallia_chat_session_id"
 
 export type ChatStatus = "searching" | "writing"
 
+// Where an assistant reply came from — mirrors apps/api's ChatSource.
+export type ChatSource = {
+  kind: "handbook" | "book" | "catalog" | "hours" | "account"
+  label: string
+  detail: string | null
+  book_id: string | null
+}
+
 export type ChatMessage = {
   role: "user" | "assistant"
   content: string
+  sources?: ChatSource[]
 }
 
 export type ChatDone = {
   reply: string
   books: Book[]
+  sources?: ChatSource[]
   session_id: string
 }
 

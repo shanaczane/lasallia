@@ -9,9 +9,18 @@ from pydantic import BaseModel
 from schemas.book import Book
 
 
+class ChatSource(BaseModel):
+    """One place an assistant answer came from — see core/chat_sources.py."""
+    kind: Literal["handbook", "book", "catalog", "hours", "account"]
+    label: str
+    detail: str | None = None
+    book_id: str | None = None  # kind == "book" only, so the frontend can link to its page
+
+
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
+    sources: list[ChatSource] = []
 
 
 class ChatRequest(BaseModel):
@@ -23,6 +32,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     books: list[Book] | None = None
+    sources: list[ChatSource] = []
     session_id: str
 
 

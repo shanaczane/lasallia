@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 
 from supabase import Client
 
-from schemas.chat import ChatMessage
+from schemas.chat import ChatMessage, ChatSource
 
 
 def start_session(admin: Client, session_id: str, user_id: str | None, surface: str) -> None:
@@ -31,13 +31,15 @@ def start_session(admin: Client, session_id: str, user_id: str | None, surface: 
     }, on_conflict="id", ignore_duplicates=True).execute()
 
 
-def append_message(admin: Client, session_id: str, role: str, content: str) -> None:
-    """Appends one message to a session's history."""
-    admin.table("chat_messages").insert({
-        "session_id": session_id,
-        "role": role,
-        "content": content,
-    }).execute()
+def append_message(
+    admin: Client, session_id: str, role: str, content: str, sources: list[ChatSource] | None = None
+) -> None:
+    """Appends one message to a session's history. `sources` is only ever
+    set on an assistant reply — where its answer came from."""
+    row = {"session_id": session_id, "role": role, "content": content}
+    if sources:
+        row["sources"] = [s.model_dump() for s in sources]
+    admin.table("chat_messages").insert(row).execute()
 
 
 def get_history(admin: Client, session_id: str) -> list[ChatMessage]:
@@ -48,12 +50,12 @@ def get_history(admin: Client, session_id: str) -> list[ChatMessage]:
     prior visit's history from a new one."""
     rows = (
         admin.table("chat_messages")
-        .select("role, content")
+        .select("role, content, sources")
         .eq("session_id", session_id)
         .order("created_at")
         .execute()
     ).data
-    return [ChatMessage(role=r["role"], content=r["content"]) for r in rows]
+    return [ChatMessage(role=r["role"], content=r["content"], sources=r.get("sources") or []) for r in rows]
 
 
 def delete_session(admin: Client, session_id: str) -> None:
