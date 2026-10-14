@@ -3,10 +3,11 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { AlertTriangle, X, Archive, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Book } from '@lasallia/types'
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 type DeleteBookModalProps = {
   book: Book | null
@@ -33,6 +34,9 @@ export function DeleteBookModal({ book, isOpen, onClose, onArchive, onDelete }: 
     handleClose()
   }
 
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { open: isOpen && !!book, onClose: () => handleClose() })
+
   if (!isOpen || !book) return null
 
   return (
@@ -42,7 +46,7 @@ export function DeleteBookModal({ book, isOpen, onClose, onArchive, onDelete }: 
       onClick={handleClose}
     >
       <div
-        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-(--shadow-lg) w-full sm:max-w-md p-6 flex flex-col gap-5"
+        ref={dialogRef} role="dialog" aria-modal="true" className="bg-white rounded-t-2xl sm:rounded-2xl shadow-(--shadow-lg) w-full sm:max-w-md p-6 flex flex-col gap-5"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

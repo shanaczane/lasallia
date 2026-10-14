@@ -16,6 +16,7 @@ import {
 import { cn } from '@/lib/utils'
 import { COLLEGES } from '@/lib/colleges'
 import type { Book, BookFormat, BookStatus, FundingSource } from '@lasallia/types'
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -563,13 +564,9 @@ export function BookFormModal({
     setDuplicate(null)
   }, [mode, book, isOpen])
 
-  // Close on Escape
-  useEffect(() => {
-    if (!isOpen) return
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [isOpen, onClose])
+  // Esc to close, Tab kept inside, focus returned on close.
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { open: isOpen, onClose })
 
   // A 409 from the create/update call (e.g. another book claimed the same
   // accession number between page load and submit) — shown on the right
@@ -651,7 +648,7 @@ export function BookFormModal({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-(--shadow-lg) w-full sm:max-w-4xl lg:max-w-5xl h-[94dvh] sm:h-[90dvh] flex flex-col overflow-hidden"
+        ref={dialogRef} role="dialog" aria-modal="true" className="bg-white rounded-t-2xl sm:rounded-2xl shadow-(--shadow-lg) w-full sm:max-w-4xl lg:max-w-5xl h-[94dvh] sm:h-[90dvh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

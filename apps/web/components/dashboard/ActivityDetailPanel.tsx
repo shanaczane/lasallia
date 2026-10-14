@@ -15,6 +15,7 @@ import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock'
 import { TX_CONFIG, timeLabel, dateLabel, type FeedItem, type TxType } from '@/lib/activity'
 import type { Loan } from '@/lib/kiosk'
 import type { Reservation } from '@lasallia/types'
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 type ActivityDetailPanelProps = {
   item: FeedItem | null
@@ -120,14 +121,9 @@ export function ActivityDetailPanel({ item, loans, reservations, onClose }: Acti
     return () => clearTimeout(timer)
   }, [item])
 
-  useEffect(() => {
-    if (!item) return
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onCloseRef.current()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [item])
+  // Esc to close, Tab kept inside, focus returned on close.
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { open: mounted && !!item, onClose: () => onCloseRef.current() })
 
   if (!mounted || !item) return null
 
@@ -151,6 +147,7 @@ export function ActivityDetailPanel({ item, loans, reservations, onClose }: Acti
       />
 
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Activity details"

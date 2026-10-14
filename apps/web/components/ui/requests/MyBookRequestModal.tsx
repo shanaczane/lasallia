@@ -7,7 +7,7 @@
 
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { X, Paperclip, Download, Pencil, Trash2, Ban, ChevronUp, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -19,6 +19,7 @@ import {
   type BookRequestStatus,
   type BookRequestFormat,
 } from "@/lib/bookRequests"
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 const STATUS_LABEL: Record<BookRequestStatus, string> = {
   pending: "Pending", approved: "Approved", rejected: "Rejected", fulfilled: "Fulfilled", cancelled: "Cancelled",
@@ -66,6 +67,9 @@ type MyBookRequestModalProps = {
 }
 
 export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookRequestModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { onClose })
+
   const editable = r.status === "pending"
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -170,7 +174,7 @@ export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookReq
     <div className="fixed inset-0 z-(--z-modal) flex items-end sm:items-center justify-center sm:p-4">
       <div className="absolute inset-0 bg-ink-900/40" onClick={onClose} />
 
-      <div className="relative w-full sm:max-w-2xl h-[92vh] sm:h-[86vh] max-h-[900px] bg-white rounded-t-(--radius-lg) sm:rounded-(--radius-lg) shadow-(--shadow-lg) flex flex-col overflow-hidden">
+      <div ref={dialogRef} role="dialog" aria-modal="true" className="relative w-full sm:max-w-2xl h-[92vh] sm:h-[86vh] max-h-[900px] bg-white rounded-t-(--radius-lg) sm:rounded-(--radius-lg) shadow-(--shadow-lg) flex flex-col overflow-hidden">
 
         {/* Header */}
         <div className="flex items-start justify-between gap-3 p-4 sm:p-6 border-b border-ink-100 shrink-0">

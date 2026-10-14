@@ -14,13 +14,14 @@
 // things shouldn't share a blocking modal with required ones.
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Loader2, AlertCircle } from "lucide-react"
 import { updateAcademicProfile } from "@/lib/auth"
 import { COLLEGES } from "@/lib/colleges"
 import { collegeForProgram } from "@/lib/collegeForProgram"
 import { PROGRAM_GROUPS } from "@/lib/programs"
 import { cn } from "@/lib/utils"
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 const YEAR_LEVELS = [1, 2, 3, 4, 5, 6]
 
@@ -51,6 +52,8 @@ type Seed = {
 // that predates that column, so program/year_level/college (already set)
 // need to come in pre-filled rather than forcing a redundant re-entry.
 export function CompleteProfileModal({ role, initial, step, onDone }: { role: "student" | "faculty"; initial?: Seed; step?: { current: number; total: number }; onDone: () => void }) {
+  const dialogRef = useRef<HTMLFormElement>(null)
+  useDialogKeyboard(dialogRef)
   const isFaculty = role === "faculty"
 
   const [idNumber, setIdNumber] = useState(initial?.id_number ?? "")
@@ -90,7 +93,7 @@ export function CompleteProfileModal({ role, initial, step, onDone }: { role: "s
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-50 flex items-center justify-center bg-black/55 p-4" style={{ top: "var(--height-nav)" }} role="dialog" aria-modal="true" aria-labelledby="complete-profile-title">
-      <form onSubmit={handleSubmit} className="w-full max-w-md rounded-3xl bg-white p-6" style={{ boxShadow: "var(--shadow-lg)" }}>
+      <form ref={dialogRef} onSubmit={handleSubmit} className="w-full max-w-md rounded-3xl bg-white p-6" style={{ boxShadow: "var(--shadow-lg)" }}>
         {step && step.total > 1 && (
           <p className="mb-1 font-semibold text-green-700 uppercase" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-section)" }}>
             Step {step.current} of {step.total}

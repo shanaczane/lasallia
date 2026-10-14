@@ -20,6 +20,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { X, Info, AlertCircle, Monitor, RotateCcw } from 'lucide-react'
 import { openSessionFromToken, claimHold, releaseHold, NetworkError, type ClaimHoldResponse } from '@/lib/kiosk'
 import type { Book } from '@lasallia/types'
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 type ClaimState =
   | { status: 'claiming' }
@@ -38,6 +39,8 @@ export function BorrowModal({
   onClose: () => void
 }) {
   const [claim, setClaim] = useState<ClaimState>({ status: 'claiming' })
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { onClose: () => handleClose() })
 
   // Claiming a hold consumes the only available copy of a single-copy
   // title, so it must run exactly once per modal open. startedRef guards
@@ -98,7 +101,7 @@ export function BorrowModal({
       onClick={handleClose}
     >
       <div
-        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-sm p-6 flex flex-col items-center gap-4"
+        ref={dialogRef} role="dialog" aria-modal="true" aria-label="Borrow this book" className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-sm p-6 flex flex-col items-center gap-4"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

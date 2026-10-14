@@ -22,6 +22,7 @@ import { TopNav } from '@/components/layout/TopNav'
 import { KioskSessionProvider, useKioskSession, readInitialActiveKey } from '@/components/kiosk/KioskSessionProvider'
 import { RfidListener } from '@/components/kiosk/RfidListener'
 import { useIdleTimeout } from '@/components/kiosk/useIdleTimeout'
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
@@ -60,6 +61,10 @@ function KioskShell({ children }: { children: React.ReactNode }) {
     timeoutSeconds: IDLE_TIMEOUT_SECONDS,
     onExpire: () => { session ? end() : endGuest() },
   })
+  // "Still here?" — focus lands on "Yes, I'm here" so Enter answers it, and
+  // Esc counts as still being here too.
+  const idleDialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(idleDialogRef, { open: secondsLeft <= WARNING_AT_SECONDS, onClose: reset })
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem('kiosk-sidebar-collapsed') === 'true') setCollapsed(true)
@@ -104,6 +109,7 @@ function KioskShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen w-full bg-paper relative">
       <RfidListener onTap={handleTap} />
+      <a href="#main-content" className="skip-link">Skip to main content</a>
 
       {active && (
         <>
@@ -163,7 +169,7 @@ function KioskShell({ children }: { children: React.ReactNode }) {
               className="fixed inset-0 z-[300] flex items-center justify-center p-4"
               style={{ background: 'rgba(20,21,15,0.55)' }}
             >
-              <div className="bg-white rounded-2xl shadow-xl p-6 max-w-xs w-full flex flex-col items-center gap-3 text-center">
+              <div ref={idleDialogRef} role="alertdialog" aria-modal="true" aria-label="Still here?" className="bg-white rounded-2xl shadow-xl p-6 max-w-xs w-full flex flex-col items-center gap-3 text-center">
                 <Clock size={28} className="text-warn" />
                 <p className="text-ink-900 font-semibold" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}>
                   Still here?
@@ -186,6 +192,8 @@ function KioskShell({ children }: { children: React.ReactNode }) {
       )}
 
       <main
+        id="main-content"
+        tabIndex={-1}
         className={cn('min-h-screen transition-all duration-200', active && (collapsed ? 'md:pl-14' : 'md:pl-(--width-side)'))}
         style={active ? { paddingTop: 'var(--height-nav)' } : undefined}
       >

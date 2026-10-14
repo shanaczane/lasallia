@@ -18,6 +18,7 @@ import { fetchBooks } from "@/lib/books"
 import { buildFeed, timeLabel, TX_CONFIG, type FeedItem } from "@/lib/activity"
 import { ActivityDetailPanel } from "@/components/dashboard/ActivityDetailPanel"
 import type { Reservation } from "@lasallia/types"
+import { pressable } from "@/lib/a11y"
 
 // Dashboard only ever shows a short preview — the full, searchable history
 // lives on the Reports "Activity Log" tab (see "See all" link below).
@@ -230,7 +231,7 @@ export default function LibrarianDashboard() {
                         return (
                           <tr
                             key={tx.id}
-                            onClick={() => setSelectedActivity(tx)}
+                            {...pressable(() => setSelectedActivity(tx))}
                             className="hover:bg-ink-50 transition-colors cursor-pointer"
                           >
                             <td className="py-3 px-4 align-top">

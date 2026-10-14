@@ -6,7 +6,9 @@
 
 'use client'
 
+import { useRef } from 'react'
 import { AlertTriangle, X } from 'lucide-react'
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 type DeleteChatModalProps = {
   isOpen: boolean
@@ -15,6 +17,9 @@ type DeleteChatModalProps = {
 }
 
 export function DeleteChatModal({ isOpen, onClose, onConfirm }: DeleteChatModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { open: isOpen, onClose })
+
   if (!isOpen) return null
 
   return (
@@ -24,7 +29,7 @@ export function DeleteChatModal({ isOpen, onClose, onConfirm }: DeleteChatModalP
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-(--shadow-lg) w-full sm:max-w-sm p-6 flex flex-col gap-5"
+        ref={dialogRef} role="dialog" aria-modal="true" className="bg-white rounded-t-2xl sm:rounded-2xl shadow-(--shadow-lg) w-full sm:max-w-sm p-6 flex flex-col gap-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">

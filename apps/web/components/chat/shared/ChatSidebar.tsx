@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DeleteChatModal } from "./DeleteChatModal"
+import { useDialogKeyboard } from "@/lib/hooks/useDialogKeyboard"
 import { fetchChatSessions, deleteChatSession, type ChatSessionSummary } from "@/lib/chat"
 
 interface ChatSidebarProps {
@@ -31,7 +32,12 @@ function relativeTime(iso: string): string {
 // simply renders nothing for a guest rather than an empty/broken list.
 // Not rendered at all on the kiosk assistant page (nothing to list —
 // kiosk history is gone the moment the session ends).
-export default function ChatSidebar({ open, activeSessionId, onSelectSession, refreshKey }: ChatSidebarProps) {
+export default function ChatSidebar({ open, onClose, activeSessionId, onSelectSession, refreshKey }: ChatSidebarProps) {
+  // Below lg the sidebar slides over the chat like a drawer: Esc closes it
+  // and Tab stays inside. At lg+ it's a normal always-visible column.
+  const asideRef = useRef<HTMLElement>(null)
+  const isOverlay = typeof window !== "undefined" && window.matchMedia("(max-width: 1023.98px)").matches
+  useDialogKeyboard(asideRef, { open: open && isOverlay, onClose })
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
 
@@ -50,6 +56,8 @@ export default function ChatSidebar({ open, activeSessionId, onSelectSession, re
 
   return (
     <aside
+      ref={asideRef}
+      aria-label="Recent chats"
       className={cn(
         "flex flex-col w-[280px] bg-white border-r overflow-hidden",
         // Desktop (lg+): always in flow
@@ -127,7 +135,7 @@ export default function ChatSidebar({ open, activeSessionId, onSelectSession, re
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setDeleteTarget(s.id) }}
                     aria-label="Delete this chat"
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded-md text-ink-300 opacity-0 group-hover:opacity-100 hover:bg-danger-bg hover:text-danger transition-colors"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded-md text-ink-300 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 hover:bg-danger-bg hover:text-danger transition-colors"
                   >
                     <Trash2 size={13} />
                   </button>

@@ -93,6 +93,7 @@ import {
 import type { Book, UserProfile, Reservation } from "@lasallia/types"
 import { programLabel } from "@/lib/programLabels"
 import { copyStatusConfig } from "@/lib/copyStatus"
+import { pressable } from "@/lib/a11y"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ReportTab = "overview" | "catalogue" | "shelf-list" | "circulation" | "overdue" | "requests" | "weeding" | "activity"
@@ -985,7 +986,7 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
                 {paged.map((r) => (
                   <tr
                     key={r.id}
-                    onClick={() => setSelectedId(r.id)}
+                    {...pressable(() => setSelectedId(r.id))}
                     className="border-b border-ink-100 hover:bg-ink-50 transition-colors cursor-pointer"
                   >
                     <td className="py-2.5 px-4">
@@ -1485,7 +1486,7 @@ function ActivityLogTable({
                 return (
                   <tr
                     key={tx.id}
-                    onClick={() => onSelectItem(tx)}
+                    {...pressable(() => onSelectItem(tx))}
                     className="border-b border-ink-100 hover:bg-ink-50 transition-colors cursor-pointer"
                   >
                     <td className="py-3 px-4 whitespace-nowrap text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
@@ -1812,7 +1813,8 @@ function FinesTable({
                   <Fragment key={row.patron_id}>
                     <tr
                       className="border-b border-ink-100 hover:bg-ink-50 transition-colors cursor-pointer"
-                      onClick={() => setExpanded(isOpen ? null : row.patron_id)}
+                      aria-expanded={isOpen}
+                      {...pressable(() => setExpanded(isOpen ? null : row.patron_id))}
                     >
                       <td className="py-3 pl-4 pr-1 w-6">
                         {isOpen ? <ChevronUp size={13} className="text-ink-400" /> : <ChevronDown size={13} className="text-ink-400" />}

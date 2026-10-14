@@ -3,8 +3,10 @@
 
 "use client"
 
+import { useRef } from 'react'
 import { AlertTriangle, UserCheck } from "lucide-react"
 import type { UserProfile } from "@lasallia/types"
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 type ConfirmStatusDialogProps = {
   patron: UserProfile
@@ -13,6 +15,9 @@ type ConfirmStatusDialogProps = {
 }
 
 export function ConfirmStatusDialog({ patron, onClose, onConfirm }: ConfirmStatusDialogProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { onClose })
+
   const isActive = patron.status !== "inactive"
   const nextLabel = isActive ? "Deactivate" : "Activate"
 
@@ -20,7 +25,7 @@ export function ConfirmStatusDialog({ patron, onClose, onConfirm }: ConfirmStatu
     <div className="fixed inset-0 z-(--z-modal) flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-ink-900/40" onClick={onClose} />
 
-      <div className="relative w-full max-w-sm bg-white rounded-(--radius-lg) shadow-(--shadow-lg) p-5">
+      <div ref={dialogRef} role="dialog" aria-modal="true" className="relative w-full max-w-sm bg-white rounded-(--radius-lg) shadow-(--shadow-lg) p-5">
         <div className="flex items-center justify-center w-11 h-11 rounded-full mb-3.5"
           style={{ background: isActive ? "var(--color-danger-bg)" : "var(--color-success-bg)" }}
         >

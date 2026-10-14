@@ -9,7 +9,7 @@
 
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useRef, useEffect, useMemo, useState } from "react"
 import { X, BookOpen, Bookmark, History, Mail, UserX, UserCheck, ChevronDown, ChevronUp } from "lucide-react"
 import { cn, ordinal } from "@/lib/utils"
 import type { UserProfile, Reservation, ReservationStatus } from "@lasallia/types"
@@ -18,6 +18,7 @@ import { fetchReservations } from "@/lib/reservations"
 import { collegeForProgram } from "@/lib/collegeForProgram"
 import { RoleBadge } from "./RoleBadge"
 import { AccountStatusPill } from "./AccountStatusPill"
+import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 type Tab = "loans" | "reservations" | "history" | "fines"
 
@@ -99,6 +100,9 @@ type FineEntry = {
 }
 
 export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = false }: PatronProfileModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogKeyboard(dialogRef, { onClose })
+
   const [tab, setTab] = useState<Tab>("loans")
   const isActive = patron.status !== "inactive"
   const blockSelfDeactivate = isActive && isSelf
@@ -253,7 +257,7 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
     <div className="fixed inset-0 z-(--z-modal) flex items-end sm:items-center justify-center sm:p-4">
       <div className="absolute inset-0 bg-ink-900/40" onClick={onClose} />
 
-      <div className="relative w-full sm:max-w-6xl h-[92vh] sm:h-[86vh] max-h-[940px] bg-white rounded-t-(--radius-lg) sm:rounded-(--radius-lg) shadow-(--shadow-lg) flex flex-col overflow-hidden">
+      <div ref={dialogRef} role="dialog" aria-modal="true" className="relative w-full sm:max-w-6xl h-[92vh] sm:h-[86vh] max-h-[940px] bg-white rounded-t-(--radius-lg) sm:rounded-(--radius-lg) shadow-(--shadow-lg) flex flex-col overflow-hidden">
 
         {/* Header */}
         <div className="flex items-start justify-between gap-3 p-4 sm:p-6 border-b border-ink-100 shrink-0">
