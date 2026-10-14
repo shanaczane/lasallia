@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, type ReactNode } from "react"
+import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from "react"
 import { usePathname } from "next/navigation"
 import ChatHeader from "./ChatHeader"
 import ChatInput from "./ChatInput"
@@ -111,6 +111,10 @@ export default function ChatWindow({
   // A conversation switch jumps straight to the newest message; only new
   // messages within the same chat scroll smoothly.
   const jumpScrollRef = useRef(true)
+  // Whether the student is at (or near) the last message — see the
+  // ResizeObserver effect below.
+  const stickToBottomRef = useRef(true)
+  const contentRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
   // Shared by the student (faculty too), guest and kiosk assistants — each
   // card opens that portal's own book page. Sprint 5.4
@@ -207,14 +211,43 @@ export default function ChatWindow({
     if (id && messages.length > 0) cacheRef.current.set(id, messages)
   }, [messages])
 
-  useEffect(() => {
+  // A layout effect, so a switched-to conversation is already at its last
+  // message on the first frame drawn — a plain effect paints it at the top
+  // first and then jumps.
+  useLayoutEffect(() => {
     // Scrolls the message list only — scrollIntoView would also scroll the
     // page itself (the kiosk shell adds its own top padding around this).
     const list = messagesRef.current
     if (!list) return
-    list.scrollTo({ top: list.scrollHeight, behavior: jumpScrollRef.current ? "auto" : "smooth" })
+    if (jumpScrollRef.current) {
+      list.scrollTop = list.scrollHeight
+      stickToBottomRef.current = true
+    } else {
+      list.scrollTo({ top: list.scrollHeight, behavior: "smooth" })
+    }
     if (messages.length > 0) jumpScrollRef.current = false
   }, [messages, typingStatus])
+
+  // Book covers load after the messages are drawn and make them taller,
+  // which would leave the view short of the last message. While the
+  // student is at the bottom, keep it there as the content grows.
+  useEffect(() => {
+    const list = messagesRef.current
+    const content = contentRef.current
+    if (!list || !content) return
+    const onScroll = () => {
+      stickToBottomRef.current = list.scrollHeight - list.scrollTop - list.clientHeight < 80
+    }
+    const observer = new ResizeObserver(() => {
+      if (stickToBottomRef.current) list.scrollTop = list.scrollHeight
+    })
+    list.addEventListener("scroll", onScroll, { passive: true })
+    observer.observe(content)
+    return () => {
+      list.removeEventListener("scroll", onScroll)
+      observer.disconnect()
+    }
+  }, [])
 
   async function handleSend(text: string) {
     const sentFrom = shownIdRef.current
@@ -311,21 +344,23 @@ export default function ChatWindow({
       {/* Messages — scrollable area */}
       <div
         ref={messagesRef}
-        className="flex-1 overflow-y-auto px-6 py-5 space-y-5"
+        className="flex-1 overflow-y-auto px-6 py-5"
         style={{ background: "var(--color-ink-50)" }}
       >
-        {loadingHistory && (
-          <p
-            className="text-center pt-6"
-            style={{ fontFamily: "var(--font-body)", fontSize: 13, color: "var(--color-ink-400)" }}
-          >
-            Loading conversation…
-          </p>
-        )}
-        {messages.map((m) => (
-          <ChatMessage key={m.id} {...m} />
-        ))}
-        {typingStatus && <TypingIndicator status={typingStatus} />}
+        <div ref={contentRef} className="space-y-5">
+          {loadingHistory && (
+            <p
+              className="text-center pt-6"
+              style={{ fontFamily: "var(--font-body)", fontSize: 13, color: "var(--color-ink-400)" }}
+            >
+              Loading conversation…
+            </p>
+          )}
+          {messages.map((m) => (
+            <ChatMessage key={m.id} {...m} />
+          ))}
+          {typingStatus && <TypingIndicator status={typingStatus} />}
+        </div>
       </div>
 
       {/* Quick replies slot (optional) */}
