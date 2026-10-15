@@ -38,15 +38,18 @@ class ReportFilters:
     loans.borrowed_at (or reservations.requested_at for transaction
     stats) — loan-centric reports only. category applies to books.category
     everywhere, including book-centric reports (catalogue, shelf list),
-    since it's a book field. program/year_level apply via
+    since it's a book field. program/college/year_level apply via
     loans.student_id -> profiles — loan-centric reports only; book-centric
-    reports have no program/year_level dimension of their own, and the
+    reports have no program/college/year_level dimension of their own, and the
     frontend is expected to say so rather than silently ignore the filter."""
 
     date_from: str | None = None
     date_to: str | None = None
     category: str | None = None
     program: str | None = None
+    # The borrower's college (profiles.college) on loan-based reports; the
+    # book's own college (books.subject) on the catalogue and shelf list.
+    college: str | None = None
     year_level: int | None = None
 
 
@@ -74,7 +77,7 @@ def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
     # blanking every report on the page, not just the ones that use this
     # helper directly — Promise.all on the frontend fails closed).
     query = admin.table("loans").select(
-        "*, book_copies(book_id, books(*)), profiles!loans_student_id_fkey(full_name, email, program, year_level)"
+        "*, book_copies(book_id, books(*)), profiles!loans_student_id_fkey(full_name, email, program, college, year_level)"
     )
     if filters.date_from:
         query = query.gte("borrowed_at", filters.date_from)
@@ -91,6 +94,8 @@ def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
 
         if filters.category and (not book or book.get("category") != filters.category):
             continue
+        if filters.college and (not profile or profile.get("college") != filters.college):
+            continue
         if filters.program and (not profile or profile.get("program") != filters.program):
             continue
         if filters.year_level is not None and (not profile or profile.get("year_level") != filters.year_level):
@@ -105,12 +110,15 @@ def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
 
 
 def catalogue_report(admin: Client, filters: ReportFilters) -> list[CatalogueSlice]:
-    """Ports deriveCatalogue. Book-centric — only the category filter
-    applies (a date/program/year_level filter has no meaning against the
-    static catalog)."""
+    """Ports deriveCatalogue. Book-centric — the category and college
+    filters apply (college as the book's own college, books.subject); a
+    date/program/year_level filter has no meaning against the static
+    catalog."""
     query = admin.table("books").select("category, total_copies").is_("archived_at", "null")
     if filters.category:
         query = query.eq("category", filters.category)
+    if filters.college:
+        query = query.eq("subject", filters.college)
     books = query.execute().data
 
     by_category: dict[str, int] = {}
@@ -401,7 +409,7 @@ def transaction_stats(admin: Client, filters: ReportFilters) -> TransactionStats
     is aggregate counts/rates for whatever period the filters describe."""
     loans = _fetch_filtered_loans(admin, filters)
 
-    res_query = admin.table("reservations").select("status, requested_at, books(category), profiles(program, year_level)")
+    res_query = admin.table("reservations").select("status, requested_at, books(category), profiles(program, college, year_level)")
     if filters.date_from:
         res_query = res_query.gte("requested_at", filters.date_from)
     if filters.date_to:
@@ -410,6 +418,7 @@ def transaction_stats(admin: Client, filters: ReportFilters) -> TransactionStats
         r for r in res_query.execute().data
         if (not filters.category or (r.get("books") or {}).get("category") == filters.category)
         and (not filters.program or (r.get("profiles") or {}).get("program") == filters.program)
+        and (not filters.college or (r.get("profiles") or {}).get("college") == filters.college)
         and (filters.year_level is None or (r.get("profiles") or {}).get("year_level") == filters.year_level)
     ]
 
@@ -453,6 +462,9 @@ def shelf_list(admin: Client, filters: ReportFilters, floor: str | None = None, 
     books_query = admin.table("books").select("id, title, author, call_number, category, shelf_location, floor, aisle").is_("archived_at", "null")
     if filters.category:
         books_query = books_query.eq("category", filters.category)
+    # Book-centric, so College means the book's own college here.
+    if filters.college:
+        books_query = books_query.eq("subject", filters.college)
     if floor:
         books_query = books_query.eq("floor", floor)
     if aisle:

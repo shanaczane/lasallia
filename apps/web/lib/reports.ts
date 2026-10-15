@@ -99,6 +99,7 @@ export type ReportFilters = {
   dateTo?: string
   category?: string
   program?: string
+  college?: string
   yearLevel?: number
 }
 
@@ -128,6 +129,7 @@ function filterParams(filters: ReportFilters): URLSearchParams {
   if (filters.dateTo) params.set("date_to", filters.dateTo)
   if (filters.category) params.set("category", filters.category)
   if (filters.program) params.set("program", filters.program)
+  if (filters.college) params.set("college", filters.college)
   if (filters.yearLevel != null) params.set("year_level", String(filters.yearLevel))
   return params
 }

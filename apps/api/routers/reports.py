@@ -45,9 +45,13 @@ def report_filters(
     date_to: str | None = None,
     category: str | None = None,
     program: str | None = None,
+    college: str | None = None,
     year_level: int | None = None,
 ) -> ReportFilters:
-    return ReportFilters(date_from=date_from, date_to=date_to, category=category, program=program, year_level=year_level)
+    return ReportFilters(
+        date_from=date_from, date_to=date_to, category=category,
+        program=program, college=college, year_level=year_level,
+    )
 
 
 @router.get("/catalogue", response_model=list[CatalogueSlice])

@@ -46,6 +46,7 @@ import { CSS } from "@dnd-kit/utilities"
 import { cn } from "@/lib/utils"
 import { fetchBooks } from "@/lib/books"
 import { fetchPatrons, updatePatronStatus } from "@/lib/users"
+import { COLLEGES } from "@/lib/colleges"
 import { fetchLoans, settleFine, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
 import { buildFeed, TX_CONFIG, type FeedItem } from "@/lib/activity"
@@ -2298,7 +2299,9 @@ function ReportsPageContent() {
   const [fromDate, setFromDate]     = useState("")
   const [toDate, setToDate]         = useState("")
   const [category, setCategory]     = useState("All Categories")
-  const [program, setProgram]       = useState("All Programs")
+  // The borrower's college — narrows every loan-based report to patrons of
+  // that college (profiles.college), like Year Level does for year.
+  const [college, setCollege]       = useState("All Colleges")
   const [yearLevel, setYearLevel]   = useState("All Year Levels")
 
   // Circulation/Activity Log are the two tabs built client-side from
@@ -2312,7 +2315,7 @@ function ReportsPageContent() {
   const activityFeed = useMemo(() => {
     const full = buildFeed(loans, reservations)
     const wantedYear = YEAR_LEVEL_LABELS[yearLevel]
-    if (category === "All Categories" && program === "All Programs" && !wantedYear) return full
+    if (category === "All Categories" && college === "All Colleges" && !wantedYear) return full
 
     const patronsById = new Map(patrons.map((p) => [p.id, p]))
     return full.filter((tx) => {
@@ -2320,14 +2323,14 @@ function ReportsPageContent() {
         const cat = tx.loan?.books?.category ?? tx.reservation?.books?.category
         if (cat !== category) return false
       }
-      if (program !== "All Programs" || wantedYear) {
+      if (college !== "All Colleges" || wantedYear) {
         const patron = tx.userId ? patronsById.get(tx.userId) : undefined
-        if (program !== "All Programs" && patron?.program !== program) return false
+        if (college !== "All Colleges" && patron?.college !== college) return false
         if (wantedYear && patron?.year_level !== wantedYear) return false
       }
       return true
     })
-  }, [loans, reservations, category, program, yearLevel, patrons])
+  }, [loans, reservations, category, college, yearLevel, patrons])
 
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
@@ -2353,10 +2356,10 @@ function ReportsPageContent() {
       dateFrom,
       dateTo,
       category: category === "All Categories" ? undefined : category,
-      program: program === "All Programs" ? undefined : program,
+      college: college === "All Colleges" ? undefined : college,
       yearLevel: YEAR_LEVEL_LABELS[yearLevel],
     }
-  }, [dateRange, fromDate, toDate, category, program, yearLevel])
+  }, [dateRange, fromDate, toDate, category, college, yearLevel])
 
   // Just the date half of currentFilters(), for the Activity Log / Circulation
   // tabs — neither has its own Date Range control, they respect this same
@@ -2405,7 +2408,12 @@ function ReportsPageContent() {
 
   const handlePrint = () => window.print()
 
-  const catalogueBooks = category === "All Categories" ? books : books.filter((b) => b.category === category)
+  // Book-centric like the Shelf List, so College means the book's own
+  // college here, not the borrower's.
+  const catalogueBooks = books.filter((b) =>
+    (category === "All Categories" || b.category === category) &&
+    (college === "All Colleges" || b.subject === college),
+  )
   const circulationRows = buildCirculationRows(activityFeed, activeDateBounds.dateFrom, activeDateBounds.dateTo)
 
   const exportShelfListCsv = () => downloadCsv("shelf-list.csv", shelfListData.map((r) => ({
@@ -2620,7 +2628,7 @@ function ReportsPageContent() {
       : `${from.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })} – ${to.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}`
     return `${label} · ${range}`
   })()
-  const programSubtitle = program !== "All Programs" ? program.toLowerCase() : "all programs"
+  const collegeSubtitle = college !== "All Colleges" ? college : "all colleges"
 
   return (
     <div className="p-4 sm:p-6 flex flex-col gap-6">
@@ -2665,7 +2673,7 @@ function ReportsPageContent() {
           className="text-ink-400"
           style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
         >
-          {dateSubtitle} · {programSubtitle}{loading ? " · Loading…" : ""}
+          {dateSubtitle} · {collegeSubtitle}{loading ? " · Loading…" : ""}
           {lastUpdated && (
             <span className="text-ink-300"> · Updated {lastUpdated.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}</span>
           )}
@@ -2734,8 +2742,8 @@ function ReportsPageContent() {
         {[
           { label: "Category", value: category, setter: setCategory,
             options: ["All Categories", ...new Set(books.map((b) => b.category).filter(Boolean))] },
-          { label: "Program", value: program, setter: setProgram,
-            options: ["All Programs", ...new Set(patrons.map((p) => p.program).filter((p): p is string => !!p))] },
+          { label: "College", value: college, setter: setCollege,
+            options: ["All Colleges", ...COLLEGES] },
           { label: "Year Level", value: yearLevel, setter: setYearLevel,
             options: ["All Year Levels", "1st Year", "2nd Year", "3rd Year", "4th Year"] },
         ].map((f) => (
