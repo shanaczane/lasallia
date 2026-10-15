@@ -261,7 +261,7 @@ export default function InventoryPage() {
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
             disabled={loading || locations.length === 0}
-            className="h-11 flex-1 sm:max-w-md appearance-none pl-3 pr-9 rounded-(--radius) border border-ink-200 bg-white text-ink-800 hover:border-ink-300 focus:outline-none focus:border-green-700 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="h-11 flex-1 min-w-0 appearance-none pl-3 pr-9 rounded-(--radius) border border-ink-200 bg-white text-ink-800 hover:border-ink-300 focus:outline-none focus:border-green-700 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
               ...body(),
               backgroundImage: `url("${SELECT_CHEVRON}")`,
