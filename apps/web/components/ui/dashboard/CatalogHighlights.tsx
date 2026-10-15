@@ -1,5 +1,5 @@
 // apps/web/components/ui/dashboard/CatalogHighlights.tsx
-// Sprint 5.7 — extra dashboard sections beyond "Recommended for You":
+// Sprint 5.7 — extra dashboard sections beyond "For You":
 // New Arrivals, and the student's own Program/College. All three are
 // derived client-side from the same full-catalog fetch the student
 // catalog page already uses (apps/api's /books is a small, one-shot,

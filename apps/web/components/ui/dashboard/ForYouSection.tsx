@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { ArrowRight, Sparkles } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { BookCard } from "@/components/ui/catalog/BookCard"
 import { fetchRecommendations } from "@/lib/recommendations"
 import { logEvent, logImpressions } from "@/lib/recommendationEvents"
@@ -77,11 +78,13 @@ function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
 // through rungs 1 (personal) -> 2 (program) -> 3/4 (library-wide
 // popular) server-side, and reports which one actually produced the
 // response as `rung`. This is just the header/subtitle copy for each,
-// so the section never claims personalization it didn't do.
+// so the section never claims personalization it didn't do. The title is
+// the same for every rung: it renders before the rung is known, so a
+// different one flashed "For You" and then swapped while loading.
 const RUNG_COPY: Record<RecommendationsResponse["rung"], { title: string; subtitle: string }> = {
   personal: { title: "For You", subtitle: "Based on what you've borrowed." },
   program: { title: "For You", subtitle: "Popular in your program." },
-  popular: { title: "Recommended for You", subtitle: "Picks from around the LRC." },
+  popular: { title: "For You", subtitle: "Picks from around the LRC." },
 }
 
 // fetcher/hrefPrefix default to the student dashboard's behavior; the kiosk's
@@ -133,7 +136,13 @@ export function ForYouSection({
         >
           {copy.title}
         </h2>
-        <p className="text-ink-400" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}>
+        {/* Kept in the layout but hidden until the rung is known, so the
+            subtitle doesn't flash the "personal" copy and then swap. */}
+        <p
+          className={cn("text-ink-400", loading && "invisible")}
+          style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
+          aria-hidden={loading || undefined}
+        >
           {copy.subtitle}
         </p>
       </div>
