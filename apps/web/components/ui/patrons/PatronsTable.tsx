@@ -78,7 +78,7 @@ export function PatronsTable({ patrons, stats, onView, onToggleStatus, selfId }:
         <span className="hidden lg:block">College</span>
         <span className="text-center">Books out</span>
         <span className="text-center">Overdue</span>
-        <span className="text-right">Fines owed</span>
+        <span className="text-center">Fines owed</span>
         <span className="text-center">Status</span>
         <span />
       </div>
@@ -152,7 +152,7 @@ export function PatronsTable({ patrons, stats, onView, onToggleStatus, selfId }:
                 </span>
 
                 <span
-                  className={cn("text-right", s.owed > 0 ? "text-danger font-semibold" : "text-ink-300")}
+                  className={cn("text-center", s.owed > 0 ? "text-danger font-semibold" : "text-ink-300")}
                   style={body("var(--text-sm-body)")}
                 >
                   {s.owed > 0 ? peso(s.owed) : "—"}
