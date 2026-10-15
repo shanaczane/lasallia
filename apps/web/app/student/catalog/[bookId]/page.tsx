@@ -15,7 +15,7 @@
 
 import { use, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   ArrowLeft, MapPin, Hash, Building2, Calendar,
   BookOpen, GraduationCap, Landmark, Bookmark, Bell, QrCode,
@@ -30,6 +30,7 @@ import { useReservations } from '@/lib/hooks/useReservations'
 import { createReservation, cancelReservation } from '@/lib/reservations'
 import { fetchSavedBooks, saveBook, unsaveBook } from '@/lib/saved'
 import { fetchLoans, type Loan as ApiLoan } from '@/lib/kiosk'
+import { isHandheld } from '@/lib/device'
 import { logEvent } from '@/lib/recommendationEvents'
 import { useStudentCounts } from '@/components/layout/StudentCountsContext'
 import { BorrowModal } from '@/components/kiosk/BorrowModal'
@@ -409,6 +410,14 @@ export default function StudentBookDetailPage({
 }) {
   const { bookId }      = use(params)
   const [showQR, setShowQR]   = useState(false)
+  const router = useRouter()
+
+  // A phone or tablet is already the device the student borrows on, so it
+  // skips the QR modal and goes straight to the borrow form.
+  function handleBorrow() {
+    if (isHandheld()) router.push(`/borrow/start?book=${encodeURIComponent(bookId)}`)
+    else setShowQR(true)
+  }
 
   // Where "Back" returns to — defaults to the catalog search results, but a
   // linking page (My Library's Borrowed/Saved/History tabs, Reservations)
@@ -690,7 +699,7 @@ export default function StudentBookDetailPage({
             isAvailable={isAvailable}
             availableCopies={availableCopies}
             totalCopies={totalCopies}
-            onBorrow={() => setShowQR(true)}
+            onBorrow={handleBorrow}
             reservation={existingReservation}
             onReservationChange={refreshReservations}
             loan={activeLoan}
