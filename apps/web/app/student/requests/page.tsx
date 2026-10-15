@@ -21,6 +21,7 @@ import {
   type BookRequestFormat,
 } from "@/lib/bookRequests"
 import { MyBookRequestModal } from "@/components/ui/requests/MyBookRequestModal"
+import { Pagination } from "@/components/ui/catalog"
 import { resolveDateRange, type DateRangePreset } from "@/lib/reports"
 import { pressable } from "@/lib/a11y"
 
@@ -43,6 +44,9 @@ const FORMAT_LABEL: Record<BookRequestFormat, string> = {
 }
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+
+// Sized so a page of history sits about level with the form beside it.
+const REQUESTS_PER_PAGE = 5
 
 type FilterKey = "all" | BookRequestStatus
 
@@ -77,6 +81,7 @@ export default function RequestABookPage() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<FilterKey>("all")
   const [dateFilter, setDateFilter] = useState<DateRangePreset>("all")
+  const [page, setPage] = useState(1)
 
   const [title, setTitle] = useState("")
   const [author, setAuthor] = useState("")
@@ -154,6 +159,7 @@ export default function RequestABookPage() {
       if (fileInputRef.current) fileInputRef.current.value = ""
       setJustSubmitted(true)
       setTimeout(() => setJustSubmitted(false), 3000)
+      setPage(1) // the new request lands at the top of the list
       load()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not submit your request")
@@ -186,7 +192,19 @@ export default function RequestABookPage() {
         </p>
       </div>
 
-      <div className="px-4 sm:px-8 pb-8 flex flex-col gap-6 max-w-2xl">
+      {/* Wide screens: form and history side by side, so neither a centered
+          column nor a left-hugging one leaves a dead band of empty space.
+          Narrower screens stack them as before. */}
+      <div className="w-full max-w-[1440px] px-4 sm:px-8 pb-8 grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] xl:gap-8 items-start">
+        <section className="flex flex-col gap-2 min-w-0">
+          <div className="flex items-center min-h-8">
+            <p
+              className="text-ink-500 uppercase font-semibold"
+              style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}
+            >
+              New Request
+            </p>
+          </div>
         <form onSubmit={handleSubmit} className="bg-white rounded-(--radius) border border-ink-200 p-4 sm:p-5 flex flex-col gap-3">
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="flex flex-col gap-1">
@@ -362,9 +380,10 @@ export default function RequestABookPage() {
             {submitting ? "Submitting…" : "Submit Request"}
           </button>
         </form>
+        </section>
 
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+        <section className="flex flex-col gap-2 min-w-0">
+          <div className="flex items-center justify-between gap-3 flex-wrap min-h-8">
             <p
               className="text-ink-500 uppercase font-semibold"
               style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)", fontFamily: "var(--font-body)" }}
@@ -374,7 +393,7 @@ export default function RequestABookPage() {
             <div className="flex items-center gap-2 flex-wrap">
               <select
                 value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value as DateRangePreset)}
+                onChange={(e) => { setDateFilter(e.target.value as DateRangePreset); setPage(1) }}
                 aria-label="Filter by date"
                 className="appearance-none bg-white border border-ink-200 text-ink-700 rounded-sm pl-3 pr-7 py-1.5 focus:outline-none focus:border-green-700 hover:border-ink-300 cursor-pointer transition-colors"
                 style={{
@@ -391,7 +410,7 @@ export default function RequestABookPage() {
               </select>
               <select
                 value={filter}
-                onChange={(e) => setFilter(e.target.value as FilterKey)}
+                onChange={(e) => { setFilter(e.target.value as FilterKey); setPage(1) }}
                 aria-label="Filter by status"
                 className="appearance-none bg-white border border-ink-200 text-ink-700 rounded-sm pl-3 pr-7 py-1.5 focus:outline-none focus:border-green-700 hover:border-ink-300 cursor-pointer transition-colors"
                 style={{
@@ -430,15 +449,22 @@ export default function RequestABookPage() {
                 </div>
               )
             }
+            const totalPages = Math.ceil(visible.length / REQUESTS_PER_PAGE)
+            // Clamped in case the list shrank under the current page (e.g. a
+            // request cancelled from the modal on the last page).
+            const currentPage = Math.min(page, totalPages)
+            const start = (currentPage - 1) * REQUESTS_PER_PAGE
+            const pageItems = visible.slice(start, start + REQUESTS_PER_PAGE)
             return (
+            <>
             <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
-              {visible.map((r, i) => (
+              {pageItems.map((r, i) => (
                 <div
                   key={r.id}
                   {...pressable(() => setSelectedId(r.id))}
                   className={cn(
                     "flex items-center justify-between gap-3 px-4 py-3.5 cursor-pointer hover:bg-ink-50 transition-colors",
-                    i !== visible.length - 1 && "border-b border-ink-100"
+                    i !== pageItems.length - 1 && "border-b border-ink-100"
                   )}
                 >
                   <div className="min-w-0">
@@ -479,9 +505,19 @@ export default function RequestABookPage() {
                 </div>
               ))}
             </div>
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+                <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+                  Showing <span className="font-medium text-ink-600">{start + 1}–{start + pageItems.length}</span> of{" "}
+                  <span className="font-medium text-ink-600">{visible.length}</span>
+                </p>
+                <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+              </div>
+            )}
+            </>
             )
           })()}
-        </div>
+        </section>
       </div>
 
       {selectedId && (() => {
