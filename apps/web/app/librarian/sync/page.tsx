@@ -42,6 +42,11 @@ const body = (size = "var(--text-sm-body)") => ({ fontFamily: "var(--font-body)"
 
 // "CBEAM.xlsx" / "GRADUATE SCHOOL.xlsx" -> that college, matching how the
 // existing per-college files are named. Empty when nothing matches.
+// Same chevron-as-background-image the other selects on the site use, so
+// this one doesn't fall back to the OS's own arrow.
+const SELECT_CHEVRON =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"
+
 function guessCollege(fileName: string): string {
   const upper = fileName.toUpperCase()
   return [...COLLEGES].sort((a, b) => b.length - a.length).find((c) => upper.includes(c)) ?? ""
@@ -273,8 +278,20 @@ export default function CatalogImportPage() {
       </div>
 
       {/* Upload */}
-      <div className="bg-white rounded-(--radius) border border-ink-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-        <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
+      {/* Bottom-aligned with every control at 40px (the file icon's height):
+          the College label sits above its dropdown, so centering the row
+          left the dropdown lower and taller than the buttons beside it. */}
+      <div className="bg-white rounded-(--radius) border border-ink-200 p-4 flex flex-col sm:flex-row sm:items-end gap-3">
+        {/* Labelled like the College dropdown so both columns line up under
+            a heading instead of leaving a blank band above the file. */}
+        <div className="flex flex-col gap-1 flex-1 min-w-0">
+        <span
+          className="text-ink-400 font-semibold uppercase"
+          style={{ ...body("var(--text-2xs)"), letterSpacing: "var(--tracking-caps)" }}
+        >
+          File
+        </span>
+        <label className="flex items-center gap-3 min-w-0 cursor-pointer">
           <span className="flex items-center justify-center rounded-(--radius) bg-green-50 text-green-700 shrink-0" style={{ width: 40, height: 40 }}>
             <FileUp size={18} />
           </span>
@@ -296,6 +313,7 @@ export default function CatalogImportPage() {
             onChange={(e) => chooseFile(e.target.files?.[0] ?? null)}
           />
         </label>
+        </div>
 
         {/* The sheets don't say which college they're for — the existing
             per-college files carry it in the file name, so it's prefilled
@@ -315,8 +333,13 @@ export default function CatalogImportPage() {
                 setPreview(null)
               }}
               disabled={busy !== null}
-              className="px-2 py-1.5 rounded-sm border border-ink-200 bg-white text-ink-800"
-              style={body()}
+              className="h-10 min-w-44 appearance-none pl-3 pr-8 rounded-sm border border-ink-200 bg-white text-ink-800 hover:border-ink-300 focus:outline-none focus:border-green-700 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                ...body(),
+                backgroundImage: `url("${SELECT_CHEVRON}")`,
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "right 10px center",
+              }}
             >
               <option value="">Select…</option>
               {COLLEGES.map((c) => (
@@ -331,7 +354,7 @@ export default function CatalogImportPage() {
             <button
               onClick={reset}
               disabled={busy !== null}
-              className="px-3 py-1.5 rounded-sm border border-ink-200 text-ink-600 font-semibold hover:bg-ink-50 transition-colors disabled:opacity-50"
+              className="h-10 px-4 rounded-sm border border-ink-200 text-ink-600 font-semibold hover:bg-ink-50 transition-colors disabled:opacity-50"
               style={body()}
             >
               Clear
@@ -340,7 +363,7 @@ export default function CatalogImportPage() {
           <button
             onClick={runPreview}
             disabled={!file || (spreadsheet && !college) || busy !== null}
-            className="px-3 py-1.5 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+            className="h-10 px-4 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
             style={body()}
           >
             {busy === "preview" && <Loader2 size={14} className="animate-spin" />}
