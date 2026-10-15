@@ -9,6 +9,7 @@ from core.calendar import compute_fine
 from core.deps import get_current_user, get_user_supabase, require_librarian
 from core.loans import HOLD_GONE, check_borrow_eligibility, create_loan_and_notify, reshelve_copy_now
 from core.notify import notify, notify_librarians
+from core.email_template import EmailContent, long_date, peso, staff_alert
 from core.reservations import maybe_sweep_expired_reservations, promote_next_reservation
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
@@ -370,7 +371,7 @@ def return_loan(
     if loan["status"] == "returned":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This loan has already been returned")
 
-    copy_res = admin.table("book_copies").select("id, book_id").eq("id", loan["book_copy_id"]).execute()
+    copy_res = admin.table("book_copies").select("id, book_id, accession_number").eq("id", loan["book_copy_id"]).execute()
     copy = copy_res.data[0]
     book_res = admin.table("books").select("collection_type").eq("id", copy["book_id"]).execute()
     collection_type = book_res.data[0]["collection_type"] if book_res.data else "General"
@@ -426,11 +427,55 @@ def return_loan(
         {"status": "reserved" if promoted else "for_reshelving"}
     ).eq("id", copy["id"]).execute()
 
+    # A return with a fine gets the official fine record; a clean return
+    # gets a short confirmation.
+    book_row = book_full_res.data[0] if book_full_res.data else {}
+    fine_email = EmailContent(
+        subject=f"Return confirmed: {book_title}",
+        intro="Thank you! Your borrowed book has been returned to the LRC.",
+        details=[
+            ("Title", book_title),
+            ("Call No.", book_row.get("call_number")),
+            ("Due date", long_date(loan["due_date"])),
+            ("Returned on", long_date(loan["returned_at"])),
+        ],
+        paragraphs=["No fine was recorded for this return."],
+        link_label="View your loans",
+        link="/student/library",
+    )
+    if total_fine > 0:
+        parts = []
+        if overdue_fine > 0:
+            parts.append(f"late return {peso(overdue_fine)}")
+        if damage_fine > 0:
+            parts.append(f"damage {peso(damage_fine)}")
+        paid_now = body.fine_settlement == "paid"
+        fine_email = EmailContent(
+            subject=f"Fine recorded for {book_title}",
+            intro="Your returned book has been checked in, and a fine was recorded for it.",
+            details=[
+                ("Title", book_title),
+                ("Call No.", book_row.get("call_number")),
+                ("Due date", long_date(loan["due_date"])),
+                ("Returned on", long_date(loan["returned_at"])),
+                ("Fine", f"{peso(total_fine)} ({', '.join(parts)})" if parts else peso(total_fine)),
+                ("Status", f"Paid (Receipt No. {body.receipt_number})" if paid_now else "Unpaid"),
+            ],
+            paragraphs=[
+                "Thank you, your payment has been recorded. Please keep your receipt."
+                if paid_now else
+                "Please settle this fine in person at the LRC counter. Unpaid fines may keep you "
+                "from borrowing or reserving books until they are paid.",
+            ],
+            link_label="View your loans",
+            link="/student/library",
+        )
     notify(
         loan["student_id"], "return_confirmed",
         "Return confirmed",
         f'"{book_title}" has been checked in.' + (f" A ₱{total_fine:.2f} fine was recorded." if total_fine > 0 else ""),
         link="/student/library",
+        email=fine_email,
     )
     borrower_res = admin.table("profiles").select("full_name").eq("id", loan["student_id"]).execute()
     borrower_name = borrower_res.data[0]["full_name"] if borrower_res.data else "A student"
@@ -439,17 +484,40 @@ def return_loan(
     # Two different follow-up actions depending on where the copy went —
     # each needs its own notification so whoever's on the desk knows which
     # one applies, rather than one generic "returned" message either way.
+    return_details = [
+        ("Borrower", borrower_name),
+        ("Title", book_title),
+        ("Accession No.", copy.get("accession_number")),
+        ("Returned on", long_date(loan["returned_at"])),
+        ("Fine", f"{peso(total_fine)} ({'paid' if body.fine_settlement == 'paid' else 'unpaid'})" if total_fine > 0 else "None"),
+    ]
     if needs_reshelving:
         notify_librarians(
             "Book ready for reshelving",
             f'{borrower_name} returned "{book_title}" — it needs to be walked back to the shelf.{fine_note}',
             link="/librarian/borrow-return?tab=reshelving",
+            email=staff_alert(
+                subject=f"Book returned: {book_title}",
+                intro="A borrowed book has been returned and is ready for reshelving.",
+                details=return_details,
+                action="Please return it to its shelf, then scan it under Reshelving.",
+                link_label="Open reshelving",
+                link="/librarian/borrow-return?tab=reshelving",
+            ),
         )
     else:
         notify_librarians(
             "Book returned — held for next reservation",
             f'{borrower_name} returned "{book_title}"; it\'s now on hold for the next reservation.{fine_note}',
             link="/librarian/reservations",
+            email=staff_alert(
+                subject=f"Book returned and held: {book_title}",
+                intro="A returned book has been set aside for the next person in the reservation queue.",
+                details=return_details,
+                action="Please place it on the hold shelf at the LRC counter for pickup.",
+                link_label="View reservations",
+                link="/librarian/reservations",
+            ),
         )
 
     loan["books"] = book_full_res.data[0] if book_full_res.data else None
@@ -502,6 +570,19 @@ def settle_fine(
         "Fine settled",
         f'Your ₱{loan["fine_amount"]:.2f} fine for "{book_title}" has been recorded as paid (receipt {receipt_number}).',
         link="/student/library",
+        email=EmailContent(
+            subject="Payment received for your fine",
+            intro="We've received your payment. Your fine has been recorded as paid.",
+            details=[
+                ("Title", book_title),
+                ("Amount paid", peso(loan["fine_amount"])),
+                ("Receipt No.", receipt_number),
+                ("Date recorded", long_date(datetime.now(timezone.utc))),
+            ],
+            paragraphs=["Please keep your receipt as proof of payment."],
+            link_label="View your loans",
+            link="/student/library",
+        ),
     )
 
     return loan

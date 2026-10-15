@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from core.deps import require_faculty, require_librarian
 from core.notify import notify, notify_librarians
+from core.email_template import EmailContent, long_date, staff_alert
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.book_request import (
@@ -89,6 +90,21 @@ def create_book_request(
         f'{requester_name} requested "{title}".',
         link="/librarian/reports?tab=requests",
         type="book_request_submitted",
+        email=staff_alert(
+            subject=f"New book request: {title}",
+            intro="A new book request has been submitted in Lasallia.",
+            details=[
+                ("Requested by", requester_name),
+                ("Title", title),
+                ("Author", (body.author or "").strip() or None),
+                ("Copies", str(body.copies)),
+                ("Course", (body.course or "").strip() or None),
+                ("Reason", (body.note or "").strip() or None),
+            ],
+            action="Please review the request and approve or decline it in the librarian dashboard.",
+            link_label="Review requests",
+            link="/librarian/reports?tab=requests",
+        ),
     )
 
     return created.data[0]
@@ -167,6 +183,14 @@ def cancel_book_request(
         f'{requester_name} cancelled their request for "{existing.data[0]["title"]}".',
         link="/librarian/reports?tab=requests",
         type="book_request_cancelled",
+        email=staff_alert(
+            subject=f"Book request withdrawn: {existing.data[0]['title']}",
+            intro="A book request has been withdrawn by the person who submitted it.",
+            details=[("Requested by", requester_name), ("Title", existing.data[0]["title"])],
+            action="No action is needed. The request is no longer pending.",
+            link_label="View requests",
+            link="/librarian/reports?tab=requests",
+        ),
     )
 
     updated = admin.table("book_requests").select(_SELECT).eq("id", request_id).execute()
@@ -330,7 +354,40 @@ def update_book_request(
     }.get(changes.get("status"))
     if decision_notice:
         notif_type, notif_title, notif_message = decision_notice
-        notify(row["requester_id"], notif_type, notif_title, notif_message, link="/student/requests")
+        decision = changes.get("status")
+        intro, status_label, closing = {
+            "approved": (
+                "Your book request has been approved.",
+                "Approved",
+                "The LRC will now acquire this title. We'll email you again once it is available to borrow.",
+            ),
+            "rejected": (
+                "Your book request has been reviewed and was not approved for acquisition.",
+                "Not approved",
+                "If you have questions about this decision, please ask at the LRC counter.",
+            ),
+            "fulfilled": (
+                "Good news! The book you requested has been acquired and is now part of the collection.",
+                "Available",
+                "You can now find it in the catalog and borrow or reserve it.",
+            ),
+        }[decision]
+        notify(
+            row["requester_id"], notif_type, notif_title, notif_message, link="/student/requests",
+            email=EmailContent(
+                subject=notif_title,
+                intro=intro,
+                details=[
+                    ("Title", row["title"]),
+                    ("Author", row.get("author")),
+                    ("Requested on", long_date(row["created_at"])),
+                    ("Status", status_label),
+                ],
+                paragraphs=[closing],
+                link_label="View your requests",
+                link="/student/requests",
+            ),
+        )
 
     updated = admin.table("book_requests").select(_SELECT).eq("id", request_id).execute()
     return updated.data[0]

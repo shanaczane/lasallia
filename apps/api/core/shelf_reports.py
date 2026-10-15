@@ -12,6 +12,7 @@ from supabase import Client
 
 from core.inventory import book_location_label
 from core.notify import notify_librarians
+from core.email_template import staff_alert
 from schemas.shelf_report import ShelfReport
 
 
@@ -80,6 +81,14 @@ def report_book(admin: Client, book_id: str, reporter_id: str, reporter_name: st
         "Book not found on its shelf",
         f'{who} couldn\'t find "{book["title"]}" in {book_location_label(book)}. Please check that shelf.',
         link="/librarian/inventory#reported",
+        email=staff_alert(
+            subject=f"Book not found on its shelf: {book['title']}",
+            intro="A student reported that they couldn't find a book on its shelf.",
+            details=[("Reported by", who), ("Title", book["title"]), ("Location", book_location_label(book))],
+            action="Please check that shelf and update the report in Inventory.",
+            link_label="Open Inventory",
+            link="/librarian/inventory#reported",
+        ),
     )
     return _to_models(admin, [row])[0]
 

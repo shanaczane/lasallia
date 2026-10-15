@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 
 from core.accession import normalize_accession_number
 from core.notify import notify, notify_librarians
+from core.email_template import EmailContent, long_date, peso, staff_alert
 from core.reservations import promote_next_reservation
 from core.settings import get_library_settings
 
@@ -180,6 +181,22 @@ def create_loan_and_notify(
         "Book successfully borrowed",
         f'You\'ve borrowed "{book_title}". It\'s due back on {due_label}.',
         link="/student/library",
+        email=EmailContent(
+            subject=f"Borrowing confirmed: {book_title}",
+            intro="This confirms that you borrowed a book from the LRC.",
+            details=[
+                ("Title", book_title),
+                ("Call No.", (loan["books"] or {}).get("call_number")),
+                ("Borrowed on", long_date(loan["borrowed_at"] if loan.get("borrowed_at") else datetime.now(timezone.utc))),
+                ("Due date", long_date(due_date)),
+            ],
+            paragraphs=[
+                "Please return it to the LRC counter on or before the due date to avoid an overdue fine "
+                f"of {peso(cfg['fine_per_day'])} per school day.",
+            ],
+            link_label="View your loans",
+            link="/student/library",
+        ),
     )
     borrower_res = db.table("profiles").select("full_name").eq("id", student_id).execute()
     borrower_name = borrower_res.data[0]["full_name"] if borrower_res.data else "A student"
@@ -187,6 +204,19 @@ def create_loan_and_notify(
         "Book checked out",
         f'{borrower_name} checked out "{book_title}", due {due_label}.',
         link="/librarian/borrow-return",
+        email=staff_alert(
+            subject=f"Book checked out: {book_title}",
+            intro="A book has been checked out in Lasallia.",
+            details=[
+                ("Borrower", borrower_name),
+                ("Title", book_title),
+                ("Call No.", (loan["books"] or {}).get("call_number")),
+                ("Due date", long_date(due_date)),
+            ],
+            action="No action is needed. The loan is recorded under Borrow & Return.",
+            link_label="View Borrow & Return",
+            link="/librarian/borrow-return",
+        ),
     )
 
     return loan
@@ -223,6 +253,14 @@ def reshelve_copy_now(admin, copy: dict, accession_display: str) -> str:
             "Book reshelved — held for next reservation",
             f'"{book_title}" ({accession_display}) is on hold for the next reservation instead of going back on the shelf.',
             link="/librarian/reservations",
+            email=staff_alert(
+                subject=f"Held for a reservation: {book_title}",
+                intro="A reshelved book has been set aside for the next person in the reservation queue.",
+                details=[("Title", book_title), ("Accession No.", accession_display), ("Status", "Held for reservation")],
+                action="Please place it on the hold shelf at the LRC counter for pickup.",
+                link_label="View reservations",
+                link="/librarian/reservations",
+            ),
         )
         return "reserved"
 
@@ -230,5 +268,13 @@ def reshelve_copy_now(admin, copy: dict, accession_display: str) -> str:
         "Book reshelved",
         f'"{book_title}" ({accession_display}) is back on the shelf and available.',
         link="/librarian/borrow-return?tab=reshelving",
+        email=staff_alert(
+            subject=f"Book reshelved: {book_title}",
+            intro="A book is back on its shelf and available to borrow.",
+            details=[("Title", book_title), ("Accession No.", accession_display), ("Status", "Available")],
+            action="No action is needed.",
+            link_label="View reshelving",
+            link="/librarian/borrow-return?tab=reshelving",
+        ),
     )
     return "available"

@@ -14,6 +14,7 @@ from core.loans import (
     ensure_initial_copy,
 )
 from core.notify import notify_librarians
+from core.email_template import staff_alert
 from core.reservations import maybe_sweep_expired_reservations, promote_next_reservation
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
@@ -335,4 +336,12 @@ def report_missing(token: str):
         "Copy reported missing",
         f'A student couldn\'t find "{book_title}"{f" ({accession})" if accession else ""} on the shelf — it\'s now flagged missing.',
         link="/librarian/catalog",
+        email=staff_alert(
+            subject=f"Copy reported missing: {book_title}",
+            intro="A student couldn't find a copy on the shelf while trying to borrow it, so it has been flagged as missing.",
+            details=[("Title", book_title), ("Accession No.", accession), ("Status", "Missing")],
+            action="Please check the shelf. If you find the copy, mark it as found in the catalog.",
+            link_label="Open catalog",
+            link="/librarian/catalog",
+        ),
     )

@@ -5,6 +5,7 @@ from supabase import Client
 
 from core.deps import get_current_user, get_user_supabase
 from core.notify import notify, notify_librarians
+from core.email_template import EmailContent, staff_alert
 from core.reservations import (
     advance_or_release,
     estimate_ready_at,
@@ -235,15 +236,29 @@ def create_reservation(
     if not res.data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not create reservation")
 
-    book_title_res = admin.table("books").select("title").eq("id", body.book_id).execute()
+    book_title_res = admin.table("books").select("title, call_number").eq("id", body.book_id).execute()
     book_title = book_title_res.data[0]["title"] if book_title_res.data else "A book"
+    call_number = book_title_res.data[0].get("call_number") if book_title_res.data else None
+    queue_position = ahead_count + 1
     notify_librarians(
         "Book reserved",
         f'{user.full_name or "A student"} reserved "{book_title}".',
         link="/librarian/reservations",
+        email=staff_alert(
+            subject=f"Book reserved: {book_title}",
+            intro="A book has been reserved in Lasallia.",
+            details=[
+                ("Reserved by", user.full_name or user.email),
+                ("Title", book_title),
+                ("Call No.", call_number),
+                ("Queue position", f"#{queue_position}"),
+            ],
+            action="The next returned copy will be held for this reservation automatically.",
+            link_label="View reservations",
+            link="/librarian/reservations",
+        ),
     )
 
-    queue_position = ahead_count + 1
     notify(
         user.id, "reservation_placed",
         "Reservation confirmed",
@@ -253,6 +268,21 @@ def create_reservation(
             else f'You\'re #{queue_position} in line for "{book_title}" — we\'ll notify you when it\'s your turn.'
         ),
         link="/student/reservations",
+        email=EmailContent(
+            subject=f"Reservation confirmed: {book_title}",
+            intro="Your reservation has been placed.",
+            details=[
+                ("Title", book_title),
+                ("Call No.", call_number),
+                ("Your place in line", "First" if queue_position == 1 else f"#{queue_position}"),
+            ],
+            paragraphs=[
+                "We'll email you as soon as a copy is ready for pickup. You'll then have a few days to claim it "
+                "at the LRC counter.",
+            ],
+            link_label="View your reservations",
+            link="/student/reservations",
+        ),
     )
 
     return res.data[0]
@@ -268,7 +298,7 @@ def update_reservation(
     # happens automatically (Phase 4's return handler, or the expiry sweep
     # above), never through this endpoint. RLS already restricts *whose*
     # row can be touched (own reservation, or any if librarian).
-    current = db.table("reservations").select("id, book_id, book_copy_id, status").eq("id", reservation_id).execute()
+    current = db.table("reservations").select("id, user_id, book_id, book_copy_id, status").eq("id", reservation_id).execute()
     if not current.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Reservation not found")
     row = current.data[0]
@@ -286,6 +316,33 @@ def update_reservation(
     if row["status"] == "ready" and row["book_copy_id"]:
         advance_or_release(get_admin_client(), row)
 
+    # A librarian cancelling on someone's behalf tells that student — they
+    # lost their place in line and didn't do it themselves.
+    if user.role == "librarian" and row["user_id"] != user.id:
+        admin = get_admin_client()
+        book_res = admin.table("books").select("title, call_number").eq("id", row["book_id"]).execute()
+        book_title = book_res.data[0]["title"] if book_res.data else "A book"
+        notify(
+            row["user_id"], "reservation_cancelled",
+            "Your reservation was cancelled",
+            f'The LRC cancelled your reservation for "{book_title}".',
+            link="/student/reservations",
+            email=EmailContent(
+                subject="Your reservation was cancelled",
+                intro="The LRC has cancelled your reservation for the book below.",
+                details=[
+                    ("Title", book_title),
+                    ("Call No.", book_res.data[0].get("call_number") if book_res.data else None),
+                ],
+                paragraphs=[
+                    "If you believe this was a mistake or still need the book, please ask at the LRC counter, "
+                    "or reserve it again from the catalog.",
+                ],
+                link_label="View your reservations",
+                link="/student/reservations",
+            ),
+        )
+
     # Only notify on the student's own cancellation — a librarian cancelling
     # a reservation on someone's behalf shouldn't notify librarians about
     # their own action.
@@ -297,6 +354,17 @@ def update_reservation(
             "Reservation cancelled",
             f'{user.full_name or "A student"} cancelled their reservation for "{book_title}".',
             link="/librarian/reservations",
+            email=staff_alert(
+                subject=f"Reservation cancelled: {book_title}",
+                intro="A reservation has been cancelled by the student.",
+                details=[("Cancelled by", user.full_name or user.email), ("Title", book_title)],
+                action=(
+                    "If a copy was being held for this reservation, it has been passed to the next person in line "
+                    "or released back to the shelf."
+                ),
+                link_label="View reservations",
+                link="/librarian/reservations",
+            ),
         )
 
     res = db.table("reservations").select("*, books(*), profiles(*)").eq("id", reservation_id).execute()

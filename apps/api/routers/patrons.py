@@ -3,6 +3,8 @@ from supabase import Client
 
 from core.deps import get_user_supabase, require_librarian
 from core.supabase import get_admin_client
+from core.email_template import EmailContent
+from core.notify import email_user
 from schemas.auth import UserProfile
 from schemas.patron import Patron, UpdatePatronRequest
 
@@ -107,7 +109,39 @@ def update_patron(
                 f"Cannot deactivate this patron — they have {count} outstanding loan{plural}. They must return their book{plural} first.",
             )
 
+    previous_status = None
+    if "status" in changes:
+        prev = admin.table("profiles").select("status").eq("id", user_id).execute()
+        previous_status = (prev.data[0].get("status") or "active") if prev.data else None
+
     res = admin.table("profiles").update(changes).eq("id", user_id).execute()
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Patron not found")
+
+    # Tell the patron when their access changes. Email only — a deactivated
+    # account can't sign in to see an in-app notice anyway.
+    new_status = changes.get("status")
+    if new_status and previous_status and new_status != previous_status:
+        email_user(user_id, _account_status_email(new_status))
     return res.data[0]
+
+
+def _account_status_email(new_status: str) -> EmailContent:
+    if new_status == "inactive":
+        return EmailContent(
+            subject="Your Lasallia account has been deactivated",
+            intro="Your Lasallia account has been deactivated by the LRC.",
+            details=[("Status", "Deactivated")],
+            paragraphs=[
+                "You won't be able to sign in, borrow, or reserve books while your account is deactivated. "
+                "If you think this is a mistake, please visit the LRC counter or contact the library.",
+            ],
+        )
+    return EmailContent(
+        subject="Your Lasallia account has been reactivated",
+        intro="Good news! Your Lasallia account has been reactivated by the LRC.",
+        details=[("Status", "Active")],
+        paragraphs=["You can now sign in, borrow, and reserve books again."],
+        link_label="Sign in",
+        link="/login",
+    )

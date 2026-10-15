@@ -9,6 +9,15 @@ from fastapi import APIRouter, HTTPException, status, Depends
 
 from core.deps import require_librarian
 from core.notify import notify_librarians
+from core.email_template import EmailContent
+
+# The labels the Contact Support form shows (components/login/ContactSupportModal.tsx).
+TICKET_CATEGORY_LABEL = {
+    "login": "Login issue",
+    "technical": "Technical bug",
+    "account": "Account issue",
+    "other": "Other",
+}
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.support_ticket import (
@@ -51,6 +60,20 @@ def create_ticket(body: CreateSupportTicketRequest):
         "New support ticket submitted",
         f"{ticket['ticket_number']} from {name} ({email}): {preview}",
         link="/librarian/settings?tab=support",
+        email=EmailContent(
+            subject=f"New support ticket: {ticket['ticket_number']}",
+            intro="A new support ticket has been submitted in Lasallia.",
+            details=[
+                ("Ticket No.", ticket["ticket_number"]),
+                ("From", f"{name} ({email})"),
+                ("Category", TICKET_CATEGORY_LABEL.get(body.category, body.category)),
+                ("Message", f'"{message}"'),
+            ],
+            paragraphs=["Please review and respond to the ticket in the librarian dashboard."],
+            link_label="Open ticket",
+            link="/librarian/settings?tab=support",
+            automated=False,
+        ),
     )
     return ticket
 

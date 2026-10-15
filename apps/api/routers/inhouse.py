@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from core.accession import normalize_accession_number
 from core.deps import require_librarian
 from core.notify import notify_librarians
+from core.email_template import staff_alert
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.inhouse import CreateInHouseLoanRequest, InHouseLoan
@@ -79,6 +80,18 @@ def create_in_house_loan(
         "Guest checked out an item",
         f'{body.guest_name.strip()} checked out "{book_title}" for in-house use.',
         link="/librarian/borrow-return?tab=guest",
+        email=staff_alert(
+            subject=f"Guest checkout: {book_title}",
+            intro="A guest has checked out an item for in-house use.",
+            details=[
+                ("Guest", body.guest_name.strip()),
+                ("Title", book_title),
+                ("Accession No.", copy["accession_number"]),
+            ],
+            action="The item must stay inside the LRC and be returned before the guest leaves.",
+            link_label="View guest loans",
+            link="/librarian/borrow-return?tab=guest",
+        ),
     )
 
     return loan
@@ -118,6 +131,18 @@ def return_in_house_loan(
         "Book ready for reshelving",
         f'{loan["guest_name"]} returned "{book_title}" (in-house) — it needs to be walked back to the shelf.',
         link="/librarian/borrow-return?tab=reshelving",
+        email=staff_alert(
+            subject=f"Guest return: {book_title}",
+            intro="A guest has returned an in-house item, and it is ready for reshelving.",
+            details=[
+                ("Guest", loan["guest_name"]),
+                ("Title", book_title),
+                ("Accession No.", copy["accession_number"]),
+            ],
+            action="Please return it to its shelf, then scan it under Reshelving.",
+            link_label="Open reshelving",
+            link="/librarian/borrow-return?tab=reshelving",
+        ),
     )
 
     return loan

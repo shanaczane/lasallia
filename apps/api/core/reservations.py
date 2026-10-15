@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from supabase import Client
 
 from core.notify import notify
+from core.email_template import EmailContent, long_date_time
 from core.settings import get_library_settings
 
 logger = logging.getLogger(__name__)
@@ -75,8 +76,9 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
         "pickup_by": pickup_by.isoformat(),
     }).eq("id", pending[0]["id"]).execute()
 
-    book_res = admin.table("books").select("title").eq("id", book_id).execute()
+    book_res = admin.table("books").select("title, call_number").eq("id", book_id).execute()
     book_title = book_res.data[0]["title"] if book_res.data else "A book"
+    call_number = book_res.data[0].get("call_number") if book_res.data else None
     pickup_label = pickup_by.astimezone(MANILA).strftime("%B %d, %Y at %I:%M %p").replace(" 0", " ")
     notify(
         pending[0]["user_id"], "reservation_confirmed",
@@ -84,6 +86,21 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
         f'"{book_title}" is waiting for you at the LRC counter. Pick it up by {pickup_label} '
         "— after that the reservation expires and the copy goes to the next student in line.",
         link="/student/reservations",
+        email=EmailContent(
+            subject="Your reserved book is ready for pickup",
+            intro="Good news! The book you reserved is now ready for pickup at the LRC.",
+            details=[
+                ("Title", book_title),
+                ("Call No.", call_number),
+                ("Pick up by", long_date_time(pickup_by)),
+            ],
+            paragraphs=[
+                "Please claim it at the LRC counter before the deadline. If it is not picked up by then, "
+                "the reservation will expire and the book will go to the next person in line.",
+            ],
+            link_label="View your reservation",
+            link="/student/reservations",
+        ),
     )
 
     if len(pending) > 1:
@@ -94,6 +111,18 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
             # an expired pickup window alike, so "fulfilled" was often wrong.
             f'You\'re now first in line for "{book_title}" — we\'ll notify you when it\'s ready for pickup.',
             link="/student/reservations",
+            email=EmailContent(
+                subject=f"You're now first in line: {book_title}",
+                intro="Good news! You've moved to the front of the reservation queue.",
+                details=[
+                    ("Title", book_title),
+                    ("Call No.", call_number),
+                    ("Your place in line", "First"),
+                ],
+                paragraphs=["We'll email you again as soon as a copy is ready for pickup at the LRC."],
+                link_label="View your reservations",
+                link="/student/reservations",
+            ),
         )
 
     return True
@@ -148,7 +177,7 @@ def sweep_expired_reservations(admin: Client) -> int:
         # The expired student is notified before the copy is handed on, so
         # a failure in the handoff can't swallow their notice — the row is
         # already 'expired' and won't be picked up by a later sweep.
-        book_res = admin.table("books").select("title").eq("id", row["book_id"]).execute()
+        book_res = admin.table("books").select("title, call_number").eq("id", row["book_id"]).execute()
         book_title = book_res.data[0]["title"] if book_res.data else "your reserved book"
         notify(
             row["user_id"], "reservation_cancelled",
@@ -157,6 +186,20 @@ def sweep_expired_reservations(admin: Client) -> int:
             "and the copy has been released. If you still want it, reserve it again "
             "— you'll join the end of the queue.",
             link=f"/student/catalog/{row['book_id']}?from=reservations",
+            email=EmailContent(
+                subject="Your reservation has expired",
+                intro="Your reserved book was not picked up before the deadline, so the reservation has expired.",
+                details=[
+                    ("Title", book_title),
+                    ("Call No.", book_res.data[0].get("call_number") if book_res.data else None),
+                ],
+                paragraphs=[
+                    "The book has been released to the next person in line. If you still need it, "
+                    "you can reserve it again. You will be added to the end of the queue.",
+                ],
+                link_label="Reserve it again",
+                link=f"/student/catalog/{row['book_id']}",
+            ),
         )
         try:
             advance_or_release(admin, row)
