@@ -10,7 +10,7 @@
 "use client"
 
 import { useRef, useEffect, useMemo, useState } from "react"
-import { X, BookOpen, Bookmark, History, Mail, UserX, UserCheck, ChevronDown, ChevronUp } from "lucide-react"
+import { X, BookOpen, Bookmark, History, Mail, UserX, UserCheck, ChevronDown, ChevronUp, Info } from "lucide-react"
 import { cn, ordinal } from "@/lib/utils"
 import type { UserProfile, Reservation, ReservationStatus } from "@lasallia/types"
 import { fetchLoans, settleFine, type Loan } from "@/lib/kiosk"
@@ -18,6 +18,7 @@ import { fetchReservations } from "@/lib/reservations"
 import { collegeForProgram } from "@/lib/collegeForProgram"
 import { RoleBadge } from "./RoleBadge"
 import { AccountStatusPill } from "./AccountStatusPill"
+import { BookCover } from "@/components/ui/catalog/BookCover"
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 type Tab = "loans" | "reservations" | "history" | "fines"
@@ -93,10 +94,16 @@ type FineEntry = {
   amount: number
   kind: FineKind
   detail: string
-  /** Plain-language basis for the amount — only what's actually known
-   * (dates, declared vs. found condition), never a fabricated peso-exact
-   * overdue/damage split the frontend has no authoritative way to compute. */
-  reasonLines: string[]
+  /** "Why this amount?" as label/value rows — only what's actually on the
+   * loan (dates, declared vs. found condition, the recorded late/damage
+   * split when there is one), never an amount the frontend made up. */
+  reasons: FineReason[]
+}
+
+type FineReason = { label: string; value: string; tone?: "danger" | "success" }
+
+function dayCount(n: number): string {
+  return `${n} day${n === 1 ? "" : "s"}`
 }
 
 export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = false }: PatronProfileModalProps) {
@@ -141,26 +148,55 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
         const isNewDamage =
           l.condition_at_borrow === "good" && (l.condition_at_return === "damaged" || l.condition_at_return === "incomplete")
 
-        const reasonLines: string[] = [
-          `Borrowed ${formatDate(l.borrowed_at)} · Due ${formatDate(l.due_date)} · Returned ${formatDate(l.returned_at!)}.`,
+        // Calendar days, for context only — the fine itself is counted on
+        // library days, so the two can differ around weekends/holidays.
+        const daysAfterDue = Math.max(
+          0,
+          Math.round((new Date(l.returned_at!).getTime() - new Date(l.due_date).getTime()) / 86_400_000)
+        )
+        const borrowCondition = BORROW_CONDITION_LABEL[l.condition_at_borrow] ?? l.condition_at_borrow
+        const returnCondition = l.condition_at_return
+          ? RETURN_CONDITION_LABEL[l.condition_at_return] ?? l.condition_at_return
+          : null
+
+        // The recorded split when the loan has it; otherwise just the reason.
+        const overdueAmt = l.overdue_fine_amount
+        const damageAmt = l.damage_fine_amount
+        const charges: string[] = []
+        if (overdueAmt != null && damageAmt != null) {
+          if (overdueAmt > 0) charges.push(`Late return ₱${overdueAmt.toFixed(2)}`)
+          if (damageAmt > 0) charges.push(`damage ₱${damageAmt.toFixed(2)}`)
+        } else {
+          if (wasLateReturn) charges.push("Late return")
+          if (isNewDamage) charges.push("damage not declared when borrowed")
+        }
+        const chargedFor = charges.length > 0
+          ? charges.join(" + ").replace(/^./, (c) => c.toUpperCase())
+          : "Fine recorded at return"
+
+        const reasons: FineReason[] = [
+          { label: "Borrowed", value: formatDate(l.borrowed_at) },
+          { label: "Due", value: formatDate(l.due_date) },
+          {
+            label: "Returned",
+            value: wasLateReturn && daysAfterDue > 0
+              ? `${formatDate(l.returned_at!)} - ${dayCount(daysAfterDue)} after the due date`
+              : formatDate(l.returned_at!),
+          },
+          {
+            label: "Condition",
+            value: returnCondition
+              ? `${borrowCondition} when borrowed, ${returnCondition} when returned`
+              : `${borrowCondition} when borrowed`,
+          },
+          {
+            label: "Charged for",
+            value: wasLateReturn && overdueAmt == null ? `${chargedFor} (counted on library days)` : chargedFor,
+          },
+          paid
+            ? { label: "Payment", value: l.receipt_number ? `Paid - receipt ${l.receipt_number}` : "Paid", tone: "success" }
+            : { label: "Payment", value: "Not paid yet - pay in person at the circulation desk", tone: "danger" },
         ]
-        if (wasLateReturn) {
-          reasonLines.push("Returned after the due date — an overdue fine applies (computed against the library calendar).")
-        }
-        reasonLines.push(
-          `Condition declared at borrow: ${BORROW_CONDITION_LABEL[l.condition_at_borrow] ?? l.condition_at_borrow}` +
-            (l.condition_at_return
-              ? ` · Found at return: ${RETURN_CONDITION_LABEL[l.condition_at_return] ?? l.condition_at_return}.`
-              : ".")
-        )
-        if (isNewDamage) {
-          reasonLines.push("Damage found at return wasn't declared at borrow — a damage/replacement fee applies.")
-        }
-        reasonLines.push(
-          paid && l.receipt_number
-            ? `Settled — receipt ${l.receipt_number}.`
-            : "Not yet settled — payable in person at the circulation desk."
-        )
 
         entries.push({
           loanId: l.id,
@@ -171,7 +207,7 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
             paid && l.receipt_number
               ? `Returned ${formatDate(l.returned_at!)} · Receipt ${l.receipt_number}`
               : `Returned ${formatDate(l.returned_at!)}`,
-          reasonLines,
+          reasons,
         })
       } else if ((l.status === "active" || l.status === "overdue") && (l.preview_fine_amount ?? 0) > 0) {
         const days = l.days_overdue ?? 0
@@ -181,9 +217,11 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
           amount: l.preview_fine_amount!,
           kind: "accruing",
           detail: `${days} day${days === 1 ? "" : "s"} overdue · not yet returned`,
-          reasonLines: [
-            `Due ${formatDate(l.due_date)} — ${days} day${days === 1 ? "" : "s"} overdue as of today.`,
-            "This is a preview only and increases daily (per the library calendar) until the book is returned.",
+          reasons: [
+            { label: "Borrowed", value: formatDate(l.borrowed_at) },
+            { label: "Due", value: formatDate(l.due_date) },
+            { label: "Overdue", value: `${dayCount(days)} as of today`, tone: "danger" },
+            { label: "Amount", value: "Estimate - grows each library day until the book is returned" },
           ],
         })
       }
@@ -195,6 +233,10 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
     () => fineEntries.filter((e) => e.kind !== "paid").reduce((sum, e) => sum + e.amount, 0),
     [fineEntries]
   )
+  // The two parts of the Fines tab's summary beside Outstanding: what's
+  // still adding up on books not yet returned, and what's been settled.
+  const accruingFines = fineEntries.filter((e) => e.kind === "accruing").reduce((sum, e) => sum + e.amount, 0)
+  const paidFines = fineEntries.filter((e) => e.kind === "paid").reduce((sum, e) => sum + e.amount, 0)
 
   // Patched locally from the settle-fine response's own inputs rather than
   // its response body — the endpoint doesn't return days_overdue/
@@ -253,22 +295,45 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
     { key: "fines",        label: "Fines",         icon: <span className="leading-none font-bold" style={{ fontSize: "14px" }}>₱</span>, count: fineEntries.length, warn: outstandingFines > 0 },
   ]
 
+  // At-a-glance figures for the sidebar — the same numbers the tabs list.
+  const overdueCount = activeLoans.filter(
+    (l) => l.status === "overdue" || (now !== null && new Date(l.due_date).getTime() < now)
+  ).length
+  const quickStats: { label: string; value: string; alert?: boolean }[] = [
+    { label: "Books out", value: String(activeLoans.length) },
+    { label: "Overdue", value: String(overdueCount), alert: overdueCount > 0 },
+    { label: "Fines owed", value: `₱${outstandingFines.toFixed(2)}`, alert: outstandingFines > 0 },
+    { label: "Returned", value: String(returnedLoans.length) },
+  ]
+
+  // Two columns: who the patron is (sidebar) and what they have (tabs).
+  // Replaces a full-width header, a thin meta row and a separate footer,
+  // which left most of the window empty around a short list.
   return (
     <div className="fixed inset-0 z-(--z-modal) flex items-end sm:items-center justify-center sm:p-4">
       <div className="absolute inset-0 bg-ink-900/40" onClick={onClose} />
 
-      <div ref={dialogRef} role="dialog" aria-modal="true" className="relative w-full sm:max-w-6xl h-[92vh] sm:h-[86vh] max-h-[940px] bg-white rounded-t-(--radius-lg) sm:rounded-(--radius-lg) shadow-(--shadow-lg) flex flex-col overflow-hidden">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Patron record: ${displayName}`}
+        className="relative w-full sm:max-w-6xl h-[92vh] sm:h-[82vh] max-h-[780px] bg-white rounded-t-(--radius-lg) sm:rounded-(--radius-lg) shadow-(--shadow-lg) flex flex-col md:flex-row overflow-hidden"
+      >
 
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 p-4 sm:p-6 border-b border-ink-100 shrink-0">
-          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+        {/* ── Sidebar: identity, figures, details, account action ── */}
+        <aside className="shrink-0 md:w-[360px] max-h-[45%] md:max-h-none bg-ink-50 border-b md:border-b-0 md:border-r border-ink-100 flex flex-col min-h-0">
+          <div className="flex-1 min-h-0 overflow-y-auto">
+          {/* Avatar beside the name, not stacked above it — keeps the
+              header short so the whole sidebar fits without scrolling. */}
+          <div className="px-5 md:px-6 pt-5 md:pt-6 pb-4 flex items-center gap-3.5">
             <div
-              className="flex items-center justify-center rounded-full bg-green-200 text-green-800 font-semibold shrink-0 w-12 h-12 sm:w-[60px] sm:h-[60px]"
+              className="flex items-center justify-center rounded-full bg-green-200 text-green-800 font-semibold shrink-0 w-14 h-14"
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-lg)" }}
             >
               {initials}
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p
                 className="text-ink-400 uppercase font-semibold"
                 style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-section)" }}
@@ -276,91 +341,149 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
                 Patron Record
               </p>
               <h2
-                className="text-ink-900 font-semibold truncate"
-                style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-2xl)" }}
+                className="text-ink-900 font-semibold leading-snug break-words"
+                style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}
               >
                 {displayName}
               </h2>
-              <div className="flex items-center gap-1.5 text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                <Mail size={13} className="shrink-0" />
-                <span className="truncate">{patron.email}</span>
-              </div>
+              <p
+                className="flex items-start gap-1.5 text-ink-500 mt-0.5 min-w-0"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+              >
+                <Mail size={13} className="shrink-0 mt-[3px]" />
+                <span className="break-all">{patron.email}</span>
+              </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-sm text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors shrink-0"
-          >
-            <X size={17} />
-          </button>
-        </div>
-
-        {/* Meta row — identity pills on the left, enrollment info
-            (Program/College/Year Level) right-aligned on the same row via
-            justify-between, so a wide modal doesn't leave the whole right
-            side of this row empty next to two small pills. Falls back to
-            wrapping onto its own line only on narrow viewports. */}
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 sm:px-6 py-3 border-b border-ink-100 shrink-0">
-          <div className="flex items-center gap-2">
+          <div className="px-5 md:px-6 pb-4 flex flex-wrap items-center gap-2">
             <RoleBadge role={patron.role} />
             <AccountStatusPill status={patron.status ?? "active"} />
           </div>
+
+          {/* Figures */}
+          <div className="grid grid-cols-4 md:grid-cols-2 gap-2 px-5 md:px-6">
+            {quickStats.map((st) => (
+              <div key={st.label} className="rounded-sm border border-ink-200 bg-white px-3 py-2 min-w-0 flex flex-col">
+                <p
+                  className={cn("font-semibold leading-tight truncate", st.alert ? "text-danger" : "text-ink-900")}
+                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-base)" }}
+                >
+                  {loadingActivity ? "—" : st.value}
+                </p>
+                <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                  {st.label}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* Details */}
           {enrollmentFields.length > 0 && (
-            <div className="flex items-center divide-x divide-ink-200">
+            <dl className="px-5 md:px-6 pt-3 pb-4 grid grid-cols-2 md:grid-cols-1 gap-x-4">
               {enrollmentFields.map((f) => (
-                <div key={f.label} className="px-4 first:pl-0 last:pr-0 text-right">
-                  <p
-                    className="text-ink-400 uppercase font-semibold"
+                <div key={f.label} className="flex flex-col md:flex-row md:items-center md:justify-between gap-0.5 md:gap-3 py-2 border-b border-ink-100 last:border-b-0">
+                  <dt
+                    className="text-ink-400 uppercase font-semibold shrink-0"
                     style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)" }}
                   >
                     {f.label}
-                  </p>
-                  <p className="text-ink-900 font-medium whitespace-nowrap" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                  </dt>
+                  <dd
+                    className="text-ink-900 font-medium md:text-right min-w-0 break-words"
+                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                  >
                     {f.value}
-                  </p>
+                  </dd>
                 </div>
               ))}
-            </div>
+            </dl>
           )}
-        </div>
 
-        {/* Tabs */}
-        <div className="flex px-4 sm:px-6 border-b border-ink-100 shrink-0 overflow-x-auto">
-          {tabs.map((t) => (
+          </div>
+
+          {/* Account action — its own footer, always visible below the
+              scrolling details instead of falling off the bottom. */}
+          <div className="shrink-0 px-5 md:px-6 py-4 border-t border-ink-100 flex flex-col gap-2">
+            {blockSelfDeactivate && (
+              <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+                You can&apos;t deactivate your own account.
+              </p>
+            )}
             <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
+              type="button"
+              onClick={onToggleStatus}
+              disabled={blockSelfDeactivate}
               className={cn(
-                "flex items-center gap-1.5 px-2.5 sm:px-3.5 py-2.5 sm:py-3 border-b-2 transition-colors whitespace-nowrap shrink-0",
-                tab === t.key
-                  ? "border-green-700 text-green-800 font-semibold"
-                  : "border-transparent text-ink-400 hover:text-ink-700"
+                "w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-sm transition-colors font-semibold disabled:opacity-50 disabled:pointer-events-none",
+                isActive ? "bg-white border border-danger/30 text-danger hover:bg-danger-bg" : "bg-green-700 text-white hover:bg-green-800"
               )}
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
             >
-              {t.icon}
-              {t.label}
-              <span
-                className={cn(
-                  "flex items-center justify-center rounded-full min-w-[18px] h-[18px] px-1 font-semibold",
-                  tab === t.key
-                    ? "bg-green-100 text-green-800"
-                    : t.warn
-                      ? "bg-danger-bg text-danger"
-                      : "bg-ink-100 text-ink-500"
-                )}
-                style={{ fontSize: "var(--text-2xs)" }}
-              >
-                {t.count}
-              </span>
+              {isActive ? <UserX size={14} /> : <UserCheck size={14} />}
+              {isActive ? "Deactivate account" : "Activate account"}
             </button>
-          ))}
-        </div>
+          </div>
+        </aside>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        {/* ── Main: tabs and their lists ── */}
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+          {/* Segmented control — a grey track filling the row, split into
+              four equal segments, with the open view as a white pill. Reads
+              as switching views inside a pop-up better than a page-style
+              underline row. min-w-max lets it scroll on narrow screens
+              instead of squashing the labels. */}
+          <div className="flex items-center gap-3 px-4 sm:px-6 py-3 border-b border-ink-100 shrink-0">
+            <div className="flex-1 min-w-0 overflow-x-auto">
+              <div role="tablist" aria-label="Patron activity" className="flex w-full min-w-max items-center gap-1 p-1 rounded-full bg-ink-100">
+                {tabs.map((t) => {
+                  const selected = tab === t.key
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      onClick={() => setTab(t.key)}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-full whitespace-nowrap transition-colors",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700",
+                        selected
+                          ? "bg-white text-ink-900 font-semibold shadow-(--shadow-sm)"
+                          : "text-ink-500 hover:text-ink-800"
+                      )}
+                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+                    >
+                      <span className={cn("flex", selected ? "text-green-700" : "text-ink-400")}>{t.icon}</span>
+                      {t.label}
+                      <span
+                        className={cn(
+                          "flex items-center justify-center rounded-full min-w-[18px] h-[18px] px-1 font-semibold",
+                          selected
+                            ? "bg-green-100 text-green-800"
+                            : t.warn
+                              ? "bg-danger-bg text-danger"
+                              : "bg-white/70 text-ink-500"
+                        )}
+                        style={{ fontSize: "var(--text-2xs)" }}
+                      >
+                        {t.count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="flex items-center justify-center w-9 h-9 rounded-full text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors shrink-0"
+            >
+              <X size={17} />
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
           {loadingActivity ? (
             <div className="flex items-center justify-center py-10 text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
               Loading…
@@ -375,6 +498,7 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
                     const status = l.status === "overdue" || daysLeft < 0 ? "overdue" : daysLeft <= DUE_SOON_DAYS ? "due_soon" : "active"
                     return {
                       key: l.id,
+                      book: l.books,
                       title: l.books?.title ?? "Unknown title",
                       line1: `Borrowed ${formatDate(l.borrowed_at)}`,
                       line2: `Due ${formatDate(l.due_date)}`,
@@ -388,6 +512,7 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
                   empty="No reservations."
                   items={reservations.map((r) => ({
                     key: r.id,
+                    book: r.books,
                     title: r.books?.title ?? "Unknown title",
                     line1: `Requested ${formatDate(r.requested_at)}`,
                     line2: r.status === "ready" && r.pickup_by ? `Pickup by ${formatDate(r.pickup_by)}` : undefined,
@@ -402,6 +527,7 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
                     const wasLate = new Date(l.returned_at!).getTime() > new Date(l.due_date).getTime()
                     return {
                       key: l.id,
+                      book: l.books,
                       title: l.books?.title ?? "Unknown title",
                       line1: `Borrowed ${formatDate(l.borrowed_at)}`,
                       line2: `Returned ${formatDate(l.returned_at!)}`,
@@ -412,61 +538,48 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
               )}
               {tab === "fines" && (
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 rounded-sm border border-ink-200 bg-ink-50">
-                    <div>
-                      <p
-                        className="text-ink-400 uppercase font-semibold"
-                        style={{ fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-section)" }}
-                      >
-                        Outstanding
-                      </p>
-                      <p
-                        className={cn("font-semibold", outstandingFines > 0 ? "text-danger" : "text-ink-900")}
-                        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xl)" }}
-                      >
-                        ₱{outstandingFines.toFixed(2)}
-                      </p>
-                    </div>
-                    <p className="text-ink-500 max-w-sm" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-                      Fines are settled in person at the circulation desk — a librarian records the receipt number
-                      when the book is returned, under <span className="font-medium text-ink-700">Borrow &amp; Return</span>.
-                    </p>
+                  {/* Three figures side by side, then a one-line note on how
+                      fines get settled — instead of one wide box with a
+                      paragraph squeezed in beside the total. */}
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {[
+                      { label: "Outstanding", value: outstandingFines, tone: outstandingFines > 0 ? "text-danger" : "text-ink-900" },
+                      { label: "Accruing", value: accruingFines, tone: accruingFines > 0 ? "text-warn" : "text-ink-900" },
+                      { label: "Paid", value: paidFines, tone: paidFines > 0 ? "text-success" : "text-ink-900" },
+                    ].map((f) => (
+                      <div key={f.label} className="rounded-(--radius) border border-ink-200 bg-white px-4 py-2.5 min-w-0">
+                        <p
+                          className="text-ink-400 uppercase font-semibold truncate"
+                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-caps)" }}
+                        >
+                          {f.label}
+                        </p>
+                        <p
+                          className={cn("font-semibold leading-tight mt-0.5 truncate", f.tone)}
+                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-lg)" }}
+                        >
+                          ₱{f.value.toFixed(2)}
+                        </p>
+                      </div>
+                    ))}
                   </div>
+                  <p
+                    className="flex items-start gap-2 text-ink-500 px-1"
+                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
+                  >
+                    <Info size={13} className="shrink-0 mt-0.5 text-ink-400" />
+                    <span>
+                      Fines are paid in person at the circulation desk. Record the receipt number with{" "}
+                      <span className="font-semibold text-ink-700">Record Payment</span> on the fine below, or when the book is returned in{" "}
+                      <span className="font-semibold text-ink-700">Borrow &amp; Return</span>.
+                    </span>
+                  </p>
                   <FinesList entries={fineEntries} onSettled={handleFineSettled} />
                 </div>
               )}
             </>
           )}
-        </div>
-
-        {/* Footer actions */}
-        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 p-4 sm:p-5 border-t border-ink-100 shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2.5 rounded-sm text-ink-600 hover:bg-ink-100 transition-colors font-medium"
-            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-          >
-            Close
-          </button>
-          {blockSelfDeactivate && (
-            <p className="text-ink-400 sm:mr-auto text-center sm:text-left" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
-              You can&apos;t deactivate your own account.
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={onToggleStatus}
-            disabled={blockSelfDeactivate}
-            className={cn(
-              "flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-sm transition-colors font-semibold disabled:opacity-50 disabled:pointer-events-none",
-              isActive ? "bg-danger/10 text-danger hover:bg-danger/20" : "bg-green-700 text-white hover:bg-green-800"
-            )}
-            style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-          >
-            {isActive ? <UserX size={14} /> : <UserCheck size={14} />}
-            {isActive ? "Deactivate" : "Activate"}
-          </button>
+          </div>
         </div>
       </div>
     </div>
@@ -482,7 +595,7 @@ function FinesList({
 }) {
   if (entries.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-10 gap-2 text-ink-300">
+      <div className="flex flex-col items-center justify-center py-14 gap-2 text-ink-300">
         <span className="leading-none font-bold" style={{ fontSize: "26px" }}>₱</span>
         <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>No fines on record.</p>
       </div>
@@ -490,7 +603,7 @@ function FinesList({
   }
 
   return (
-    <ul className="flex flex-col gap-2.5">
+    <ul className="rounded-(--radius) border border-ink-200 bg-white divide-y divide-ink-100 overflow-hidden">
       {entries.map((e) => (
         <FineRow key={e.loanId} entry={e} onSettled={onSettled} />
       ))}
@@ -536,13 +649,13 @@ function FineRow({
   }
 
   return (
-    <li className="flex flex-col gap-2 px-4 py-3.5 rounded-sm border border-ink-200 bg-white">
+    <li className="flex flex-col gap-2 px-4 py-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="min-w-0">
           <p className="text-ink-900 font-semibold truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
             {entry.title}
           </p>
-          <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+          <p className="text-ink-500 mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
             {entry.detail}
           </p>
         </div>
@@ -551,7 +664,7 @@ function FineRow({
             ₱{entry.amount.toFixed(2)}
           </span>
           <span
-            className={cn("px-2.5 py-1 rounded-sm border font-semibold", FINE_CFG[entry.kind].bg, FINE_CFG[entry.kind].text, FINE_CFG[entry.kind].border)}
+            className={cn("px-2.5 py-0.5 rounded-full font-semibold", FINE_CFG[entry.kind].bg, FINE_CFG[entry.kind].text)}
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
           >
             {FINE_CFG[entry.kind].label}
@@ -579,13 +692,24 @@ function FineRow({
       </div>
 
       {showReason && (
-        <ul className="flex flex-col gap-1 mt-1 pt-2 pl-3 border-t border-l-2 border-ink-200">
-          {entry.reasonLines.map((line, i) => (
-            <li key={i} className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-              {line}
-            </li>
+        <dl className="mt-1 rounded-sm bg-ink-50 px-3.5 py-2.5 grid grid-cols-[96px_minmax(0,1fr)] gap-x-4 gap-y-1.5">
+          {entry.reasons.map((r) => (
+            <div key={r.label} className="contents">
+              <dt className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+                {r.label}
+              </dt>
+              <dd
+                className={cn(
+                  "min-w-0",
+                  r.tone === "danger" ? "text-danger font-medium" : r.tone === "success" ? "text-success font-medium" : "text-ink-700"
+                )}
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
+              >
+                {r.value}
+              </dd>
+            </div>
           ))}
-        </ul>
+        </dl>
       )}
 
       {settling && (
@@ -628,16 +752,22 @@ function FineRow({
   )
 }
 
-function ActivityList({
-  items,
-  empty,
-}: {
-  items: { key: string; title: string; line1: string; line2?: string; cfg: { label: string; text: string; bg: string; border: string } }[]
-  empty: string
-}) {
+type ActivityItem = {
+  key: string
+  book?: { cover_url?: string | null; cover_color?: string | null } | null
+  title: string
+  line1: string
+  line2?: string
+  cfg: { label: string; text: string; bg: string; border: string }
+}
+
+// One bordered list with dividers, a small cover per row and the status as a
+// rounded pill — instead of a separate outlined box per item, which left a
+// lone heavy card floating at the top of an otherwise empty panel.
+function ActivityList({ items, empty }: { items: ActivityItem[]; empty: string }) {
   if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-10 gap-2 text-ink-300">
+      <div className="flex flex-col items-center justify-center py-14 gap-2 text-ink-300">
         <BookOpen size={26} />
         <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{empty}</p>
       </div>
@@ -645,22 +775,39 @@ function ActivityList({
   }
 
   return (
-    <ul className="flex flex-col gap-2.5">
+    <ul className="rounded-(--radius) border border-ink-200 bg-white divide-y divide-ink-100 overflow-hidden">
       {items.map((item) => (
-        <li
-          key={item.key}
-          className="flex items-center justify-between gap-3 px-4 py-3.5 rounded-sm border border-ink-200 bg-white"
-        >
-          <div className="min-w-0">
-            <p className="text-ink-900 font-semibold truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+        <li key={item.key} className="flex items-center gap-3.5 px-4 py-3">
+          <div
+            className="w-9 h-[52px] rounded-[3px] overflow-hidden shrink-0 shadow-(--shadow-sm)"
+            style={{ background: item.book?.cover_color ?? "var(--color-green-800)" }}
+          >
+            <BookCover
+              src={item.book?.cover_url}
+              alt=""
+              className="w-full h-full object-cover"
+              fallback={
+                <div className="w-full h-full flex items-center justify-center text-white/60">
+                  <BookOpen size={14} />
+                </div>
+              }
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p
+              className="text-ink-900 font-semibold truncate"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+              title={item.title}
+            >
               {item.title}
             </p>
-            <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-              {item.line1}{item.line2 ? ` · ${item.line2}` : ""}
+            <p className="text-ink-500 mt-0.5" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+              {item.line1}
+              {item.line2 && <><span className="text-ink-300 mx-1.5">·</span>{item.line2}</>}
             </p>
           </div>
           <span
-            className={cn("shrink-0 px-2.5 py-1 rounded-sm border font-semibold", item.cfg.bg, item.cfg.text, item.cfg.border)}
+            className={cn("shrink-0 px-2.5 py-0.5 rounded-full font-semibold", item.cfg.bg, item.cfg.text)}
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
           >
             {item.cfg.label}

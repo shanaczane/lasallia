@@ -1,20 +1,16 @@
 // apps/web/components/ui/patrons/PatronsToolbar.tsx
 // Sprint 5.5.1 — search + filter controls for the users list table
-// Fix: status filter removed; search + role filter now always sit beside each
-// other (flex-row) on every device — the select shrinks instead of the two
-// controls stacking, so the toolbar stays compact even on small phones. Only
-// wraps to a second line as a last resort on extremely narrow viewports.
+// Search plus college and account-status filters, beside each other
+// (flex-row) on every device; the row wraps onto a second line only when
+// the screen is too narrow to fit them all.
 
 "use client"
 
 import { Search, X, Users, Download } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { UserRole } from "@lasallia/types"
-import { ROLE_LABEL } from "@/lib/mock/patrons"
+import { COLLEGES } from "@/lib/colleges"
 
-export type RoleFilter = "all" | UserRole
-
-const ROLE_FILTERS: RoleFilter[] = ["all", "student", "faculty", "librarian"]
+export type StatusFilter = "all" | "active" | "inactive"
 
 // Shared select chevron — matches the Sort control on the Catalog tab
 const SELECT_CHEVRON =
@@ -23,8 +19,10 @@ const SELECT_CHEVRON =
 type PatronsToolbarProps = {
   query: string
   onQueryChange: (v: string) => void
-  roleFilter: RoleFilter
-  onRoleFilterChange: (v: RoleFilter) => void
+  collegeFilter: string
+  onCollegeFilterChange: (v: string) => void
+  statusFilter: StatusFilter
+  onStatusFilterChange: (v: StatusFilter) => void
   resultCount: number
   /** Exports whatever `resultCount` describes — the search+role-filtered
    *  list, not the full unfiltered patron directory. */
@@ -35,12 +33,27 @@ type PatronsToolbarProps = {
 export function PatronsToolbar({
   query,
   onQueryChange,
-  roleFilter,
-  onRoleFilterChange,
+  collegeFilter,
+  onCollegeFilterChange,
+  statusFilter,
+  onStatusFilterChange,
   resultCount,
   onExport,
   exportDisabled,
 }: PatronsToolbarProps) {
+  const selectClass = cn(
+    "shrink-0 min-w-[128px] sm:min-w-[150px] bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2",
+    "focus:outline-none focus:border-green-700 cursor-pointer",
+    "hover:border-ink-300 transition-colors appearance-none pr-7"
+  )
+  const selectStyle = {
+    fontSize: "var(--text-sm-body)",
+    fontFamily: "var(--font-body)",
+    backgroundImage: `url("${SELECT_CHEVRON}")`,
+    backgroundRepeat: "no-repeat",
+    backgroundPosition: "right 7px center",
+  }
+
   return (
     <div className="flex flex-col gap-3">
       {/* Search + role filter — sticky so it stays reachable while scrolling.
@@ -81,29 +94,31 @@ export function PatronsToolbar({
           )}
         </div>
 
-        {/* Role filter */}
+        {/* College filter */}
         <select
-          value={roleFilter}
-          onChange={(e) => onRoleFilterChange(e.target.value as RoleFilter)}
-          aria-label="Filter by role"
-          className={cn(
-            "shrink-0 min-w-[128px] sm:min-w-[168px] bg-white border border-ink-200 text-ink-700 rounded-sm px-2.5 py-2",
-            "focus:outline-none focus:border-green-700 cursor-pointer",
-            "hover:border-ink-300 transition-colors appearance-none pr-7"
-          )}
-          style={{
-            fontSize: "var(--text-sm-body)",
-            fontFamily: "var(--font-body)",
-            backgroundImage: `url("${SELECT_CHEVRON}")`,
-            backgroundRepeat: "no-repeat",
-            backgroundPosition: "right 7px center",
-          }}
+          value={collegeFilter}
+          onChange={(e) => onCollegeFilterChange(e.target.value)}
+          aria-label="Filter by college"
+          className={selectClass}
+          style={selectStyle}
         >
-          {ROLE_FILTERS.map((r) => (
-            <option key={r} value={r}>
-              {r === "all" ? "All roles" : ROLE_LABEL[r]}
-            </option>
+          <option value="all">All colleges</option>
+          {COLLEGES.map((c) => (
+            <option key={c} value={c}>{c}</option>
           ))}
+        </select>
+
+        {/* Account status filter */}
+        <select
+          value={statusFilter}
+          onChange={(e) => onStatusFilterChange(e.target.value as StatusFilter)}
+          aria-label="Filter by account status"
+          className={selectClass}
+          style={selectStyle}
+        >
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
         </select>
 
         {/* Export CSV — follows the search + role filter above, same as

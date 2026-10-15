@@ -6,18 +6,21 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { CheckCircle2, AlertCircle } from "lucide-react"
+import { CheckCircle2, AlertCircle, Users, GraduationCap, BookUser, Clock, Wallet } from "lucide-react"
 import type { UserProfile } from "@lasallia/types"
 import { fetchPatrons, updatePatronStatus } from "@/lib/users"
+import { fetchLoans, type Loan } from "@/lib/kiosk"
+import { collegeForProgram } from "@/lib/collegeForProgram"
+import { cn } from "@/lib/utils"
 import { getUser } from "@/lib/auth"
 import { downloadCsv } from "@/lib/reports"
 import { ROLE_LABEL } from "@/lib/mock/patrons"
 import { Pagination } from "@/components/ui/catalog"
 import {
   PatronsToolbar,
-  type RoleFilter,
+  type StatusFilter,
 } from "@/components/ui/patrons/PatronsToolbar"
-import { PatronsTable } from "@/components/ui/patrons/PatronsTable"
+import { PatronsTable, EMPTY_STATS, type PatronStats } from "@/components/ui/patrons/PatronsTable"
 import { PatronProfileModal } from "@/components/ui/patrons/PatronProfileModal"
 import { ConfirmStatusDialog } from "@/components/ui/patrons/ConfirmStatusDialog"
 
@@ -97,6 +100,45 @@ function Toast({ message, variant }: { message: string; variant: "success" | "er
   )
 }
 
+// ─── Summary cards ───────────────────────────────────────────────────────────
+// Each one doubles as a filter: clicking it narrows the list to those patrons,
+// clicking it again (or "Total patrons") clears that filter.
+
+type QuickFilter = "all" | "students" | "faculty" | "overdue" | "fines"
+
+function SummaryCard({
+  icon, iconClass, label, value, active, onClick,
+}: {
+  icon: React.ReactNode
+  iconClass: string
+  label: string
+  value: number | string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "min-w-0 flex items-center gap-3 rounded-(--radius) border bg-white px-4 py-3 text-left transition-colors",
+        active ? "border-green-700 ring-1 ring-green-700" : "border-ink-200 hover:border-ink-300",
+      )}
+    >
+      <span className={cn("flex items-center justify-center w-9 h-9 rounded-sm shrink-0", iconClass)}>{icon}</span>
+      <span className="min-w-0">
+        <span className="block text-ink-900 font-bold leading-tight" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-2xl)" }}>
+          {value}
+        </span>
+        <span className="block text-ink-500 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+          {label}
+        </span>
+      </span>
+    </button>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function PatronsPageContent() {
@@ -104,6 +146,7 @@ function PatronsPageContent() {
   const highlightId = searchParams.get("highlight")
 
   const [patrons, setPatrons] = useState<UserProfile[]>([])
+  const [loans, setLoans] = useState<Loan[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -111,10 +154,34 @@ function PatronsPageContent() {
       .then(setPatrons)
       .catch(() => {})
       .finally(() => setLoading(false))
+    // Separate so a loans hiccup can't blank the directory — the figures
+    // just read 0 until it loads.
+    fetchLoans().then(setLoans).catch(() => {})
   }, [])
 
+  // Books out / overdue / fines owed per patron, from the same loans list
+  // the dashboard uses. "Owed" matches the profile's Outstanding total:
+  // unsettled fines on returned books plus what's accruing on overdue ones.
+  const stats = useMemo(() => {
+    const byPatron: Record<string, PatronStats> = {}
+    for (const l of loans) {
+      const s = (byPatron[l.student_id] ??= { ...EMPTY_STATS })
+      if (l.status === "active" || l.status === "overdue") {
+        s.booksOut += 1
+        if (l.status === "overdue") s.overdue += 1
+        s.owed += l.preview_fine_amount ?? 0
+      } else if (l.fine_status === "unsettled") {
+        s.owed += l.fine_amount ?? 0
+      }
+    }
+    return byPatron
+  }, [loans])
+  const statsOf = (p: UserProfile) => stats[p.id] ?? EMPTY_STATS
+
   const [query, setQuery] = useState("")
-  const [roleFilter, setRoleFilter] = useState<RoleFilter>("all")
+  const [collegeFilter, setCollegeFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all")
 
   const [viewing, setViewing] = useState<UserProfile | null>(null)
   const [confirmingStatus, setConfirmingStatus] = useState<UserProfile | null>(null)
@@ -150,12 +217,32 @@ function PatronsPageContent() {
         p.email.toLowerCase().includes(q) ||
         (p.program ?? "").toLowerCase().includes(q) ||
         (p.id_number ?? "").toLowerCase().includes(q)
-      const matchesRole = roleFilter === "all" || p.role === roleFilter
-      return matchesQuery && matchesRole
+      const matchesCollege = collegeFilter === "all" || (p.college || collegeForProgram(p.program)) === collegeFilter
+      const matchesStatus = statusFilter === "all" || (p.status ?? "active") === statusFilter
+      const s = stats[p.id] ?? EMPTY_STATS
+      const matchesQuick =
+        quickFilter === "all" ||
+        (quickFilter === "students" && p.role === "student") ||
+        (quickFilter === "faculty" && p.role === "faculty") ||
+        (quickFilter === "overdue" && s.overdue > 0) ||
+        (quickFilter === "fines" && s.owed > 0)
+      return matchesQuery && matchesCollege && matchesStatus && matchesQuick
     })
-  }, [patrons, query, roleFilter])
+  }, [patrons, stats, query, collegeFilter, statusFilter, quickFilter])
 
-  const { page, totalPages, pageItems, goTo } = usePagination(filtered, `${query}|${roleFilter}`)
+  const { page, totalPages, pageItems, goTo } = usePagination(
+    filtered,
+    `${query}|${collegeFilter}|${statusFilter}|${quickFilter}`,
+  )
+
+  const summary = {
+    total: patrons.length,
+    students: patrons.filter((p) => p.role === "student").length,
+    faculty: patrons.filter((p) => p.role === "faculty").length,
+    overdue: patrons.filter((p) => statsOf(p).overdue > 0).length,
+    fines: patrons.filter((p) => statsOf(p).owed > 0).length,
+  }
+  const toggleQuick = (f: QuickFilter) => setQuickFilter((cur) => (cur === f ? "all" : f))
 
   // Exports whatever the search + role filter currently narrows the table
   // to (`filtered`), not the full unfiltered directory or just the current
@@ -166,8 +253,12 @@ function PatronsPageContent() {
     email: p.email,
     id_number: p.id_number ?? "",
     role: ROLE_LABEL[p.role],
+    college: p.college || collegeForProgram(p.program) || "",
     program: p.program ?? "",
     year_level: p.year_level ?? "",
+    books_out: statsOf(p).booksOut,
+    overdue: statsOf(p).overdue,
+    fines_owed: statsOf(p).owed.toFixed(2),
     status: p.status ?? "active",
     joined: p.created_at,
   })))
@@ -209,11 +300,41 @@ function PatronsPageContent() {
         </p>
       </div>
 
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <SummaryCard
+          icon={<Users size={18} />} iconClass="bg-green-100 text-green-700"
+          label="Total patrons" value={summary.total}
+          active={quickFilter === "all"} onClick={() => setQuickFilter("all")}
+        />
+        <SummaryCard
+          icon={<GraduationCap size={18} />} iconClass="bg-info-bg text-info"
+          label="Students" value={summary.students}
+          active={quickFilter === "students"} onClick={() => toggleQuick("students")}
+        />
+        <SummaryCard
+          icon={<BookUser size={18} />} iconClass="bg-gold-100 text-gold-600"
+          label="Faculty" value={summary.faculty}
+          active={quickFilter === "faculty"} onClick={() => toggleQuick("faculty")}
+        />
+        <SummaryCard
+          icon={<Clock size={18} />} iconClass="bg-danger-bg text-danger"
+          label="With overdue books" value={summary.overdue}
+          active={quickFilter === "overdue"} onClick={() => toggleQuick("overdue")}
+        />
+        <SummaryCard
+          icon={<Wallet size={18} />} iconClass="bg-warn-bg text-warn"
+          label="With unpaid fines" value={summary.fines}
+          active={quickFilter === "fines"} onClick={() => toggleQuick("fines")}
+        />
+      </div>
+
       <PatronsToolbar
         query={query}
         onQueryChange={setQuery}
-        roleFilter={roleFilter}
-        onRoleFilterChange={setRoleFilter}
+        collegeFilter={collegeFilter}
+        onCollegeFilterChange={setCollegeFilter}
+        statusFilter={statusFilter}
+        onStatusFilterChange={setStatusFilter}
         resultCount={filtered.length}
         onExport={exportPatronsCsv}
         exportDisabled={filtered.length === 0}
@@ -221,6 +342,7 @@ function PatronsPageContent() {
 
       <PatronsTable
         patrons={pageItems}
+        stats={stats}
         onView={setViewing}
         onToggleStatus={setConfirmingStatus}
         selfId={selfId}

@@ -1,29 +1,66 @@
 // apps/web/components/ui/patrons/PatronsTable.tsx
 // Sprint 5.5.1 — users list table with search and filter
+//
+// Columns lead with what a librarian acts on — books out, overdue, fines
+// owed, account status — with program/year folded into the College cell as
+// a small second line. Role isn't shown per row; the Students/Faculty summary
+// cards filter by it, and the profile shows it.
 
 "use client"
 
 import { Users } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { collegeForProgram } from "@/lib/collegeForProgram"
 import type { UserProfile } from "@lasallia/types"
-import { RoleBadge } from "./RoleBadge"
+import { AccountStatusPill } from "./AccountStatusPill"
 import { PatronActionsMenu } from "./PatronActionsMenu"
 
+// Per-patron loan figures, worked out by the page from the loans list.
+export type PatronStats = {
+  booksOut: number
+  overdue: number
+  // Unsettled fines on returned books plus what's accruing on overdue ones —
+  // the same "Outstanding" total the profile's Fines tab shows.
+  owed: number
+}
+
+export const EMPTY_STATS: PatronStats = { booksOut: 0, overdue: 0, owed: 0 }
+
 // Shared column template for the header AND every row — keeps them pixel-aligned.
-// md: Name | Program | Role | Actions              (4 cols — Year Level hidden to save width)
-// lg: Name | Program | Year Level | Role | Actions  (5 cols)
+// md: Name | Books out | Overdue | Fines | Status | Actions
+// lg: Name | College | Books out | Overdue | Fines | Status | Actions
 const ROW_GRID =
-  "grid-cols-[minmax(0,2.4fr)_minmax(0,1.2fr)_100px_44px] lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_100px_44px]"
+  "grid-cols-[minmax(0,2.4fr)_76px_76px_96px_92px_44px] lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.4fr)_76px_76px_96px_92px_44px]"
+
+const body = (size: string) => ({ fontFamily: "var(--font-body)", fontSize: size })
+
+function initialsOf(patron: UserProfile): string {
+  return (patron.full_name || patron.email)
+    .split(" ")
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase()
+}
+
+function programLine(patron: UserProfile): string {
+  return [patron.program, patron.year_level ? `Year ${patron.year_level}` : null].filter(Boolean).join(" · ")
+}
+
+function peso(n: number): string {
+  return `₱${n.toFixed(2)}`
+}
 
 type PatronsTableProps = {
   patrons: UserProfile[]
+  stats: Record<string, PatronStats>
   onView: (patron: UserProfile) => void
   onToggleStatus: (patron: UserProfile) => void
   // Signed-in librarian's id — their own row can't be deactivated.
   selfId?: string | null
 }
 
-export function PatronsTable({ patrons, onView, onToggleStatus, selfId }: PatronsTableProps) {
+export function PatronsTable({ patrons, stats, onView, onToggleStatus, selfId }: PatronsTableProps) {
   return (
     <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
 
@@ -38,16 +75,18 @@ export function PatronsTable({ patrons, onView, onToggleStatus, selfId }: Patron
         }}
       >
         <span>Name</span>
-        <span>Program</span>
-        <span className="hidden lg:block">Year Level</span>
-        <span className="text-center">Role</span>
+        <span className="hidden lg:block">College</span>
+        <span className="text-center">Books out</span>
+        <span className="text-center">Overdue</span>
+        <span className="text-right">Fines owed</span>
+        <span className="text-center">Status</span>
         <span />
       </div>
 
       {patrons.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-14 gap-2 text-ink-300">
           <Users size={28} />
-          <p style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+          <p style={body("var(--text-sm-body)")}>
             No users match your search or filters.
           </p>
         </div>
@@ -57,12 +96,10 @@ export function PatronsTable({ patrons, onView, onToggleStatus, selfId }: Patron
           // (something to show in the avatar) and "No name on file" for
           // the row text, rather than crash on a patron with none set.
           const displayName = patron.full_name || "No name on file"
-          const initials = (patron.full_name || patron.email)
-            .split(" ")
-            .map((p) => p[0])
-            .slice(0, 2)
-            .join("")
-            .toUpperCase()
+          const initials = initialsOf(patron)
+          const s = stats[patron.id] ?? EMPTY_STATS
+          const college = patron.college || collegeForProgram(patron.program)
+          const program = programLine(patron)
 
           return (
             <div key={patron.id} className="border-b border-ink-100 last:border-b-0">
@@ -72,36 +109,58 @@ export function PatronsTable({ patrons, onView, onToggleStatus, selfId }: Patron
                 <button onClick={() => onView(patron)} className="flex items-center gap-3 min-w-0 group text-left">
                   <div
                     className="flex items-center justify-center rounded-full bg-green-200 text-green-800 font-semibold shrink-0"
-                    style={{ width: 36, height: 36, fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                    style={{ width: 36, height: 36, ...body("var(--text-sm-body)") }}
                   >
                     {initials}
                   </div>
                   <div className="min-w-0">
                     <p
                       className="text-ink-900 font-semibold truncate group-hover:text-green-700 transition-colors"
-                      style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                      style={body("var(--text-sm-body)")}
                     >
                       {displayName}
                     </p>
-                    <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+                    <p className="text-ink-400 truncate" style={body("var(--text-sm)")}>
                       {patron.email}
                       {patron.id_number ? ` · ${patron.id_number}` : ""}
                     </p>
                   </div>
                 </button>
 
-                <span className="text-ink-600 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                  {patron.program ?? ""}
-                </span>
-
-                <span className="hidden lg:block text-ink-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                  {patron.year_level ? `Year ${patron.year_level}` : ""}
-                </span>
-
-                {/* Role — now on the other side, after Name and Program (College) */}
-                <div className="flex justify-center">
-                  <RoleBadge role={patron.role} />
+                <div className="hidden lg:block min-w-0">
+                  <p className="text-ink-700 truncate" style={body("var(--text-sm-body)")}>{college ?? "—"}</p>
+                  {program && (
+                    <p className="text-ink-400 truncate" style={body("var(--text-xs)")} title={program}>{program}</p>
+                  )}
                 </div>
+
+                <span
+                  className={cn("text-center", s.booksOut > 0 ? "text-ink-900 font-semibold" : "text-ink-300")}
+                  style={body("var(--text-sm-body)")}
+                >
+                  {s.booksOut}
+                </span>
+
+                <span className="flex justify-center">
+                  {s.overdue > 0 ? (
+                    <span className="px-2 py-0.5 rounded-full bg-danger-bg text-danger font-semibold" style={body("var(--text-2xs)")}>
+                      {s.overdue}
+                    </span>
+                  ) : (
+                    <span className="text-ink-300" style={body("var(--text-sm-body)")}>0</span>
+                  )}
+                </span>
+
+                <span
+                  className={cn("text-right", s.owed > 0 ? "text-danger font-semibold" : "text-ink-300")}
+                  style={body("var(--text-sm-body)")}
+                >
+                  {s.owed > 0 ? peso(s.owed) : "—"}
+                </span>
+
+                <span className="flex justify-center">
+                  <AccountStatusPill status={patron.status ?? "active"} />
+                </span>
 
                 <PatronActionsMenu
                   patron={patron}
@@ -111,26 +170,45 @@ export function PatronsTable({ patrons, onView, onToggleStatus, selfId }: Patron
                 />
               </div>
 
-              {/* Mobile card — Role badge on the right, after name/program (college) */}
+              {/* Mobile card — name and college on the left; the things that
+                  need attention (overdue, fines) as small pills under them. */}
               <div className="flex md:hidden items-center gap-2.5 px-4 py-3.5">
                 <button onClick={() => onView(patron)} className="flex items-center gap-3 min-w-0 flex-1 text-left">
                   <div
                     className="flex items-center justify-center rounded-full bg-green-200 text-green-800 font-semibold shrink-0"
-                    style={{ width: 38, height: 38, fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+                    style={{ width: 38, height: 38, ...body("var(--text-sm)") }}
                   >
                     {initials}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-ink-900 font-semibold truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                    <p className="text-ink-900 font-semibold truncate" style={body("var(--text-sm-body)")}>
                       {displayName}
                     </p>
-                    <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-                      {patron.program ?? patron.email}
-                      {patron.year_level ? ` · Year ${patron.year_level}` : ""}
+                    <p className="text-ink-400 truncate" style={body("var(--text-sm)")}>
+                      {[college, program].filter(Boolean).join(" · ") || patron.email}
                     </p>
+                    {(s.booksOut > 0 || s.overdue > 0 || s.owed > 0 || patron.status === "inactive") && (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                        {s.booksOut > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-ink-100 text-ink-600 font-medium" style={body("var(--text-2xs)")}>
+                            {s.booksOut} out
+                          </span>
+                        )}
+                        {s.overdue > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-danger-bg text-danger font-semibold" style={body("var(--text-2xs)")}>
+                            {s.overdue} overdue
+                          </span>
+                        )}
+                        {s.owed > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-danger-bg text-danger font-semibold" style={body("var(--text-2xs)")}>
+                            {peso(s.owed)} owed
+                          </span>
+                        )}
+                        {patron.status === "inactive" && <AccountStatusPill status="inactive" className="w-auto" />}
+                      </div>
+                    )}
                   </div>
                 </button>
-                <RoleBadge role={patron.role} className="shrink-0" />
                 <PatronActionsMenu
                   patron={patron}
                   onView={() => onView(patron)}
