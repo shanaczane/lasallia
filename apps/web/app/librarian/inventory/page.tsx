@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { AlertCircle, ChevronRight, ClipboardCheck, Loader2, ScanLine } from "lucide-react"
+import { AlertCircle, ChevronRight, ClipboardCheck, Loader2, MapPinOff, ScanLine, SearchX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { copyStatusConfig } from "@/lib/copyStatus"
 import {
@@ -29,6 +29,43 @@ const SESSION_STATUS: Record<InventorySessionStatus, { label: string; style: str
   in_progress: { label: "In progress", style: "bg-gold-100 text-ink-800" },
   completed:   { label: "Completed",   style: "bg-green-100 text-green-800" },
   cancelled:   { label: "Cancelled",   style: "bg-ink-100 text-ink-600" },
+}
+
+// Same look as the librarian dashboard's stat cards. Each links down to the
+// follow-up list below, which is what the counts are taken from.
+function FlagCountCard({
+  icon, iconBg, label, value, sub,
+}: {
+  icon: React.ReactNode
+  iconBg: string
+  label: string
+  value: string
+  sub: string
+}) {
+  return (
+    <a
+      href="#flagged"
+      className="min-w-0 bg-white rounded-(--radius) border border-ink-200 p-3 sm:p-4 flex flex-col gap-2 sm:gap-3 hover:border-ink-300 transition-colors"
+    >
+      <div className={cn("flex items-center justify-center rounded-sm w-7 h-7 sm:w-9 sm:h-9", iconBg)}>
+        {icon}
+      </div>
+      <div>
+        <p
+          className="text-ink-400 uppercase font-semibold truncate"
+          style={{ ...body("var(--text-2xs)"), letterSpacing: "var(--tracking-caps)" }}
+        >
+          {label}
+        </p>
+        <p className="text-ink-900 font-bold leading-tight" style={{ fontSize: "var(--text-2xl)", fontFamily: "var(--font-display)" }}>
+          {value}
+        </p>
+        <p className="mt-0.5 truncate text-ink-500" style={body("var(--text-xs)")}>
+          {sub}
+        </p>
+      </div>
+    </a>
+  )
 }
 
 function locationKey(l: { floor: string; aisle: string | null }): string {
@@ -62,6 +99,8 @@ export default function InventoryPage() {
   }, [])
 
   const choice = locations.find((l) => locationKey(l) === selected)
+  const missingCount = flagged.filter((c) => c.status === "missing").length
+  const misplacedCount = flagged.filter((c) => c.status === "misplaced").length
 
   async function handleStart() {
     if (!choice) return
@@ -95,6 +134,25 @@ export default function InventoryPage() {
           <AlertCircle size={16} className="shrink-0" /> {loadError}
         </div>
       )}
+
+      {/* Missing / misplaced at a glance — counted from the follow-up list
+          at the bottom of this page, so the two always agree. */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
+        <FlagCountCard
+          icon={<SearchX size={18} className="text-[#6D28D9]" />}
+          iconBg="bg-[#EDE9FE]"
+          label="Missing"
+          value={loading ? "—" : String(missingCount)}
+          sub="Copies not found on their shelf"
+        />
+        <FlagCountCard
+          icon={<MapPinOff size={18} className="text-[#9D174D]" />}
+          iconBg="bg-[#FCE7F3]"
+          label="Misplaced"
+          value={loading ? "—" : String(misplacedCount)}
+          sub="Copies found on the wrong shelf"
+        />
+      </div>
 
       {/* Start a check */}
       <section className="bg-white rounded-(--radius) border border-ink-200 p-4 sm:p-5 flex flex-col gap-3">
@@ -196,7 +254,7 @@ export default function InventoryPage() {
         </div>
       </section>
 
-      {/* Follow-up list — the dashboard's Missing / Misplaced cards link here. */}
+      {/* Follow-up list — the Missing / Misplaced cards at the top link here. */}
       <section id="flagged" className="flex flex-col gap-3 scroll-mt-20">
         <h2 className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}>
           Missing &amp; misplaced copies

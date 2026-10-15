@@ -76,8 +76,6 @@ export type ScanResult = {
   session: InventorySession
 }
 
-export type InventoryCounts = { missing: number; misplaced: number }
-
 export async function fetchInventoryLocations(): Promise<InventoryLocation[]> {
   const res = await fetch(`${API_URL}/inventory/locations`, { headers: authHeaders() })
   if (!res.ok) return parseErrorOrThrow(res, "Failed to load shelf locations")
@@ -135,12 +133,6 @@ export async function resolveInventoryItem(itemId: string, action: "missing" | "
     body: JSON.stringify({ action }),
   })
   if (!res.ok) return parseErrorOrThrow(res, "Could not update this copy")
-  return res.json()
-}
-
-export async function fetchInventoryCounts(): Promise<InventoryCounts> {
-  const res = await fetch(`${API_URL}/inventory/counts`, { headers: authHeaders() })
-  if (!res.ok) return parseErrorOrThrow(res, "Failed to load missing/misplaced counts")
   return res.json()
 }
 
