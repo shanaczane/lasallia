@@ -100,20 +100,27 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: "gr
   )
 }
 
+// Badge in a fixed-width left column and everything about the title —
+// author line, field changes, new copies — in one column beside it, so
+// every line starts where the title does (and titles line up across "New
+// title" and "Update" rows, whose badges are different widths).
 function ChangeRow({ item }: { item: SyncItem }) {
   return (
-    <div className="px-4 py-3 border-b border-ink-100 last:border-b-0 flex flex-col gap-1.5">
-      <div className="flex items-start gap-2 flex-wrap">
+    <div className="px-4 py-3 border-b border-ink-100 last:border-b-0 flex items-start gap-3">
+      <span className="w-20 shrink-0 pt-0.5">
         <span
           className={cn(
-            "px-2 py-0.5 rounded-full font-semibold shrink-0",
+            "inline-block px-2 py-0.5 rounded-full font-semibold whitespace-nowrap",
             item.action === "add" ? "bg-green-100 text-green-800" : "bg-gold-100 text-ink-800",
           )}
           style={body("var(--text-2xs)")}
         >
           {item.action === "add" ? "New title" : "Update"}
         </span>
-        <div className="min-w-0 flex-1">
+      </span>
+
+      <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+        <div>
           <p className="text-ink-900 font-medium" style={body()}>{item.title}</p>
           <p className="text-ink-400" style={body("var(--text-xs)")}>
             {item.author ?? "Unknown author"} · {item.location ?? `record ${item.record}`}
@@ -121,32 +128,32 @@ function ChangeRow({ item }: { item: SyncItem }) {
             {item.archived && " · archived in Lasallia (stays archived)"}
           </p>
         </div>
+
+        {item.changes.length > 0 && (
+          <ul className="flex flex-col gap-0.5">
+            {item.changes.map((c) => (
+              <li key={c.field} className="text-ink-600" style={body("var(--text-xs)")}>
+                <span className="font-semibold">{FIELD_LABEL[c.field] ?? c.field}:</span>{" "}
+                <span className="line-through text-ink-400">{truncate(c.old)}</span> → {truncate(c.new)}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {item.new_copies.length > 0 && (
+          <p className="text-green-700" style={body("var(--text-xs)")}>
+            + {item.new_copies.length} new {item.new_copies.length === 1 ? "copy" : "copies"}:{" "}
+            <span style={{ fontFamily: "var(--font-mono)" }}>{item.new_copies.join(", ")}</span>
+          </p>
+        )}
+
+        {item.copies_not_in_export.length > 0 && (
+          <p className="text-warn" style={body("var(--text-xs)")}>
+            Not in this file (kept, not deleted):{" "}
+            <span style={{ fontFamily: "var(--font-mono)" }}>{item.copies_not_in_export.join(", ")}</span>
+          </p>
+        )}
       </div>
-
-      {item.changes.length > 0 && (
-        <ul className="flex flex-col gap-0.5 pl-1">
-          {item.changes.map((c) => (
-            <li key={c.field} className="text-ink-600" style={body("var(--text-xs)")}>
-              <span className="font-semibold">{FIELD_LABEL[c.field] ?? c.field}:</span>{" "}
-              <span className="line-through text-ink-400">{truncate(c.old)}</span> → {truncate(c.new)}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {item.new_copies.length > 0 && (
-        <p className="text-green-700 pl-1" style={body("var(--text-xs)")}>
-          + {item.new_copies.length} new {item.new_copies.length === 1 ? "copy" : "copies"}:{" "}
-          <span style={{ fontFamily: "var(--font-mono)" }}>{item.new_copies.join(", ")}</span>
-        </p>
-      )}
-
-      {item.copies_not_in_export.length > 0 && (
-        <p className="text-warn pl-1" style={body("var(--text-xs)")}>
-          Not in this file (kept, not deleted):{" "}
-          <span style={{ fontFamily: "var(--font-mono)" }}>{item.copies_not_in_export.join(", ")}</span>
-        </p>
-      )}
     </div>
   )
 }
