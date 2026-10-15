@@ -2,7 +2,7 @@
 import { isLibraryUseOnly } from "@/lib/collectionType"
 import type { Book } from "@lasallia/types"
 
-export type AvailabilityStatus = "available" | "borrowed" | "reserved" | "missing" | "misplaced" | "reference"
+export type AvailabilityStatus = "available" | "borrowed" | "reserved" | "for_reshelving" | "missing" | "misplaced" | "reference"
 
 type AvailabilityPillProps = {
   status: AvailabilityStatus
@@ -21,6 +21,10 @@ const statusConfig: Record<AvailabilityStatus, { label: string; style: string }>
   reserved: {
     label: "Reserved",
     style: "bg-[#FEF3C7] text-[#C2730A]",
+  },
+  for_reshelving: {
+    label: "For Reshelving",
+    style: "bg-[#CCFBF1] text-[#0F766E]",
   },
   missing: {
     label: "Missing",

@@ -13,6 +13,7 @@ from core.reservations import (
 )
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
+from routers.books import _redact_for_patrons
 from schemas.auth import UserProfile
 from schemas.reservation import (
     CreateReservationRequest,
@@ -22,6 +23,14 @@ from schemas.reservation import (
 )
 
 router = APIRouter(prefix="/reservations", tags=["reservations"])
+
+def _redact_embedded_books(rows: list[dict], user: UserProfile) -> list[dict]:
+    # The books(*) embed carries the accession number and acquisition
+    # record; a student's own reservation list must not, same rule as the
+    # catalog (routers/books.py's _redact_for_patrons).
+    _redact_for_patrons([r["books"] for r in rows if r.get("books")], user)
+    return rows
+
 
 NON_BORROWABLE_COLLECTION_TYPES = {"Reference", "Thesis", "Capstone", "MTR", "Archives"}
 
@@ -71,7 +80,7 @@ def list_reservations(
                 ready_at = estimate_ready_at(admin, r["book_id"], ahead.count or 0, cfg)
                 r["estimated_ready_at"] = ready_at.isoformat() if ready_at else None
 
-    return reservations
+    return _redact_embedded_books(reservations, user)
 
 def _reservation_problem(admin: Client, user_id: str, book_id: str, cfg: dict) -> str | None:
     """Why this student can't reserve this title right now, or None if they
@@ -291,7 +300,7 @@ def update_reservation(
         )
 
     res = db.table("reservations").select("*, books(*), profiles(*)").eq("id", reservation_id).execute()
-    return res.data[0]
+    return _redact_embedded_books(res.data, user)[0]
 
 # Fulfillment no longer happens through this router at all — a 'ready'
 # reservation is claimed and confirmed through the exact same flow as a

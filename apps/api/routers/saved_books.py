@@ -2,10 +2,32 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from core.deps import get_current_user, get_user_supabase
+from core.supabase import get_admin_client
+from routers.books import _apply_real_availability, _redact_for_patrons
 from schemas.auth import UserProfile
 from schemas.saved_book import CreateSavedBookRequest, SavedBook
 
 router = APIRouter(prefix="/saved-books", tags=["saved-books"])
+
+
+def _with_live_books(rows: list[dict], user: UserProfile) -> list[dict]:
+    """The embedded books carry the stored books.status, which nothing
+    keeps in sync — the catalog and book pages recompute it from the copies
+    on every read. Do the same here so a saved book shows the same pill in
+    My Library as everywhere else, and apply the same patron redaction (no
+    accession number before it's typed at /borrow). book_copies has no
+    public RLS policy, so the copies are read with the admin client, same as
+    the catalog."""
+    books = [r["books"] for r in rows if r.get("books")]
+    if not books:
+        return rows
+    copies = (
+        get_admin_client().table("book_copies").select("book_id, status")
+        .in_("book_id", [b["id"] for b in books]).execute().data
+    )
+    _apply_real_availability(books, copies)
+    _redact_for_patrons(books, user)
+    return rows
 
 # RLS (0013) scopes every route to the caller's own rows — books has a
 # public select policy so the books(*) embed works through the same
@@ -17,7 +39,7 @@ def list_saved_books(
     db: Client = Depends(get_user_supabase),
 ):
     res = db.table("saved_books").select("*, books(*)").order("created_at", desc=True).execute()
-    return res.data
+    return _with_live_books(res.data, user)
 
 @router.post("", response_model=SavedBook, status_code=status.HTTP_201_CREATED)
 def save_book(
@@ -30,7 +52,7 @@ def save_book(
     # frontend toggle shouldn't have to special-case a double-click/race.
     existing = db.table("saved_books").select("*, books(*)").eq("book_id", body.book_id).execute()
     if existing.data:
-        return existing.data[0]
+        return _with_live_books(existing.data, user)[0]
 
     res = db.table("saved_books").insert({"user_id": user.id, "book_id": body.book_id}).execute()
     if not res.data:
@@ -38,7 +60,7 @@ def save_book(
     saved = res.data[0]
     book_res = db.table("books").select("*").eq("id", body.book_id).execute()
     saved["books"] = book_res.data[0] if book_res.data else None
-    return saved
+    return _with_live_books([saved], user)[0]
 
 @router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
 def unsave_book(

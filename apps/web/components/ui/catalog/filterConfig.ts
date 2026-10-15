@@ -49,6 +49,7 @@ export const AVAILABILITY_OPTIONS: FilterOption[] = [
   { value: 'available', label: 'Available' },
   { value: 'borrowed', label: 'Borrowed' },
   { value: 'reserved', label: 'Reserved' },
+  { value: 'for_reshelving', label: 'For reshelving' },
   { value: 'missing', label: 'Missing' },
   { value: 'misplaced', label: 'Misplaced' },
 ]

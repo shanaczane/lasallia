@@ -39,11 +39,17 @@ def _redact_for_patrons(books: list[dict], user: UserProfile | None) -> list[dic
             b[field] = None
     return books
 
-def _derive_status(statuses: set[str]) -> str:
+def _derive_status(statuses: set[str], has_waiting: bool = False) -> str:
     if "available" in statuses:
         return "available"
     if "reserved" in statuses:
         return "reserved"
+    # Returned and waiting to go back on the shelf. If someone's in the
+    # reservation queue, the reshelving scan hands this copy straight to
+    # them (core/loans.py's reshelve_copy_now), so for everyone else it's
+    # still effectively out — keep it "borrowed" in that case.
+    if "for_reshelving" in statuses and not has_waiting:
+        return "for_reshelving"
     if statuses and statuses <= {"lost", "missing", "damaged"}:
         return "missing"
     # In the building but on the wrong shelf (an inventory scan found it
@@ -71,13 +77,27 @@ def _apply_real_availability(books: list[dict], copy_rows: list[dict]) -> list[d
         elif row["status"] == "reserved":
             entry["reserved"] += 1
 
+    # Only books that would otherwise read "for reshelving" need the
+    # reservation check, so the extra query is skipped when there are none.
+    reshelving_ids = [
+        book_id for book_id, e in agg.items()
+        if "for_reshelving" in e["statuses"] and not e["statuses"] & {"available", "reserved"}
+    ]
+    waiting_ids: set[str] = set()
+    if reshelving_ids:
+        waiting_ids = {
+            r["book_id"] for r in
+            get_admin_client().table("reservations").select("book_id")
+            .in_("book_id", reshelving_ids).in_("status", ["pending", "ready"]).execute().data
+        }
+
     for b in books:
         entry = agg.get(b["id"])
         if entry:
             b["total_copies"] = entry["total"]
             b["available_copies"] = entry["available"]
             b["reserved_copies"] = entry["reserved"]
-            b["status"] = _derive_status(entry["statuses"])
+            b["status"] = _derive_status(entry["statuses"], has_waiting=b["id"] in waiting_ids)
     return books
 
 @router.get("", response_model=BookSearchResponse)

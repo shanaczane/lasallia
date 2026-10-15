@@ -3,7 +3,9 @@
 
 // missing: every copy is lost/missing/damaged. misplaced: no copy available,
 // at least one in the building on the wrong shelf (found by an inventory scan).
-export type BookStatus = 'available' | 'borrowed' | 'reserved' | 'missing' | 'misplaced'
+// for_reshelving: returned and waiting to go back on the shelf, with nobody in
+// the reservation queue for it (otherwise it stays 'borrowed').
+export type BookStatus = 'available' | 'borrowed' | 'reserved' | 'for_reshelving' | 'missing' | 'misplaced'
 
 export type BookFormat = 'print' | 'digital' | 'reference'
 
