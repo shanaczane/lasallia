@@ -140,7 +140,10 @@ export function NotificationFeed({
 
       {/* ── Page header ────────────────────────────────────────────────── */}
       <div className="px-4 sm:px-8 pt-6 pb-4">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        {/* Button stays top-right at every width, same as Reservations'
+            "Refresh list" — stacking it under the title on phones left it
+            floating on its own row. */}
+        <div className="flex items-start justify-between gap-3">
           <div>
             <h1
               className="text-ink-900 font-semibold leading-tight"
@@ -161,8 +164,8 @@ export function NotificationFeed({
             suppressHydrationWarning
             onClick={onMarkAllRead}
             disabled={unreadCount === 0}
-            className="self-start sm:self-auto flex-shrink-0 px-5 py-2.5 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
-            style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+            className="flex-shrink-0 px-3 py-1.5 rounded-(--radius) border border-ink-200 bg-white text-ink-700 font-medium hover:bg-ink-50 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+            style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
           >
             <span className="sm:hidden">Mark read</span>
             <span className="hidden sm:inline">Mark all as read</span>
