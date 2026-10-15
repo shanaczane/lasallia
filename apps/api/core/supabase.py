@@ -7,8 +7,24 @@ import certifi
 import httpx
 from postgrest import SyncPostgrestClient
 from postgrest.constants import DEFAULT_POSTGREST_CLIENT_TIMEOUT
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
 from core.config import SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+
+# supabase-py talks HTTP/2 by default, but these two clients are process-wide
+# singletons hit from many worker threads at once (every page load fires
+# several API calls, plus the reservation-expiry loop). A shared HTTP/2
+# connection breaks under that — once it does, every request riding on it
+# fails together, which is how leaving the borrow form landed on a catalog
+# whose /books and /loans calls both 500'd. httpx's HTTP/1.1 pool is
+# thread-safe, so both clients get one of those instead.
+def _http1_options() -> ClientOptions:
+    return ClientOptions(
+        httpx_client=httpx.Client(
+            http2=False,
+            timeout=DEFAULT_POSTGREST_CLIENT_TIMEOUT,
+            follow_redirects=True,
+        )
+    )
 
 # Public client — uses anon key, respects RLS
 _client: Client | None = None
@@ -16,7 +32,7 @@ _client: Client | None = None
 def get_client() -> Client:
     global _client
     if _client is None:
-        _client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+        _client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY, _http1_options())
     return _client
 
 # Admin client — bypasses RLS; use only for server-side admin operations
@@ -25,7 +41,7 @@ _admin_client: Client | None = None
 def get_admin_client() -> Client:
     global _admin_client
     if _admin_client is None:
-        _admin_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        _admin_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, _http1_options())
     return _admin_client
 
 # User-scoped client — anon key + the caller's own access token, so RLS
