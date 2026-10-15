@@ -747,45 +747,77 @@ function HistoryCard({ loan, status }: { loan: ApiLoan; status: HistoryStatus })
         >
           Returned {loan.returned_at ? formatDate(loan.returned_at) : "—"}
         </p>
-        {!!loan.fine_amount && (
-          <p
-            className="text-warn font-semibold"
-            style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
-          >
-            {fineDescription(loan, status)} · {loan.fine_status === "unsettled" ? "Unpaid" : "Paid"}
-          </p>
-        )}
+        {!!loan.fine_amount && (() => {
+          const fine = fineParts(loan, status)
+          const paid = loan.fine_status !== "unsettled"
+          return (
+            // Its own footer pinned to the bottom of the card: what the fine
+            // was for and how much on the left, paid/unpaid as a pill on the
+            // right — instead of one wrapping line in warning orange, which
+            // read as a problem even when the fine was already paid.
+            <div className="mt-auto pt-2 border-t border-ink-100 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p
+                  className="text-ink-500 truncate"
+                  style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
+                  title={fine.detail ?? fine.label}
+                >
+                  {fine.label}
+                </p>
+                <p
+                  className="text-ink-900 font-semibold"
+                  style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
+                >
+                  {fine.amount}
+                </p>
+              </div>
+              <span
+                className={cn(
+                  "shrink-0 px-2 py-0.5 rounded-full font-semibold",
+                  paid ? "bg-success-bg text-success" : "bg-danger-bg text-danger",
+                )}
+                style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}
+              >
+                {paid ? "Paid" : "Unpaid"}
+              </span>
+            </div>
+          )
+        })()}
       </div>
     </Link>
   )
 }
 
-// What the fine was for, e.g. "₱35.00 late fine" or "₱35.00 late + ₱50.00
-// damage fine". Loans returned since the parts were recorded separately
+// What the fine was for ("Damage fine", "Late + damage fine") and the total,
+// kept apart so the card can show them on separate lines. `detail` spells
+// out the split for a combined fine ("₱35.00 late + ₱50.00 damage") as a
+// hover tooltip. Loans returned since the parts were recorded separately
 // (overdue_fine_amount / damage_fine_amount) use those exact amounts.
 // Older loans only have the total, so the type is inferred the same way
 // return_loan (routers/loans.py) charges it — late if returned after the
 // due date, damage if it went out in good condition and came back damaged
-// or incomplete — and the total is shown once.
-function fineDescription(loan: ApiLoan, status: HistoryStatus): string {
-  const total = `₱${(loan.fine_amount ?? 0).toFixed(2)}`
+// or incomplete.
+function fineParts(loan: ApiLoan, status: HistoryStatus): { label: string; amount: string; detail?: string } {
+  const amount = `₱${(loan.fine_amount ?? 0).toFixed(2)}`
   const overdue = loan.overdue_fine_amount
   const damage = loan.damage_fine_amount
   if (overdue != null && damage != null) {
-    if (overdue > 0 && damage > 0) return `₱${overdue.toFixed(2)} late + ₱${damage.toFixed(2)} damage fine`
-    if (damage > 0) return `${total} damage fine`
-    if (overdue > 0) return `${total} late fine`
-    return `${total} fine`
+    if (overdue > 0 && damage > 0) {
+      return { label: "Late + damage fine", amount, detail: `₱${overdue.toFixed(2)} late + ₱${damage.toFixed(2)} damage` }
+    }
+    if (damage > 0) return { label: "Damage fine", amount }
+    if (overdue > 0) return { label: "Late fine", amount }
+    return { label: "Fine", amount }
   }
 
   const late = status === "overdue_returned"
   const damaged =
     loan.condition_at_borrow === "good" &&
     (loan.condition_at_return === "damaged" || loan.condition_at_return === "incomplete")
-  if (late && damaged) return `${total} late + damage fine`
-  if (damaged) return `${total} damage fine`
-  if (late) return `${total} late fine`
-  return `${total} fine`
+  if (late && damaged) return { label: "Late + damage fine", amount }
+  if (damaged) return { label: "Damage fine", amount }
+  if (late) return { label: "Late fine", amount }
+  return { label: "Fine", amount }
 }
 
 // Newest return first. Loans come back ordered by borrow date, which
