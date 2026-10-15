@@ -13,6 +13,9 @@ class InventoryLocation(BaseModel):
     aisle: str | None = None  # None = the whole floor
     label: str
     expected_copies: int
+    # Of those, how many weren't seen in the last 6 months — what a smart
+    # check would ask the librarian to scan.
+    unseen_copies: int = 0
     # Set when a check of this exact location is already open — starting
     # it again joins that check instead of creating a second one.
     open_session_id: str | None = None
@@ -21,6 +24,7 @@ class InventoryLocation(BaseModel):
 class StartSessionRequest(BaseModel):
     floor: str
     aisle: str | None = None
+    skip_recently_seen: bool = False
 
 
 class InventorySession(BaseModel):
@@ -32,6 +36,8 @@ class InventorySession(BaseModel):
     started_by_name: str | None = None
     started_at: str
     completed_at: str | None = None
+    # Set on a smart check: copies seen since then weren't expected.
+    skip_seen_since: str | None = None
     expected: int = 0
     found: int = 0
     misplaced: int = 0
@@ -92,6 +98,23 @@ class FlaggedCopy(BaseModel):
     call_number: str | None = None
     status: Literal["missing", "misplaced"]
     location: str  # where it belongs
+
+
+# One row of the Inventory page's All books list: every copy, its current
+# status, and when it was last known to be in hand.
+class InventoryCopy(BaseModel):
+    copy_id: str
+    book_id: str
+    accession_number: str | None = None
+    title: str
+    author: str | None = None
+    call_number: str | None = None
+    status: str
+    floor: str | None = None
+    aisle: str | None = None
+    location: str
+    # Last returned from a loan / in-house use, or found by a check.
+    last_seen_at: str | None = None
 
 
 # Reports > Inventory "Export details" — one row per copy per check.

@@ -12,18 +12,15 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowLeft,
-  Camera,
   CheckCircle2,
   ChevronDown,
   HelpCircle,
   Loader2,
   MapPinOff,
   ScanLine,
-  Usb,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ScannerListener } from "@/components/ui/ScannerListener"
-import { CameraScanner } from "@/components/ui/CameraScanner"
 import {
   cancelInventorySession,
   completeInventorySession,
@@ -167,7 +164,6 @@ function CopyLine({ item, extra }: { item: InventoryItem; extra?: React.ReactNod
 // ─── Scanning ─────────────────────────────────────────────────────────────────
 
 function ScanView({ detail, setDetail }: { detail: InventorySessionDetail; setDetail: (d: InventorySessionDetail) => void }) {
-  const [mode, setMode] = useState<"usb" | "camera">("usb")
   const [manual, setManual] = useState("")
   const [recent, setRecent] = useState<ScanResult[]>([])
   const [busy, setBusy] = useState(false)
@@ -251,45 +247,16 @@ function ScanView({ detail, setDetail }: { detail: InventorySessionDetail; setDe
       <div className="flex flex-col lg:flex-row gap-5">
         {/* Scanner */}
         <section className="flex-1 min-w-0 bg-white rounded-(--radius) border border-ink-200 p-4 sm:p-5 flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <h2 className="text-ink-900 font-semibold flex items-center gap-2" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}>
-              <ScanLine size={18} className="text-green-700" /> Scan books
-              {busy && <Loader2 size={15} className="animate-spin text-ink-400" />}
-            </h2>
-            <div className="inline-flex rounded-(--radius) border border-ink-200 p-0.5 bg-ink-50" role="tablist">
-              {([
-                ["usb", <Usb key="u" size={14} />, "USB scanner"],
-                ["camera", <Camera key="c" size={14} />, "Webcam"],
-              ] as const).map(([value, icon, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="tab"
-                  aria-selected={mode === value}
-                  onClick={() => setMode(value)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-sm font-medium transition-colors",
-                    mode === value ? "bg-white text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-900",
-                  )}
-                  style={body("var(--text-xs)")}
-                >
-                  {icon} {label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <h2 className="text-ink-900 font-semibold flex items-center gap-2" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}>
+            <ScanLine size={18} className="text-green-700" /> Scan books
+            {busy && <Loader2 size={15} className="animate-spin text-ink-400" />}
+          </h2>
 
-          {mode === "camera" ? (
-            <CameraScanner onScan={handleScan} />
-          ) : (
-            <>
-              {/* Catches scans even after a click moved focus to a button. */}
-              <ScannerListener onScan={handleScan} />
-              <p className="text-ink-500" style={body()}>
-                Scan each book&apos;s barcode sticker. You can also type an accession number and press Enter.
-              </p>
-            </>
-          )}
+          {/* Catches scans even after a click moved focus to a button. */}
+          <ScannerListener onScan={handleScan} />
+          <p className="text-ink-500" style={body()}>
+            Scan each book&apos;s barcode sticker. You can also type an accession number and press Enter.
+          </p>
 
           <form
             onSubmit={(e) => { e.preventDefault(); handleScan(manual); setManual("") }}
@@ -299,7 +266,7 @@ function ScanView({ detail, setDetail }: { detail: InventorySessionDetail; setDe
               value={manual}
               onChange={(e) => setManual(e.target.value)}
               placeholder="Accession number, e.g. T45312"
-              autoFocus={mode === "usb"}
+              autoFocus
               autoComplete="off"
               className="flex-1 min-w-0 px-3 py-2 rounded-(--radius) border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500"
               style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}

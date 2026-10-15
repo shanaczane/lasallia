@@ -19,7 +19,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import {
   ArrowLeft, MapPin, Hash, Building2, Calendar,
   BookOpen, GraduationCap, Landmark, Bookmark, Bell, QrCode,
-  CheckCircle2, Clock,
+  CheckCircle2, Clock, Flag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { programLabel } from '@/lib/programLabels'
@@ -32,6 +32,7 @@ import { fetchSavedBooks, saveBook, unsaveBook } from '@/lib/saved'
 import { fetchLoans, type Loan as ApiLoan } from '@/lib/kiosk'
 import { isHandheld } from '@/lib/device'
 import { logEvent } from '@/lib/recommendationEvents'
+import { reportBookNotOnShelf } from '@/lib/inventory'
 import { useStudentCounts } from '@/components/layout/StudentCountsContext'
 import { BorrowModal } from '@/components/kiosk/BorrowModal'
 import { AvailabilityPill, pillStatusFor } from '@/components/ui/pills/availability-pill'
@@ -74,6 +75,51 @@ function pickupUrgency(pickupBy: string): { shortLabel: string; textClass: strin
 // rather than informative.
 function hasKnownShelfLocation(book: Book): boolean {
   return !!book.shelf_location && book.shelf_location.trim().toLowerCase() !== 'unassigned'
+}
+
+// ─── "Can't find it on the shelf?" ─────────────────────────────────────────────
+// Under the Available panel: the catalog says a copy is on the shelf, but
+// the student couldn't find it. Tells the librarian to check just this one
+// book (core/shelf_reports.py), instead of waiting for a full inventory.
+
+function ShelfReportLink({ bookId }: { bookId: string }) {
+  const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle')
+  const [error, setError] = useState('')
+
+  async function report() {
+    setState('sending')
+    setError('')
+    try {
+      await reportBookNotOnShelf(bookId)
+      setState('sent')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not send your report')
+      setState('idle')
+    }
+  }
+
+  const style = { fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }
+  if (state === 'sent') {
+    return (
+      <p className="flex items-center gap-1.5 text-green-700" style={style}>
+        <CheckCircle2 size={13} className="shrink-0" /> Thanks — the librarian will check the shelf.
+      </p>
+    )
+  }
+  return (
+    <p className="text-ink-500" style={style}>
+      <button
+        type="button"
+        onClick={report}
+        disabled={state === 'sending'}
+        className="inline-flex items-center gap-1.5 hover:text-ink-800 underline-offset-2 hover:underline disabled:opacity-50"
+      >
+        <Flag size={12} className="shrink-0" />
+        {state === 'sending' ? 'Sending…' : "Can't find it on the shelf? Tell the librarian"}
+      </button>
+      {error && <span className="block text-danger mt-1">{error}</span>}
+    </p>
+  )
 }
 
 // ─── Action panel — simplified borrowing logic ────────────────────────────────
@@ -179,39 +225,42 @@ function ActionPanel({
 
   if (isAvailable) {
     return (
-      <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
-        {/* Just the count and where it is — the borrow modal explains the
-            QR-at-the-counter step, so it isn't repeated here. */}
-        {/* Stacked on phones; one line with a divider on wider screens so
-            the panel doesn't leave a big empty gap before the button. */}
-        <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-          <p className="flex items-center gap-2 font-semibold text-green-900">
-            <span className="w-3.5 flex justify-center shrink-0">
-              <span className="w-2 h-2 rounded-full bg-green-500" />
-            </span>
-            {availableCopies} of {totalCopies} {totalCopies === 1 ? 'copy' : 'copies'} available
-          </p>
-          {hasKnownShelfLocation(book) && (
-            <>
-              <span className="hidden sm:block w-px h-4 bg-green-200" />
-              <p className="flex items-center gap-2 text-green-800">
-                <MapPin size={14} className="text-green-600 shrink-0" />
-                {book.shelf_location}
-              </p>
-            </>
-          )}
+      <div className="flex flex-col gap-2">
+        <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
+          {/* Just the count and where it is — the borrow modal explains the
+              QR-at-the-counter step, so it isn't repeated here. */}
+          {/* Stacked on phones; one line with a divider on wider screens so
+              the panel doesn't leave a big empty gap before the button. */}
+          <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+            <p className="flex items-center gap-2 font-semibold text-green-900">
+              <span className="w-3.5 flex justify-center shrink-0">
+                <span className="w-2 h-2 rounded-full bg-green-500" />
+              </span>
+              {availableCopies} of {totalCopies} {totalCopies === 1 ? 'copy' : 'copies'} available
+            </p>
+            {hasKnownShelfLocation(book) && (
+              <>
+                <span className="hidden sm:block w-px h-4 bg-green-200" />
+                <p className="flex items-center gap-2 text-green-800">
+                  <MapPin size={14} className="text-green-600 shrink-0" />
+                  {book.shelf_location}
+                </p>
+              </>
+            )}
+          </div>
+          {/* Borrow button — stays on the right, shorter label on phones */}
+          <button
+            type="button"
+            onClick={onBorrow}
+            className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[8px] bg-green-700 text-white font-semibold hover:bg-green-800 active:scale-95 transition-all"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+          >
+            <QrCode size={15} />
+            <span className="sm:hidden">Borrow</span>
+            <span className="hidden sm:inline">Borrow this book</span>
+          </button>
         </div>
-        {/* Borrow button — stays on the right, shorter label on phones */}
-        <button
-          type="button"
-          onClick={onBorrow}
-          className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[8px] bg-green-700 text-white font-semibold hover:bg-green-800 active:scale-95 transition-all"
-          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
-        >
-          <QrCode size={15} />
-          <span className="sm:hidden">Borrow</span>
-          <span className="hidden sm:inline">Borrow this book</span>
-        </button>
+        <ShelfReportLink bookId={book.id} />
       </div>
     )
   }

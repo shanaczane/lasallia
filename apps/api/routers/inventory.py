@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 
 from core.deps import require_librarian
 from core.inventory import (
+    all_copies,
     cancel_session,
     complete_session,
     copy_counts,
@@ -20,6 +21,7 @@ from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.inventory import (
     FlaggedCopy,
+    InventoryCopy,
     InventoryCounts,
     InventoryItem,
     InventoryLocation,
@@ -49,6 +51,11 @@ def get_flagged(librarian: UserProfile = Depends(require_librarian)):
     return flagged_copies(get_admin_client())
 
 
+@router.get("/copies", response_model=list[InventoryCopy])
+def get_copies(librarian: UserProfile = Depends(require_librarian)):
+    return all_copies(get_admin_client())
+
+
 @router.get("/sessions", response_model=list[InventorySession])
 def get_sessions(limit: int = 100, librarian: UserProfile = Depends(require_librarian)):
     return list_sessions(get_admin_client(), max(1, min(limit, 500)))
@@ -56,7 +63,7 @@ def get_sessions(limit: int = 100, librarian: UserProfile = Depends(require_libr
 
 @router.post("/sessions", response_model=InventorySession)
 def post_session(body: StartSessionRequest, librarian: UserProfile = Depends(require_librarian)):
-    return start_session(get_admin_client(), body.floor, body.aisle or None, librarian.id)
+    return start_session(get_admin_client(), body.floor, body.aisle or None, librarian.id, body.skip_recently_seen)
 
 
 @router.get("/sessions/{session_id}", response_model=InventorySessionDetail)

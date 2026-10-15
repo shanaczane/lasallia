@@ -6,11 +6,12 @@
 #
 # The chart itself warns some letters were hard to read off the signs, so
 # every numeric boundary below is an approximation of what was photographed,
-# not an exact transcription. Two known gaps, left unassigned rather than
-# guessed:
-#   - GS/SP/S-prefixed call numbers aren't on the chart at all (Graduate
-#     School / Special collections, presumably shelved elsewhere).
-#   - REF-prefixed call numbers outside the low/high bounds seen below.
+# not an exact transcription.
+#
+# GS/SP/S-prefixed call numbers aren't on the chart at all — they're the
+# Graduate School and Special Collection books, shelved in their own
+# sections. Each section is its own "aisle" so an inventory check can cover
+# it on its own.
 # FIL call numbers below the chart's lowest Filipiniana range (226.507) are
 # placed in Aisle 12 anyway (the lowest-numbered Filipiniana aisle) per an
 # explicit call made when this was written, not something the chart confirms.
@@ -23,8 +24,12 @@ _PREFIX_RE = re.compile(r"^(REF|FIL|FIC|GS|SP|S)\b\s*")
 _DEWEY_RE = re.compile(r"^(\d+(?:\.\d+)?)")
 _CUTTER_RE = re.compile(r"^([A-Za-z]+)(\d*)([A-Za-z]*)")
 
-# Collections the chart doesn't cover at all.
-_UNMAPPED_PREFIXES = {"GS", "SP", "S"}
+# Collections the chart doesn't cover: shelved as their own sections.
+_SECTION_PREFIXES = {
+    "GS": "Graduate School",
+    "SP": "Special Collection",
+    "S": "Special Collection",
+}
 
 # (aisle, upper_bound) — General Collection continues past Aisle 4 (910.2373)
 # as the low end of Aisle 5, before Reference call numbers start.
@@ -84,8 +89,9 @@ def classify_call_number(call_number: str | None) -> dict:
     prefix = m.group(1) if m else None
     rest = s[m.end():] if m else s
 
-    if prefix in _UNMAPPED_PREFIXES:
-        return dict(UNASSIGNED)
+    if prefix in _SECTION_PREFIXES:
+        section = _SECTION_PREFIXES[prefix]
+        return {"aisle": section, "shelf_location": section}
 
     if prefix == "FIC":
         cutter_m = _CUTTER_RE.match(rest.strip())

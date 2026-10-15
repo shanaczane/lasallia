@@ -7,7 +7,7 @@
 # book_copies.shelf_location reads "Unassigned" on every row.
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from postgrest.exceptions import APIError
@@ -17,6 +17,7 @@ from core.accession import normalize_accession_number
 from core.loans import reshelve_copy_now
 from schemas.inventory import (
     FlaggedCopy,
+    InventoryCopy,
     InventoryCounts,
     InventoryItem,
     InventoryLocation,
@@ -34,6 +35,9 @@ NOT_EXPECTED_STATUSES = {"on_loan", "overdue", "reserved", "lost"}
 # Statuses a copy can only leave through for_reshelving (migration 0055).
 _SIDE_STATES = {"missing", "lost", "misplaced"}
 
+# A smart check skips copies seen this recently (migration 0056).
+SEEN_WINDOW_DAYS = 180
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -41,12 +45,12 @@ def _now() -> str:
 
 def location_label(floor: str | None, aisle: str | None) -> str:
     """A check's label: one aisle, or the whole floor."""
-    return f"{floor} · {aisle}" if aisle else f"{floor} · whole floor"
+    return f"{floor} - {aisle}" if aisle else f"{floor} - whole floor"
 
 
 def book_location_label(book: dict) -> str:
     """Where one book belongs — what a Misplaced scan tells the librarian."""
-    return f"{book.get('floor') or 'No floor'} · {book.get('aisle') or 'No aisle'}"
+    return f"{book.get('floor') or 'No floor'} - {book.get('aisle') or 'No aisle'}"
 
 
 def _natural_key(value: str | None) -> list:
@@ -58,6 +62,52 @@ def _belongs_here(book: dict, session: dict) -> bool:
     if book.get("floor") != session["floor"]:
         return False
     return session["aisle"] is None or book.get("aisle") == session["aisle"]
+
+
+def _seen_cutoff() -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=SEEN_WINDOW_DAYS)).isoformat()
+
+
+_PAGE_SIZE = 1000  # PostgREST's default max rows per request
+
+
+def _fetch_all(build_query) -> list[dict]:
+    """Every row of a query, one PostgREST page at a time. build_query
+    returns a fresh query each call, since .range() can't be reapplied."""
+    rows: list[dict] = []
+    start = 0
+    while True:
+        page = build_query().range(start, start + _PAGE_SIZE - 1).execute().data
+        rows.extend(page)
+        if len(page) < _PAGE_SIZE:
+            return rows
+        start += _PAGE_SIZE
+
+
+def _last_seen_by_copy(admin: Client, since: str | None = None) -> dict[str, str]:
+    """When each copy was last known to be physically in hand: returned
+    from a loan or in-house use, or found on its shelf by a check."""
+    sources = [
+        ("loans", "returned_at", lambda q: q.not_.is_("returned_at", "null")),
+        ("in_house_loans", "returned_at", lambda q: q.not_.is_("returned_at", "null")),
+        ("inventory_items", "scanned_at", lambda q: q.eq("result", "found").not_.is_("scanned_at", "null")),
+    ]
+    last: dict[str, str] = {}
+    for table, column, only_seen in sources:
+        def build(table=table, column=column, only_seen=only_seen):
+            query = only_seen(admin.table(table).select(f"book_copy_id, {column}"))
+            return query.gte(column, since) if since else query
+        for r in _fetch_all(build):
+            when = r[column]
+            if when and when > last.get(r["book_copy_id"], ""):
+                last[r["book_copy_id"]] = when
+    return last
+
+
+def _recently_seen_copy_ids(admin: Client, since: str) -> set[str]:
+    """Copies seen since the cutoff. A smart check doesn't ask the librarian
+    to scan these again."""
+    return set(_last_seen_by_copy(admin, since))
 
 
 def _profile_names(admin: Client, ids: set[str]) -> dict[str, str]:
@@ -80,22 +130,28 @@ def list_locations(admin: Client) -> list[InventoryLocation]:
         return []
     books_by_id = {b["id"]: b for b in books}
     copies = (
-        admin.table("book_copies").select("book_id, status").in_("book_id", list(books_by_id)).execute()
+        admin.table("book_copies").select("id, book_id, status").in_("book_id", list(books_by_id)).execute()
     ).data
+    seen = _recently_seen_copy_ids(admin, _seen_cutoff())
 
-    per_aisle: dict[tuple[str, str], int] = {}
-    per_floor: dict[str, int] = {}
+    # [all expected copies, expected copies not seen recently]
+    per_aisle: dict[tuple[str, str], list[int]] = {}
+    per_floor: dict[str, list[int]] = {}
     for b in books:
-        per_floor.setdefault(b["floor"], 0)
+        per_floor.setdefault(b["floor"], [0, 0])
         if b.get("aisle"):
-            per_aisle.setdefault((b["floor"], b["aisle"]), 0)
+            per_aisle.setdefault((b["floor"], b["aisle"]), [0, 0])
     for c in copies:
         if c["status"] in NOT_EXPECTED_STATUSES:
             continue
         book = books_by_id[c["book_id"]]
-        per_floor[book["floor"]] += 1
+        unseen = c["id"] not in seen
+        targets = [per_floor[book["floor"]]]
         if book.get("aisle"):
-            per_aisle[(book["floor"], book["aisle"])] += 1
+            targets.append(per_aisle[(book["floor"], book["aisle"])])
+        for t in targets:
+            t[0] += 1
+            t[1] += unseen
 
     open_sessions = (
         admin.table("inventory_sessions").select("id, floor, aisle").eq("status", "in_progress").execute()
@@ -105,15 +161,15 @@ def list_locations(admin: Client) -> list[InventoryLocation]:
     locations = [
         InventoryLocation(
             floor=floor, aisle=None, label=location_label(floor, None),
-            expected_copies=count, open_session_id=open_by_location.get((floor, None)),
+            expected_copies=count, unseen_copies=unseen, open_session_id=open_by_location.get((floor, None)),
         )
-        for floor, count in per_floor.items()
+        for floor, (count, unseen) in per_floor.items()
     ] + [
         InventoryLocation(
             floor=floor, aisle=aisle, label=location_label(floor, aisle),
-            expected_copies=count, open_session_id=open_by_location.get((floor, aisle)),
+            expected_copies=count, unseen_copies=unseen, open_session_id=open_by_location.get((floor, aisle)),
         )
-        for (floor, aisle), count in per_aisle.items()
+        for (floor, aisle), (count, unseen) in per_aisle.items()
     ]
     # Each floor, then its aisles in natural order, whole floor first.
     locations.sort(key=lambda l: (_natural_key(l.floor), l.aisle is not None, _natural_key(l.aisle)))
@@ -161,7 +217,8 @@ def _summaries(admin: Client, sessions: list[dict]) -> list[InventorySession]:
         InventorySession(
             id=s["id"], floor=s["floor"], aisle=s["aisle"], label=location_label(s["floor"], s["aisle"]),
             status=s["status"], started_by_name=names.get(s["started_by"]),
-            started_at=s["started_at"], completed_at=s["completed_at"], **counts[s["id"]],
+            started_at=s["started_at"], completed_at=s["completed_at"],
+            skip_seen_since=s.get("skip_seen_since"), **counts[s["id"]],
         )
         for s in sessions
     ]
@@ -182,10 +239,13 @@ def list_sessions(
     return _summaries(admin, query.execute().data)
 
 
-def start_session(admin: Client, floor: str, aisle: str | None, librarian_id: str) -> InventorySession:
+def start_session(
+    admin: Client, floor: str, aisle: str | None, librarian_id: str, skip_recently_seen: bool = False,
+) -> InventorySession:
     """Opens a check and snapshots every copy expected there as 'pending'.
-    If a check of this exact location is already open, returns that one
-    instead (decision 6: two librarians share one check)."""
+    A smart check (skip_recently_seen) leaves out copies seen in the last
+    SEEN_WINDOW_DAYS. If a check of this exact location is already open,
+    returns that one instead (decision 6: two librarians share one check)."""
     def open_one() -> dict | None:
         query = admin.table("inventory_sessions").select("*").eq("status", "in_progress").eq("floor", floor)
         query = query.eq("aisle", aisle) if aisle else query.is_("aisle", "null")
@@ -203,10 +263,26 @@ def start_session(admin: Client, floor: str, aisle: str | None, librarian_id: st
     if not books:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"No books are shelved in {location_label(floor, aisle)}")
 
+    books_by_id = {b["id"]: b for b in books}
+    copies = (
+        admin.table("book_copies").select("id, book_id, status").in_("book_id", list(books_by_id)).execute()
+    ).data
+    copies = [c for c in copies if c["status"] not in NOT_EXPECTED_STATUSES]
+    since = _seen_cutoff() if skip_recently_seen else None
+    if since:
+        seen = _recently_seen_copy_ids(admin, since)
+        copies = [c for c in copies if c["id"] not in seen]
+        if not copies:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Every book in {location_label(floor, aisle)} was seen in the last {SEEN_WINDOW_DAYS // 30} months — nothing to check",
+            )
+
     try:
-        session = admin.table("inventory_sessions").insert({
-            "floor": floor, "aisle": aisle, "started_by": librarian_id,
-        }).execute().data[0]
+        new_session = {"floor": floor, "aisle": aisle, "started_by": librarian_id}
+        if since:
+            new_session["skip_seen_since"] = since
+        session = admin.table("inventory_sessions").insert(new_session).execute().data[0]
     except APIError:
         # Lost a race with another librarian starting the same location —
         # the partial unique index (0053) let only one through. Join theirs.
@@ -215,10 +291,6 @@ def start_session(admin: Client, floor: str, aisle: str | None, librarian_id: st
             return _summaries(admin, [existing])[0]
         raise
 
-    books_by_id = {b["id"]: b for b in books}
-    copies = (
-        admin.table("book_copies").select("id, book_id, status").in_("book_id", list(books_by_id)).execute()
-    ).data
     rows = [
         {
             "session_id": session["id"],
@@ -228,7 +300,6 @@ def start_session(admin: Client, floor: str, aisle: str | None, librarian_id: st
             "expected_location": book_location_label(books_by_id[c["book_id"]]),
         }
         for c in copies
-        if c["status"] not in NOT_EXPECTED_STATUSES
     ]
     if rows:
         admin.table("inventory_items").insert(rows).execute()
@@ -361,6 +432,9 @@ def scan(admin: Client, session_id: str, code: str, librarian_id: str) -> ScanRe
                 message += " — someone reserved it, take it to the hold shelf"
             elif was in _SIDE_STATES:
                 message += f" — it was marked {was}, now available again"
+        also = _count_in_other_checks(admin, session, copy, book, scanned)
+        if also:
+            message += f" (also counted in {', '.join(also)})"
         return result("found", message, item_id)
 
     # Belongs on another shelf: Misplaced, and say where it goes.
@@ -371,6 +445,25 @@ def scan(admin: Client, session_id: str, code: str, librarian_id: str) -> ScanRe
         _to_for_reshelving(admin, copy)
         admin.table("book_copies").update({"status": "misplaced"}).eq("id", copy["id"]).execute()
     return result("misplaced", f'Misplaced: "{title}" belongs in {book_location_label(book)}', item_id)
+
+
+def _count_in_other_checks(admin: Client, session: dict, copy: dict, book: dict, scanned: dict) -> list[str]:
+    """A copy found on its own shelf is found for every open check that
+    covers that shelf, so scanning an aisle also ticks the copy off an open
+    whole-floor check (and the other way round). Returns those checks' labels."""
+    others = (
+        admin.table("inventory_sessions").select("id, floor, aisle")
+        .eq("status", "in_progress").eq("floor", session["floor"]).neq("id", session["id"]).execute()
+    ).data
+    others = [s for s in others if _belongs_here(book, s)]
+    if not others:
+        return []
+    updated = (
+        admin.table("inventory_items").update({"result": "found", **scanned})
+        .in_("session_id", [s["id"] for s in others]).eq("book_copy_id", copy["id"]).eq("result", "pending").execute()
+    ).data
+    updated_sessions = {r["session_id"] for r in updated}
+    return [location_label(s["floor"], s["aisle"]) for s in others if s["id"] in updated_sessions]
 
 
 def _insert_item(admin: Client, session_id: str, copy: dict, book: dict, *, expected: bool, item_result: str, scanned: dict) -> str | None:
@@ -426,6 +519,29 @@ def copy_counts(admin: Client) -> InventoryCounts:
     def count(copy_status: str) -> int:
         return admin.table("book_copies").select("id", count="exact").eq("status", copy_status).limit(1).execute().count or 0
     return InventoryCounts(missing=count("missing"), misplaced=count("misplaced"))
+
+
+def all_copies(admin: Client) -> list[InventoryCopy]:
+    """Every copy of every catalogued book with its current status — the
+    Inventory page's All books list."""
+    rows = _fetch_all(lambda: (
+        admin.table("book_copies")
+        .select("id, accession_number, status, book_id, books!inner(title, author, call_number, floor, aisle, archived_at)")
+        .is_("books.archived_at", "null")
+        .order("id")
+    ))
+    last_seen = _last_seen_by_copy(admin)
+    copies = []
+    for r in rows:
+        book = r.get("books") or {}
+        copies.append(InventoryCopy(
+            copy_id=r["id"], book_id=r["book_id"], accession_number=r["accession_number"],
+            title=book.get("title") or "Untitled", author=book.get("author"), call_number=book.get("call_number"),
+            status=r["status"], floor=book.get("floor"), aisle=book.get("aisle"),
+            location=book_location_label(book), last_seen_at=last_seen.get(r["id"]),
+        ))
+    copies.sort(key=lambda c: (_natural_key(c.floor), _natural_key(c.aisle), _natural_key(c.call_number), c.accession_number or ""))
+    return copies
 
 
 def flagged_copies(admin: Client) -> list[FlaggedCopy]:

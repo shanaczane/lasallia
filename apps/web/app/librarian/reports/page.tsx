@@ -2739,7 +2739,7 @@ function ReportsPageContent() {
           { label: "Year Level", value: yearLevel, setter: setYearLevel,
             options: ["All Year Levels", "1st Year", "2nd Year", "3rd Year", "4th Year"] },
         ].map((f) => (
-          <div key={f.label} className="flex flex-col gap-1 shrink-0">
+          <div key={f.label} className="flex flex-col gap-1 flex-1 min-w-36">
             <label className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
               {f.label}
             </label>
@@ -2748,7 +2748,7 @@ function ReportsPageContent() {
                 value={f.value}
                 onChange={(e) => f.setter(e.target.value)}
                 title={programLabel(f.value)}
-                className="appearance-none w-36 truncate pl-3 pr-8 py-1.5 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-ink-800"
+                className="appearance-none w-full truncate pl-3 pr-8 py-1.5 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-ink-800"
                 style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
               >
                 {f.options.map((o) => (
