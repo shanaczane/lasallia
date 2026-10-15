@@ -265,10 +265,8 @@ export default function CatalogImportPage() {
           >
             Catalog Import
           </h1>
-          <p className="text-ink-400 mt-1 max-w-[680px]" style={body("var(--text-body)")}>
-            Upload the LRC catalog Excel sheet (.xlsx), or a MARC 21 export (.mrc) from Follett Destiny. You&apos;ll see
-            a preview and any likely typos before anything changes. Imports never delete books or change whether a copy
-            is on loan.
+          <p className="text-ink-500 mt-1" style={body()}>
+            Add or update books from the LRC Excel sheet or a Follett Destiny export. Nothing changes until you review the preview.
           </p>
         </div>
         <button
