@@ -241,7 +241,10 @@ function StudentProfileContent() {
   }
 
   return (
-    <div className="flex flex-col gap-6 px-4 py-5 sm:px-8 sm:py-6 w-full max-w-2xl mx-auto">
+    // Same wide-screen treatment as the Request a Book page: left-aligned and
+    // capped rather than a narrow centered column, with each tab's two cards
+    // side by side from xl up so neither side is left as dead space.
+    <div className="flex flex-col gap-6 px-4 py-5 sm:px-8 sm:py-6 w-full max-w-[1440px]">
 
       {/* Header */}
       <div>
@@ -292,8 +295,9 @@ function StudentProfileContent() {
               Couldn&apos;t find your signed-in session — try reloading the page.
             </p>
           ) : (
-            <>
+            <div className="grid gap-4 xl:gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] items-start">
               <SettingsSection title="Account Information">
+                <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Full Name" value={profile.full_name ?? "No name on file"} onChange={() => {}} disabled />
                 <Field label="Email" value={profile.email} onChange={() => {}} type="email" disabled />
                 <Field
@@ -329,6 +333,7 @@ function StudentProfileContent() {
                     <Field label="College" value={(profile.college || collegeForProgram(profile.program))!} onChange={() => {}} disabled />
                   )
                 )}
+                </div>
               </SettingsSection>
 
               <SettingsSection title="Outstanding Fines">
@@ -415,10 +420,10 @@ function StudentProfileContent() {
                   </>
                 )}
               </SettingsSection>
-            </>
+            </div>
           )
         ) : (
-          <>
+          <div className="grid gap-4 xl:gap-6 xl:grid-cols-2 items-start">
             <SettingsSection title="Full Name">
               <Field label="Full Name" value={fullName} onChange={setFullName} />
 
@@ -500,7 +505,7 @@ function StudentProfileContent() {
                 {passwordSaving ? "Saving…" : hasPassword === false ? "Set Password" : "Update Password"}
               </button>
             </SettingsSection>
-          </>
+          </div>
         )}
       </div>
     </div>
