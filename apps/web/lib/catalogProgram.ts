@@ -12,6 +12,11 @@
 const PROGRAM_TO_CATALOG: Record<string, string> = {
   "BS Accountancy": "Accountancy AIS",
   "BS Accounting Information System": "Accountancy AIS",
+  "Accounting Information System": "Accountancy AIS",
+  // Spellings found on real profiles that don't follow the roster's names.
+  "BMMA": "Multimedia Arts",
+  "Multi Media Arts": "Multimedia Arts",
+  "BSBA MM": "Marketing",
   "AB Communication": "ABCOMMUNICATION",
   "Bachelor of Elementary Education": "Education",
   "Bachelor of Secondary Education": "Education",

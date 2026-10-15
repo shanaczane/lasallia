@@ -241,10 +241,10 @@ function StudentProfileContent() {
   }
 
   return (
-    // Same wide-screen treatment as the Request a Book page: left-aligned and
-    // capped rather than a narrow centered column, with each tab's two cards
-    // side by side from xl up so neither side is left as dead space.
-    <div className="flex flex-col gap-6 px-4 py-5 sm:px-8 sm:py-6 w-full max-w-[1440px]">
+    // Full width like the catalog pages rather than a narrow centered
+    // column, with each tab's two cards side by side from xl up so neither
+    // side is left as dead space.
+    <div className="flex flex-col gap-6 px-4 py-5 sm:px-8 sm:py-6 w-full">
 
       {/* Header */}
       <div>

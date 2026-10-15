@@ -38,7 +38,7 @@ export default function KioskForYouPage() {
   if (!session) return null
 
   return (
-    <div className="px-5 sm:px-8 py-7 max-w-5xl mx-auto flex flex-col gap-6">
+    <div className="px-5 sm:px-8 py-7 flex flex-col gap-6">
 
       {/* Greeting — same tone as the student dashboard's, without the
           "Find a book" CTA next to it: the kiosk sidebar already has a
@@ -63,17 +63,15 @@ export default function KioskForYouPage() {
         hrefPrefix="/kiosk/catalog"
       />
 
-      {/* New Arrivals only — sprint 5.7 added Program/College sections too,
-          but the kiosk's For You tab sticks to New Arrivals here. identity
-          is still passed (rather than omitted) so the component never falls
-          back to getUser()/localStorage for it: this is a shared terminal,
-          and that fallback would risk showing a different student's
-          program/college than the one actually standing here, even though
-          those sections are hidden. */}
+      {/* New Arrivals plus the tapped-in student's own program. identity
+          comes from the station session, never getUser()/localStorage: this
+          is a shared terminal, and that fallback could show a different
+          student's program than the one actually standing here. The
+          college row stays off to keep the tab short. */}
       <CatalogHighlights
         key={`highlights-${session.id}`}
         identity={{ program: session.program ?? null, college: session.college ?? null }}
-        showProgramCollege={false}
+        showCollege={false}
         hrefPrefix="/kiosk/catalog"
       />
     </div>

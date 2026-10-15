@@ -16,6 +16,7 @@ import { BookCard } from "@/components/ui/catalog/BookCard"
 import { fetchBooks } from "@/lib/books"
 import { getUser } from "@/lib/auth"
 import { collegeForProgram } from "@/lib/collegeForProgram"
+import { catalogProgramFor } from "@/lib/catalogProgram"
 import { programLabel } from "@/lib/programLabels"
 import { ScrollRow } from "./ScrollRow"
 
@@ -125,15 +126,15 @@ function Section({
 export function CatalogHighlights({
   identity,
   hrefPrefix = "/student/catalog",
-  // The kiosk's "For you" tab only wants New Arrivals — Program/College
-  // sections lean on the same walk-up-terminal identity concerns as
-  // ForYouSection (see app/kiosk/for-you/page.tsx), so it opts out here
-  // rather than the student dashboard's default of showing everything.
-  showProgramCollege = true,
+  // The kiosk's "For you" tab shows the program row but not the college
+  // one, so each can be switched off on its own.
+  showProgram = true,
+  showCollege = true,
 }: {
   identity?: { program: string | null; college: string | null }
   hrefPrefix?: string
-  showProgramCollege?: boolean
+  showProgram?: boolean
+  showCollege?: boolean
 } = {}) {
   const [books, setBooks] = useState<Book[] | null>(null)
   const [failed, setFailed] = useState(false)
@@ -161,14 +162,23 @@ export function CatalogHighlights({
     ? [...books].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, SECTION_SIZE)
     : []
 
-  const programBooks = books && program
-    ? books.filter((b) => b.category === program).slice(0, SECTION_SIZE)
+  // A profile's program ("BS Nursing") is named differently from the
+  // catalog's Program ("Nursing"), and some programs are shelved under more
+  // than one name ("Computer Science" and "BS Computer Science"), so a plain
+  // equality check left this row empty for most students. Every catalog
+  // Program that maps to the student's program counts.
+  const genres = books ? [...new Set(books.map((b) => b.category))] : []
+  const programCategories = new Set(genres.filter((g) => catalogProgramFor(program, [g]) !== null))
+  const catalogProgram = catalogProgramFor(program, genres)
+
+  const programBooks = books && programCategories.size > 0
+    ? books.filter((b) => programCategories.has(b.category)).slice(0, SECTION_SIZE)
     : []
 
   // Excludes the student's own program so this section reads as "the rest
   // of your college", not a re-list of the section right above it.
   const collegeBooks = books && college
-    ? books.filter((b) => b.subject === college && b.category !== program).slice(0, SECTION_SIZE)
+    ? books.filter((b) => b.subject === college && !programCategories.has(b.category)).slice(0, SECTION_SIZE)
     : []
 
   return (
@@ -181,18 +191,19 @@ export function CatalogHighlights({
         hrefPrefix={hrefPrefix}
         viewMoreHref={hrefPrefix}
       />
-      {showProgramCollege && (
-        <>
+      {showProgram && (
           <Section
-            title={`From ${programLabel(program)}`}
+            title={`From ${programLabel(catalogProgram ?? program ?? "")}`}
             subtitle="Books shelved under your program."
             loading={loading}
             books={programBooks}
             hrefPrefix={hrefPrefix}
             // genre is the catalog filter's own param name for Program (see
             // useCatalogFilters.ts) — pre-filters the catalog to match.
-            viewMoreHref={`${hrefPrefix}?genre=${encodeURIComponent(program ?? "")}`}
+            viewMoreHref={`${hrefPrefix}?genre=${encodeURIComponent(catalogProgram ?? "")}`}
           />
+      )}
+      {showCollege && (
           <Section
             title={`From ${college ?? ""}`}
             subtitle="More from your college's collection."
@@ -202,7 +213,6 @@ export function CatalogHighlights({
             // subject is the catalog filter's own param name for College.
             viewMoreHref={`${hrefPrefix}?subject=${encodeURIComponent(college ?? "")}`}
           />
-        </>
       )}
     </>
   )

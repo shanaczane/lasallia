@@ -139,7 +139,7 @@ export default function GuestBookDetailPage({
   // ── Loading state ────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="px-5 sm:px-8 py-7 max-w-5xl mx-auto animate-pulse">
+      <div className="px-5 sm:px-8 py-7 animate-pulse">
         <div className="h-4 w-32 bg-ink-100 rounded mb-7" />
         <div className="flex flex-col sm:flex-row gap-8">
           <div className="shrink-0 mx-auto sm:mx-0 rounded-xl bg-ink-100" style={{ width: 176, aspectRatio: '2/3' }} />
@@ -188,7 +188,7 @@ export default function GuestBookDetailPage({
   const totalCopies    = book.total_copies ?? 1
 
   return (
-    <div className="px-5 sm:px-8 py-7 max-w-5xl mx-auto">
+    <div className="px-5 sm:px-8 py-7">
 
       {/* Back */}
       <Link

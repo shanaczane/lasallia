@@ -195,7 +195,7 @@ export default function RequestABookPage() {
       {/* Wide screens: form and history side by side, so neither a centered
           column nor a left-hugging one leaves a dead band of empty space.
           Narrower screens stack them as before. */}
-      <div className="w-full max-w-[1440px] px-4 sm:px-8 pb-8 grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] xl:gap-8 items-start">
+      <div className="w-full px-4 sm:px-8 pb-8 grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] xl:gap-8 items-start">
         <section className="flex flex-col gap-2 min-w-0">
           <div className="flex items-center min-h-8">
             <p

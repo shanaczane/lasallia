@@ -157,7 +157,7 @@ export default function LibrarianBookDetailPage({
 
   if (loading) {
     return (
-      <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-5xl mx-auto animate-pulse">
+      <div className="px-4 sm:px-6 lg:px-8 py-6 animate-pulse">
         <div className="h-4 w-32 bg-ink-100 rounded mb-6" />
         <div className="flex flex-col sm:flex-row gap-5 sm:gap-7">
           <div className="shrink-0 rounded-(--radius) bg-ink-100" style={{ width: 140, height: 198 }} />
@@ -234,7 +234,7 @@ export default function LibrarianBookDetailPage({
     .filter((s) => s.count > 0)
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-5xl mx-auto">
+    <div className="px-4 sm:px-6 lg:px-8 py-6">
 
       {/* Back link */}
       <Link

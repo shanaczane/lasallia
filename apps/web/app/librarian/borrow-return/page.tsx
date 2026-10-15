@@ -1860,7 +1860,7 @@ function BorrowAndReturnPageContent() {
       </div>
 
       {/* ── Two-column layout ─────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: scanner / lookup */}
         {tab === "borrow" && <AssistedBorrowPanel onSettled={loadBorrowedToday} />}
         {tab === "return" && (
