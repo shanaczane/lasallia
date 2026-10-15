@@ -37,6 +37,7 @@ import { DeleteBookModal } from '@/components/ui/catalog/DeleteBookModal'
 
 type SortOption =
   | 'relevance'
+  | 'added_desc'
   | 'title_asc'
   | 'title_desc'
   | 'year_desc'
@@ -46,10 +47,11 @@ type SortOption =
 
 const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
   { value: 'relevance',    label: 'Most relevant' },
+  { value: 'added_desc', label: 'Recently added' },
   { value: 'title_asc',   label: 'Title A–Z' },
   { value: 'title_desc',  label: 'Title Z–A' },
-  { value: 'year_desc',   label: 'Newest first' },
-  { value: 'year_asc',    label: 'Oldest first' },
+  { value: 'year_desc',   label: 'Newest published' },
+  { value: 'year_asc',    label: 'Oldest published' },
   { value: 'copies_desc', label: 'Most copies' },
   { value: 'copies_asc',  label: 'Fewest copies' },
 ]
@@ -57,6 +59,8 @@ const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
 function sortBooks(books: Book[], sort: SortOption): Book[] {
   const s = [...books]
   switch (sort) {
+    // When the title entered the catalog — not its publication year.
+    case 'added_desc': return s.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
     case 'title_asc':    return s.sort((a, b) => a.title.localeCompare(b.title))
     case 'title_desc':   return s.sort((a, b) => b.title.localeCompare(a.title))
     case 'year_desc':    return s.sort((a, b) => (b.published_year ?? 0) - (a.published_year ?? 0))
