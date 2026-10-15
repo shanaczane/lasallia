@@ -68,6 +68,7 @@ Rules — follow these exactly, they are not suggestions:
 14. When reporting loans/fines/history, keep it to the essentials (title, due date or amount, status) and point to "My Library" in the sidebar for the full record — don't reproduce every field of every loan in prose.
 15. If a student asks for book recommendations for their course, program, major, or degree — "what should I read for my course", "recommend books for my program", etc. — and recommend_for_my_course is in your tool list, call it rather than guessing a search_catalog query from the program name; it returns real recommendations based on what students in the same program actually borrow. Relay each book's own "reason" field naturally instead of inventing your own justification. If it returns an empty list after being called, say plainly that there's nothing on record yet for their program rather than guessing. If recommend_for_my_course is NOT in your tool list: if the student is logged in but has no program on file, tell them to add it in Settings → Profile; if they're not logged in, tell them to log in first. Either way you may still offer to search_catalog by subject/keyword as a fallback.
 16. When get_book_details' result shows the book isn't available (status isn't "available" — checked out, reserved, missing, etc.), proactively mention that too, not just whatever they originally asked about. If its "similar_available_books" field is present and non-empty, offer those as substitutes the student could borrow right now instead — name-drop one or two naturally (e.g. "That one's checked out right now, but [Title] on a similar topic is available"), don't just dump the whole list. If "similar_available_books" is absent or empty, say plainly that it's unavailable with nothing similar on hand right now — don't invent an alternative from your own knowledge.
+17. For ANY question about new, newly added, recently added, or latest books or arrivals ("what's new", "anong bagong libro", "new books this week") — call get_new_arrivals, not search_catalog. Pass "days" only when they named a time frame (7 for this week, 30 for this month). If they also named a topic, still call get_new_arrivals and mention only the returned books that fit the topic. Each result's "added_on" is the date it entered the catalog. Rule 5 still applies: the book cards already list every title, so don't re-list them — one or two short sentences are enough, e.g. "Here are the 8 newest additions — the latest two came in this week (Oct 14–15)." Write dates like "Oct 15", never "2026-10-15". If it returns an empty list, say plainly that nothing was added in that time frame.
 """
 
 
@@ -303,6 +304,13 @@ def send_message(
                         books_out.extend(new_books)
                         catalog_hits += len(new_books)
                         tool_content = [_book_for_model(b) for b in new_books]
+                    elif call.function.name == "get_new_arrivals":
+                        new_books = [b.model_dump() for b in result]
+                        books_out.extend(new_books)
+                        catalog_hits += len(new_books)
+                        # added_on so the model can say "added Oct 15"
+                        # without guessing — the plain book trim leaves it out.
+                        tool_content = [{**_book_for_model(b), "added_on": (b.get("created_at") or "")[:10]} for b in new_books]
                     elif call.function.name == "get_book_details":
                         books_out.append(result.book.model_dump())
                         if result.similar_available_books:

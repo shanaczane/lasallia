@@ -15,7 +15,7 @@ Structural home of two of the chatbot plan's non-negotiable rules:
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from core.tools import account, book_details, catalog, course_recommendations, hours, policy
+from core.tools import account, book_details, catalog, course_recommendations, hours, new_arrivals, policy
 from schemas.auth import UserProfile
 
 
@@ -55,6 +55,7 @@ class ToolRegistry:
         """
         tools = [
             ToolSpec(schema=catalog.TOOL_SCHEMA, handler=catalog.search_catalog),
+            ToolSpec(schema=new_arrivals.TOOL_SCHEMA, handler=new_arrivals.get_new_arrivals),
             ToolSpec(schema=book_details.TOOL_SCHEMA, handler=book_details.get_book_details),
             ToolSpec(schema=policy.TOOL_SCHEMA, handler=policy.search_policy),
             ToolSpec(schema=hours.TOOL_SCHEMA, handler=hours.get_library_hours),

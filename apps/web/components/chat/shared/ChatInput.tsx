@@ -3,6 +3,8 @@
 import { useRef, useState } from "react"
 import { Send } from "lucide-react"
 
+const MAX_HEIGHT = 120
+
 interface ChatInputProps {
   onSend: (message: string) => void
   disabled?: boolean
@@ -20,14 +22,22 @@ export default function ChatInput({ onSend, disabled, hintText }: ChatInputProps
     setValue("")
     if (ref.current) {
       ref.current.style.height = "auto"
+      ref.current.style.overflowY = "hidden"
       ref.current.focus()
     }
   }
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     setValue(e.target.value)
-    e.target.style.height = "auto"
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
+    const el = e.target
+    el.style.height = "auto"
+    // scrollHeight leaves out the border but the box's height includes it
+    // (border-box), so sizing to scrollHeight alone left the text 2px short
+    // and showed a scrollbar even on one line. Scrolling only kicks in once
+    // the box hits its max height.
+    const fullHeight = el.scrollHeight + el.offsetHeight - el.clientHeight
+    el.style.height = `${Math.min(fullHeight, MAX_HEIGHT)}px`
+    el.style.overflowY = fullHeight > MAX_HEIGHT ? "auto" : "hidden"
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -58,7 +68,8 @@ export default function ChatInput({ onSend, disabled, hintText }: ChatInputProps
             fontFamily: "var(--font-body)",
             fontSize: 14,
             lineHeight: "1.5",
-            maxHeight: 120,
+            maxHeight: MAX_HEIGHT,
+            overflowY: "hidden",
             border: "1px solid var(--color-ink-200)",
             background: "var(--color-ink-50)",
           } as React.CSSProperties}
