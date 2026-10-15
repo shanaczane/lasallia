@@ -4,52 +4,19 @@
 // be dismissed — no close button or backdrop click; the only ways out are
 // Accept (POST /auth/accept-privacy) or Decline (signs out).
 //
-// NOT SHIPPABLE AS-IS: the NOTICE_* text and ACCEPT_LABEL are an unreviewed
-// DRAFT template, not official or legally reviewed text. They are pending review
-// by DLSL's Data Protection Officer. Keep this on a feature branch until the
-// team confirms the final text; only then change PRIVACY_NOTICE_VERSION in
-// routers/auth.py from "placeholder".
+// NOT SHIPPABLE AS-IS: the notice text (lib/privacyNotice.ts) and ACCEPT_LABEL
+// are an unreviewed DRAFT template, not official or legally reviewed text.
+// They are pending review by DLSL's Data Protection Officer. Keep this on a
+// feature branch until the team confirms the final text; only then change
+// PRIVACY_NOTICE_VERSION in routers/auth.py from "placeholder".
 "use client"
 
 import { useRef, useState } from "react"
 import { Loader2, AlertCircle } from "lucide-react"
 import { acceptPrivacyNotice, clearSession } from "@/lib/auth"
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
+import { NOTICE_CLOSING, NOTICE_INTRO, NOTICE_SECTIONS } from "@/lib/privacyNotice"
 
-// DRAFT — pending DPO review. Intro and closing are plain paragraphs; each
-// section renders as a bold heading, a paragraph, and (if present) a list.
-const NOTICE_INTRO = `De La Salle Lipa – Learning Resource Center ("DLSL LRC," "we," "us") values your privacy. This notice explains how we collect, use, and protect your personal data when you use the Lasallia library system, in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173) and its Implementing Rules and Regulations.`
-
-const NOTICE_SECTIONS: { heading: string; body: string; items?: string[] }[] = [
-  {
-    heading: "WHAT WE COLLECT",
-    body: "We collect and process personal information you provide when you use this system, including but not limited to: your name, student/employee number, program, college, year level, email address, and your borrowing, reservation, and library usage history.",
-  },
-  {
-    heading: "WHY WE COLLECT IT",
-    body: "We use this information to:",
-    items: [
-      "Manage your library account, loans, reservations, and fines",
-      "Send you notifications about your account (e.g. due dates, pickup notices)",
-      "Maintain accurate library records as required by DLSL's institutional policies",
-      "Improve library services and generate usage reports for institutional purposes",
-    ],
-  },
-  {
-    heading: "HOW WE PROTECT IT",
-    body: "We implement reasonable organizational, physical, and technical safeguards to protect your personal data from unauthorized access, use, or disclosure.",
-  },
-  {
-    heading: "HOW LONG WE KEEP IT",
-    body: "We retain your personal data for as long as necessary to fulfill the purposes described above, or as required by DLSL policy and applicable law.",
-  },
-  {
-    heading: "YOUR RIGHTS",
-    body: "Under the Data Privacy Act, you have the right to be informed, to access your data, to correct inaccurate data, to object to processing, and to file a complaint with the National Privacy Commission. To exercise these rights or ask questions about this notice, contact the Data Protection Officer.",
-  },
-]
-
-const NOTICE_CLOSING = `By clicking "Accept," you acknowledge that you have read and understood this notice and consent to the processing of your personal data as described above.`
 const ACCEPT_LABEL = "I have read and understood this Data Privacy Notice, and I consent to the processing of my personal data as described."
 
 export function PrivacyNoticeModal({ step, onDone }: { step?: { current: number; total: number }; onDone: () => void }) {

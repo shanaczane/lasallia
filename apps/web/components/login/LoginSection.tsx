@@ -343,6 +343,10 @@ export default function LoginSection() {
               >
                 System Status
               </button>
+              <span className="mx-1.5">|</span>
+              <a href="/privacy" className="hover:text-ink-700 transition-colors">
+                Privacy Policy
+              </a>
             </p>
           </div>
 
