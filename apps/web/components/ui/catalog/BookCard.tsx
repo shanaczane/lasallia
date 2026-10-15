@@ -10,6 +10,7 @@ import { Book } from '@lasallia/types'
 import { AvailabilityPill, pillStatusFor } from '@/components/ui/pills/availability-pill'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
+import { BookCover } from './BookCover'
 
 type BookCardProps = {
   book: Book
@@ -93,16 +94,11 @@ export function BookCard({ book, href, className, showBookmark = false, isSaved,
           className="relative w-full overflow-hidden"
           style={{ aspectRatio: '2/3', background: coverColor }}
         >
-          {book.cover_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              loading="lazy"
-              decoding="async"
-              src={book.cover_url}
-              alt={`Cover of ${book.title}`}
-              className="w-full h-full object-cover"
-            />
-          ) : (
+          <BookCover
+            src={book.cover_url}
+            alt={`Cover of ${book.title}`}
+            className="w-full h-full object-cover"
+            fallback={(
             <div className="relative w-full h-full flex flex-col justify-between p-3">
               <svg
                 className="absolute inset-0 w-full h-full opacity-10"
@@ -137,7 +133,8 @@ export function BookCard({ book, href, className, showBookmark = false, isSaved,
                 {book.title}
               </p>
             </div>
-          )}
+            )}
+          />
         </div>
 
         {/* Meta */}

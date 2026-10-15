@@ -13,6 +13,7 @@ import { isLibraryUseOnly } from '@/lib/collectionType'
 import { useBook } from '@/lib/hooks/useBooks'
 import { AvailabilityPill, pillStatusFor } from '@/components/ui/pills/availability-pill'
 import type { Book } from '@lasallia/types'
+import { BookCover } from '@/components/ui/catalog/BookCover'
 
 // ─── Cover helpers ────────────────────────────────────────────────────────────
 const COVER_COLORS = [
@@ -209,14 +210,12 @@ export default function GuestBookDetailPage({
             className="rounded-xl overflow-hidden shadow-xl"
             style={{ width: 176, aspectRatio: '2/3', background: coverColor }}
           >
-            {book.cover_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={book.cover_url}
-                alt={`Cover of ${book.title}`}
-                className="w-full h-full object-cover"
-              />
-            ) : (
+            <BookCover
+              src={book.cover_url}
+              alt={`Cover of ${book.title}`}
+              className="w-full h-full object-cover"
+              loading="eager"
+              fallback={(
               <div className="relative w-full h-full flex flex-col justify-between p-4">
                 <svg
                   className="absolute inset-0 w-full h-full opacity-10"
@@ -246,7 +245,8 @@ export default function GuestBookDetailPage({
                   {book.title}
                 </p>
               </div>
-            )}
+              )}
+            />
           </div>
         </div>
 

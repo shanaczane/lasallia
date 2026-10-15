@@ -18,6 +18,7 @@ import {
   User, ArrowLeft, XCircle, RotateCcw, WifiOff,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { BookCover } from '@/components/ui/catalog/BookCover'
 import { fetchHold, confirmLoan, extendHold, reportMissing, releaseHold, NetworkError, type HoldDetail, type Condition } from '@/lib/kiosk'
 
 // Placeholder pending real LRC policy (plan doc's open question #2) —
@@ -442,10 +443,8 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
             className="shrink-0 rounded-sm overflow-hidden"
             style={{ width: 52, height: 72, background: hold.book.cover_color ?? '#1E3A5F' }}
           >
-            {hold.book.cover_url && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={hold.book.cover_url} alt="" className="w-full h-full object-cover" />
-            )}
+            {/* No picture → just the cover color, as before. */}
+            <BookCover src={hold.book.cover_url} alt="" className="w-full h-full object-cover" loading="eager" fallback={null} />
           </div>
           <div className="flex-1 min-w-0 flex flex-col gap-1">
             <p className="text-ink-900 font-semibold leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>

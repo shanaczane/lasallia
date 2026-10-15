@@ -16,6 +16,7 @@ import { TX_CONFIG, timeLabel, dateLabel, type FeedItem, type TxType } from '@/l
 import type { Loan } from '@/lib/kiosk'
 import type { Reservation } from '@lasallia/types'
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
+import { BookCover } from '@/components/ui/catalog/BookCover'
 
 type ActivityDetailPanelProps = {
   item: FeedItem | null
@@ -189,12 +190,14 @@ export function ActivityDetailPanel({ item, loans, reservations, onClose }: Acti
               className="w-20 h-28 rounded-sm overflow-hidden shrink-0 flex items-center justify-center shadow-(--shadow-sm)"
               style={{ background: coverColor }}
             >
-              {book?.cover_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img loading="lazy" decoding="async" src={book.cover_url} alt="" className="w-full h-full object-cover" />
-              ) : (
+              <BookCover
+                src={book?.cover_url}
+                alt=""
+                className="w-full h-full object-cover"
+                fallback={(
                 <BookOpen size={26} className="text-white/50" />
-              )}
+                )}
+              />
             </div>
             <p
               className="text-ink-900 font-semibold leading-snug truncate w-full"

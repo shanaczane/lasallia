@@ -19,7 +19,8 @@ export interface BookCardData {
 }
 
 export default function BookCard({ title, author, callNumber, availability, location, href, coverUrl }: BookCardData) {
-  // A broken cover link falls back to the plain banner, same as no cover.
+  // A broken cover link — or Destiny's 1×1 "no cover" GIF — falls back to
+  // the plain banner, same as no cover.
   const [coverFailed, setCoverFailed] = useState(false)
   const showCover = !!coverUrl && !coverFailed
 
@@ -45,6 +46,9 @@ export default function BookCard({ title, author, callNumber, availability, loca
               loading="lazy"
               decoding="async"
               onError={() => setCoverFailed(true)}
+              // Destiny answers "no cover" with a 1×1 transparent GIF rather
+              // than an error — treat that the same as a broken link.
+              onLoad={(e) => { if (e.currentTarget.naturalWidth <= 2) setCoverFailed(true) }}
               className="absolute inset-0 h-full w-full object-cover object-top"
             />
             <div className="absolute inset-0 bg-linear-to-t from-black/75 via-black/25 to-transparent" />

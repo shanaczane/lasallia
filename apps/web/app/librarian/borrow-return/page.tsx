@@ -43,6 +43,7 @@ import {
   type ReshelvingQueueItem,
   type ReshelvedItem,
 } from "@/lib/returns"
+import { BookCover } from '@/components/ui/catalog/BookCover'
 import {
   fetchInHouseLoans,
   createInHouseLoan,
@@ -546,10 +547,12 @@ function BookCoverThumb({
       className="shrink-0 rounded-[3px] overflow-hidden relative"
       style={{ width, height, background: bg }}
     >
-      {coverUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={coverUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
-      ) : (
+      <BookCover
+        src={coverUrl}
+        alt=""
+        className="absolute inset-0 w-full h-full object-cover"
+        loading="eager"
+        fallback={(
         <div className="absolute inset-0 flex flex-col justify-between p-1.5">
           <svg className="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
             <defs>
@@ -574,7 +577,8 @@ function BookCoverThumb({
             {title}
           </p>
         </div>
-      )}
+        )}
+      />
     </div>
   )
 }

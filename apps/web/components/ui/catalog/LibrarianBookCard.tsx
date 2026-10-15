@@ -9,6 +9,7 @@ import { Copy, Calendar, Pencil, Trash2 } from 'lucide-react'
 import { Book } from '@lasallia/types'
 import { AvailabilityPill, pillStatusFor } from '@/components/ui/pills/availability-pill'
 import { cn } from '@/lib/utils'
+import { BookCover } from './BookCover'
 
 const COVER_COLORS = [
   '#1E3A5F', '#5C3D11', '#1B3A2D', '#4A1942',
@@ -51,16 +52,11 @@ export function LibrarianBookCard({ book, onEdit, onDelete, className }: Librari
         <div
           className="w-[72px] h-[102px] sm:w-[88px] sm:h-[124px] relative flex flex-col justify-between p-2"
         >
-          {book.cover_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              loading="lazy"
-              decoding="async"
-              src={book.cover_url}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-          ) : (
+          <BookCover
+            src={book.cover_url}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+            fallback={(
             <>
               {/* Subtle grid texture */}
               <svg className="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
@@ -84,7 +80,8 @@ export function LibrarianBookCard({ book, onEdit, onDelete, className }: Librari
                 {book.title}
               </p>
             </>
-          )}
+            )}
+          />
         </div>
       </Link>
 

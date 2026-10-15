@@ -25,6 +25,7 @@ import { fetchSavedBooks, unsaveBook } from "@/lib/saved"
 import { useSwipeTabs } from "@/lib/hooks/useSwipeTabs"
 import { useStickyBelowNav } from "@/lib/hooks/useStickyBelowNav"
 import type { Book } from "@lasallia/types"
+import { BookCover } from "@/components/ui/catalog/BookCover"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -247,14 +248,12 @@ function Cover({ book, children }: { book: Book; children?: React.ReactNode }) {
       className="relative w-full overflow-hidden"
       style={{ aspectRatio: "2/3", background: coverColor }}
     >
-      {book.cover_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={book.cover_url}
-          alt={`Cover of ${book.title}`}
-          className="w-full h-full object-cover"
-        />
-      ) : (
+      <BookCover
+        src={book.cover_url}
+        alt={`Cover of ${book.title}`}
+        className="w-full h-full object-cover"
+        loading="eager"
+        fallback={(
         <div className="relative w-full h-full flex flex-col justify-end p-3">
           <svg className="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
             <defs>
@@ -271,7 +270,8 @@ function Cover({ book, children }: { book: Book; children?: React.ReactNode }) {
             {book.title}
           </p>
         </div>
-      )}
+        )}
+      />
       {children}
     </div>
   )

@@ -25,6 +25,7 @@ import { archiveBook } from '@/lib/weeding'
 import { fetchBookCopies, markCopyFound, updateBook, uploadBookCover, type BookCopy } from '@/lib/books'
 import { bookFormDataToPayload } from '@/lib/bookForm'
 import { copyStatusConfig, COPY_STATUSES } from '@/lib/copyStatus'
+import { BookCover } from '@/components/ui/catalog/BookCover'
 
 // ─── Cover color helper ───────────────────────────────────────────────────────
 
@@ -324,14 +325,12 @@ export default function LibrarianBookDetailPage({
             minWidth: 140,
           }}
         >
-          {book.cover_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={book.cover_url}
-              alt={`Cover of ${book.title}`}
-              className="w-full h-full object-cover"
-            />
-          ) : (
+          <BookCover
+            src={book.cover_url}
+            alt={`Cover of ${book.title}`}
+            className="w-full h-full object-cover"
+            loading="eager"
+            fallback={(
             <>
               <svg className="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
                 <defs>
@@ -356,7 +355,8 @@ export default function LibrarianBookDetailPage({
                 </p>
               </div>
             </>
-          )}
+            )}
+          />
         </div>
 
         {/* Info */}

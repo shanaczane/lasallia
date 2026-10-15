@@ -38,6 +38,7 @@ import { AvailabilityPill, pillStatusFor } from '@/components/ui/pills/availabil
 import { BookCard } from '@/components/ui/catalog'
 import { ReserveConfirmModal, relativeWait } from '@/components/ui/catalog/ReserveConfirmModal'
 import type { Book, Reservation } from '@lasallia/types'
+import { BookCover } from '@/components/ui/catalog/BookCover'
 
 // ─── Cover color helper ───────────────────────────────────────────────────────
 
@@ -556,14 +557,12 @@ export default function StudentBookDetailPage({
               className="rounded-xl overflow-hidden shadow-xl"
               style={{ width: 176, aspectRatio: '2/3', background: coverColor }}
             >
-              {book.cover_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={book.cover_url}
-                  alt={`Cover of ${book.title}`}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
+              <BookCover
+                src={book.cover_url}
+                alt={`Cover of ${book.title}`}
+                className="w-full h-full object-cover"
+                loading="eager"
+                fallback={(
                 <div className="relative w-full h-full flex flex-col justify-between p-4">
                   <svg className="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
                     <defs>
@@ -586,7 +585,8 @@ export default function StudentBookDetailPage({
                     {book.title}
                   </p>
                 </div>
-              )}
+                )}
+              />
             </div>
           </div>
 
