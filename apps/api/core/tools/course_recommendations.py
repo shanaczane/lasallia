@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from core.recommendations import get_program_recommendations
 from core.supabase import get_admin_client
-from routers.books import _apply_real_availability, _redact_accession
+from routers.books import _apply_real_availability, _redact_for_patrons
 from schemas.auth import UserProfile
 from schemas.book import Book
 
@@ -40,7 +40,7 @@ def recommend_for_my_course(user: UserProfile, limit: int = DEFAULT_LIMIT) -> li
     books = admin.table("books").select("*").in_("id", book_ids).execute().data
     copies = admin.table("book_copies").select("book_id, status").in_("book_id", book_ids).execute().data
     books = _apply_real_availability(books, copies)
-    books = _redact_accession(books, None)
+    books = _redact_for_patrons(books, None)
     by_id = {b["id"]: b for b in books}
 
     return [

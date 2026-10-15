@@ -12,7 +12,7 @@ import numpy as np
 
 from core.embeddings import embed_text, semantic_search, translate_query_to_english
 from core.supabase import get_admin_client
-from routers.books import _apply_real_availability, _redact_accession
+from routers.books import _apply_real_availability, _redact_for_patrons
 from schemas.book import Book
 
 DEFAULT_LIMIT = 5
@@ -120,7 +120,7 @@ def search_catalog(query: str, limit: int = DEFAULT_LIMIT, translate: bool = Fal
     book_ids = [b["id"] for b in ordered]
     copies_res = admin.table("book_copies").select("book_id, status").in_("book_id", book_ids).execute().data
     ordered = _apply_real_availability(ordered, copies_res)
-    ordered = _redact_accession(ordered, None)
+    ordered = _redact_for_patrons(ordered, None)
 
     return [Book(**b) for b in ordered]
 

@@ -10,7 +10,9 @@ from core.loans import ensure_initial_copy, find_removal_blocker
 from core.reservations import maybe_sweep_expired_reservations
 from core.supabase import get_admin_client, get_client
 from schemas.auth import UserProfile
-from schemas.book import AddCopiesRequest, Book, BookCopy, BookSearchResponse, BookUpdate, BookWrite
+from schemas.book import (
+    LIBRARIAN_ONLY_FIELDS, AddCopiesRequest, Book, BookCopy, BookSearchResponse, BookUpdate, BookWrite, LibrarianBook,
+)
 
 router = APIRouter(prefix="/books", tags=["books"])
 
@@ -19,17 +21,22 @@ router = APIRouter(prefix="/books", tags=["books"])
 # past what's reasonable to ship in one response.
 DEFAULT_LIMIT = 1000
 
-def _redact_accession(books: list[dict], user: UserProfile | None) -> list[dict]:
-    # Core rule of the borrow/return kiosk plan: the accession number is
-    # never displayed to a student before they've typed it themselves —
-    # not on the catalog, not on the detail page. Checked here, at the
-    # response layer, not trusted to the frontend not to render it: any
-    # caller without a librarian JWT gets it nulled out, whether they're
-    # a guest, a student, or someone poking the API directly.
+def _redact_for_patrons(books: list[dict], user: UserProfile | None) -> list[dict]:
+    # Checked here, at the response layer, not trusted to the frontend not
+    # to render it: any caller without a librarian JWT — guest, student,
+    # faculty, kiosk, the Library Assistant, or someone poking the API
+    # directly — gets these nulled out.
+    #  - accession number: core rule of the borrow/return kiosk plan, never
+    #    shown before the student has typed it themselves.
+    #  - acquisition record (price, vendor, funding, date acquired,
+    #    circulation type, staff notes): the LRC's own inventory data. A
+    #    patron sees the same bibliographic record the public OPAC shows.
     if user is not None and user.role == "librarian":
         return books
     for b in books:
         b["accession_no"] = None
+        for field in LIBRARIAN_ONLY_FIELDS:
+            b[field] = None
     return books
 
 def _derive_status(statuses: set[str]) -> str:
@@ -112,7 +119,7 @@ def list_books(
         for b in books:
             b.pop("abstract", None)
     books = _apply_real_availability(books, copies_data)
-    books = _redact_accession(books, user)
+    books = _redact_for_patrons(books, user)
 
     return BookSearchResponse(books=books, total=len(books), page=1, per_page=limit)
 
@@ -137,7 +144,7 @@ def _check_accession_conflict(admin, accession_no: str | None, exclude_book_id: 
 # the number shown anywhere, since those rows stay authoritative — copy
 # management for existing titles happens through the reshelving/mark-found
 # flows, not this form.
-@router.post("", response_model=Book, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=LibrarianBook, status_code=status.HTTP_201_CREATED)
 def create_book(body: BookWrite, librarian: UserProfile = Depends(require_librarian)):
     admin = get_admin_client()
     _check_accession_conflict(admin, body.accession_no)
@@ -153,7 +160,7 @@ def create_book(body: BookWrite, librarian: UserProfile = Depends(require_librar
     ensure_initial_copy(admin, res.data[0]["id"])
     return res.data[0]
 
-@router.patch("/{book_id}", response_model=Book)
+@router.patch("/{book_id}", response_model=LibrarianBook)
 def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends(require_librarian)):
     admin = get_admin_client()
     existing = admin.table("books").select("id, accession_no").eq("id", book_id).execute()
@@ -183,7 +190,7 @@ def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends
     book = _apply_real_availability(res.data, copies_res.data)
     return book[0]
 
-@router.post("/{book_id}/add-copies", response_model=Book)
+@router.post("/{book_id}/add-copies", response_model=LibrarianBook)
 def add_copies(book_id: str, body: AddCopiesRequest, librarian: UserProfile = Depends(require_librarian)):
     admin = get_admin_client()
     existing = admin.table("books").select("total_copies, available_copies").eq("id", book_id).execute()
@@ -221,7 +228,7 @@ def delete_book(book_id: str, librarian: UserProfile = Depends(require_librarian
             f'"{title}" has related records and can\'t be deleted — try archiving it instead.',
         )
 
-@router.get("/{book_id}", response_model=Book)
+@router.get("/{book_id}", response_model=LibrarianBook)
 def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)):
     db = get_client()
     admin = get_admin_client()
@@ -275,7 +282,7 @@ def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)
         )
         book[0]["waiting_count"] = waiting_res.count or 0
 
-    book = _redact_accession(book, user)
+    book = _redact_for_patrons(book, user)
 
     return book[0]
 
@@ -321,7 +328,7 @@ def get_similar_books(book_id: str, limit: int = 5, user: UserProfile | None = D
     # archived, same effect as never having matched at all.
     ordered = [books_by_id[nid] for nid in neighbor_ids if nid in books_by_id]
     ordered = _apply_real_availability(ordered, copies_data)
-    ordered = _redact_accession(ordered, user)
+    ordered = _redact_for_patrons(ordered, user)
     return ordered
 
 

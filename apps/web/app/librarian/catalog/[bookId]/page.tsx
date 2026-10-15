@@ -9,6 +9,8 @@ import Link from 'next/link'
 import {
   ArrowLeft, MapPin, Hash, Building2, Calendar,
   BookOpen, GraduationCap, Landmark, Copy, Pencil, Trash2,
+  Banknote, Store, HandCoins, Layers, StickyNote, Barcode, Ruler, Globe,
+  Tags, Library, BookMarked, Type, CalendarPlus, RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { programLabel } from '@/lib/programLabels'
@@ -66,6 +68,25 @@ function MetaRow({
       </span>
     </div>
   )
+}
+
+function formatLongDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+}
+
+const FUNDING_LABEL: Record<NonNullable<Book['funding_source']>, string> = {
+  purchased: 'Purchased', donated: 'Donated', grant: 'Grant',
+}
+
+// "348 pages : illustrations ; 28 cm" — the same order a catalog record
+// prints the physical description in.
+function physicalDescription(book: Book): string | null {
+  const parts = [book.physical_extent, book.physical_illustrations, book.physical_dimensions]
+  if (!parts.some(Boolean)) return null
+  let out = book.physical_extent ?? ''
+  if (book.physical_illustrations) out += (out ? ' : ' : '') + book.physical_illustrations
+  if (book.physical_dimensions) out += (out ? ' ; ' : '') + book.physical_dimensions
+  return out
 }
 
 // ─── Section heading ──────────────────────────────────────────────────────────
@@ -350,6 +371,14 @@ export default function LibrarianBookDetailPage({
               >
                 {book.title}
               </h1>
+              {book.subtitle && (
+                <p
+                  className="text-ink-700 mt-1"
+                  style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}
+                >
+                  {book.subtitle}
+                </p>
+              )}
               <p
                 className="text-ink-500 mt-1"
                 style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-lg)' }}
@@ -432,12 +461,43 @@ export default function LibrarianBookDetailPage({
         </div>
       </div>
 
-      {/* ── Two-column metadata ── */}
+      {/* ── Two-column metadata ──
+          Everything the Add/Edit form collects shows up here. The patron
+          catalog only ever sees the bibliographic side — the API nulls the
+          accession number and acquisition record for non-librarians
+          (routers/books.py's _redact_for_patrons). */}
+      {/* Both columns stretch to the taller one so the cards' bottom edges
+          line up instead of leaving a ragged gap under the shorter side. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
 
         {/* Bibliographic */}
-        <div className="bg-white rounded-(--radius) border border-ink-200 p-5">
+        <div className="bg-white rounded-(--radius) border border-ink-200 p-5 lg:h-full">
           <SectionHeading>Bibliographic Info</SectionHeading>
+          {book.alternate_title && (
+            <MetaRow icon={<Type size={14} />} label="Alternate title" value={book.alternate_title} />
+          )}
+          {book.edition && (
+            <MetaRow icon={<BookMarked size={14} />} label="Edition" value={book.edition} />
+          )}
+          {book.series_title && (
+            <MetaRow
+              icon={<Library size={14} />}
+              label="Series"
+              value={book.series_volume ? `${book.series_title} ; ${book.series_volume}` : book.series_title}
+            />
+          )}
+          {book.publisher && (
+            <MetaRow icon={<Building2 size={14} />} label="Publisher" value={book.publisher} />
+          )}
+          {book.place_of_publication && (
+            <MetaRow icon={<Globe size={14} />} label="Published in" value={book.place_of_publication} />
+          )}
+          {book.published_year && (
+            <MetaRow icon={<Calendar size={14} />} label="Year" value={book.published_year} />
+          )}
+          {physicalDescription(book) && (
+            <MetaRow icon={<Ruler size={14} />} label="Physical desc." value={physicalDescription(book)} />
+          )}
           {book.isbn && (
             <MetaRow
               icon={<Hash size={14} />}
@@ -445,55 +505,114 @@ export default function LibrarianBookDetailPage({
               value={<span style={{ fontFamily: 'var(--font-mono)' }}>{book.isbn}</span>}
             />
           )}
-          {book.publisher && (
-            <MetaRow icon={<Building2 size={14} />} label="Publisher" value={book.publisher} />
+          {book.lccn && (
+            <MetaRow
+              icon={<Hash size={14} />}
+              label="LCCN"
+              value={<span style={{ fontFamily: 'var(--font-mono)' }}>{book.lccn}</span>}
+            />
           )}
-          {book.published_year && (
-            <MetaRow icon={<Calendar size={14} />} label="Year" value={book.published_year} />
+          {book.issn && (
+            <MetaRow
+              icon={<Hash size={14} />}
+              label="ISSN"
+              value={<span style={{ fontFamily: 'var(--font-mono)' }}>{book.issn}</span>}
+            />
+          )}
+          {book.category && (
+            <MetaRow icon={<GraduationCap size={14} />} label="Program" value={programLabel(book.category)} />
           )}
           {book.subject && (
             <MetaRow icon={<Landmark size={14} />} label="College" value={book.subject} />
           )}
+          {book.keywords && book.keywords.length > 0 && (
+            <MetaRow icon={<Tags size={14} />} label="Keywords" value={book.keywords.join(', ')} />
+          )}
         </div>
 
-        {/* Location & Admin */}
-        <div className="bg-white rounded-(--radius) border border-ink-200 p-5">
-          <SectionHeading>Location & Admin Data</SectionHeading>
-          <MetaRow
-            icon={<Hash size={14} />}
-            label="Call Number"
-            value={<span style={{ fontFamily: 'var(--font-mono)' }}>{book.call_number}</span>}
-          />
-          <MetaRow icon={<MapPin size={14} />} label="Location" value={book.shelf_location} />
-          {book.total_copies !== undefined && (
+        <div className="flex flex-col gap-4">
+          {/* Location & copies */}
+          <div className="bg-white rounded-(--radius) border border-ink-200 p-5">
+            <SectionHeading>Location & Copies</SectionHeading>
+            {book.accession_no && (
+              <MetaRow
+                icon={<Barcode size={14} />}
+                label="Accession No."
+                value={<span style={{ fontFamily: 'var(--font-mono)' }}>{book.accession_no}</span>}
+              />
+            )}
             <MetaRow
-              icon={<Copy size={14} />}
-              label="Copies"
-              value={
-                <span>
-                  <span className="font-bold">{book.available_copies ?? 0}</span>
-                  {' / '}
-                  {book.total_copies} available
-                </span>
-              }
+              icon={<Hash size={14} />}
+              label="Call Number"
+              value={<span style={{ fontFamily: 'var(--font-mono)' }}>{book.call_number}</span>}
             />
-          )}
-          <MetaRow
-            icon={<Calendar size={14} />}
-            label="Acquired"
-            value={new Date(book.created_at).toLocaleDateString('en-PH', {
-              year: 'numeric', month: 'long', day: 'numeric',
-            })}
-          />
-          <MetaRow
-            icon={<Calendar size={14} />}
-            label="Last Updated"
-            value={new Date(book.updated_at).toLocaleDateString('en-PH', {
-              year: 'numeric', month: 'long', day: 'numeric',
-            })}
-          />
+            <MetaRow icon={<MapPin size={14} />} label="Location" value={book.shelf_location} />
+            {book.total_copies !== undefined && (
+              <MetaRow
+                icon={<Copy size={14} />}
+                label="Copies"
+                value={
+                  <span>
+                    <span className="font-bold">{book.available_copies ?? 0}</span>
+                    {' / '}
+                    {book.total_copies} available
+                  </span>
+                }
+              />
+            )}
+            {book.collection_type && (
+              <MetaRow icon={<Layers size={14} />} label="Collection" value={book.collection_type} />
+            )}
+          </div>
+
+          {/* Acquisition — librarian-only record. flex-1 takes up whatever
+              height the Bibliographic card adds on the left. */}
+          <div className="bg-white rounded-(--radius) border border-ink-200 p-5 lg:flex-1">
+            <SectionHeading>Acquisition (librarian only)</SectionHeading>
+            {book.date_acquired && (
+              <MetaRow icon={<Calendar size={14} />} label="Date acquired" value={formatLongDate(book.date_acquired)} />
+            )}
+            {book.purchase_price != null && (
+              <MetaRow
+                icon={<Banknote size={14} />}
+                label="Purchase price"
+                value={`₱${book.purchase_price.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              />
+            )}
+            {book.vendor && (
+              <MetaRow icon={<Store size={14} />} label="Vendor" value={book.vendor} />
+            )}
+            {book.funding_source && (
+              <MetaRow icon={<HandCoins size={14} />} label="Funding" value={FUNDING_LABEL[book.funding_source]} />
+            )}
+            {book.circulation_type && (
+              <MetaRow icon={<Layers size={14} />} label="Circulation" value={book.circulation_type} />
+            )}
+            {!book.date_acquired && book.purchase_price == null && !book.vendor && !book.funding_source && !book.circulation_type && (
+              <p className="text-ink-400 pb-2" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}>
+                No acquisition details recorded yet — add them with Edit.
+              </p>
+            )}
+            <MetaRow icon={<CalendarPlus size={14} />} label="Added to catalog" value={formatLongDate(book.created_at)} />
+            <MetaRow icon={<RefreshCw size={14} />} label="Last updated" value={formatLongDate(book.updated_at)} />
+          </div>
         </div>
       </div>
+
+      {/* Staff notes — librarian-only */}
+      {book.notes && (
+        <div className="bg-white rounded-(--radius) border border-ink-200 p-5 mb-6">
+          <SectionHeading>
+            <span className="inline-flex items-center gap-1.5"><StickyNote size={12} /> Staff notes (librarian only)</span>
+          </SectionHeading>
+          <p
+            className="text-ink-700 leading-relaxed whitespace-pre-line"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-body)' }}
+          >
+            {book.notes}
+          </p>
+        </div>
+      )}
 
       {/* Abstract */}
       {book.abstract && (

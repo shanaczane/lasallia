@@ -43,12 +43,6 @@ class Book(BaseModel):
     call_number_start: str | None = None
     expected_back: str | None = None  # soonest due_date among copies out, computed on read
     waiting_count: int | None = None  # pending + ready reservations for this title
-    purchase_price: float | None = None
-    date_acquired: str | None = None
-    circulation_type: str | None = None
-    vendor: str | None = None
-    funding_source: FundingSource | None = None
-    notes: str | None = None
     # core/loans.NON_BORROWABLE_COLLECTION_TYPES ("Reference", "Thesis",
     # "Capstone", "MTR", "Archives") already blocks borrow/reserve for these
     # server-side; this field is what lets the frontend hide those actions
@@ -57,8 +51,26 @@ class Book(BaseModel):
     created_at: str
     updated_at: str
 
+# The library's own acquisition record — never patron-facing. Kept off
+# `Book` on purpose: every loan/reservation/hold/saved-book/search response
+# embeds `Book`, so anything not declared there is dropped before it leaves
+# the API. Only the catalog list/detail and the librarian write endpoints
+# return this wider model, and routers/books.py's _redact_for_patrons nulls
+# these fields for anyone who isn't a librarian.
+LIBRARIAN_ONLY_FIELDS = (
+    "purchase_price", "date_acquired", "circulation_type", "vendor", "funding_source", "notes",
+)
+
+class LibrarianBook(Book):
+    purchase_price: float | None = None
+    date_acquired: str | None = None
+    circulation_type: str | None = None
+    vendor: str | None = None
+    funding_source: FundingSource | None = None
+    notes: str | None = None  # internal staff notes, not the catalog record's public notes
+
 class BookSearchResponse(BaseModel):
-    books: list[Book]
+    books: list[LibrarianBook]
     total: int
     page: int
     per_page: int

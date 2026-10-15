@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from core.deps import get_optional_user, require_librarian
 from core.embeddings import embed_text, reembed_books, semantic_search as run_semantic_search
 from core.supabase import get_admin_client
-from routers.books import _apply_real_availability, _redact_accession
+from routers.books import _apply_real_availability, _redact_for_patrons
 from schemas.auth import UserProfile
 from schemas.search import ReembedResponse, SemanticSearchRequest, SemanticSearchResponse
 
@@ -34,7 +34,7 @@ def semantic_search(
     book_ids = [b["id"] for b in ordered]
     copies_res = admin.table("book_copies").select("book_id, status").in_("book_id", book_ids).execute().data
     ordered = _apply_real_availability(ordered, copies_res)
-    ordered = _redact_accession(ordered, user)
+    ordered = _redact_for_patrons(ordered, user)
 
     return SemanticSearchResponse(query=body.query, books=ordered)
 

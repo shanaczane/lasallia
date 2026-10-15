@@ -10,7 +10,7 @@ actually in the record, never to fill gaps from model knowledge.
 from pydantic import BaseModel
 
 from core.supabase import get_admin_client
-from routers.books import _apply_real_availability, _redact_accession
+from routers.books import _apply_real_availability, _redact_for_patrons
 from schemas.book import Book
 
 
@@ -64,7 +64,7 @@ def _find_similar_available(admin, book_id: str, limit: int = 3) -> list[Book]:
     books = admin.table("books").select("*").in_("id", neighbor_ids).is_("archived_at", "null").execute().data
     copies = admin.table("book_copies").select("book_id, status").in_("book_id", neighbor_ids).execute().data
     books = _apply_real_availability(books, copies)
-    books = _redact_accession(books, None)
+    books = _redact_for_patrons(books, None)
     available_by_id = {b["id"]: b for b in books if b["status"] == "available"}
 
     ordered = [available_by_id[nid] for nid in neighbor_ids if nid in available_by_id]
@@ -89,7 +89,7 @@ def get_book_details(book_id: str) -> BookDetailsResult:
 
     copies_res = admin.table("book_copies").select("book_id, status").eq("book_id", book_id).execute().data
     enriched = _apply_real_availability([dict(raw)], copies_res)[0]
-    enriched = _redact_accession([enriched], None)[0]
+    enriched = _redact_for_patrons([enriched], None)[0]
     book = Book(**enriched)
 
     nearby = _find_nearby_by_call_number(admin, book_id) if not book.abstract else None

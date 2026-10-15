@@ -64,7 +64,10 @@ type BookFormModalProps = {
   book?: Book            // pre-populated when editing
   isOpen: boolean
   onClose: () => void
-  onSubmit: (data: BookFormData) => void
+  // May return a promise — the modal disables its buttons until it settles,
+  // so a second click while the save is still running can't send a second
+  // create (which the first one's accession number would then reject).
+  onSubmit: (data: BookFormData) => void | Promise<void>
   // Already-loaded catalog rows — a duplicate accession number is caught
   // live as the librarian types rather than only after a 409 from the API,
   // and (mode: 'add' only) a same title/author or same-ISBN match offers
@@ -75,7 +78,7 @@ type BookFormModalProps = {
   externalError?: { field: keyof BookFormData; message: string } | null
   // mode: 'add' only — called when the librarian confirms adding copies to
   // an existing title instead of creating a new one.
-  onAddCopies?: (existingBook: Book, count: number) => void
+  onAddCopies?: (existingBook: Book, count: number) => void | Promise<void>
 }
 
 const EMPTY_FORM: BookFormData = {
@@ -513,6 +516,18 @@ export function BookFormModal({
   // Set when handleSubmit finds an existing title matching this one (Add
   // mode only) — swaps the footer to "add copies instead?" until resolved.
   const [duplicate, setDuplicate] = useState<Book | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  // One save at a time — see onSubmit's note above.
+  async function runSave(save: () => void | Promise<void>) {
+    if (saving) return
+    setSaving(true)
+    try {
+      await save()
+    } finally {
+      setSaving(false)
+    }
+  }
 
   // Pre-populate when editing
   useEffect(() => {
@@ -602,6 +617,7 @@ export function BookFormModal({
   }
 
   function handleSubmit() {
+    if (saving) return
     setSubmitted(true)
     const errs = validate(form, existingBooks, book?.id)
     if (Object.keys(errs).length > 0) {
@@ -619,7 +635,7 @@ export function BookFormModal({
       }
     }
 
-    onSubmit(form)
+    runSave(() => onSubmit(form))
   }
 
   // "Add as copies" — adds this submission's copy count to the matched
@@ -627,14 +643,14 @@ export function BookFormModal({
   function confirmAddCopies() {
     if (!duplicate) return
     const count = parseInt(form.total_copies, 10) || 1
-    onAddCopies?.(duplicate, count)
+    if (onAddCopies) runSave(() => onAddCopies(duplicate, count))
   }
 
   // "No, this is a different book" — the librarian knows better than the
   // title/author/ISBN heuristic; proceed with creating a new book.
   function confirmCreateAnyway() {
     setDuplicate(null)
-    onSubmit(form)
+    runSave(() => onSubmit(form))
   }
 
   if (!isOpen) return null
@@ -1198,7 +1214,8 @@ export function BookFormModal({
               <button
                 type="button"
                 onClick={confirmCreateAnyway}
-                className="px-4 py-2 rounded-sm border border-ink-200 text-ink-700 hover:bg-ink-50 transition-colors font-medium"
+                disabled={saving}
+                className="px-4 py-2 rounded-sm border border-ink-200 text-ink-700 hover:bg-ink-50 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
               >
                 No, this is a different book
@@ -1206,10 +1223,11 @@ export function BookFormModal({
               <button
                 type="button"
                 onClick={confirmAddCopies}
-                className="px-5 py-2 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+                disabled={saving}
+                className="px-5 py-2 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
               >
-                Add as copies
+                {saving ? 'Adding…' : 'Add as copies'}
               </button>
             </div>
           </div>
@@ -1226,10 +1244,11 @@ export function BookFormModal({
             <button
               type="button"
               onClick={handleSubmit}
-              className="px-5 py-2 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
+              disabled={saving}
+              className="px-5 py-2 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
             >
-              {isEdit ? 'Save Changes' : 'Add Book'}
+              {saving ? (isEdit ? 'Saving…' : 'Adding…') : (isEdit ? 'Save Changes' : 'Add Book')}
             </button>
           </div>
         )}

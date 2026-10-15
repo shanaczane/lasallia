@@ -18,7 +18,7 @@ from core.rate_limit import check_and_record
 from core.recommendation_events import log_events
 from core.recommendations import get_currently_excluded_book_ids
 from core.supabase import get_admin_client
-from routers.books import _apply_real_availability, _redact_accession
+from routers.books import _apply_real_availability, _redact_for_patrons
 from schemas.auth import UserProfile
 from schemas.recommendation import (
     LogEventsRequest,
@@ -88,7 +88,7 @@ def _with_live_availability(rows: list[dict]) -> list[dict]:
         .execute()
     ).data
     _apply_real_availability(books, copies)
-    _redact_accession(books, None)
+    _redact_for_patrons(books, None)
     return rows
 
 
