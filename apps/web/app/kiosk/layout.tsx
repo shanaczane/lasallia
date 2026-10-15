@@ -91,11 +91,18 @@ function KioskShell({ children }: { children: React.ReactNode }) {
   // page with the tap-in-gated sidebar/TopNav missing and no way back —
   // so this now checks "inactive AND not already on the idle screen",
   // not just "inactive and just became so".
+  //
+  // One exception: a guest who taps their ID while looking at a book (or
+  // the catalog) is the same person signing in to borrow it, not someone
+  // new walking up — so they stay on that page, now as themselves, instead
+  // of being sent back to the catalog root to find the book again. Catalog
+  // pages show nothing personal, so there's nothing of the guest's to leak.
   useEffect(() => {
     const prev = previousActiveKey.current
     const current = session?.id ?? (guestBrowsing ? 'guest' : null)
+    const guestSigningIn = prev === 'guest' && !!session
     if (current && current !== prev) {
-      router.push('/kiosk/catalog')
+      if (!(guestSigningIn && pathname.startsWith('/kiosk/catalog'))) router.push('/kiosk/catalog')
     } else if (!current && pathname !== '/kiosk') {
       router.replace('/kiosk')
     }
