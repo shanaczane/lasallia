@@ -76,9 +76,8 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
         "pickup_by": pickup_by.isoformat(),
     }).eq("id", pending[0]["id"]).execute()
 
-    book_res = admin.table("books").select("title, call_number").eq("id", book_id).execute()
+    book_res = admin.table("books").select("title").eq("id", book_id).execute()
     book_title = book_res.data[0]["title"] if book_res.data else "A book"
-    call_number = book_res.data[0].get("call_number") if book_res.data else None
     pickup_label = pickup_by.astimezone(MANILA).strftime("%B %d, %Y at %I:%M %p").replace(" 0", " ")
     notify(
         pending[0]["user_id"], "reservation_confirmed",
@@ -91,7 +90,6 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
             intro="Good news! The book you reserved is now ready for pickup at the LRC.",
             details=[
                 ("Title", book_title),
-                ("Call No.", call_number),
                 ("Pick up by", long_date_time(pickup_by)),
             ],
             paragraphs=[
@@ -116,7 +114,6 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
                 intro="Good news! You've moved to the front of the reservation queue.",
                 details=[
                     ("Title", book_title),
-                    ("Call No.", call_number),
                     ("Your place in line", "First"),
                 ],
                 paragraphs=["We'll email you again as soon as a copy is ready for pickup at the LRC."],
@@ -177,7 +174,7 @@ def sweep_expired_reservations(admin: Client) -> int:
         # The expired student is notified before the copy is handed on, so
         # a failure in the handoff can't swallow their notice — the row is
         # already 'expired' and won't be picked up by a later sweep.
-        book_res = admin.table("books").select("title, call_number").eq("id", row["book_id"]).execute()
+        book_res = admin.table("books").select("title").eq("id", row["book_id"]).execute()
         book_title = book_res.data[0]["title"] if book_res.data else "your reserved book"
         notify(
             row["user_id"], "reservation_cancelled",
@@ -191,7 +188,6 @@ def sweep_expired_reservations(admin: Client) -> int:
                 intro="Your reserved book was not picked up before the deadline, so the reservation has expired.",
                 details=[
                     ("Title", book_title),
-                    ("Call No.", book_res.data[0].get("call_number") if book_res.data else None),
                 ],
                 paragraphs=[
                     "The book has been released to the next person in line. If you still need it, "

@@ -236,9 +236,8 @@ def create_reservation(
     if not res.data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not create reservation")
 
-    book_title_res = admin.table("books").select("title, call_number").eq("id", body.book_id).execute()
+    book_title_res = admin.table("books").select("title").eq("id", body.book_id).execute()
     book_title = book_title_res.data[0]["title"] if book_title_res.data else "A book"
-    call_number = book_title_res.data[0].get("call_number") if book_title_res.data else None
     queue_position = ahead_count + 1
     notify_librarians(
         "Book reserved",
@@ -250,7 +249,6 @@ def create_reservation(
             details=[
                 ("Reserved by", user.full_name or user.email),
                 ("Title", book_title),
-                ("Call No.", call_number),
                 ("Queue position", f"#{queue_position}"),
             ],
             action="The next returned copy will be held for this reservation automatically.",
@@ -273,7 +271,6 @@ def create_reservation(
             intro="Your reservation has been placed.",
             details=[
                 ("Title", book_title),
-                ("Call No.", call_number),
                 ("Your place in line", "First" if queue_position == 1 else f"#{queue_position}"),
             ],
             paragraphs=[
@@ -320,7 +317,7 @@ def update_reservation(
     # lost their place in line and didn't do it themselves.
     if user.role == "librarian" and row["user_id"] != user.id:
         admin = get_admin_client()
-        book_res = admin.table("books").select("title, call_number").eq("id", row["book_id"]).execute()
+        book_res = admin.table("books").select("title").eq("id", row["book_id"]).execute()
         book_title = book_res.data[0]["title"] if book_res.data else "A book"
         notify(
             row["user_id"], "reservation_cancelled",
@@ -332,7 +329,6 @@ def update_reservation(
                 intro="The LRC has cancelled your reservation for the book below.",
                 details=[
                     ("Title", book_title),
-                    ("Call No.", book_res.data[0].get("call_number") if book_res.data else None),
                 ],
                 paragraphs=[
                     "If you believe this was a mistake or still need the book, please ask at the LRC counter, "

@@ -1,7 +1,7 @@
 import resend
 
 from core.config import RESEND_API_KEY
-from core.email_template import EmailContent, render_text
+from core.email_template import EmailContent, render_html, render_text
 from core.supabase import get_admin_client
 # schemas/notification.py is the single source of truth for this — it's also
 # GET /notifications' response_model, so a type notify() can insert but that
@@ -42,6 +42,7 @@ def send_email(to_email: str, content: EmailContent, recipient_name: str | None 
             "from": FROM_ADDRESS,
             "to": [to_email],
             "subject": content.subject,
+            "html": render_html(content, recipient_name),
             "text": render_text(content, recipient_name),
         })
     except Exception as e:
