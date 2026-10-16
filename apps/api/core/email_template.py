@@ -4,28 +4,33 @@
 
     Good news! The book you reserved is now ready for pickup at the LRC.
 
-    Title: Essentials of Supply Chain Management (5th ed.)
-    Call No.: 658.7 H896e 2024
-    Pick up by: Monday, October 20, 2026, 6:00 PM
+    **Title:** Essentials of Supply Chain Management (5th ed.)
+    **Pick up by:** Monday, October 20, 2026, 6:00 PM
 
     Please claim it at the LRC counter before the deadline. ...
 
     View your reservation: https://lasallia.com/user/reservations
 
-    — Lasallia, De La Salle Lipa Learning Resource Center
+    Sincerely,
+    Lasallia, De La Salle Lipa Learning Resource Center
+
     This is an automated message. Please do not reply to this email.
 
-Callers describe *what* to say (an EmailContent); render_text() owns the
-layout. supabase/functions/loan-reminders/index.ts renders the same layout
-for the daily reminders, since that Deno job can't import this file.
+Only the detail labels are bold, so each email goes out as HTML with a
+plain-text fallback. Callers describe *what* to say (an EmailContent);
+render_text()/render_html() own the layout.
+supabase/functions/loan-reminders/index.ts renders the same layout for the
+daily reminders, since that Deno job can't import this file.
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from html import escape
 
 from core.config import FRONTEND_URL
 
-SIGNATURE = "— Lasallia, De La Salle Lipa Learning Resource Center"
+CLOSING = "Sincerely,"
+SIGNATURE = "Lasallia, De La Salle Lipa Learning Resource Center"
 AUTOMATED_NOTE = "This is an automated message. Please do not reply to this email."
 
 # Philippine time has no DST, so a fixed offset is exact.
@@ -88,9 +93,35 @@ def render_text(content: EmailContent, recipient_name: str | None = None) -> str
         url = f"{FRONTEND_URL}{content.link}"
         blocks.append(f"{content.link_label}: {url}" if content.link_label else url)
 
-    footer = [SIGNATURE] + ([AUTOMATED_NOTE] if content.automated else [])
-    blocks.append("\n".join(footer))
+    blocks.append(f"{CLOSING}\n{SIGNATURE}")
+    if content.automated:
+        blocks.append(AUTOMATED_NOTE)
     return "\n\n".join(blocks)
+
+
+def render_html(content: EmailContent, recipient_name: str | None = None) -> str:
+    """Same layout as render_text(), with the detail labels in bold."""
+    name = first_name(recipient_name)
+    blocks = [escape(f"Hi {name}," if name else "Hello,"), escape(content.intro)]
+
+    detail_lines = [
+        f"<strong>{escape(label)}:</strong> {escape(value)}"
+        for label, value in content.details if value
+    ]
+    if detail_lines:
+        blocks.append("<br>".join(detail_lines))
+
+    blocks.extend(escape(p) for p in content.paragraphs if p)
+
+    if content.link:
+        url = escape(f"{FRONTEND_URL}{content.link}")
+        anchor = f'<a href="{url}">{url}</a>'
+        blocks.append(f"{escape(content.link_label)}: {anchor}" if content.link_label else anchor)
+
+    blocks.append(f"{escape(CLOSING)}<br>{escape(SIGNATURE)}")
+    if content.automated:
+        blocks.append(escape(AUTOMATED_NOTE))
+    return "".join(f'<p style="margin:0 0 16px">{b}</p>' for b in blocks)
 
 
 # ─── Shared formatting ─────────────────────────────────────────────────────

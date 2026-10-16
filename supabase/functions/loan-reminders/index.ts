@@ -76,7 +76,8 @@ type EmailContent = {
   link: string;
 };
 
-const SIGNATURE = "— Lasallia, De La Salle Lipa Learning Resource Center";
+const CLOSING = "Sincerely,";
+const SIGNATURE = "Lasallia, De La Salle Lipa Learning Resource Center";
 const AUTOMATED_NOTE = "This is an automated message. Please do not reply to this email.";
 
 // "MARIA SANTOS" -> "Maria"; names are often stored in capitals.
@@ -93,8 +94,26 @@ function renderEmail(c: EmailContent, recipientName: string | null | undefined):
   if (details.length) blocks.push(details.join("\n"));
   blocks.push(...c.paragraphs);
   blocks.push(`${c.linkLabel}: ${FRONTEND_URL}${c.link}`);
-  blocks.push(`${SIGNATURE}\n${AUTOMATED_NOTE}`);
+  blocks.push(`${CLOSING}\n${SIGNATURE}`, AUTOMATED_NOTE);
   return blocks.join("\n\n");
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// Same layout as renderEmail, with the detail labels in bold.
+function renderEmailHtml(c: EmailContent, recipientName: string | null | undefined): string {
+  const name = firstName(recipientName);
+  const blocks = [escapeHtml(name ? `Hi ${name},` : "Hello,"), escapeHtml(c.intro)];
+  const details = c.details.filter(([, v]) => v)
+    .map(([label, v]) => `<strong>${escapeHtml(label)}:</strong> ${escapeHtml(v!)}`);
+  if (details.length) blocks.push(details.join("<br>"));
+  blocks.push(...c.paragraphs.map(escapeHtml));
+  const url = escapeHtml(`${FRONTEND_URL}${c.link}`);
+  blocks.push(`${escapeHtml(c.linkLabel)}: <a href="${url}">${url}</a>`);
+  blocks.push(`${CLOSING}<br>${escapeHtml(SIGNATURE)}`, escapeHtml(AUTOMATED_NOTE));
+  return blocks.map((b) => `<p style="margin:0 0 16px">${b}</p>`).join("");
 }
 
 // "Friday, October 17, 2026" in Philippine time.
@@ -127,6 +146,7 @@ async function sendEmail(to: string | null | undefined, content: EmailContent, r
       headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         from: FROM_ADDRESS, to: [to], subject: content.subject,
+        html: renderEmailHtml(content, recipientName),
         text: renderEmail(content, recipientName),
       }),
     });
@@ -175,7 +195,7 @@ async function process(
       ? {
         subject: `Reminder: your borrowed book is due ${days <= 1 ? when : "soon"}`,
         intro: `This is a reminder that your borrowed book is due ${when}.`,
-        details: [["Title", book?.title ?? title], ["Call No.", book?.call_number], ["Due date", longDate(loan.due_date)]],
+        details: [["Title", book?.title ?? title], ["Due date", longDate(loan.due_date)]],
         paragraphs: [
           "Please return it to the LRC counter on or before the due date to avoid an overdue fine " +
           `of ${peso(finePerDay)} per school day.`,
@@ -186,7 +206,7 @@ async function process(
       : {
         subject: "Your borrowed book is overdue",
         intro: "Your borrowed book is now overdue.",
-        details: [["Title", book?.title ?? title], ["Call No.", book?.call_number], ["Due date", longDate(loan.due_date)]],
+        details: [["Title", book?.title ?? title], ["Due date", longDate(loan.due_date)]],
         paragraphs: [
           `Please return it to the LRC counter as soon as possible. An overdue fine of ${peso(finePerDay)} ` +
           "per school day applies until the book is returned.",
@@ -232,7 +252,7 @@ async function processFineReminders(candidates: FineRow[], cooldownIso: string):
     await sendEmail(loan.profiles?.email, {
       subject: "Reminder: you have an unpaid fine",
       intro: "This is a reminder that you have an unpaid fine at the LRC.",
-      details: [["Title", book?.title ?? title], ["Call No.", book?.call_number], ["Amount due", peso(loan.fine_amount ?? 0)]],
+      details: [["Title", book?.title ?? title], ["Amount due", peso(loan.fine_amount ?? 0)]],
       paragraphs: [
         "Please settle it in person at the LRC counter. Unpaid fines may keep you from borrowing " +
         "or reserving books until they are paid.",

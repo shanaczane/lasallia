@@ -186,7 +186,6 @@ def create_loan_and_notify(
             intro="This confirms that you borrowed a book from the LRC.",
             details=[
                 ("Title", book_title),
-                ("Call No.", (loan["books"] or {}).get("call_number")),
                 ("Borrowed on", long_date(loan["borrowed_at"] if loan.get("borrowed_at") else datetime.now(timezone.utc))),
                 ("Due date", long_date(due_date)),
             ],
@@ -210,7 +209,6 @@ def create_loan_and_notify(
             details=[
                 ("Borrower", borrower_name),
                 ("Title", book_title),
-                ("Call No.", (loan["books"] or {}).get("call_number")),
                 ("Due date", long_date(due_date)),
             ],
             action="No action is needed. The loan is recorded under Borrow & Return.",

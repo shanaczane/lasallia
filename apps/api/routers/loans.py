@@ -429,13 +429,11 @@ def return_loan(
 
     # A return with a fine gets the official fine record; a clean return
     # gets a short confirmation.
-    book_row = book_full_res.data[0] if book_full_res.data else {}
     fine_email = EmailContent(
         subject=f"Return confirmed: {book_title}",
         intro="Thank you! Your borrowed book has been returned to the LRC.",
         details=[
             ("Title", book_title),
-            ("Call No.", book_row.get("call_number")),
             ("Due date", long_date(loan["due_date"])),
             ("Returned on", long_date(loan["returned_at"])),
         ],
@@ -455,7 +453,6 @@ def return_loan(
             intro="Your returned book has been checked in, and a fine was recorded for it.",
             details=[
                 ("Title", book_title),
-                ("Call No.", book_row.get("call_number")),
                 ("Due date", long_date(loan["due_date"])),
                 ("Returned on", long_date(loan["returned_at"])),
                 ("Fine", f"{peso(total_fine)} ({', '.join(parts)})" if parts else peso(total_fine)),
