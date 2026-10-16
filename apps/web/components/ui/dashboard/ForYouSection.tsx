@@ -13,6 +13,8 @@ import { ArrowRight, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { BookCard } from "@/components/ui/catalog/BookCard"
 import { fetchRecommendations } from "@/lib/recommendations"
+import { getUser } from "@/lib/auth"
+import { peekCache, peekMemory, remember } from "@/lib/clientCache"
 import { logEvent, logImpressions } from "@/lib/recommendationEvents"
 import type { RecommendationItem, RecommendationsResponse } from "@lasallia/types"
 import { ScrollRow } from "./ScrollRow"
@@ -89,16 +91,32 @@ const RUNG_COPY: Record<RecommendationsResponse["rung"], { title: string; subtit
 
 // fetcher/hrefPrefix default to the student dashboard's behavior; the kiosk's
 // "For you" tab passes its own (no JWT there — see fetchKioskRecommendations).
+// The signed-in user's last recommendations, keyed by account so a shared
+// browser never shows one person's picks to the next. The kiosk passes
+// cacheKey={null} — a tapped-in session isn't the browser's user.
+function dashboardCacheKey(): string | null {
+  const id = typeof window === "undefined" ? null : getUser()?.id
+  return id ? `recs:${id}` : null
+}
+
 export function ForYouSection({
   fetcher = () => fetchRecommendations(12),
   hrefPrefix = "/user/catalog",
+  cacheKey = dashboardCacheKey,
 }: {
   fetcher?: () => Promise<RecommendationsResponse>
   hrefPrefix?: string
+  cacheKey?: (() => string | null) | null
 } = {}) {
-  const [items, setItems] = useState<RecommendationItem[] | null>(null)
-  const [rung, setRung] = useState<RecommendationsResponse["rung"]>("personal")
-  const [loading, setLoading] = useState(true)
+  // Coming back to the dashboard within the app: show the last picks at
+  // once instead of skeletons (memory only here — see peekMemory).
+  const [initial] = useState(() => {
+    const key = cacheKey?.()
+    return key ? peekMemory<RecommendationsResponse>(key) : undefined
+  })
+  const [items, setItems] = useState<RecommendationItem[] | null>(initial?.recommendations ?? null)
+  const [rung, setRung] = useState<RecommendationsResponse["rung"]>(initial?.rung ?? "personal")
+  const [loading, setLoading] = useState(!initial)
   // Plan 6's error state: "Hide the section entirely. Do not show an
   // error card on a dashboard." — tracked separately from "loaded but
   // empty" so those two cases can render differently.
@@ -109,9 +127,22 @@ export function ForYouSection({
     // the guard, logImpressions() below fired twice with the same items,
     // double-posting to /recommendations/events on every load.
     let cancelled = false
+    let fresh = false
+    const key = cacheKey?.() ?? null
+    // After a reload: last copy from this tab, until the fresh one lands.
+    if (key && !initial) {
+      Promise.resolve(peekCache<RecommendationsResponse>(key)).then((cached) => {
+        if (cancelled || fresh || !cached) return
+        setItems(cached.recommendations)
+        setRung(cached.rung)
+        setLoading(false)
+      })
+    }
     fetcher()
       .then((res) => {
         if (cancelled) return
+        fresh = true
+        if (key) remember(key, res)
         setItems(res.recommendations)
         setRung(res.rung)
         // Phase 9 — one batched call for the whole rendered list, not

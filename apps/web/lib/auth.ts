@@ -1,4 +1,5 @@
 import { getSupabaseAuth } from "@/lib/supabaseBrowser"
+import { clearClientCache } from "@/lib/clientCache"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
@@ -302,6 +303,7 @@ export function clearSession(): void {
     sessionStorage.removeItem(key)
   }
   clearSessionCookie()
+  clearClientCache()
 }
 
 export function roleRedirect(role: string): string {

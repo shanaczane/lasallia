@@ -14,6 +14,7 @@ import { ArrowRight } from "lucide-react"
 import type { Book } from "@lasallia/types"
 import { BookCard } from "@/components/ui/catalog/BookCard"
 import { fetchBooks } from "@/lib/books"
+import { peekCache, peekMemory, remember } from "@/lib/clientCache"
 import { getUser } from "@/lib/auth"
 import { collegeForProgram } from "@/lib/collegeForProgram"
 import { catalogProgramFor } from "@/lib/catalogProgram"
@@ -25,6 +26,8 @@ const SECTION_SIZE = 12
 // viewport fits more than 4 of the 140px cards before the row needs to
 // scroll, so 4 skeletons under-filled the row next to the real cards.
 const SKELETON_COUNT = 8
+// The catalog isn't per-user, so one copy serves the dashboard and the kiosk.
+const BOOKS_CACHE_KEY = "books"
 
 function SkeletonCard() {
   return (
@@ -33,6 +36,7 @@ function SkeletonCard() {
       <div className="p-2.5 flex flex-col gap-1.5">
         <div className="h-3 bg-ink-100 rounded w-4/5" />
         <div className="h-2.5 bg-ink-100 rounded w-3/5" />
+        <div className="h-2.5 bg-ink-100 rounded w-1/4" />
         <div className="h-5 bg-ink-100 rounded-full w-16 mt-1" />
       </div>
     </div>
@@ -136,7 +140,8 @@ export function CatalogHighlights({
   showProgram?: boolean
   showCollege?: boolean
 } = {}) {
-  const [books, setBooks] = useState<Book[] | null>(null)
+  // Memory copy from earlier in this visit — instant, no skeletons.
+  const [books, setBooks] = useState<Book[] | null>(() => peekMemory<Book[]>(BOOKS_CACHE_KEY) ?? null)
   const [failed, setFailed] = useState(false)
   // getUser() reads localStorage, which doesn't exist during Next's SSR
   // pass of this client component — has to run post-hydration, in an
@@ -145,8 +150,17 @@ export function CatalogHighlights({
   const [college, setCollege] = useState<string | null>(identity?.college ?? null)
 
   useEffect(() => {
+    let fresh = false
+    // After a reload: last copy from this tab, until the fresh one lands.
+    Promise.resolve(peekCache<Book[]>(BOOKS_CACHE_KEY)).then((cached) => {
+      if (!fresh && cached) setBooks((current) => current ?? cached)
+    })
     fetchBooks()
-      .then(setBooks)
+      .then((fetched) => {
+        fresh = true
+        remember(BOOKS_CACHE_KEY, fetched)
+        setBooks(fetched)
+      })
       .catch(() => setFailed(true))
     if (identity) return
     const user = getUser()
@@ -191,7 +205,7 @@ export function CatalogHighlights({
         hrefPrefix={hrefPrefix}
         viewMoreHref={hrefPrefix}
       />
-      {showProgram && (
+      {showProgram && !loading && (
           <Section
             title={`From ${programLabel(catalogProgram ?? program ?? "")}`}
             subtitle="Books shelved under your program."
@@ -203,7 +217,7 @@ export function CatalogHighlights({
             viewMoreHref={`${hrefPrefix}?genre=${encodeURIComponent(catalogProgram ?? "")}`}
           />
       )}
-      {showCollege && (
+      {showCollege && !loading && (
           <Section
             title={`From ${college ?? ""}`}
             subtitle="More from your college's collection."

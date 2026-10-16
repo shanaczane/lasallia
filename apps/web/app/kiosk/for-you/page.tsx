@@ -61,6 +61,8 @@ export default function KioskForYouPage() {
         key={`for-you-${session.id}`}
         fetcher={() => fetchKioskRecommendations(session.id)}
         hrefPrefix="/kiosk/catalog"
+        // Shared terminal: never show a cached list from another student.
+        cacheKey={null}
       />
 
       {/* New Arrivals plus the tapped-in student's own program. identity
