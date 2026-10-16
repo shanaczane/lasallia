@@ -22,7 +22,7 @@ export function proxy(request: NextRequest) {
   }
 
   if (role !== 'librarian') {
-    return NextResponse.redirect(new URL('/student/dashboard', request.url))
+    return NextResponse.redirect(new URL('/user/dashboard', request.url))
   }
 
   return NextResponse.next()

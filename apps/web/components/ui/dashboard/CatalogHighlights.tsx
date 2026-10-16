@@ -125,7 +125,7 @@ function Section({
 // to be cached in that browser's localStorage from an unrelated tab/visit.
 export function CatalogHighlights({
   identity,
-  hrefPrefix = "/student/catalog",
+  hrefPrefix = "/user/catalog",
   // The kiosk's "For you" tab shows the program row but not the college
   // one, so each can be switched off on its own.
   showProgram = true,

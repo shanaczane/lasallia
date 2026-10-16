@@ -85,7 +85,7 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
         "Your reserved book is ready for pickup",
         f'"{book_title}" is waiting for you at the LRC counter. Pick it up by {pickup_label} '
         "— after that the reservation expires and the copy goes to the next student in line.",
-        link="/student/reservations",
+        link="/user/reservations",
         email=EmailContent(
             subject="Your reserved book is ready for pickup",
             intro="Good news! The book you reserved is now ready for pickup at the LRC.",
@@ -99,7 +99,7 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
                 "the reservation will expire and the book will go to the next person in line.",
             ],
             link_label="View your reservation",
-            link="/student/reservations",
+            link="/user/reservations",
         ),
     )
 
@@ -110,7 +110,7 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
             # Neutral on purpose: this runs after a pickup, a cancellation or
             # an expired pickup window alike, so "fulfilled" was often wrong.
             f'You\'re now first in line for "{book_title}" — we\'ll notify you when it\'s ready for pickup.',
-            link="/student/reservations",
+            link="/user/reservations",
             email=EmailContent(
                 subject=f"You're now first in line: {book_title}",
                 intro="Good news! You've moved to the front of the reservation queue.",
@@ -121,7 +121,7 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
                 ],
                 paragraphs=["We'll email you again as soon as a copy is ready for pickup at the LRC."],
                 link_label="View your reservations",
-                link="/student/reservations",
+                link="/user/reservations",
             ),
         )
 
@@ -185,7 +185,7 @@ def sweep_expired_reservations(admin: Client) -> int:
             f'You didn\'t pick up "{book_title}" before the pickup deadline, so your reservation has expired '
             "and the copy has been released. If you still want it, reserve it again "
             "— you'll join the end of the queue.",
-            link=f"/student/catalog/{row['book_id']}?from=reservations",
+            link=f"/user/catalog/{row['book_id']}?from=reservations",
             email=EmailContent(
                 subject="Your reservation has expired",
                 intro="Your reserved book was not picked up before the deadline, so the reservation has expired.",
@@ -198,7 +198,7 @@ def sweep_expired_reservations(admin: Client) -> int:
                     "you can reserve it again. You will be added to the end of the queue.",
                 ],
                 link_label="Reserve it again",
-                link=f"/student/catalog/{row['book_id']}",
+                link=f"/user/catalog/{row['book_id']}",
             ),
         )
         try:

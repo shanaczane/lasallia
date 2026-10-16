@@ -310,10 +310,10 @@ export function roleRedirect(role: string): string {
     // Faculty share the student site and rules — same route, no separate
     // faculty layout to keep in sync.
     case "student":
-    case "faculty":   return "/student/dashboard"
+    case "faculty":   return "/user/dashboard"
     case "guest":     return "/guest/dashboard"
     default:
       console.warn(`roleRedirect: unrecognized role "${role}", defaulting to student route`)
-      return "/student/dashboard"
+      return "/user/dashboard"
   }
 }

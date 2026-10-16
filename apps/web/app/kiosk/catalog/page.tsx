@@ -4,7 +4,7 @@
 // "filter sidebar is skipped this pass" note from the original build
 // plan no longer applies, brought in for UI consistency with the rest
 // of the app. Layout (sticky search bar, header block, grid) matches
-// the guest/student catalog screens exactly; only the header subtitle
+// the guest/user catalog screens exactly; only the header subtitle
 // differs, since the kiosk needs to show who's borrowing.
 
 'use client'

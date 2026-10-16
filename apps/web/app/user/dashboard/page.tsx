@@ -1,4 +1,4 @@
-// apps/web/app/student/dashboard/page.tsx
+// apps/web/app/user/dashboard/page.tsx
 "use client"
 
 import { useEffect, useState } from "react"
@@ -21,7 +21,7 @@ import type { Reservation } from "@lasallia/types"
 
 type BorrowStatus = "due_soon" | "overdue" | "active"
 
-// Matches apps/web/app/student/library/page.tsx — pending real LRC borrow-limit policy
+// Matches apps/web/app/user/library/page.tsx — pending real LRC borrow-limit policy
 const BORROW_LIMIT_PLACEHOLDER = 3
 const DUE_SOON_DAYS = 3
 
@@ -97,7 +97,7 @@ export default function StudentDashboard() {
         {/* Desktop/tablet only — on phone this becomes a floating button
             (below) instead of competing with the greeting for space. */}
         <Link
-          href="/student/catalog"
+          href="/user/catalog"
           className="hidden sm:flex items-center justify-center gap-2 px-4 py-2.5 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors shadow-sm self-start"
           style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
         >
@@ -112,7 +112,7 @@ export default function StudentDashboard() {
           area via safe-area-inset-bottom, same convention FilterSheet's
           footer already uses. */}
       <Link
-        href="/student/catalog"
+        href="/user/catalog"
         aria-label="Find a book"
         className="sm:hidden fixed right-4 flex items-center justify-center w-14 h-14 rounded-full bg-green-700 text-white hover:bg-green-800 active:bg-green-900 transition-colors"
         style={{

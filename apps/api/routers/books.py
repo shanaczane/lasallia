@@ -308,7 +308,7 @@ def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)
 
 # "You may also like" on the book detail page — previously a plain
 # same-category client-side filter with no ranking (apps/web's
-# Recommendations component in app/student/catalog/[bookId]/page.tsx).
+# Recommendations component in app/user/catalog/[bookId]/page.tsx).
 # This reads the same TF-IDF/cosine-similarity data the "For You"
 # dashboard section already uses (book_similarities, computed nightly by
 # jobs/rebuild_similarities.py) instead of a same-category guess — a real

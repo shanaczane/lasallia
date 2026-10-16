@@ -1,5 +1,5 @@
 // apps/web/components/ui/requests/MyBookRequestModal.tsx
-// Faculty-side view/edit for a single request on /student/requests. A
+// Faculty-side view/edit for a single request on /user/requests. A
 // request can be edited (title/author/isbn/format/copies/course/note, plus
 // attachments) only while still "pending" — once a librarian has approved,
 // rejected, or fulfilled it, this renders read-only. Backend enforces the

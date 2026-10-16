@@ -6,7 +6,7 @@
 // type the accession number themselves. Never shows it here: the whole
 // point is proving they have the actual physical book.
 //
-// Shared between the student portal (apps/web/app/student/catalog/[bookId])
+// Shared between the student portal (apps/web/app/user/catalog/[bookId])
 // and the kiosk terminal (apps/web/app/kiosk/catalog/[bookId], Phase 6) —
 // the only difference is where the station session comes from: an
 // already-logged-in student's own JWT (student portal, default), or an

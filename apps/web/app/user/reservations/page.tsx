@@ -1,4 +1,4 @@
-// apps/web/app/student/reservations/page.tsx
+// apps/web/app/user/reservations/page.tsx
 "use client"
 
 import { useRef, useState } from "react"
@@ -178,7 +178,7 @@ function ReservationItemCard({ reservation: r, onCancel, isLast }: ReservationIt
       <div className="flex items-center gap-2 flex-shrink-0">
         {r.status === "ready" && (
           <Link
-            href={`/student/catalog/${r.book_id}?from=reservations`}
+            href={`/user/catalog/${r.book_id}?from=reservations`}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-(--radius) border border-green-700 bg-green-700 text-white font-medium hover:bg-green-800 transition-colors whitespace-nowrap"
             style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
           >
@@ -224,7 +224,7 @@ function EmptyState() {
         No reservations here
       </p>
       <Link
-        href="/student/catalog"
+        href="/user/catalog"
         className="mt-1 px-4 py-1.5 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors"
         style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}
       >

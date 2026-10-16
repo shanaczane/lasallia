@@ -441,7 +441,7 @@ def return_loan(
         ],
         paragraphs=["No fine was recorded for this return."],
         link_label="View your loans",
-        link="/student/library",
+        link="/user/library",
     )
     if total_fine > 0:
         parts = []
@@ -468,13 +468,13 @@ def return_loan(
                 "from borrowing or reserving books until they are paid.",
             ],
             link_label="View your loans",
-            link="/student/library",
+            link="/user/library",
         )
     notify(
         loan["student_id"], "return_confirmed",
         "Return confirmed",
         f'"{book_title}" has been checked in.' + (f" A ₱{total_fine:.2f} fine was recorded." if total_fine > 0 else ""),
-        link="/student/library",
+        link="/user/library",
         email=fine_email,
     )
     borrower_res = admin.table("profiles").select("full_name").eq("id", loan["student_id"]).execute()
@@ -569,7 +569,7 @@ def settle_fine(
         loan["student_id"], "fine_settled",
         "Fine settled",
         f'Your ₱{loan["fine_amount"]:.2f} fine for "{book_title}" has been recorded as paid (receipt {receipt_number}).',
-        link="/student/library",
+        link="/user/library",
         email=EmailContent(
             subject="Payment received for your fine",
             intro="We've received your payment. Your fine has been recorded as paid.",
@@ -581,7 +581,7 @@ def settle_fine(
             ],
             paragraphs=["Please keep your receipt as proof of payment."],
             link_label="View your loans",
-            link="/student/library",
+            link="/user/library",
         ),
     )
 

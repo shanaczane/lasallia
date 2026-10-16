@@ -50,19 +50,19 @@ function getStudentNav(isFaculty: boolean): NavSection[] {
     {
       title: "Main",
       items: [
-        { label: "Dashboard",         icon: <LayoutDashboard size={16} />, href: "/student/dashboard" },
-        { label: "Catalog",           icon: <Search size={16} />,          href: "/student/catalog" },
-        { label: "Reservations",      icon: <BookOpen size={16} />,        href: "/student/reservations" },
-        ...(isFaculty ? [{ label: "Request a Book", icon: <BookPlus size={16} />, href: "/student/requests" }] : []),
-        { label: "Library Assistant", icon: <MessageSquare size={16} />,   href: "/student/assistant" },
-        { label: "Notifications",     icon: <Bell size={16} />,            href: "/student/notifications" },
+        { label: "Dashboard",         icon: <LayoutDashboard size={16} />, href: "/user/dashboard" },
+        { label: "Catalog",           icon: <Search size={16} />,          href: "/user/catalog" },
+        { label: "Reservations",      icon: <BookOpen size={16} />,        href: "/user/reservations" },
+        ...(isFaculty ? [{ label: "Request a Book", icon: <BookPlus size={16} />, href: "/user/requests" }] : []),
+        { label: "Library Assistant", icon: <MessageSquare size={16} />,   href: "/user/assistant" },
+        { label: "Notifications",     icon: <Bell size={16} />,            href: "/user/notifications" },
       ],
     },
     {
       title: "My Library",
       items: [
         // Sprint 4.5 — single entry point for Borrowed, Saved, and History tabs
-        { label: "My Library", icon: <Library size={16} />, href: "/student/library" },
+        { label: "My Library", icon: <Library size={16} />, href: "/user/library" },
       ],
     },
   ]
@@ -256,9 +256,9 @@ function StudentLayoutInner({
               {section.items.map((item) => {
                 const isActive = pathname === item.href
                 const badge =
-                  item.href === '/student/notifications' ? (unreadCount || undefined) :
-                  item.href === '/student/reservations' ? (activeReservationCount || undefined) :
-                  item.href === '/student/library' ? (activeLoanCount || undefined) :
+                  item.href === '/user/notifications' ? (unreadCount || undefined) :
+                  item.href === '/user/reservations' ? (activeReservationCount || undefined) :
+                  item.href === '/user/library' ? (activeLoanCount || undefined) :
                   item.badge
                 return (
                   <li key={item.href}>
@@ -316,11 +316,11 @@ function StudentLayoutInner({
         userEmail={displayEmail}
         userInitials={displayInitials}
         notificationCount={unreadCount}
-        notificationsHref="/student/notifications"
-        homeHref="/student/dashboard"
+        notificationsHref="/user/notifications"
+        homeHref="/user/dashboard"
         showNotifications={true}
-        profileHref="/student/profile"
-        settingsHref="/student/profile?tab=settings"
+        profileHref="/user/profile"
+        settingsHref="/user/profile?tab=settings"
         onMenuClick={() => setMenuOpen(true)}
       />
 
@@ -366,7 +366,7 @@ function StudentLayoutInner({
           className="flex items-center justify-between px-4 border-b border-ink-200"
           style={{ height: "var(--height-nav)" }}
         >
-          <Link href="/student/dashboard" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5">
+          <Link href="/user/dashboard" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5">
             <div
               className="flex items-center justify-center rounded-full bg-white border border-ink-200 shrink-0"
               style={{ width: 34, height: 34, boxShadow: "var(--shadow-sm)" }}

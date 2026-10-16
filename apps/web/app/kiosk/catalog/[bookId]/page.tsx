@@ -73,7 +73,7 @@ function BibGrid({ items }: { items: Array<{ label: string; value?: string | num
 }
 
 // ─── Availability / borrow action panel ───────────────────────────────────────
-// Same progress-bar callout as the guest/student pages, but the call to
+// Same progress-bar callout as the guest/user pages, but the call to
 // action reflects what an RFID-tapped kiosk session can actually do:
 // borrow directly (session), or a "tap your ID" prompt (guest browsing).
 

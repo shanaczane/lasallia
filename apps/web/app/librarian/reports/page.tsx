@@ -804,7 +804,7 @@ function CirculationTable({ rows, onExport }: { rows: CirculationRow[]; onExport
 }
 
 // ─── Requests — faculty book-request inbox. Faculty submit from
-// /student/requests (require_faculty at the API); this lists every one and
+// /user/requests (require_faculty at the API); this lists every one and
 // lets a librarian move it through pending -> approved/rejected ->
 // (approved only) fulfilled. See migrations/0039_book_requests.sql.
 const REQUEST_STATUS_LABEL: Record<BookRequestStatus, string> = {

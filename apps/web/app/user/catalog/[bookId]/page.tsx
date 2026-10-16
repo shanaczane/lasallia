@@ -1,4 +1,4 @@
-// apps/web/app/student/catalog/[bookId]/page.tsx
+// apps/web/app/user/catalog/[bookId]/page.tsx
 // Sprint 4.3.3 — 'You may also like' recommendations row
 // Sprint 4.3.4 — Save to Favorites bookmark button
 // Sprint 4.5.4 — Borrow QR button (available books only)
@@ -440,7 +440,7 @@ function Recommendations({
           <BookCard
             key={book.id}
             book={book}
-            href={`/student/catalog/${book.id}`}
+            href={`/user/catalog/${book.id}`}
             showBookmark
             isSaved={savedBookIds.has(book.id)}
             onToggleSave={onToggleSave}
@@ -479,12 +479,12 @@ export default function StudentBookDetailPage({
   const libraryTab = backSearchParams.get('tab')
   const { backHref, backLabel } =
     from === 'library'
-      ? { backHref: libraryTab ? `/student/library?tab=${libraryTab}` : '/student/library', backLabel: 'Back to My Library' }
+      ? { backHref: libraryTab ? `/user/library?tab=${libraryTab}` : '/user/library', backLabel: 'Back to My Library' }
       : from === 'reservations'
-        ? { backHref: '/student/reservations', backLabel: 'Back to reservations' }
+        ? { backHref: '/user/reservations', backLabel: 'Back to reservations' }
         : from === 'assistant'
-          ? { backHref: '/student/assistant', backLabel: 'Back to assistant' }
-          : { backHref: '/student/catalog', backLabel: 'Back to results' }
+          ? { backHref: '/user/assistant', backLabel: 'Back to assistant' }
+          : { backHref: '/user/catalog', backLabel: 'Back to results' }
 
   const { book, loading } = useBook(bookId)
   const { reservations, refresh: refreshReservations } = useReservations()

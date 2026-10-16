@@ -267,7 +267,7 @@ def create_reservation(
             if queue_position == 1
             else f'You\'re #{queue_position} in line for "{book_title}" — we\'ll notify you when it\'s your turn.'
         ),
-        link="/student/reservations",
+        link="/user/reservations",
         email=EmailContent(
             subject=f"Reservation confirmed: {book_title}",
             intro="Your reservation has been placed.",
@@ -281,7 +281,7 @@ def create_reservation(
                 "at the LRC counter.",
             ],
             link_label="View your reservations",
-            link="/student/reservations",
+            link="/user/reservations",
         ),
     )
 
@@ -326,7 +326,7 @@ def update_reservation(
             row["user_id"], "reservation_cancelled",
             "Your reservation was cancelled",
             f'The LRC cancelled your reservation for "{book_title}".',
-            link="/student/reservations",
+            link="/user/reservations",
             email=EmailContent(
                 subject="Your reservation was cancelled",
                 intro="The LRC has cancelled your reservation for the book below.",
@@ -339,7 +339,7 @@ def update_reservation(
                     "or reserve it again from the catalog.",
                 ],
                 link_label="View your reservations",
-                link="/student/reservations",
+                link="/user/reservations",
             ),
         )
 

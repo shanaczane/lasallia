@@ -13,7 +13,7 @@ export interface BookCardData {
   availability: AvailabilityStatus
   location: string
   coverUrl?: string
-  // The role's own book page (/student, /guest or /kiosk catalog) — set by
+  // The role's own book page (/user, /guest or /kiosk catalog) — set by
   // ChatWindow, which knows which portal the chat is running in.
   href?: string
 }

@@ -1,4 +1,4 @@
-// apps/web/app/student/library/page.tsx
+// apps/web/app/user/library/page.tsx
 // Sprint 4.5 — My Library (unified tabbed page)
 // 4.5.1 Borrowed Books · 4.5.2 Saved · 4.5.3 History
 // QR for BORROWING only — lives on catalog detail page
@@ -328,7 +328,7 @@ function BorrowedCard({ loan, status }: { loan: ApiLoan; status: BorrowStatus })
 
   return (
     <Link
-      href={`/student/catalog/${book.id}?from=library&tab=borrowed`}
+      href={`/user/catalog/${book.id}?from=library&tab=borrowed`}
       className="group flex flex-col rounded-(--radius) overflow-hidden bg-white border border-ink-200 shadow-(--shadow-sm) hover:shadow-(--shadow) transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700"
     >
       <Cover book={book}>
@@ -535,7 +535,7 @@ function SavedCard({
       )}
     >
       <Link
-        href={`/student/catalog/${book.id}?from=library&tab=saved`}
+        href={`/user/catalog/${book.id}?from=library&tab=saved`}
         className="group flex flex-col flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1"
       >
         <Cover book={book}>
@@ -593,7 +593,7 @@ function SavedCard({
 function BrowseCatalogCard() {
   return (
     <Link
-      href="/student/catalog"
+      href="/user/catalog"
       className="h-full min-h-[200px] flex flex-col items-center justify-center gap-2 rounded-(--radius) border border-dashed border-ink-300 bg-white hover:bg-ink-50 hover:border-green-700 transition-colors"
     >
       <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 text-green-700">
@@ -651,7 +651,7 @@ function SavedTab({ savedBooks, loading, error, onRemove }: { savedBooks: Book[]
           </p>
         </div>
         <Link
-          href="/student/catalog"
+          href="/user/catalog"
           className="px-5 py-2.5 rounded-[10px] bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors"
           style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
         >
@@ -720,7 +720,7 @@ function HistoryCard({ loan, status }: { loan: ApiLoan; status: HistoryStatus })
   if (!book) return null
   return (
     <Link
-      href={`/student/catalog/${book.id}?from=library&tab=history`}
+      href={`/user/catalog/${book.id}?from=library&tab=history`}
       className="group flex flex-col rounded-(--radius) overflow-hidden bg-white border border-ink-200 shadow-(--shadow-sm) hover:shadow-(--shadow) transition-shadow duration-200"
     >
       <Cover book={book}>
@@ -844,7 +844,7 @@ function FineChip({ summary }: { summary: NonNullable<ReturnType<typeof getFineS
   const isPaid = summary.unpaid === 0
   return (
     <Link
-      href="/student/profile"
+      href="/user/profile"
       className={cn(
         "flex items-center gap-1.5 px-3 py-1.5 rounded-full border shrink-0 transition-colors",
         isPaid

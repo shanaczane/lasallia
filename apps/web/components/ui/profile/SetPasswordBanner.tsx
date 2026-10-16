@@ -56,7 +56,7 @@ export function SetPasswordBanner() {
       </div>
       <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
         <Link
-          href="/student/profile?tab=settings"
+          href="/user/profile?tab=settings"
           className="px-3 py-1.5 rounded-(--radius-sm) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors whitespace-nowrap"
           style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
         >

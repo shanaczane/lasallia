@@ -1,6 +1,6 @@
-// apps/web/app/student/page.tsx
+// apps/web/app/user/page.tsx
 import { redirect } from "next/navigation"
 
 export default function Page() {
-  redirect("/student/dashboard")
+  redirect("/user/dashboard")
 }

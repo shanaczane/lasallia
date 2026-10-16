@@ -1,4 +1,4 @@
-// apps/web/app/student/profile/page.tsx
+// apps/web/app/user/profile/page.tsx
 // Profile / Settings — reached from the TopNav avatar dropdown (not the
 // sidebar, since this is account-level, not a primary destination).
 // One page, two tabs (?tab=settings deep-links straight to Settings, same

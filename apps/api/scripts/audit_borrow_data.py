@@ -105,11 +105,11 @@ def _decision(stats: dict) -> str:
         )
     if median >= MEDIAN_HYBRID_VIABLE:
         return (
-            f"**Median borrows/student is {median} (≥ {MEDIAN_HYBRID_VIABLE}).** "
+            f"**Median borrows/user is {median} (≥ {MEDIAN_HYBRID_VIABLE}).** "
             "Hybrid is viable — proceed through Phase 4 as planned."
         )
     return (
-        f"**Median borrows/student is {median} (1–2 range, or otherwise below "
+        f"**Median borrows/user is {median} (1–2 range, or otherwise below "
         f"{MEDIAN_HYBRID_VIABLE}).** Collaborative boost would be noise on this little "
         "signal. Build Phases 2-3 only (content-based); keep Phase 4 as documented "
         "future work rather than building it against data too sparse to trust."

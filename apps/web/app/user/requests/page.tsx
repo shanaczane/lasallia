@@ -1,6 +1,6 @@
-// apps/web/app/student/requests/page.tsx
+// apps/web/app/user/requests/page.tsx
 // Faculty-only "request a book" form + a self-service history of what
-// they've submitted. Lives under /student because faculty share the whole
+// they've submitted. Lives under /user because faculty share the whole
 // student route tree (require_student, core/deps.py) — StudentLayout only
 // shows the nav link when role === 'faculty', but this page still checks
 // for itself since a student could type the URL directly; the real gate is

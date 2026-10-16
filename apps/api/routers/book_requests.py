@@ -373,7 +373,7 @@ def update_book_request(
             ),
         }[decision]
         notify(
-            row["requester_id"], notif_type, notif_title, notif_message, link="/student/requests",
+            row["requester_id"], notif_type, notif_title, notif_message, link="/user/requests",
             email=EmailContent(
                 subject=notif_title,
                 intro=intro,
@@ -385,7 +385,7 @@ def update_book_request(
                 ],
                 paragraphs=[closing],
                 link_label="View your requests",
-                link="/student/requests",
+                link="/user/requests",
             ),
         )
 

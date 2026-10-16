@@ -31,8 +31,8 @@ const FRONTEND_URL = Deno.env.get("FRONTEND_URL") ?? "http://localhost:3000";
 const DUE_REMINDER_DAYS = Number(Deno.env.get("DUE_REMINDER_DAYS") ?? "1");
 const FINE_REMINDER_COOLDOWN_DAYS = Number(Deno.env.get("FINE_REMINDER_COOLDOWN_DAYS") ?? "7");
 const FROM_ADDRESS = "Lasallia <notifications@lasallia.com>";
-const LOAN_LINK = "/student/library";
-const FINE_LINK = "/student/profile";
+const LOAN_LINK = "/user/library";
+const FINE_LINK = "/user/profile";
 
 const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 

@@ -42,7 +42,7 @@ export function TopNav({
   userEmail = "",
   userInitials = "U",
   notificationCount = 0,
-  notificationsHref = "/student/notifications",
+  notificationsHref = "/user/notifications",
   showNotifications = true,
   showSignOut = true,
   onMenuClick,

@@ -91,7 +91,7 @@ const RUNG_COPY: Record<RecommendationsResponse["rung"], { title: string; subtit
 // "For you" tab passes its own (no JWT there — see fetchKioskRecommendations).
 export function ForYouSection({
   fetcher = () => fetchRecommendations(12),
-  hrefPrefix = "/student/catalog",
+  hrefPrefix = "/user/catalog",
 }: {
   fetcher?: () => Promise<RecommendationsResponse>
   hrefPrefix?: string

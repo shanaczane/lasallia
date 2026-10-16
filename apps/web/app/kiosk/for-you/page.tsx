@@ -1,6 +1,6 @@
 // apps/web/app/kiosk/for-you/page.tsx
 // The kiosk's "For you" tab — mirrors the student dashboard's content
-// (app/student/dashboard/page.tsx) minus the stat cards, which need loan/
+// (app/user/dashboard/page.tsx) minus the stat cards, which need loan/
 // reservation data the kiosk doesn't fetch here. Fed by the tapped-in
 // station session (no JWT at a kiosk) instead of localStorage/GET /auth/me,
 // and links into the kiosk catalog. A guest visit has no identity to

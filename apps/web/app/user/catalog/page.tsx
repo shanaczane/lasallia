@@ -1,4 +1,4 @@
-// apps/web/app/student/catalog/page.tsx
+// apps/web/app/user/catalog/page.tsx
 // Sprint 4.3.1 — Authenticated student catalog (same as Guest + bookmark buttons)
 // Responsive filters: desktop sidebar / mobile bottom sheet (sprint: responsive catalog filters)
 
@@ -264,7 +264,7 @@ function StudentCatalogContent() {
             <BookGrid
               books={pagedResults}
               isLoading={loading}
-              hrefPrefix="/student/catalog"
+              hrefPrefix="/user/catalog"
               showBookmark={true}
               hasActiveFilters={hasActive || !!query}
               onClearFilters={clearAll}

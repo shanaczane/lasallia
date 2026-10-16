@@ -122,7 +122,7 @@ export default function ChatWindow({
   const catalogBase =
     surface === "kiosk" ? "/kiosk/catalog"
     : pathname.startsWith("/guest") ? "/guest/catalog"
-    : "/student/catalog"
+    : "/user/catalog"
 
   // Resets the whole window to whichever conversation was just picked, so
   // setting state here is the point of this effect.

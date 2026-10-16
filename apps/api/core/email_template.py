@@ -10,7 +10,7 @@
 
     Please claim it at the LRC counter before the deadline. ...
 
-    View your reservation: https://lasallia.com/student/reservations
+    View your reservation: https://lasallia.com/user/reservations
 
     — Lasallia, De La Salle Lipa Learning Resource Center
     This is an automated message. Please do not reply to this email.
@@ -40,7 +40,7 @@ class EmailContent:
     details: list[tuple[str, str | None]] = field(default_factory=list)
     # Paragraphs after the details.
     paragraphs: list[str] = field(default_factory=list)
-    # "View your loans" + "/student/library" -> "View your loans: https://…/student/library"
+    # "View your loans" + "/user/library" -> "View your loans: https://…/user/library"
     link_label: str | None = None
     link: str | None = None
     # Patron emails carry the "automated message" line; staff alerts don't.

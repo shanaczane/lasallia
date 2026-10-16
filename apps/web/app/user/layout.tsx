@@ -1,4 +1,4 @@
-// apps/web/app/student/layout.tsx
+// apps/web/app/user/layout.tsx
 import { StudentLayout } from "@/components/layout/StudentLayout"
 
 export default function Layout({ children }: { children: React.ReactNode }) {

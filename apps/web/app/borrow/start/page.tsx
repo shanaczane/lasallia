@@ -24,7 +24,7 @@ function Spinner() {
 function StartBorrow() {
   const router = useRouter()
   const bookId = useSearchParams().get('book')
-  const backHref = bookId ? `/student/catalog/${bookId}` : '/student/catalog'
+  const backHref = bookId ? `/user/catalog/${bookId}` : '/user/catalog'
 
   const [error, setError] = useState<{ message: string; retryable: boolean } | null>(null)
 

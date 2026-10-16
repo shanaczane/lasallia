@@ -180,7 +180,7 @@ def create_loan_and_notify(
         student_id, "loan_confirmed",
         "Book successfully borrowed",
         f'You\'ve borrowed "{book_title}". It\'s due back on {due_label}.',
-        link="/student/library",
+        link="/user/library",
         email=EmailContent(
             subject=f"Borrowing confirmed: {book_title}",
             intro="This confirms that you borrowed a book from the LRC.",
@@ -195,7 +195,7 @@ def create_loan_and_notify(
                 f"of {peso(cfg['fine_per_day'])} per school day.",
             ],
             link_label="View your loans",
-            link="/student/library",
+            link="/user/library",
         ),
     )
     borrower_res = db.table("profiles").select("full_name").eq("id", student_id).execute()

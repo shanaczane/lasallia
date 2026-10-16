@@ -12,6 +12,14 @@ const nextConfig: NextConfig = {
   // already builds its URL as `${API_URL}/path`, so this needs no changes
   // there. Remove if the underlying browser/network issue gets fixed
   // directly instead — this is a workaround, not the correct end state.
+  // The student/faculty site moved from /student/* to /user/*. Keeps links
+  // in notifications and emails sent before the move, and bookmarks, working.
+  async redirects() {
+    return [
+      { source: "/student", destination: "/user", permanent: true },
+      { source: "/student/:path*", destination: "/user/:path*", permanent: true },
+    ];
+  },
   async rewrites() {
     const target = process.env.LOCAL_API_PROXY_TARGET ?? "http://127.0.0.1:8000";
     return [{ source: "/api-proxy/:path*", destination: `${target}/:path*` }];
