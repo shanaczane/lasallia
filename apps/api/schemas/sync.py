@@ -37,8 +37,7 @@ class SyncPreview(BaseModel):
     books_updated: int
     books_unchanged: int
     copies_added: int
-    # Unchanged books are counted but not listed — on a re-import of the
-    # same file that would be the entire catalog.
+    # Unchanged books are counted, not listed.
     items: list[SyncItem]
     errors: list[SyncIssue]
     # Spreadsheet only: rows that import fine but look like typos.

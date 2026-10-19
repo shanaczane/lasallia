@@ -1,19 +1,7 @@
-# apps/api/scripts/backfill_college.py
-# One-off backfill for books that were already inserted by seed_books.py
-# before it started tagging a college. Re-reads the same 4 LRC college
-# Excel files and UPDATEs the `subject` column (shown in the UI as
-# "College") on the matching Supabase row — no rows are deleted or
-# re-inserted, so borrow history / manual edits on existing rows are
-# untouched.
-#
-# Matched on `title`, not `accession_no`: the books already in Supabase
-# were seeded before accession numbers were being captured, so every
-# existing row has accession_no = null and an accession-based match would
-# silently update nothing. Verified 2026-08-28 against the live data: all
-# 185 Excel titles match all 185 DB titles exactly, 1:1, no duplicates
-# either side — safe to match on. --dry-run re-checks that assumption
-# against the live table before anything is written, in case the data has
-# since drifted (an edited title, a partially-run seed, etc.).
+# One-off: sets each book's college (the `subject` column) from the Excel
+# files, for books seeded before colleges were tagged. Matches by title,
+# since those books have no accession numbers; --dry-run checks the titles
+# still match one-to-one before writing anything.
 #
 # Usage: venv/Scripts/python.exe scripts/backfill_college.py [--dry-run]
 
@@ -92,10 +80,7 @@ def main(dry_run: bool = False) -> None:
 
     print(f"\nDone. {updated} existing book rows tagged with a college.")
 
-    # subject (college) is part of core/embeddings.py's build_embedded_text
-    # recipe — this update() bypasses routers/books.py's update_book, the
-    # only HTTP path that re-embeds on write, so every tagged row's
-    # embedding went stale relative to its new subject until re-run here.
+    # The college is part of each book's search embedding, so re-embed.
     print("\nRe-embedding tagged books so search reflects the new college...")
     embedded = reembed_books(client)
     print(f"Re-embedded {embedded} book(s).")

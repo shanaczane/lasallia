@@ -1,21 +1,6 @@
-# apps/api/evals/embedding_comparison.py
-# Chatbot Phase 1 (plan 1.3) — "don't just accept the default embedding
-# model, build a small comparison." Scoped to OpenAI-hosted models only
-# for now (text-embedding-3-small vs text-embedding-3-large) rather than
-# a local multilingual model (multilingual-e5-large/BGE-m3), which would
-# need sentence-transformers/torch and a multi-GB download — a documented
-# follow-up, not a silent drop, if the thesis needs that stronger claim.
-#
-# Runs entirely in memory: embeds every book's embedded_text under each
-# candidate model, embeds each test query the same way, ranks by cosine
-# similarity, and reports hit-rate@5. Never writes to book_embeddings —
-# that table only ever holds the one model actually shipped, decided
-# after this runs.
-#
-# Relocated here from scripts/ during the Phase 2-8 structure pass —
-# this is an evaluation artifact (measures quality), not an operational
-# job like scripts/reembed_books.py. Content unchanged apart from the
-# query-set path below.
+# Compares OpenAI embedding models (3-small vs 3-large) by search hit rate
+# at 5. Runs in memory and never writes to the database. Local multilingual
+# models aren't compared (they'd need torch and a large download).
 #
 # Usage: venv/Scripts/python.exe evals/embedding_comparison.py
 

@@ -1,15 +1,6 @@
-# apps/api/scripts/repair_orphaned_copies.py
-# Finds copies marked on_loan/overdue/reserved that nothing is actually
-# holding — no active loan, no open in-house loan, no ready reservation —
-# and puts them back into circulation. These come from loan/reservation
-# rows that were deleted out from under their copy (see migration 0049)
-# and from ready reservations that expired before the sweep learned to
-# release their copy.
-#
-# Each copy is handled the way the reshelving scan handles it: the oldest
-# pending reservation on the title gets it (and is notified), otherwise it
-# goes back to available. Only run this once the copies are physically on
-# the shelf.
+# Puts back copies stuck as on_loan/overdue/reserved with no loan or
+# reservation behind them. Like the reshelving scan, a waiting reservation
+# gets the copy first. Run only once the copies are on the shelf.
 #
 # Usage: venv/Scripts/python.exe scripts/repair_orphaned_copies.py           (dry run)
 #        venv/Scripts/python.exe scripts/repair_orphaned_copies.py --apply
@@ -60,9 +51,8 @@ def main() -> None:
             print(f"would release  {copy['accession_number']:<10} {copy['status']:<9} {title}")
             continue
 
-        # on_loan/reserved -> reserved for a waiting student, otherwise
-        # -> for_reshelving -> available. overdue can't go straight to
-        # reserved, so it detours through for_reshelving (needs 0048).
+        # Overdue copies can't go straight to reserved, so they pass
+        # through for_reshelving first.
         promoted = promote_next_reservation(admin, copy["book_id"], copy["id"])
         if promoted:
             if copy["status"] == "overdue":

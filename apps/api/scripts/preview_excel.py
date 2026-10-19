@@ -1,7 +1,4 @@
-# apps/api/scripts/preview_excel.py
-# One-off helper: dumps every sheet of a raw book-data Excel file into a
-# single readable CSV (only real rows, only the columns that matter) so it
-# can be reviewed in a plain text editor instead of the binary .xlsx.
+# Dumps a catalog Excel file into one readable CSV for review.
 #
 # Usage: venv/Scripts/python.exe scripts/preview_excel.py data/CITE.xlsx
 

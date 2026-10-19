@@ -1,11 +1,5 @@
-# apps/api/schemas/reports.py
-# Reports plan, Phase 1. The first five models mirror
-# apps/web/app/librarian/reports/page.tsx's existing local types field-
-# for-field (including the frontend's own camelCase names on OverdueRow)
-# — that's what makes the frontend change a data-source swap instead of
-# a rewrite. LibraryStats/TransactionStats/ShelfListRow are new report
-# types with no prior frontend shape to match, so they use normal
-# Python naming.
+# Report response models. Some field names are camelCase on purpose, to
+# match the Reports page's own types.
 
 from pydantic import BaseModel
 
@@ -75,10 +69,7 @@ class FineEntryRow(BaseModel):
     kind: str  # "unsettled" | "accruing" | "paid"
     amount: float
     detail: str
-    # Lets the frontend call PATCH /loans/{loan_id}/settle-fine directly
-    # from this report, same action PatronProfileModal already offers
-    # per-patron — without this, recording a payment here wasn't possible
-    # at all (the aggregate totals have nowhere to point the write at).
+    # Lets the report mark this fine as paid (PATCH /loans/{loan_id}/settle-fine).
     loan_id: str
 
 
@@ -108,13 +99,8 @@ class ShelfListRow(BaseModel):
     status: str
 
 
-# Reports plan, Phase 3 — one optional field per AI-summarized report.
-# None means no summary is available for that report right now (no
-# OPENAI_API_KEY configured, or the call failed) — never a placeholder
-# string. Shelf List has no field here (a raw listing isn't narrative-
-# worthy) and Weeding Candidates already has its own per-candidate
-# narration from Phase 2 — a report-level summary on top would be
-# redundant with that.
+# AI summary per report. None means no summary (no OpenAI key, or the
+# call failed); never a placeholder.
 class ReportSummaries(BaseModel):
     catalogue: str | None = None
     circulation: str | None = None

@@ -1,10 +1,5 @@
-# apps/api/schemas/settings.py
-# The librarian Settings page's Library Info + Borrowing Rules tabs — one
-# shared, persisted row (migrations/0024_library_settings.sql,
-# 0025_library_operating_hours.sql). See core/settings.py for how the
-# rest of the API actually reads this at request time — including
-# core/calendar.py's fine math, which now checks these operating hours
-# instead of assuming every day is open.
+# Library settings: info, borrowing rules and opening hours. Read through
+# core/settings.py.
 
 from pydantic import BaseModel
 
@@ -24,9 +19,7 @@ class LibrarySettings(BaseModel):
     reservation_hold_period_days: int
     max_active_reservations: int
 
-    # "HH:MM" (or "HH:MM:SS" — both parse fine downstream). All three
-    # groups are nullable: null on both means closed that day (or, for
-    # weekday, a full closure like a semester break) — no fine accrues.
+    # "HH:MM" or "HH:MM:SS". Both empty means closed (no fines that day).
     weekday_open_time: str | None = None
     weekday_close_time: str | None = None
     saturday_open_time: str | None = None
@@ -34,22 +27,16 @@ class LibrarySettings(BaseModel):
     sunday_open_time: str | None = None
     sunday_close_time: str | None = None
 
-    # None only in the pre-migration fallback (core/settings.py's
-    # _DEFAULTS) — a row that's actually been saved always has this set.
+    # None only when using the built-in defaults.
     updated_at: str | None = None
     updated_by: str | None = None
-    # Set only when GET is answered by the built-in fallback because the
-    # migration hasn't been run against this database yet — lets the
-    # Settings page tell the librarian why Save will fail, instead of a
-    # generic 500 further down the line.
+    # True when the settings table is missing and defaults are used, so the
+    # page can explain why saving will fail.
     is_default: bool = False
 
 
-# The subset of LibrarySettings safe to serve without auth — the login
-# page's Contact Support / System Status links need this before anyone's
-# signed in. Deliberately excludes updated_at/updated_by (no reason to
-# expose a librarian's user id to an anonymous visitor) and the borrowing
-# rules (nobody outside the library needs those pre-login).
+# The settings that are safe to show before login (no borrowing rules, no
+# librarian ids).
 class PublicLibrarySettings(BaseModel):
     library_name: str
     address: str
@@ -64,8 +51,7 @@ class PublicLibrarySettings(BaseModel):
     sunday_close_time: str | None = None
 
 
-# All fields optional — PATCH only writes what's actually included, same
-# convention as UpdatePatronStatusRequest.
+# Only the fields sent are saved.
 class UpdateLibrarySettingsRequest(BaseModel):
     library_name: str | None = None
     address: str | None = None
@@ -83,9 +69,7 @@ class UpdateLibrarySettingsRequest(BaseModel):
 
     weekday_open_time: str | None = None
     weekday_close_time: str | None = None
-    # Explicitly nullable in the request too (not just "omit to leave
-    # unchanged") — marking Saturday/Sunday closed means setting these
-    # to null, not leaving them out.
+    # Send null to mark the day closed (leaving it out means no change).
     saturday_open_time: str | None = None
     saturday_close_time: str | None = None
     sunday_open_time: str | None = None

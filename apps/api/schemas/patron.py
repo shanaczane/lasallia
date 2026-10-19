@@ -5,39 +5,26 @@ from pydantic import BaseModel
 PatronRole = Literal["student", "faculty", "librarian", "guest"]
 PatronStatus = Literal["active", "inactive"]
 
-# Separate from schemas.auth.UserProfile (the minimal JWT-derived identity
-# used for auth checks) — this is the richer patron-management record the
-# librarian Patrons screen actually needs, mirroring packages/types/user.ts.
+# A patron as shown on the librarian Patrons screen (more than UserProfile).
 class Patron(BaseModel):
     id: str
     email: str
-    # Nullable — profiles created by Supabase Auth's signup trigger don't
-    # require it. This was previously a required str here, which meant
-    # GET /users would 500 for *every* patron the instant a single row
-    # had a null full_name — the response_model validation rejects the
-    # whole list, not just that one row.
+    # Optional: some profiles have no name, and a required field would
+    # break the whole list.
     full_name: str | None = None
     role: PatronRole
     program: str | None = None
     year_level: int | None = None
-    # School-issued student/faculty number (0045) — unique same as email.
+    # School-issued student/faculty number, unique like email.
     id_number: str | None = None
-    # One of the catalog's fixed college codes (apps/web/lib/colleges.ts:
-    # CITE, CBEAM, CEAS, CITHM, CON, GEN-AD, GRADUATE SCHOOL).
-    # Nullable — not backfilled for every existing row; the frontend falls
-    # back to guessing from `program` (lib/collegeForProgram.ts) when null.
+    # A college code (CITE, CBEAM, CEAS, CITHM, CON, GEN-AD, GRADUATE SCHOOL).
+    # May be empty; the frontend then guesses it from `program`.
     college: str | None = None
     avatar_url: str | None = None
     status: PatronStatus | None = None
     created_at: str
 
-# All fields optional — PATCH only writes what's actually included (same
-# exclude_unset convention as UpdateLibrarySettingsRequest). Previously
-# named UpdatePatronStatusRequest and status-only: every real student row
-# in the database has program/year_level as null (nothing has ever let a
-# librarian set them — the Patrons screen was view-and-deactivate only),
-# so this is now the one request model for everything the Patrons screen
-# can edit about an account.
+# Everything a librarian can edit on an account. Only sent fields are saved.
 class UpdatePatronRequest(BaseModel):
     status: PatronStatus | None = None
     program: str | None = None

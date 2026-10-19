@@ -1,8 +1,4 @@
-# apps/api/jobs/rebuild_similarities.py
-# Recommendations plan, Phase 2 — CLI entry point for the nightly
-# similarity rebuild. Thin wrapper; all the logic lives in
-# core/similarities.py so a future scheduler can call rebuild_similarities()
-# directly instead of shelling out to this script.
+# Rebuilds the similar-books table (logic in core/similarities.py).
 #
 # Usage: venv/Scripts/python.exe jobs/rebuild_similarities.py
 

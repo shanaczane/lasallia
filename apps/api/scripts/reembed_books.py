@@ -1,8 +1,4 @@
-# apps/api/scripts/reembed_books.py
-# Chatbot Phase 1 (plan 1.6) — the re-embedding job, as a manually
-# triggered CLI script. Same job is also reachable at POST /search/reembed
-# (routers/search.py) — both call core.embeddings.reembed_books() so
-# there's exactly one implementation.
+# Re-embeds changed books for search. Same as POST /search/reembed.
 #
 # Usage: venv/Scripts/python.exe scripts/reembed_books.py [--all]
 

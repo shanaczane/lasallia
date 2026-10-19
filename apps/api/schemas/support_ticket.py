@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-TicketCategory = str  # 'login' | 'technical' | 'account' | 'other' — see migrations/0038
+TicketCategory = str  # 'login' | 'technical' | 'account' | 'other'
 TicketStatus = str    # 'open' | 'in_progress' | 'resolved'
 
 
@@ -26,18 +26,14 @@ class CreateSupportTicketRequest(BaseModel):
     message: str
 
 
-# Looking a ticket up by number alone would let anyone enumerate the
-# sequential LRC-000001, LRC-000002... range and read strangers' messages —
-# requiring the email that submitted it as a second factor is the cheapest
-# fix that doesn't need a separate secret/token system.
+# Ticket numbers are sequential and easy to guess, so the submitter's email
+# is required too.
 class TrackTicketRequest(BaseModel):
     ticket_number: str
     email: str
 
 
-# Deliberately excludes handled_by (a librarian's user id) and the
-# submitter's own name/email, which the tracker already knows — this is
-# what an anonymous tracking lookup gets back, not the librarian's full view.
+# What a public ticket lookup returns: no librarian id or contact details.
 class TicketStatusView(BaseModel):
     ticket_number: str
     category: TicketCategory

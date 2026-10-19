@@ -1,28 +1,11 @@
-# apps/api/scripts/reclassify_dlsl_roles.py
-# One-time (and re-run-as-needed) fixup for accounts created before
-# handle_new_user() knew how to guess student vs faculty from the email's
-# local part (dots-no-underscore -> faculty, e.g. khatrina.joice.gonzales@;
-# underscore -> student, e.g. shana_czane_cruzat@ — see the migration this
-# script's neighbor, import_rfid_enrollment.py, sits beside). The trigger
-# only runs on INSERT, so it never touches a profile row that already
-# existed when it was updated — this is the retroactive half of that fix.
+# Fixes roles on older accounts, guessing from the email: dots only means
+# faculty (first.last@), an underscore means student (first_last@).
 #
-# Two different things get reported, on purpose not treated the same way:
+#   1. DLSL emails stuck as "guest" are corrected (unless --dry-run).
+#   2. Student/faculty roles that don't match the email are only listed,
+#      since a librarian may have set them on purpose.
 #
-#   1. "guest despite a @dlsl.edu.ph email" — unambiguous bug. A verified
-#      DLSL address should never have landed as guest; every one of these
-#      is auto-corrected (unless --dry-run).
-#
-#   2. "student/faculty but the email pattern disagrees" — NOT
-#      auto-corrected. A librarian may have already fixed one of these by
-#      hand from the Patrons screen's "Mark as Faculty/Student" button
-#      (routers/patrons.py) for someone whose email happens to break the
-#      dot/underscore convention; silently flipping it back here would undo
-#      a deliberate correction. These are only printed, for a human to look
-#      at and fix (or ignore) individually.
-#
-# Never touches a librarian row — role changes for that account type are a
-# direct DB edit, same rule routers/patrons.py's PATCH /users/{id} enforces.
+# Librarian accounts are never changed.
 #
 # Usage: venv/Scripts/python.exe scripts/reclassify_dlsl_roles.py [--dry-run]
 

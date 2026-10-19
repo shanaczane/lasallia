@@ -1,7 +1,4 @@
-# apps/api/scripts/seed_books.py
-# One-time import: reads the 4 LRC college Excel files and inserts them into
-# the `books` table via the service-role client (bypasses RLS — this is an
-# admin/seed operation, not a user-facing write).
+# Seeds the books table from the LRC's college Excel files.
 #
 # Usage: venv/Scripts/python.exe scripts/seed_books.py [--dry-run]
 
@@ -15,20 +12,11 @@ from shelf_location import classify_call_number
 from core.embeddings import reembed_books
 from core.supabase import get_admin_client
 
-# filename -> college code. One Excel file per college; the code becomes
-# each book's `subject` (shown in the UI as "College"). Add an entry here
-# (and the matching .xlsx in data/) when a new college's collection is
-# onboarded — see scripts/backfill_college.py for tagging rows that were
-# already seeded before this mapping existed.
+# Excel file -> college code (saved as each book's `subject`). Add a line
+# here, and the file in data/, for a new college.
 #
-# CON's file is "CON_Nursing.xlsx", not "CON.xlsx" — CON, PRN, AUX, NUL,
-# COM1-9 and LPT1-9 are reserved Windows device names, and git for Windows
-# (core.protectNTFS) refuses to track a file whose base name matches one
-# exactly, regardless of extension. A plain "CON.xlsx" can exist on disk
-# (Explorer/Python/openpyxl don't block it) but `git add` fails on it with
-# a misleading "No such file or directory". The college CODE is still
-# "CON" everywhere else (colleges.ts, the database) — only this filename
-# needs to dodge the reserved name.
+# The CON file is "CON_Nursing.xlsx" because Windows reserves the name
+# "CON", so git can't add "CON.xlsx". The college code is still "CON".
 SOURCE_FILES = {
     "CITE.xlsx": "CITE",
     "CBEAM.xlsx": "CBEAM",
@@ -113,11 +101,7 @@ def main(dry_run: bool = False) -> None:
 
     client = get_admin_client()
 
-    # Safe to re-run on a catalog that's already partially (or fully) seeded —
-    # accession_no is unique, so re-inserting an existing one would 409 the
-    # whole batch. Skip anything already in the database and only insert the
-    # rows that are actually new (e.g. appended to a college's .xlsx since
-    # the last run).
+    # Safe to re-run: skips accession numbers already in the database.
     existing = client.table("books").select("accession_no").execute().data
     existing_accessions = {r["accession_no"] for r in existing if r["accession_no"]}
     new_rows = [row for row in all_rows if row["accession_no"] not in existing_accessions]
@@ -144,11 +128,7 @@ def main(dry_run: bool = False) -> None:
 
     print(f"\nDone. {inserted} books inserted into Supabase.")
 
-    # This insert() bypasses routers/books.py's create_book, the only HTTP
-    # path that embeds a book on write — without this, every newly seeded
-    # title would be invisible to the chatbot's search_catalog until
-    # someone happened to run the reembed job by hand (the actual cause of
-    # a real UAT defect: new/edited books not found by the assistant).
+    # Embed the new books, or the chatbot's search won't find them.
     print("\nEmbedding new books for search...")
     embedded = reembed_books(client)
     print(f"Embedded {embedded} book(s).")

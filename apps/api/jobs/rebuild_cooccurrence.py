@@ -1,10 +1,5 @@
-# apps/api/jobs/rebuild_cooccurrence.py
-# Recommendations plan, Phase 4 — CLI entry point for the nightly
-# co-occurrence rebuild. Thin wrapper; all the logic lives in
-# core/cooccurrence.py. Must run BEFORE jobs/rebuild_recommendations.py
-# (which reads book_cooccurrence while scoring) — no scheduler exists to
-# chain these automatically yet (Phase 9's note on rebuild_recommendations.py
-# applies here too), so run them by hand in this order:
+# Rebuilds the "students also borrowed" table (logic in core/cooccurrence.py).
+# Not scheduled yet; run these by hand in this order:
 #   1. jobs/rebuild_similarities.py
 #   2. jobs/rebuild_cooccurrence.py   <- this one
 #   3. jobs/rebuild_recommendations.py

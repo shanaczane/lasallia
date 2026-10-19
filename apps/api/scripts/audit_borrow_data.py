@@ -1,17 +1,7 @@
-# apps/api/scripts/audit_borrow_data.py
-# Recommendations plan, Phase 1 — one-off data audit. Reports whether
-# borrowing history can support a hybrid (content + collaborative)
-# recommender, or whether the data is thin enough that only the
-# content-based system (Phases 2-3) is defensible for now. This phase
-# writes no model code, only docs/data-audit.md and a decision.
+# Reports whether there's enough borrowing history for "students also
+# borrowed" recommendations. Every row in `loans` counts as a real borrow.
 #
 # Usage: venv/Scripts/python.exe scripts/audit_borrow_data.py
-#
-# "Completed borrow record" = a row in `loans`. A row only exists once a
-# librarian has physically handed the book over at the kiosk (see
-# routers/loans.py's confirm flow) — a reservation or an expired hold
-# never becomes a loans row, so every row here is a real, completed
-# borrow regardless of its current status (active/returned/overdue).
 
 import statistics
 import sys

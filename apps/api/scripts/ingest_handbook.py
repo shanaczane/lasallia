@@ -1,6 +1,4 @@
-# apps/api/scripts/ingest_handbook.py
-# Chatbot Phase 4 — CLI wrapper around core/policy.py's
-# ingest_handbook(), mirrors scripts/reembed_books.py's shape.
+# Loads the LRC handbook for the chatbot (logic in core/policy.py).
 #
 # Usage: venv/Scripts/python.exe scripts/ingest_handbook.py <path> <version>
 # <path> may be a .pdf (extracted via pdfplumber, see core/policy.py) or

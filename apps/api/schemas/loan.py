@@ -7,9 +7,7 @@ from schemas.book import Book
 LoanStatus = Literal["active", "returned", "overdue"]
 Condition = Literal["good", "minor_wear", "already_damaged"]
 
-# Return-time inspection uses a different, fuller vocabulary than the
-# borrow-time self-declaration above — a real librarian inspection (water
-# damage, torn pages, writing, etc.) vs. a student's own quick call.
+# The librarian's condition check at return (fuller than the student's at borrow).
 ReturnCondition = Literal["good", "fair", "damaged", "incomplete"]
 FineStatus = Literal["none", "paid", "unsettled"]
 
@@ -20,12 +18,7 @@ class ConfirmLoanRequest(BaseModel):
     purpose: str | None = None
     notes: str | None = None
 
-# Desk-side checkout (build plan Phase 1's `librarian_assisted` dual-auth,
-# now wired into borrowing): the librarian already has the physical book in
-# hand, so there's no walk-to-the-shelf gap for a soft_hold to cover —
-# station_session_id points at an 'rfid' session opened at the librarian's
-# own reader (routers/sessions.py), and accession_number identifies the
-# exact copy directly instead of the kiosk's auto-pick-then-verify dance.
+# Checkout at the desk: the scanned accession number picks the exact copy.
 class LibrarianAssistedLoanRequest(BaseModel):
     station_session_id: str
     accession_number: str
@@ -53,34 +46,23 @@ class Loan(BaseModel):
     condition_at_return: ReturnCondition | None = None
     condition_notes: str | None = None
     fine_amount: float | None = None
-    # The two parts of fine_amount, recorded at return (migrations/0052).
-    # Null on loans returned before that migration.
+    # The two parts of fine_amount. Empty on older loans.
     overdue_fine_amount: float | None = None
     damage_fine_amount: float | None = None
     fine_status: FineStatus | None = None
     receipt_number: str | None = None
-    # Set only for a desk-side librarian-assisted checkout (the librarian's
-    # profile id) — null for every ordinary self-service loan.
+    # The librarian, for desk checkouts. Empty for self-service loans.
     assisted_by: str | None = None
     books: Book | None = None
     profiles: Borrower | None = None
-    # Populated by GET /loans only for status == "overdue" rows (the
-    # librarian Reports overdue table needs a real fine preview, not a
-    # frontend-side reimplementation of the school-day-calendar math).
-    # None everywhere else — a returned loan's real fine lives in
-    # fine_amount above, and an active loan has no fine yet.
+    # Only set on overdue loans: the fine so far. Returned loans use fine_amount.
     days_overdue: int | None = None
     preview_fine_amount: float | None = None
-    # Only set on the POST /{loan_id}/return response — tells the return
-    # UI which way the copy was just routed (build plan 4.6/4.7) so it can
-    # point the librarian at the right next step (Reshelving tab, vs. it's
-    # already held for the next reservation) without a second round trip.
+    # Only on the return response: whether the copy goes to reshelving (true)
+    # or is held for a reservation (false).
     needs_reshelving: bool | None = None
 
-# GET /loans/lookup and /loans/search — the librarian's return-lookup
-# screen (build plan 4.1/4.2). days_overdue/preview_fine_amount are
-# computed at request time, never stored, so the librarian sees the fine
-# before confirming anything.
+# A loan found at the return desk, with the fine so far (not stored).
 class LoanLookupResult(Loan):
     days_overdue: int
     preview_fine_amount: float
@@ -88,10 +70,8 @@ class LoanLookupResult(Loan):
 class ReturnLoanRequest(BaseModel):
     condition_at_return: ReturnCondition
     condition_notes: str | None = None
-    # Only meaningful when charging new damage (condition_at_borrow was
-    # 'good' but condition_at_return isn't) — the librarian's estimate of
-    # what the item costs to replace, per plan 4.4's "Replacement cost +
-    # ₱50.00 processing fee".
+    # Only for new damage: the librarian's replacement cost estimate (a
+    # processing fee is added on top).
     replacement_cost: float | None = None
     fine_settlement: Literal["paid", "unsettled"] | None = None
     receipt_number: str | None = None
@@ -99,32 +79,19 @@ class ReturnLoanRequest(BaseModel):
 class ReshelveRequest(BaseModel):
     accession_number: str
 
-# PATCH /loans/{id}/settle-fine — records that a fine left "unsettled" at
-# return time has since been paid at the desk. Separate from ReturnLoanRequest
-# because the loan is already closed by this point; only fine_status/
-# receipt_number change.
+# PATCH /loans/{id}/settle-fine: an unpaid fine was paid later at the desk.
 class SettleFineRequest(BaseModel):
     receipt_number: str
 
-# GET /loans/reshelving-queue — the Reshelving tab's browse list, same
-# idea as the Return tab's "Active Borrowers": let the librarian pick a
-# copy that's physically in hand instead of needing to already know its
-# accession number. Covers both real returns and in-house guest returns,
-# since both route a copy through book_copies.status == 'for_reshelving'.
+# A copy waiting to be reshelved (from a loan or in-house return).
 class ReshelvingQueueItem(BaseModel):
     id: str  # book_copies.id
     accession_number: str | None = None
     books: Book | None = None
-    # Best-effort — the most recent 'returned' loan on this copy, if any.
-    # None for a copy that's never had a real loan (e.g. newly added stock
-    # marked for_reshelving directly), which is rare but not impossible.
+    # When it was last returned; None if it's never been on loan.
     returned_at: str | None = None
 
-# GET /loans/reshelved — the Reshelving tab's "Reshelved Today" list,
-# mirroring Borrow/Return's own day-scoped views. book_copies.reshelved_at
-# holds only the most recent reshelving scan per copy (not full history),
-# which is fine for this: a copy being reshelved twice in the same day
-# would mean it was borrowed and returned twice that same day too.
+# A copy in the "Reshelved Today" list (only the latest scan per copy is kept).
 class ReshelvedItem(BaseModel):
     id: str  # book_copies.id
     accession_number: str | None = None

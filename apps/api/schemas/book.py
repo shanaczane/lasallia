@@ -43,20 +43,15 @@ class Book(BaseModel):
     call_number_start: str | None = None
     expected_back: str | None = None  # soonest due_date among copies out, computed on read
     waiting_count: int | None = None  # pending + ready reservations for this title
-    # core/loans.NON_BORROWABLE_COLLECTION_TYPES ("Reference", "Thesis",
-    # "Capstone", "MTR", "Archives") already blocks borrow/reserve for these
-    # server-side; this field is what lets the frontend hide those actions
-    # up front instead of only failing once clicked.
+    # Lets the frontend hide Borrow/Reserve for library-use-only books (the
+    # server blocks them anyway).
     collection_type: str | None = None
     created_at: str
     updated_at: str
 
-# The library's own acquisition record — never patron-facing. Kept off
-# `Book` on purpose: every loan/reservation/hold/saved-book/search response
-# embeds `Book`, so anything not declared there is dropped before it leaves
-# the API. Only the catalog list/detail and the librarian write endpoints
-# return this wider model, and routers/books.py's _redact_for_patrons nulls
-# these fields for anyone who isn't a librarian.
+# Internal acquisition details, never shown to patrons. Kept off `Book` so
+# they're dropped from every other response; the catalog hides them from
+# non-librarians.
 LIBRARIAN_ONLY_FIELDS = (
     "purchase_price", "date_acquired", "circulation_type", "vendor", "funding_source", "notes",
 )
@@ -67,7 +62,7 @@ class LibrarianBook(Book):
     circulation_type: str | None = None
     vendor: str | None = None
     funding_source: FundingSource | None = None
-    notes: str | None = None  # internal staff notes, not the catalog record's public notes
+    notes: str | None = None  # internal staff notes
 
 class BookSearchResponse(BaseModel):
     books: list[LibrarianBook]
@@ -80,16 +75,12 @@ class BookCopy(BaseModel):
     accession_number: str
     status: str
     shelf_location: str | None = None
-    # Set only for a copy currently on_loan/overdue — who has it and when
-    # it's due, joined in from loans (see routers/books.py's
-    # list_book_copies). None for every other status.
+    # Only for copies out on loan: who has it and when it's due.
     borrower_name: str | None = None
     due_date: str | None = None
 
 # ── Librarian write endpoints ───────────────────────────────────────────
-# Mirrors BookFormData (apps/web/components/ui/catalog/BookFormModal.tsx) —
-# the frontend already validates the required subset (title, author,
-# call_number, accession_no, floor, aisle, format) before submitting.
+# Matches the book form in BookFormModal.tsx.
 
 class BookWrite(BaseModel):
     accession_no: str | None = None
@@ -133,10 +124,7 @@ class BookWrite(BaseModel):
 class BookUpdate(BookWrite):
     pass
 
-# POST /books/{book_id}/add-copies — bumps total_copies/available_copies on
-# an existing title rather than cataloging a near-duplicate as a second
-# book. Plain counters, same as a freshly-created book uses (see create_book's
-# own comment) — not book_copies rows, which stay a separate, not-yet-built
-# per-copy tracking feature.
+# POST /books/{book_id}/add-copies. Only raises the counters on books; it
+# doesn't create real copies, so books that have copies show no change.
 class AddCopiesRequest(BaseModel):
     count: int = Field(ge=1)

@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 
-# A student's "Can't find this book on the shelf" report (migration 0056).
+# A student's "Can't find this book on the shelf" report.
 class ShelfReport(BaseModel):
     id: str
     book_id: str

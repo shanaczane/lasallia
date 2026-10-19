@@ -1,23 +1,6 @@
-# apps/api/scripts/import_rfid_enrollment.py
-# One-time (and re-run-as-needed) import: reads the librarian-filled
-# RFID/NFC card enrollment spreadsheet and saves each row's Card UID,
-# Program, and Year Level onto the matching student's profile, via the
-# service-role client (bypasses RLS — this is an admin operation, not a
-# user-facing write).
-#
-# Program/Year Level were sitting right there in this same spreadsheet
-# (a librarian already fills them in alongside Card UID) but were never
-# read — every real student account had them null, with no way to set
-# them, until the Patrons screen grew an edit form for it. This is the
-# faster path for a whole roster at once instead of one-by-one there.
-#
-# Matches rows to students by email (profiles has no student-number
-# column — email is the only reliably-unique identifying field a
-# spreadsheet row can carry). Skips blank template rows, refuses to
-# silently overwrite a Card UID already assigned to a DIFFERENT student (a
-# unique constraint on profiles.rfid_uid would reject that anyway, but
-# checking first gives a readable error instead of a raw DB exception),
-# and no-ops a row that already matches what's stored in every column.
+# Imports the ID card enrollment spreadsheet: saves each student's card UID,
+# program and year level to their profile, matched by email. Safe to re-run.
+# Won't move a card UID that already belongs to a different student.
 #
 # Usage: venv/Scripts/python.exe scripts/import_rfid_enrollment.py [--dry-run]
 

@@ -1,17 +1,6 @@
-# apps/api/scripts/backfill_missing_copies.py
-# One-off backfill: seed_books.py (and any other path that inserts
-# directly into `books`) only ever writes the `books` row — it never
-# creates the matching `book_copies` row a title needs to show up
-# anywhere copy-based (Shelf List, Total Copies, borrow/return). Finds
-# every non-archived book with zero book_copies rows and creates exactly
-# one, using the book's own accession_no — the same shape every other
-# copy row already has (see a normal book_copies row: accession_number =
-# books.accession_no, status "available", shelf_location "Unassigned").
-#
-# Only handles the total_copies == 1 case, which is all seed_books.py
-# has ever produced — a title seeded with more than one intended copy
-# has no per-copy accession numbers to draw from, so those are skipped
-# and printed for manual handling instead of guessing.
+# One-off: creates a copy for every book that has none, using the book's
+# accession number. Books meant to have several copies are skipped and
+# listed, since there are no accession numbers for the others.
 #
 # Usage: venv/Scripts/python.exe scripts/backfill_missing_copies.py [--dry-run]
 

@@ -1,20 +1,11 @@
-# apps/api/scripts/shelf_location.py
-# Maps an LRC call number to a shelf aisle, based on the photographed aisle
-# chart (General Collection: aisles 1-4, Reference: 5-6, Fiction: 7-8,
-# Filipiniana: 9-12 — Filipiniana aisles are numbered in descending shelf
-# order, so ascending call-number order runs 12, 11, 10, 9).
+# Maps a call number to its aisle, from a photo of the LRC aisle chart:
+# General 1-4, Reference 5-6, Fiction 7-8, Filipiniana 9-12 (numbered
+# backwards, so call numbers run 12, 11, 10, 9). Boundaries are approximate,
+# since some signs were hard to read.
 #
-# The chart itself warns some letters were hard to read off the signs, so
-# every numeric boundary below is an approximation of what was photographed,
-# not an exact transcription.
-#
-# GS/SP/S-prefixed call numbers aren't on the chart at all — they're the
-# Graduate School and Special Collection books, shelved in their own
-# sections. Each section is its own "aisle" so an inventory check can cover
-# it on its own.
-# FIL call numbers below the chart's lowest Filipiniana range (226.507) are
-# placed in Aisle 12 anyway (the lowest-numbered Filipiniana aisle) per an
-# explicit call made when this was written, not something the chart confirms.
+# GS/SP/S call numbers (Graduate School, Special Collection) each get their
+# own section. FIL call numbers below the chart's lowest range go to
+# Aisle 12 by choice; the chart doesn't say.
 
 import re
 

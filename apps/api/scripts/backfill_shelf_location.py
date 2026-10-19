@@ -1,13 +1,6 @@
-# apps/api/scripts/backfill_shelf_location.py
-# One-off backfill for books that were already inserted by seed_books.py
-# before it started assigning shelf_location/aisle from the call number.
-# Re-reads the same 4 LRC college Excel files and UPDATEs the
-# `shelf_location` / `aisle` columns on the matching Supabase row — no rows
-# are deleted or re-inserted, so borrow history / manual edits on existing
-# rows are untouched.
-#
-# Matched on `title`, same as backfill_college.py (see that file for why
-# accession_no can't be used here — these rows predate accession capture).
+# One-off: fills in shelf_location and aisle for books seeded before those
+# were set, using the Excel files. Matches books by title and only updates
+# those two columns.
 #
 # Usage: venv/Scripts/python.exe scripts/backfill_shelf_location.py [--dry-run]
 

@@ -1,7 +1,5 @@
-# apps/api/scripts/excel_source.py
-# Shared reader for the LRC's per-college book-data Excel files. Each file
-# has one sheet per program, all sharing the same column layout (with minor
-# header spelling drift between files, e.g. "Image" vs "Images").
+# Reads the LRC's Excel catalog files (one sheet per program). Header
+# spellings vary a little between files, e.g. "Image" vs "Images".
 
 from pathlib import Path
 

@@ -1,12 +1,10 @@
 from pydantic import BaseModel
 
-RequestStatus = str  # 'pending' | 'approved' | 'rejected' | 'fulfilled' — see migrations/0039
-RequestFormat = str  # 'print' | 'ebook' | 'either' — see migrations/0041
+RequestStatus = str  # 'pending' | 'approved' | 'rejected' | 'fulfilled' | 'cancelled'
+RequestFormat = str  # 'print' | 'ebook' | 'either'
 
 
-# Embedded via the requester_id -> profiles(id) foreign key (same
-# *.select("*, table(...)") embed PostgREST does for saved_books.books) —
-# lets the librarian list show who asked without a second round trip.
+# Who submitted the request, embedded from profiles.
 class RequesterInfo(BaseModel):
     full_name: str | None = None
     email: str
@@ -36,9 +34,7 @@ class BookRequest(BaseModel):
     created_at: str
     updated_at: str
     profiles: RequesterInfo | None = None
-    # Aliased embed of book_request_attachments (0042) — PostgREST returns
-    # the reverse side of a one-to-many FK as a list under whatever name
-    # the select string gives it (see routers/book_requests.py's _SELECT).
+    # Embedded from book_request_attachments.
     attachments: list[Attachment] = []
 
 
@@ -56,10 +52,7 @@ class UpdateBookRequestRequest(BaseModel):
     status: RequestStatus | None = None
 
 
-# Faculty editing their own not-yet-reviewed request — deliberately separate
-# from UpdateBookRequestRequest (the librarian's status-only PATCH, which
-# also stamps reviewed_by/reviewed_at). Every field is optional so a caller
-# only sends what actually changed.
+# Faculty editing their own pending request. Send only the fields that changed.
 class UpdateOwnBookRequestRequest(BaseModel):
     title: str | None = None
     author: str | None = None

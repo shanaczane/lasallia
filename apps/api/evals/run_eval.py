@@ -1,26 +1,11 @@
-# apps/api/evals/run_eval.py
-# Chatbot Phase 6 — the full-pipeline evaluation runner.
+# Chatbot evaluation, in two passes:
+#   1. Search hit rate at 5, with and without translating the query.
+#   2. Answer accuracy, by sending questions to a running API (start it
+#      with `pnpm dev:api` first). Accuracy is a simple text match, not a
+#      human check.
 #
-# Two passes:
-#   1. Retrieval hit-rate@5 for catalog + policy questions, baseline vs.
-#      query-translation (plan 6.3's A/B) — in-process, no server needed,
-#      same reasoning as evals/embedding_comparison.py.
-#   2. Answer-accuracy proxy for all four capabilities, driven over real
-#      HTTP against a running `uvicorn` instance — the only way to
-#      exercise routers/chat.py's actual tool-calling loop, whose logic
-#      lives in a request-scoped closure, not an importable function.
-#      Needs `pnpm dev:api` (or equivalent) running first; the script
-#      checks for this and reports plainly rather than hanging.
-#
-# "Answer accuracy" here is an automated proxy (substring match against
-# an expected fact), not the human-verified correctness the plan asks
-# for — see evals/results/phase6_taglish_eval.md's caveat.
-#
-# Account-capability questions need a real authenticated session, so this
-# creates one ephemeral test student (with one active and one returned
-# loan, known values), runs every pass-2 question through it, and tears
-# everything down afterward — same pattern used for every prior phase's
-# live verification.
+# Account questions use a temporary test student with known loans, which
+# is deleted afterwards.
 #
 # Usage: venv/Scripts/python.exe evals/run_eval.py
 
@@ -153,9 +138,8 @@ def setup_test_student(admin) -> tuple[str, dict]:
     now = datetime.now(timezone.utc)
     due_date = (now + timedelta(days=BORROW_PERIOD_DAYS)).isoformat()
 
-    # Loan first, then the copy status — a crash in between must never
-    # leave the copy On Loan with no loan behind it (migration 0050 also
-    # refuses that order).
+    # Create the loan before marking the copy on loan (the database
+    # requires this order).
     active_loan = admin.table("loans").insert({
         "book_copy_id": active_copy["id"],
         "student_id": student_id,
@@ -193,8 +177,8 @@ def setup_test_student(admin) -> tuple[str, dict]:
 def teardown_test_student(admin, cleanup: dict) -> None:
     for loan_id in cleanup["loan_ids"]:
         admin.table("loans").delete().eq("id", loan_id).execute()
-    # available -> on_loan can't go straight back — route through
-    # for_reshelving, same status-machine rule every prior phase respects.
+    # A copy can't go from on_loan straight to available; go through
+    # for_reshelving.
     admin.table("book_copies").update({"status": "for_reshelving"}).eq("id", cleanup["active_copy_id"]).execute()
     admin.table("book_copies").update({"status": "available"}).eq("id", cleanup["active_copy_id"]).execute()
     if cleanup["profile_created"]:
@@ -233,10 +217,8 @@ def _accuracy_tallies(rows: list[dict]) -> tuple[dict, dict]:
 
 
 def summarize_accuracy_console(rows: list[dict]) -> str:
-    """Tallies only — no reply text. Model replies can contain characters
-    (₱, ñ, etc.) the Windows console's cp1252 encoding can't print; the
-    full transcript with replies goes to the UTF-8 results file instead,
-    never to stdout."""
+    """Prints totals only. Replies can contain characters (₱, ñ) the
+    Windows console can't show, so they go to the results file instead."""
     by_language, by_capability = _accuracy_tallies(rows)
     lines = ["## Answer-accuracy proxy (automated substring match — NOT human-verified, see caveat below)\n"]
     lines.append("By language:")

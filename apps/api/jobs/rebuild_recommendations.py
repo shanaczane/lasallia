@@ -1,24 +1,13 @@
-# apps/api/jobs/rebuild_recommendations.py
-# Recommendations plan, Phase 5 — nightly job that computes and stores
-# every student's recommendations. This job only READS book_similarities
-# and book_cooccurrence, it doesn't rebuild either — the real order is:
+# Computes and stores every student's recommendations, plus the program
+# and popular lists. Run after the other two jobs:
 #   1. jobs/rebuild_similarities.py
 #   2. jobs/rebuild_cooccurrence.py
 #   3. jobs/rebuild_recommendations.py   <- this one
-# (Phase 4's co-occurrence step exists but stays empty until real
-# cross-student borrowing volume does — docs/data-audit.md's decision
-# gate was about trusting output computed from sparse data, not about
-# whether to build the code; see core/cooccurrence.py.)
 #
 # Usage: venv/Scripts/python.exe jobs/rebuild_recommendations.py
 #
-# Phase 9 hardening note: nothing schedules this job yet (no cron/Edge
-# Function wired up anywhere in this codebase), so it's run by hand.
-# Deliberately no try/except around the body below — an unhandled
-# exception already exits non-zero with a full traceback on stderr,
-# which is exactly what "fail loudly" means for a job a person is
-# watching run. Add real alerting (see core/notify.py) once this is
-# actually on a schedule and has no one watching it fire.
+# Not scheduled yet, so it's run by hand. Errors aren't caught on purpose,
+# so a failure is loud. Add alerting if it's ever scheduled.
 
 import sys
 import time
@@ -34,9 +23,8 @@ from core.recommendations import (
 )
 from core.supabase import get_admin_client
 
-# Store more than the dashboard shows (Phase 6 shows 6-10) — the surplus
-# is what lets the endpoint drop a book the student borrowed this
-# morning without falling short of `limit` this afternoon.
+# Store more than the dashboard shows, so there are spares when books the
+# student borrowed since are filtered out.
 STORED_PER_STUDENT = 20
 
 if __name__ == "__main__":
@@ -64,10 +52,8 @@ if __name__ == "__main__":
 
     admin.rpc("replace_student_recommendations", {"rows": rows}).execute()
 
-    # Phase 7 — rung 2: one row set per distinct program with enough
-    # contributing students. get_program_recommendations itself enforces
-    # MIN_PROGRAM_STUDENTS and returns [] below that, so a thin program
-    # just contributes nothing here rather than needing a separate check.
+    # One list per program. Programs with too few borrowers get books
+    # tagged for the program instead.
     programs = {
         p["program"]
         for p in admin.table("profiles").select("program").eq("role", "student").execute().data
@@ -84,8 +70,7 @@ if __name__ == "__main__":
             program_rows.append({"program": program, "rank": rank, "book_id": rec.book_id, "reason": rec.reason})
     admin.rpc("replace_program_recommendations", {"rows": program_rows}).execute()
 
-    # Phase 7 — rungs 3/4: one shared global list, also served directly
-    # by GET /recommendations/popular for guests.
+    # One popular list for everyone, also shown to guests.
     popular_recs = get_popular_recommendations(admin, limit=STORED_PER_STUDENT)
     popular_rows = [
         {"rank": rank, "book_id": rec.book_id, "reason": rec.reason}

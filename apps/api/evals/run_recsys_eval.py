@@ -1,30 +1,11 @@
-# apps/api/evals/run_recsys_eval.py
-# Recommendations plan, Phase 8 — offline evaluation: hides each
-# qualifying student's most recent 20% of borrows, asks each arm to
-# predict them from what's left, and reports hit rate/precision/coverage/
-# diversity at k=5 and k=10. Built for real ahead of having enough data
-# to run it for real — see the N=0 guard in run_eval() below, which is
-# what keeps this honest rather than a script nobody remembers to write
-# once there's finally data.
+# Offline test of the recommender: hides each student's most recent 20% of
+# borrows, asks each method to predict them, and reports hit rate,
+# precision, coverage and diversity at 5 and 10. Exits early if there
+# isn't enough borrowing data yet.
 #
-# One arm from the plan is deliberately NOT built here: content-only via
-# embeddings (optional in the plan, and costs real OpenAI calls on every
-# run — core/embeddings.py:embed_text already exists if this gets added
-# later).
-#
-# Content-only (TF-IDF) and Hybrid here are simplified offline replays of
-# core/recommendations.py:get_recommendations_for_student — same
-# "sum of cosine similarity to every source book" aggregation and
-# "credit the top-contributing source book" boost lookup, without
-# recency decay (no meaningful "now" in a historical replay) or the
-# diversity cap (adds complexity without changing what this measures).
-# Hybrid's co-occurrence is computed from `train` only, via
-# core/cooccurrence.py:compute_lift_pairs — same train/test boundary
-# already applied to the Most-popular and Content-only arms, never
-# leaking held-out borrows into what an arm is scored on.
-#
-# No live server needed — pure offline computation against the DB +
-# sklearn, same invocation style as jobs/rebuild_similarities.py.
+# The content and hybrid methods are simplified copies of the live scorer
+# (no recency decay or category cap). Everything uses only the training
+# borrows, so held-out borrows never leak in. No server needed.
 #
 # Usage: venv/Scripts/python.exe evals/run_recsys_eval.py
 
@@ -50,8 +31,7 @@ RESULTS_PATH = Path(__file__).resolve().parent.parent.parent.parent / "docs" / "
 MIN_BORROWS = 5
 HOLDOUT_FRAC = 0.2
 K_VALUES = (5, 10)
-# Plan's exact sweep — "report the alpha sweep... showing you tuned it
-# rather than guessed is worth more than the score itself."
+# Boost strengths to compare, to show the value was tuned, not guessed.
 HYBRID_ALPHAS = (0.0, 0.1, 0.3, 0.5)
 RANDOM_SEED = 42
 
@@ -126,10 +106,7 @@ def arm_random(train: dict[str, list[str]], catalog_ids: list[str], k: int, rng:
 
 
 def arm_most_popular(train: dict[str, list[str]], catalog_ids: list[str], k: int) -> dict[str, list[str]]:
-    """Most-borrowed-in-train — mirrors core/recommendations.py's
-    _borrow_counts/get_popular_recommendations, but computed strictly
-    from this eval's train split, never the live popular_recommendations
-    table (which would mix in data outside this experiment's boundary)."""
+    """Most borrowed in the training data (not the live popular list)."""
     counts: dict[str, int] = defaultdict(int)
     for train_ids in train.values():
         for book_id in train_ids:
@@ -166,10 +143,9 @@ def arm_content_tfidf(
 def arm_hybrid(
     train: dict[str, list[str]], book_ids: list[str], matrix: np.ndarray, alpha: float, k: int
 ) -> dict[str, list[str]]:
-    """Layers Phase 4's blend on top of arm_content_tfidf's scores:
-    final_score = content_score * (1 + alpha * normalized_boost). At
-    alpha=0.0 this is byte-identical to arm_content_tfidf, same as the
-    plan's own acceptance criterion for the live scorer."""
+    """Content scores boosted by "students also borrowed":
+    content_score * (1 + alpha * normalized_boost). alpha=0 equals the
+    content-only method."""
     idx = {b: i for i, b in enumerate(book_ids)}
     sim = cosine_similarity(matrix)
     lift_lookup = {
@@ -187,10 +163,7 @@ def arm_hybrid(
         source_idxs = [i for _, i in sources]
 
         content_scores = sim[source_idxs].sum(axis=0)
-        # Which source book each candidate is most similar to — same
-        # "credit the top-contributing source" simplification the live
-        # scorer uses, so a boost lookup only ever needs one lift value
-        # per candidate, not one per source.
+        # Each candidate's most similar source book, as in the live scorer.
         best_source_of = sim[source_idxs].argmax(axis=0)
         seen = set(source_idxs)
 

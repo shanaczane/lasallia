@@ -1,6 +1,4 @@
-# apps/api/schemas/weeding.py
-# Reports plan, Phase 2 — weeding candidates + the archive/restore/
-# dismiss event log ("Weeding logs").
+# Weeding candidates and the archive/restore/dismiss log.
 
 from pydantic import BaseModel
 
@@ -13,12 +11,9 @@ class WeedingCandidate(BaseModel):
     published_year: int | None = None
     borrow_count_in_window: int
     years_since_added: float
-    # Heuristic-derived, always true regardless of whether AI narration
-    # succeeded — the fact the candidate was flagged never depends on AI.
+    # The plain rule-based reason; never depends on AI.
     heuristic_reason: str
-    # AI-narrated version of heuristic_reason, when OPENAI_API_KEY is
-    # configured and the call succeeds; falls back to heuristic_reason
-    # otherwise so the report still works with zero AI involvement.
+    # AI-reworded reason, or heuristic_reason if AI isn't available.
     reason: str
 
 

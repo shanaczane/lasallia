@@ -1,7 +1,5 @@
-# apps/api/scripts/make_sample_destiny_export.py
-# Builds stand-in Follett Destiny MARC 21 exports from the LRC's own
-# per-college Excel files, so the Destiny import (routers/sync.py) can be
-# developed and demonstrated before the library provides a real export.
+# Builds sample MARC exports from the Excel files, for testing the import
+# without a real Destiny export.
 #
 # Writes to data/sample_destiny/:
 #   catalog.mrc          the LRC catalog as Destiny would export it — one
@@ -26,9 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # so `core.*` r
 from core.accession import normalize_accession_number
 from excel_source import read_records
 
-# Same filename -> college code mapping as seed_books.SOURCE_FILES (not
-# imported from there: that module pulls in core.supabase, which needs the
-# Supabase env vars this offline script has no use for).
+# Same as seed_books.SOURCE_FILES (copied, since importing it needs Supabase).
 SOURCE_FILES = {
     "CITE.xlsx": "CITE",
     "CBEAM.xlsx": "CBEAM",

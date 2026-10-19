@@ -1,9 +1,5 @@
-# apps/api/jobs/expire_reservations.py
-# Expires every 'ready' reservation whose pickup window has passed and
-# hands each copy to the next student in line (or sends it to reshelving).
-# The API already does this opportunistically on normal traffic (see
-# core/reservations.py's maybe_sweep_expired_reservations); this script is
-# for running it on a schedule once one exists, or by hand.
+# Expires reservations whose pickup deadline passed. The API already does
+# this every minute; this script runs it by hand.
 #
 # Usage: venv/Scripts/python.exe jobs/expire_reservations.py
 
