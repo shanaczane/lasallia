@@ -1,9 +1,5 @@
-// apps/web/app/librarian/sync/page.tsx
-// Catalog import — upload either the LRC's own Excel catalog sheet (what
-// librarians can produce today, since they have no export access in
-// Follett Destiny) or a Destiny MARC 21 export, preview what it would
-// change, then confirm. One-way into Lasallia; never deletes and never
-// changes a copy's circulation status — see apps/api/core/importers/.
+// Catalog Import: upload an LRC Excel sheet or a MARC file, preview the
+// changes, then confirm. Never deletes anything or changes a copy's status.
 
 "use client"
 
@@ -40,13 +36,11 @@ const MATCH_LABEL: Record<string, string> = {
 
 const body = (size = "var(--text-sm-body)") => ({ fontFamily: "var(--font-body)", fontSize: size })
 
-// "CBEAM.xlsx" / "GRADUATE SCHOOL.xlsx" -> that college, matching how the
-// existing per-college files are named. Empty when nothing matches.
-// Same chevron-as-background-image the other selects on the site use, so
-// this one doesn't fall back to the OS's own arrow.
+// Dropdown arrow, same as other selects.
 const SELECT_CHEVRON =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"
 
+// "CBEAM.xlsx" -> "CBEAM". Empty when no college matches.
 function guessCollege(fileName: string): string {
   const upper = fileName.toUpperCase()
   return [...COLLEGES].sort((a, b) => b.length - a.length).find((c) => upper.includes(c)) ?? ""
@@ -59,7 +53,6 @@ function truncate(value: string | number | null, max = 80): string {
 }
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
-// Same pattern as app/librarian/patrons/page.tsx's Toast.
 
 function Toast({ message, variant }: { message: string; variant: "success" | "error" }) {
   return (
@@ -100,10 +93,8 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: "gr
   )
 }
 
-// Badge in a fixed-width left column and everything about the title —
-// author line, field changes, new copies — in one column beside it, so
-// every line starts where the title does (and titles line up across "New
-// title" and "Update" rows, whose badges are different widths).
+// One title in the preview: a fixed-width badge, then its details, so
+// titles line up across rows.
 function ChangeRow({ item }: { item: SyncItem }) {
   return (
     <div className="px-4 py-3 border-b border-ink-100 last:border-b-0 flex items-start gap-3">
@@ -283,12 +274,9 @@ export default function CatalogImportPage() {
       </div>
 
       {/* Upload */}
-      {/* Bottom-aligned with every control at 40px (the file icon's height):
-          the College label sits above its dropdown, so centering the row
-          left the dropdown lower and taller than the buttons beside it. */}
+      {/* Bottom-aligned, so the dropdown lines up with the buttons. */}
       <div className="bg-white rounded-(--radius) border border-ink-200 p-4 flex flex-col sm:flex-row sm:items-end gap-3">
-        {/* Labelled like the College dropdown so both columns line up under
-            a heading instead of leaving a blank band above the file. */}
+        {/* Labelled like the College dropdown, so they line up. */}
         <div className="flex flex-col gap-1 flex-1 min-w-0">
         <span
           className="text-ink-400 font-semibold uppercase"
@@ -320,9 +308,7 @@ export default function CatalogImportPage() {
         </label>
         </div>
 
-        {/* The sheets don't say which college they're for — the existing
-            per-college files carry it in the file name, so it's prefilled
-            from that when it matches. */}
+        {/* College for the sheet, prefilled from the file name. */}
         {spreadsheet && (
           <label className="flex flex-col gap-1 shrink-0">
             <span

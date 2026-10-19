@@ -1,13 +1,7 @@
-// apps/web/app/privacy/page.tsx
-// Public privacy policy — the link Google's OAuth Branding / verification
-// requires, and linked from the login page footer. No sign-in needed (the
-// proxy only gates /librarian/*).
-//
-// The notice itself is the same DRAFT text as the first-login modal
-// (lib/privacyNotice.ts), pending review by DLSL's Data Protection Officer.
-// The two sections below it are specific to this public page: what the
-// app receives from Google sign-in, and the services that process data on
-// the LRC's behalf — both things Google's verification reviewers look for.
+// The public privacy policy (linked from the login page, and needed for
+// Google sign-in verification). The notice is the same DRAFT text as the
+// first-login popup; the Google sign-in and service provider sections are
+// only on this page.
 
 import type { Metadata } from "next"
 import Link from "next/link"

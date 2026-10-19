@@ -1,5 +1,4 @@
-// apps/web/app/guest/catalog/[bookId]/page.tsx
-// Sprint 3.1.4 — Book detail page (Guest view — no reservation action)
+// Book page for guests (no Reserve button).
 
 'use client'
 
@@ -106,7 +105,7 @@ function AvailabilityCallout({ book, available, total }: { book: Book; available
             : `${available} of ${total} ${total === 1 ? 'copy' : 'copies'} available`}
         </p>
       </div>
-      {/* Sprint 3.1 — guest prompt only; reservation wired in Sprint 4.3 */}
+      {/* Guests are asked to sign in to reserve. */}
       <Link
         href="/login"
         className={cn(
@@ -132,8 +131,7 @@ export default function GuestBookDetailPage({
   params: Promise<{ bookId: string }>
 }) {
   const { bookId } = use(params)
-  // A card in the assistant chat links here with ?from=assistant, so Back
-  // returns to that conversation instead of the catalog. Sprint 5.4
+  // ?from=assistant: Back returns to the chat instead of the catalog.
   const fromAssistant = useSearchParams().get('from') === 'assistant'
   const { book, loading } = useBook(bookId)
 

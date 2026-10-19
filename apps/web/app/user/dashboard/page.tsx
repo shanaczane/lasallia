@@ -1,4 +1,3 @@
-// apps/web/app/user/dashboard/page.tsx
 "use client"
 
 import { useEffect, useState } from "react"
@@ -21,7 +20,7 @@ import type { Reservation } from "@lasallia/types"
 
 type BorrowStatus = "due_soon" | "overdue" | "active"
 
-// Matches apps/web/app/user/library/page.tsx — pending real LRC borrow-limit policy
+// Hardcoded (also in user/library/page.tsx); Settings has the real limit.
 const BORROW_LIMIT_PLACEHOLDER = 3
 const DUE_SOON_DAYS = 3
 
@@ -47,9 +46,7 @@ export default function StudentDashboard() {
   const loading = !loaded
   const [firstName, setFirstName] = useState("there")
 
-  // getUser() reads localStorage, which doesn't exist during Next's SSR
-  // pass of this client component — has to run post-hydration, in an
-  // effect, not directly in the render body.
+  // Read the user in an effect (storage doesn't exist during server rendering).
   useEffect(() => {
     setFirstName(getUser()?.full_name?.split(" ")[0] ?? "there")
   }, [])
@@ -94,8 +91,7 @@ export default function StudentDashboard() {
           </p>
         </div>
 
-        {/* Desktop/tablet only — on phone this becomes a floating button
-            (below) instead of competing with the greeting for space. */}
+        {/* Desktop/tablet only; phones get the floating button below. */}
         <Link
           href="/user/catalog"
           className="hidden sm:flex items-center justify-center gap-2 px-4 py-2.5 rounded-(--radius) bg-green-700 text-white font-medium hover:bg-green-800 transition-colors shadow-sm self-start"
@@ -106,11 +102,7 @@ export default function StudentDashboard() {
         </Link>
       </div>
 
-      {/* Phone only — floating "Find a book" button, pinned to the bottom
-          corner so it stays reachable while scrolling instead of sitting
-          fixed in the page flow. Clears the phone's home-indicator/gesture
-          area via safe-area-inset-bottom, same convention FilterSheet's
-          footer already uses. */}
+      {/* Phone only: floating "Find a book" button, above the home indicator. */}
       <Link
         href="/user/catalog"
         aria-label="Find a book"
@@ -158,10 +150,10 @@ export default function StudentDashboard() {
         />
       </div>
 
-      {/* For You — recommendations plan Phase 6 */}
+      {/* For You */}
       <ForYouSection />
 
-      {/* New Arrivals / Program / College — sprint 5.7 */}
+      {/* New Arrivals / Program / College */}
       <CatalogHighlights />
     </div>
   )

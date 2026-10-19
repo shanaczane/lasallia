@@ -1,27 +1,16 @@
 // @ts-nocheck — Supabase Edge Function: runs on Deno, which VS Code's
 // TypeScript checker doesn't know about (Deno.env, npm: imports).
 
-// Daily job: writes a `due_reminder` notification for loans due within
-// DUE_REMINDER_DAYS, an `overdue` notification for loans past due, and a
-// `fine_reminder` notification for loans sitting with an unsettled fine,
-// then emails each one in the shared Lasallia layout (renderEmail below
-// mirrors apps/api/core/email_template.py, which can't be imported from
-// Deno — keep the two in step).
+// Daily job: notifies and emails students about books due soon, overdue
+// books, and unpaid fines. The email layout copies
+// apps/api/core/email_template.py (Deno can't import it), so keep them in sync.
 //
-// due_reminder/overdue are idempotent one-time markers: each loan is
-// "claimed" by setting due_reminder_sent_at/overdue_notified_at from NULL
-// (migration 0032) BEFORE the notification is written, so re-runs and
-// overlapping runs never duplicate. fine_reminder is different — an
-// unsettled fine can sit unpaid for a long time, so it's re-sent on a
-// cooldown (FINE_REMINDER_COOLDOWN_DAYS) rather than only ever firing
-// once: the "claim" there is fine_reminder_last_sent_at being NULL or
-// older than the cooldown window (migration 0037).
+// Due and overdue reminders are sent once per loan: the loan is marked
+// before the notification is written, so re-runs never send twice. Fine
+// reminders repeat every FINE_REMINDER_COOLDOWN_DAYS until the fine is paid.
 //
-// loans.status stays 'active' in the DB even when past due (routers/loans.py
-// derives 'overdue' in memory), so "overdue" here means returned_at is null
-// and due_date < now. fine_status is only ever meaningful on a RETURNED
-// loan (schemas/loan.py: "an active loan has no fine yet"), so the fine
-// reminder query is unrelated to returned_at.
+// The database keeps past-due loans as 'active', so "overdue" here means
+// not returned and past the due date.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -134,11 +123,7 @@ function peso(n: number): string {
 }
 
 async function sendEmail(to: string | null | undefined, content: EmailContent, recipientName: string | null | undefined) {
-  // Mirrors apps/api/core/notify.py's send_email guard (b2d04d7) — skips
-  // RFC 2606 reserved-TLD test accounts (zz-audit-*@..., zz-ui-*@...) so
-  // seed/test data doesn't generate Resend delivery-failure noise. This
-  // copy never had the guard even after the Python side got it, since
-  // Deno can't import that fix — kept in sync here instead.
+  // Skip .invalid test addresses (same as apps/api/core/notify.py).
   if (!RESEND_API_KEY || !to || to.toLowerCase().endsWith(".invalid")) return;
   try {
     const res = await fetch("https://api.resend.com/emails", {
@@ -220,9 +205,8 @@ async function process(
   return sent;
 }
 
-// Not one-time like `process` above — cooldownIso re-arms the claim once
-// enough time has passed, since a fine can stay unsettled indefinitely
-// and a single lifetime reminder wouldn't be much of a nudge.
+// Fine reminders repeat after the cooldown, since a fine can stay unpaid
+// for a long time.
 async function processFineReminders(candidates: FineRow[], cooldownIso: string): Promise<number> {
   let sent = 0;
   for (const loan of candidates) {

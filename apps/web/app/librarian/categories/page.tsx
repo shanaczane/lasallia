@@ -1,4 +1,3 @@
-// apps/web/app/librarian/categories/page.tsx
 export default function CategoriesPage() {
   return (
     <div className="p-6">

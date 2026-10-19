@@ -1,6 +1,4 @@
-// apps/web/app/librarian/catalog/page.tsx
-// Fix: responsive layout, bigger cover card, stat bar wraps cleanly on mobile
-// Responsive filters: desktop sidebar / mobile bottom sheet (sprint: responsive catalog filters)
+// The librarian catalog: stats, search, filters, and add/edit/archive/delete.
 
 'use client'
 
@@ -105,9 +103,7 @@ function CatalogStats({ books }: { books: Book[] }) {
   const total    = books.reduce((sum, b) => sum + (b.total_copies ?? 0), 0)
   const avail    = books.reduce((sum, b) => sum + (b.available_copies ?? 0), 0)
   const reserved = books.reduce((sum, b) => sum + (b.reserved_copies ?? 0), 0)
-  // Whatever's left after available/reserved — on_loan, overdue, or a
-  // missing/lost/damaged side-state. Reserved gets its own tile so a copy
-  // waiting for pickup isn't double-counted as "checked out".
+  // Everything not available or reserved (on loan, overdue, missing…).
   const borrowed = total - avail - reserved
 
   const stats = [
@@ -166,10 +162,7 @@ function LibrarianCatalogContent() {
   const [addFieldError, setAddFieldError]   = useState<{ field: keyof BookFormData; message: string } | null>(null)
   const [editFieldError, setEditFieldError] = useState<{ field: keyof BookFormData; message: string } | null>(null)
 
-  // Seeds local editable state from the fetch. Add/edit now call the real
-  // POST/PATCH endpoints below and merge the server's response back in, so
-  // this effect re-syncing on every fetch (including live refetches) just
-  // reflects what's actually persisted, not a source of lost edits.
+  // Copy the fetched books into local state (re-synced on every refetch).
   useEffect(() => {
     if (!loading && !error) setBooks(fetchedBooks)
   }, [loading, error, fetchedBooks])
@@ -213,9 +206,7 @@ function LibrarianCatalogContent() {
       setAddOpen(false)
       showToast(`"${newBook.title}" added to the catalog.`)
 
-      // Covers are uploaded separately (multipart, not part of the JSON
-      // create body) — the book needs an id first, so this can only happen
-      // after createBook resolves, same as the edit flow below.
+      // Upload the cover after the book exists (it needs the book's id).
       if (data.cover_image_file) {
         const coverUrl = await uploadBookCover(newBook.id, data.cover_image_file)
         setBooks((prev) => prev.map((b) => (b.id === newBook.id ? { ...b, cover_url: coverUrl } : b)))
@@ -253,7 +244,7 @@ function LibrarianCatalogContent() {
       setEditBook(null)
       showToast(`"${saved.title}" updated.`)
 
-      // Covers are uploaded separately (multipart, not part of the JSON body).
+      // Upload the cover separately.
       if (data.cover_image_file) {
         const coverUrl = await uploadBookCover(bookId, data.cover_image_file)
         setBooks((prev) => prev.map((b) => (b.id === bookId ? { ...b, cover_url: coverUrl } : b)))
@@ -269,11 +260,7 @@ function LibrarianCatalogContent() {
     }
   }
 
-  // Reports plan Phase 2 — the only one of these four actions wired to a
-  // real endpoint so far (add/edit/delete are still local-only, see the
-  // effect above). Local removal happens after the request succeeds, not
-  // before — an archive that actually failed shouldn't disappear from
-  // the librarian's own view.
+  // Remove the book from the list only after the archive succeeds.
   async function handleArchive(book: Book) {
     try {
       await archiveBook(book.id)
@@ -394,9 +381,7 @@ function LibrarianCatalogContent() {
             </div>
           </div>
 
-          {/* Desktop only — QuickChipRow below (lg:hidden) is the phone/
-              compact equivalent; without this gate both render at once
-              under lg. */}
+          {/* Desktop only; smaller screens use QuickChipRow below. */}
           <div className="hidden lg:block">
             <FilterPillBar
               filters={filters}

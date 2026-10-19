@@ -1,4 +1,3 @@
-// apps/web/app/librarian/renewals/page.tsx
 export default function RenewalsPage() {
   return (
     <div className="p-6">

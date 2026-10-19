@@ -1,6 +1,4 @@
-// apps/web/app/librarian/patrons/page.tsx
-// Sprint 5.5 — Librarian Manage Users Screen
-// 5.5.1 Users list table (search + filter) · 5.5.2 Profile modal · 5.5.3 Account actions
+// The Patrons page: the patron list, profiles and account actions.
 
 "use client"
 
@@ -27,7 +25,6 @@ import { ConfirmStatusDialog } from "@/components/ui/patrons/ConfirmStatusDialog
 const PAGE_SIZE = 8
 
 // ─── Pagination hook + Paginator ─────────────────────────────────────────────
-// Local to this page, matching the pattern used in student/library/page.tsx
 
 function usePagination<T>(items: T[], resetKey?: unknown) {
   const [page, setPage] = useState(1)
@@ -49,10 +46,7 @@ function usePagination<T>(items: T[], resetKey?: unknown) {
   return { page: clampedPage, totalPages, pageItems, goTo }
 }
 
-// Delegates to the same shared Pagination component (components/ui/catalog)
-// the Reports tab's ReportTableCard uses, laid out the same way — a count
-// on the left, the pager on the right — rather than a second hand-rolled
-// implementation that can drift from it.
+// A count on the left and the page buttons on the right.
 function Paginator({
   page,
   totalPages,
@@ -81,9 +75,6 @@ function Paginator({
 }
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
-// Same pattern as app/librarian/catalog/page.tsx's Toast — this screen had
-// none, so an outstanding-loan rejection from handleToggleStatus used to
-// fail completely silently.
 
 function Toast({ message, variant }: { message: string; variant: "success" | "error" }) {
   return (
@@ -154,14 +145,12 @@ function PatronsPageContent() {
       .then(setPatrons)
       .catch(() => {})
       .finally(() => setLoading(false))
-    // Separate so a loans hiccup can't blank the directory — the figures
-    // just read 0 until it loads.
+    // Loaded separately, so a loans error doesn't hide the patron list.
     fetchLoans().then(setLoans).catch(() => {})
   }, [])
 
-  // Books out / overdue / fines owed per patron, from the same loans list
-  // the dashboard uses. "Owed" matches the profile's Outstanding total:
-  // unsettled fines on returned books plus what's accruing on overdue ones.
+  // Books out, overdue and fines owed per patron. "Owed" matches the
+  // profile's Outstanding total.
   const stats = useMemo(() => {
     const byPatron: Record<string, PatronStats> = {}
     for (const l of loans) {
@@ -187,9 +176,7 @@ function PatronsPageContent() {
   const [confirmingStatus, setConfirmingStatus] = useState<UserProfile | null>(null)
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null)
 
-  // Signed-in librarian — their own row/profile can't be deactivated.
-  // null during SSR (no storage there) — harmless, since rows only exist
-  // once fetchPatrons resolves in the browser. Sprint 5.5.3
+  // The signed-in librarian, who can't deactivate themselves.
   const [selfId] = useState<string | null>(() =>
     typeof window === "undefined" ? null : getUser()?.id ?? null
   )
@@ -199,9 +186,7 @@ function PatronsPageContent() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  // Deep link from elsewhere (e.g. the dashboard's activity panel) — opens
-  // straight to that patron's profile once the list has loaded, instead of
-  // making the librarian search for them again by name.
+  // A link from elsewhere can open a patron's profile directly.
   useEffect(() => {
     if (!highlightId || patrons.length === 0) return
     const match = patrons.find((p) => p.id === highlightId)
@@ -244,10 +229,7 @@ function PatronsPageContent() {
   }
   const toggleQuick = (f: QuickFilter) => setQuickFilter((cur) => (cur === f ? "all" : f))
 
-  // Exports whatever the search + role filter currently narrows the table
-  // to (`filtered`), not the full unfiltered directory or just the current
-  // page — a librarian who searched down to one program expects the CSV to
-  // match what's on screen.
+  // Exports the filtered list (all pages), matching what's on screen.
   const exportPatronsCsv = () => downloadCsv("patrons.csv", filtered.map((p) => ({
     name: p.full_name ?? "",
     email: p.email,
@@ -278,8 +260,7 @@ function PatronsPageContent() {
         "success"
       )
     } catch (err) {
-      // Revert on failure — the optimistic update above was wrong (e.g. the
-      // API refused because this patron still has an outstanding loan).
+      // Undo if it failed (e.g. the patron still has a book out).
       setPatrons((prev) => prev.map((p) => (p.id === userId ? { ...p, status: current?.status } : p)))
       setViewing((v) => (v && v.id === userId ? { ...v, status: current?.status } : v))
       showToast(err instanceof Error ? err.message : "Could not update this patron.", "error")

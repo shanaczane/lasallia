@@ -1,4 +1,3 @@
-// packages/types/notification.ts
 
 export type NotificationType =
   | 'due_reminder'

@@ -1,4 +1,4 @@
-// Sprint 5.4 / 7.1 – Quick Scanner Interface, wired to the real borrow/return API
+// Borrow & Return: desk checkout, returns, reshelving and guest use.
 "use client"
 
 import { Suspense, useState, useEffect, useCallback, useRef } from "react"
@@ -63,14 +63,8 @@ const BORROW_CONDITIONS: { value: Condition; label: string }[] = [
 ]
 
 // ─── Assisted borrow (desk-side checkout) ──────────────────────────────────────
-// The librarian already has the physical book in hand and taps the
-// student's ID at their own reader — an ordinary 'rfid' station_sessions
-// row, identical to one the digital kiosk would produce (routers/
-// sessions.py doesn't care who operates the reader) — then scans or types
-// the accession number of the exact copy. No auto-pick, no separate hold:
-// POST /loans/librarian-assisted runs the same eligibility checks and
-// writes the same loans/book_copies record self-service borrowing does
-// (apps/api's core/loans.py), so the two are indistinguishable afterward.
+// The librarian taps the student's ID (or searches for them), then scans the
+// book. Same checks and records as borrowing at the kiosk.
 type IdentifyMode = "tap" | "search"
 
 function AssistedBorrowPanel({ onSettled }: { onSettled: () => void }) {
@@ -113,9 +107,7 @@ function AssistedBorrowPanel({ onSettled }: { onSettled: () => void }) {
     }
   }
 
-  // Debounced search — fallback for when there's no ID card to tap. No
-  // credential from the student at all: the librarian's own JWT (already
-  // attached by openSession below) is what authorizes this.
+  // Student search, for when there's no ID card to tap.
   useEffect(() => {
     if (mode !== "search" || !searchQuery.trim()) {
       setSearchResults([])
@@ -360,9 +352,8 @@ function AssistedBorrowPanel({ onSettled }: { onSettled: () => void }) {
                 className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
               />
-              {/* Safety net for when focus lands elsewhere (e.g. after
-                  clicking a Condition button) — a scan is filled in, not
-                  auto-submitted, since Condition still has to be picked. */}
+              {/* Catches scans after a click moved focus. Fills the field
+                  only, since Condition still has to be picked. */}
               <ScannerListener onScan={setAccessionInput} />
             </div>
           </div>
@@ -431,15 +422,12 @@ function AssistedBorrowPanel({ onSettled }: { onSettled: () => void }) {
   )
 }
 
-// ─── Return flow (Phase 4, new loans/book_copies schema) ──────────────────────
-// No fake camera here — a plain accession-number input plus a
-// title/borrower fallback search is what plan 4.1 actually needs.
+// ─── Return flow ──────────────────────────────────────────────────────────────
+// Scan or type the accession number, or search by title or borrower.
 
 type SessionRecord = { title: string; patron: string; time: string; note?: string }
 
-// The librarian's local calendar day, as a [from, to) ISO range — computed
-// fresh on every load rather than tracked client-side, so "today" rolls
-// over on its own at local midnight instead of needing to be reset.
+// Today (local time) as a [from, to) range.
 function todayRangeIso(): { from: string; to: string } {
   const now = new Date()
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -508,13 +496,7 @@ function ConditionButtons({
 }
 
 // ─── Book cover thumbnail ───────────────────────────────────────────────────
-// 160 of 185 real books have a real cover_url — every book "card" on this
-// page (Borrow's scan result, Return's found-loan card, the Reshelving
-// queue) was showing just a flat color square with the title's first
-// letter instead, completely ignoring it. Same real-cover-with-decorative-
-// fallback treatment components/ui/catalog/LibrarianBookCard.tsx already
-// uses, so a book reads the same whether you're looking it up in the
-// catalog or scanning it at the counter.
+// Book cover, or a colored placeholder (same as LibrarianBookCard).
 const COVER_COLORS = [
   "#1E3A5F", "#5C3D11", "#1B3A2D", "#4A1942",
   "#2C3E50", "#1A1A2E", "#0F4C75", "#154360",
@@ -645,9 +627,7 @@ function ReturnPanel({
     }
   }
 
-  // Selecting a row from the Active Borrowers list — same verification
-  // path as a manual scan (handleFind above), just pre-supplied with the
-  // accession number that row's own loan record already carries.
+  // Picking from Active Borrowers works like scanning that book.
   function selectFromActiveList(activeLoan: ActiveLoan) {
     if (!activeLoan.accession_number) return
     handleFind(activeLoan.accession_number)
@@ -713,9 +693,7 @@ function ReturnPanel({
   if (confirmed) {
     return (
       <div className="rounded border border-green-200 bg-green-50 p-6 flex flex-col items-center gap-3 text-center">
-        {/* No visible accession field on this screen — without this, a
-            scan of the next return would be silently lost until the
-            librarian clicks "Scan Another" first. */}
+        {/* Catches the next return's scan (there's no input here). */}
         <ScannerListener onScan={(v) => { reset(); handleFind(v) }} />
         <div className="flex items-center justify-center w-12 h-12 rounded-full bg-green-100">
           <CheckCircle2 size={26} className="text-green-700" />
@@ -1044,9 +1022,7 @@ function ReturnPanel({
 }
 
 // ─── Active Borrowers list ──────────────────────────────────────────────────
-// Browse who currently has what instead of needing to already know an
-// accession number — selecting one still runs the same lookupLoanByAccession
-// verification a manual scan does (see ReturnPanel.selectFromActiveList).
+// Who has which book, to pick from instead of scanning.
 function ActiveBorrowersList({
   loans,
   loading,
@@ -1134,11 +1110,7 @@ function ActiveBorrowersList({
 }
 
 // ─── Reshelving queue ───────────────────────────────────────────────────────
-// Browse list of every copy currently parked at for_reshelving — same
-// "pick it instead of typing an accession number" convenience as the
-// Return tab's Active Borrowers. Selecting a row just pre-fills the
-// accession input below; confirming still requires the librarian to have
-// the physical copy in hand, per ReshelvingPanel's own instruction.
+// Copies waiting to be reshelved. Picking one fills in the accession number.
 function ReshelvingQueueList({
   items,
   loading,
@@ -1228,7 +1200,7 @@ function ReshelvingQueueList({
   )
 }
 
-// ─── Reshelving mode (Phase 4.7) ───────────────────────────────────────────────
+// ─── Reshelving ────────────────────────────────────────────────────────────────
 function ReshelvingPanel({
   queue,
   loadingQueue,
@@ -1250,10 +1222,7 @@ function ReshelvingPanel({
     setSubmitting(true)
     try {
       const { status: copyStatus } = await reshelveCopy(value)
-      // A reservation can form while a copy sits in for_reshelving — the
-      // backend hands it straight to that hold instead of the open shelf,
-      // so this scan doesn't always mean "now available" (loans.py's
-      // reshelve_copy).
+      // If someone reserved it meanwhile, the copy is held for them instead.
       const held = copyStatus === "reserved"
       setResult(held ? "reserved" : "available")
       onSettled()
@@ -1292,10 +1261,8 @@ function ReshelvingPanel({
               className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500"
               style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
             />
-            {/* Highest-volume scan target on this page — auto-submits
-                straight from the scan since reshelving needs no other
-                manual field, so the librarian never has to touch the
-                keyboard or mouse between copies. */}
+            {/* Submits on scan, so the librarian can reshelve without touching
+                the keyboard. */}
             <ScannerListener onScan={(v) => handleConfirm(v)} />
           </div>
           <button
@@ -1379,13 +1346,9 @@ function SessionList({ tab, records }: { tab: "borrow" | "return" | "reshelving"
   )
 }
 
-// ─── Guest / In-House (Phase 7) ────────────────────────────────────────────────
-// Entirely librarian-driven — a guest never signs in and never touches this
-// screen. A single form check outs a copy for library-use-only, same-day
-// use; a separate list below returns it. Deliberately styled in amber/purple
-// rather than green throughout, so an in-house loan reads as visibly
-// distinct from a real student loan at a glance (plan 7's acceptance
-// criterion), not just distinct in the data model.
+// ─── Guest / In-House ──────────────────────────────────────────────────────────
+// Librarians record a guest's same-day, in-library use and its return.
+// Amber/purple instead of green, so it can't be mistaken for a student loan.
 
 const VISITOR_TYPES: { value: VisitorType; label: string }[] = [
   { value: "nocei", label: "NOCEI-affiliated" },
@@ -1515,9 +1478,7 @@ function GuestPanel({ onSettled }: { onSettled: () => void }) {
             className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
             style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
           />
-          {/* Nothing here submits on its own — guest name/ID still need to
-              be filled in by hand — so a scan just fills the field and
-              advances focus for that next manual step. */}
+          {/* A scan only fills the field; the guest details are typed by hand. */}
           <ScannerListener onScan={setAccessionInput} />
         </div>
       </div>
@@ -1726,9 +1687,7 @@ function BorrowAndReturnPageContent() {
   const [reshelvedToday, setReshelvedToday] = useState<SessionRecord[]>([])
   const [activeInHouseLoans, setActiveInHouseLoans] = useState<InHouseLoan[]>([])
 
-  // Real data (GET /loans, GET /loans/reshelved), not browser memory — this
-  // is what actually makes "Today" survive a refresh or a shift change,
-  // resetting only because tomorrow's todayRangeIso() genuinely excludes it.
+  // Today's lists come from the API, so they survive a refresh.
   const loadBorrowedToday = useCallback(() => {
     const { from, to } = todayRangeIso()
     fetchLoansInRange({ borrowedFrom: from, borrowedTo: to })
@@ -1764,10 +1723,7 @@ function BorrowAndReturnPageContent() {
     if (tab === "guest") loadInHouseLoans()
   }, [tab, loadInHouseLoans])
 
-  // "Ongoing" — what's currently out and what's currently waiting to go
-  // back on the shelf. Loaded once at the page level (not lazily per tab)
-  // so the tab switcher can show a live count on Return/Reshelving
-  // without making the librarian open each tab just to find out.
+  // Loaded here so the tabs can show counts.
   const [activeLoans, setActiveLoans] = useState<ActiveLoan[]>([])
   const [loadingActiveLoans, setLoadingActiveLoans] = useState(true)
   const loadActiveLoans = useCallback(() => {
@@ -1785,9 +1741,7 @@ function BorrowAndReturnPageContent() {
     loadReshelvingQueue()
   }, [loadActiveLoans, loadReshelvingQueue])
 
-  // A confirmed return can move a copy onto either list (out of Active
-  // Borrowers, and — usually — onto the Reshelving queue), so refresh
-  // both rather than guessing which one changed.
+  // A return changes both lists, so refresh both.
   function handleReturned() {
     loadReturnedToday()
     loadActiveLoans()
@@ -1832,8 +1786,7 @@ function BorrowAndReturnPageContent() {
           </p>
         </div>
 
-        {/* Tab switcher — Return/Reshelving carry a live count so the
-            librarian can see what's waiting without opening either tab */}
+        {/* Tabs, with counts on Return and Reshelving */}
         <div className="flex items-center gap-1 p-1 rounded bg-ink-100 self-start">
           {tabs.map((t) => (
             <button
@@ -1883,11 +1836,7 @@ function BorrowAndReturnPageContent() {
         )}
         {tab === "guest" && <GuestPanel onSettled={loadInHouseLoans} />}
 
-        {/* Right: records — today's, for Borrow (old schema); this session's, for Return/Reshelving (new schema, no history endpoint yet); currently-out, for Guest.
-            Title + count live inside the card (matching ActiveBorrowersList/
-            ReshelvingQueueList's own header row) so this card's top edge lines
-            up with the left panel's, instead of sitting a heading's-height
-            lower than it. */}
+        {/* Right: today's records for the tab (or guest books still out). */}
         <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

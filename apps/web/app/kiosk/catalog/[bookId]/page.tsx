@@ -1,11 +1,5 @@
-// apps/web/app/kiosk/catalog/[bookId]/page.tsx
-// Detail view for the kiosk terminal — same two-column hero / bib-grid /
-// "Book Details" card layout as the guest and student catalogs, so the
-// three catalogs read as one screen. What's still cut on purpose: no
-// bookmark/save, no recommendations, no reserve button — those need a
-// JWT an RFID-tapped session doesn't have (see Phase 6 plan's Context).
-// No accession number anywhere here, same rule as everywhere else in
-// the catalog.
+// Kiosk book page, laid out like the web one. No bookmarks, recommendations
+// or Reserve (they need a login). Never shows the accession number.
 
 'use client'
 
@@ -73,9 +67,7 @@ function BibGrid({ items }: { items: Array<{ label: string; value?: string | num
 }
 
 // ─── Availability / borrow action panel ───────────────────────────────────────
-// Same progress-bar callout as the guest/user pages, but the call to
-// action reflects what an RFID-tapped kiosk session can actually do:
-// borrow directly (session), or a "tap your ID" prompt (guest browsing).
+// Availability, with Borrow for a tapped-in student or "tap your ID" for guests.
 
 function ActionPanel({
   book,
@@ -90,8 +82,7 @@ function ActionPanel({
   available: number
   total: number
   isAvailable: boolean
-  // What a tapped-in student can do with this book — decided by the server
-  // (GET /holds/eligibility), not guessed from copy counts.
+  // Whether the student can borrow, as decided by the server.
   borrow: { state: 'none' | 'checking' | 'ready' | 'blocked'; reason?: string }
   guestBrowsing: boolean
   onBorrow: () => void
@@ -100,10 +91,7 @@ function ActionPanel({
   const isNone = available === 0
   const isLow = !isNone && available / total < 0.4
 
-  // Checked before the normal availability/borrow row — otherwise a
-  // guest-browsing (no tapped session) view still says "Tap your school ID
-  // to borrow" on a Reference book, even though claim_hold would refuse it
-  // the moment they actually tapped in.
+  // Library-use-only books can't be borrowed, so no borrow prompt.
   if (isLibraryUseOnly(book)) {
     return (
       <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex items-center gap-3">
@@ -194,8 +182,7 @@ export default function KioskBookDetailPage({
   params: Promise<{ bookId: string }>
 }) {
   const { bookId } = use(params)
-  // A card in the assistant chat links here with ?from=assistant, so Back
-  // returns to that conversation instead of the catalog. Sprint 5.4
+  // ?from=assistant: Back returns to the chat instead of the catalog.
   const fromAssistant = useSearchParams().get('from') === 'assistant'
   const { session, guestBrowsing } = useKioskSession()
   const { book, loading, error } = useBook(bookId)
@@ -269,8 +256,7 @@ export default function KioskBookDetailPage({
   const availableCopies = book.available_copies ?? (book.status === 'available' ? 1 : 0)
   const totalCopies     = book.total_copies ?? 1
   const isAvailable     = book.status === 'available' && availableCopies > 0
-  // A failed eligibility call falls back to letting them try — claim_hold
-  // still enforces every rule server-side.
+  // If the check failed, let them try; the server still checks.
   const borrowState: 'none' | 'checking' | 'ready' | 'blocked' =
     !session ? 'none'
     : !eligibility.checked ? (isAvailable ? 'checking' : 'none')

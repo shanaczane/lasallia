@@ -1,19 +1,7 @@
-// apps/web/app/librarian/settings/page.tsx
-// Library Info + Borrowing Rules are now a real, shared, persisted row
-// (GET/PATCH /settings — apps/api/migrations/0024_library_settings.sql)
-// instead of local useState with a fake "Saved" button: every number here
-// now actually drives borrow/reservation/fine behavior system-wide (see
-// core/settings.py's callers in routers/borrow.py, holds.py, loans.py,
-// reservations.py, core/calendar.py), and survives a restart because it
-// lives in the database, not this page's component state.
-//
-// Account tab shows the real signed-in librarian now (getUser(), cached
-// from login); Full Name saves via PATCH /auth/me (the header Save
-// button) and Change Password is its own action via POST
-// /auth/change-password (its own button below, not bundled into Save —
-// a wrong current password shouldn't also block a harmless name edit,
-// or vice versa). Email change still isn't wired — it needs Supabase
-// Auth's own confirm-by-email flow, a separate feature.
+// Librarian Settings: library info, borrowing rules and hours (used across
+// the whole system), the librarian's account, and support tickets.
+// Change Password has its own button, so a wrong password doesn't block
+// saving a name change. Email changes aren't supported yet.
 "use client"
 
 import { Suspense, useEffect, useState } from "react"
@@ -37,11 +25,8 @@ const TABS: { key: TabKey; label: string }[] = [
 
 type Draft = Omit<LibrarySettings, "updated_at" | "updated_by" | "is_default">
 
-// Every one of these represents a count, a period in days, or a peso
-// amount — none of them make sense at zero or negative, and an empty
-// required text field would silently save blank contact info. Checked
-// client-side so Save can't even be clicked on a broken draft, rather
-// than relying on the API to reject it after the fact.
+// What's wrong with the form, if anything (numbers must be above zero,
+// required fields filled). Save is disabled until it's fixed.
 function draftError(d: Draft): string | null {
   if (!d.library_name.trim()) return "Library Name can't be empty."
   if (!d.address.trim()) return "Address can't be empty."
@@ -61,9 +46,7 @@ function draftError(d: Draft): string | null {
   if (typeof d.fine_per_day !== "number" || d.fine_per_day < 0) return "Fine per Day can't be negative."
   if (typeof d.max_fine_per_book !== "number" || d.max_fine_per_book <= 0) return "Maximum Fine per Book must be greater than 0."
 
-  // All three groups — weekday included — can be marked Closed, so all
-  // three get the same check: either both times set (and in order), or
-  // both null. One rule, no special-cased "weekday is different."
+  // Each day group needs both times (in order), or neither (Closed).
   for (const [label, open, close] of [
     ["Weekday", d.weekday_open_time, d.weekday_close_time],
     ["Saturday", d.saturday_open_time, d.saturday_close_time],
@@ -72,8 +55,7 @@ function draftError(d: Draft): string | null {
     if (open && close) {
       if (timeToMinutes(open) >= timeToMinutes(close)) return `${label} closing time must be after opening time.`
     } else if (open || close) {
-      // Shouldn't happen through the UI (the Closed toggle sets both
-      // together) but guarded in case a draft ever gets here otherwise.
+      // Shouldn't happen (Closed sets both), but just in case.
       return `${label} needs both an opening and closing time, or mark it Closed.`
     }
   }
@@ -85,8 +67,7 @@ function timeToMinutes(v: string): number {
   return h * 60 + m
 }
 
-// <input type="time">'s value wants "HH:MM" — the API can hand back
-// "HH:MM:SS" (a plain Postgres time), so trim rather than assume either.
+// "HH:MM:SS" -> "HH:MM" for <input type="time">.
 function shortTime(v: string | null): string {
   return v ? v.slice(0, 5) : ""
 }
@@ -118,9 +99,7 @@ const VALID_TABS: TabKey[] = ["library", "borrowing", "account", "support"]
 
 function LibrarianSettingsPageContent() {
   const searchParams = useSearchParams()
-  // Lets a link (e.g. the "New support ticket submitted" notification)
-  // open straight to a specific tab via ?tab=support instead of always
-  // landing on Library Info.
+  // ?tab=support (etc.) opens that tab directly.
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     const t = searchParams.get("tab")
     return (VALID_TABS as string[]).includes(t ?? "") ? (t as TabKey) : "library"
@@ -134,25 +113,19 @@ function LibrarianSettingsPageContent() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState("")
 
-  // One shared confirmation toast for every save action on this page
-  // (library/borrowing settings, profile, password) — replaces each
-  // button's own "✓ Saved" label-and-color swap, which changed the
-  // button's size/position on every save and doubled up the same
-  // "it worked" signal three different ways across the page.
+  // One "Saved" toast for every save on this page.
   const [toast, setToast] = useState<string | null>(null)
   function showToast(message: string) {
     setToast(message)
     setTimeout(() => setToast(null), 2500)
   }
 
-  // Account tab — the real signed-in user, cached from login (no fetch
-  // needed; the same object every layout's nav would read). fullName is
-  // the editable draft; profile itself updates only after a successful save.
+  // Account tab: the signed-in user. fullName is the edited value; profile
+  // changes only after saving.
   const [profile, setProfile] = useState<AuthUser | null>(null)
   const [fullName, setFullName] = useState("")
 
-  // Change Password — deliberately separate state/button from the rest
-  // of the page (see the file header comment for why).
+  // Change Password has its own state and button.
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -168,9 +141,7 @@ function LibrarianSettingsPageContent() {
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load settings"))
       .finally(() => setLoading(false))
 
-    // getUser() only reads localStorage (nothing to await) but setState
-    // still needs to happen inside a callback here, not the effect body
-    // directly, same as the settings fetch above — one microtask tick.
+    // Set state in a callback, not directly in the effect.
     Promise.resolve().then(() => {
       const u = getUser()
       setProfile(u)

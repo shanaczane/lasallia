@@ -1,6 +1,4 @@
-// apps/web/app/user/catalog/page.tsx
-// Sprint 4.3.1 — Authenticated student catalog (same as Guest + bookmark buttons)
-// Responsive filters: desktop sidebar / mobile bottom sheet (sprint: responsive catalog filters)
+// The student catalog (like the guest one, plus bookmarks).
 
 'use client'
 
@@ -204,10 +202,7 @@ function StudentCatalogContent() {
             </div>
           </div>
 
-          {/* Desktop only — QuickChipRow below (lg:hidden) is the phone/
-              compact equivalent. Without this gate both rendered at once
-              on any viewport under lg: six wrapping pill dropdowns stacked
-              right above the "Filters" button and its own chip row. */}
+          {/* Desktop only; smaller screens use QuickChipRow below. */}
           <div className="hidden lg:block">
             <FilterPillBar
               filters={filters}

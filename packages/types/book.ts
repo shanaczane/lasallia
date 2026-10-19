@@ -1,5 +1,3 @@
-// packages/types/book.ts
-// Extended for Sprint 3.1 — Guest Public Catalog Screen
 
 // missing: every copy is lost/missing/damaged. misplaced: no copy available,
 // at least one in the building on the wrong shelf (found by an inventory scan).
@@ -50,11 +48,8 @@ export type Book = {
   waiting_count?: number     // pending + ready reservations for this title
   collection_type?: string | null // e.g. "General", "Reference", "Thesis" — non-"General" values are library-use-only (see lib/collectionType.ts)
 
-  // ── Librarian-only administrative record ──────────────────────────────
-  // Captured on the Add/Edit Book form for the LRC's own inventory records.
-  // Never rendered on the student or guest catalog pages — once a real API
-  // sits behind this, it should omit this block from non-librarian responses
-  // rather than relying on the frontend alone to hide it.
+  // ── Librarians only: acquisition details from the book form. The API
+  // leaves these out for everyone else.
   purchase_price?: number    // PHP
   date_acquired?: string     // ISO date the library took ownership, distinct from published_year
   circulation_type?: string  // Lending policy / collection, e.g. "General Collection - Law", "Reserve" — free text, no fixed taxonomy across departments

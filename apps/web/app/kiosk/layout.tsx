@@ -1,15 +1,6 @@
-// apps/web/app/kiosk/layout.tsx
-// The shared walk-up terminal shell (build plan Phase 6): wraps every
-// /kiosk/* page in the session context, the always-on RFID listener (so
-// a new tap can interrupt an active session), and the 90s idle timeout
-// with its "Still here?" warning.
-//
-// UI shell matches StudentLayout/GuestLayout (TopNav + collapsible
-// sidebar) so the kiosk reads as the same product, not a bespoke
-// terminal — but only renders while a session (real OR guest) is
-// active, same privacy-driven gate the old pill-nav used: nothing
-// personal remains on screen after logout (build plan: "Session expires
-// at 90s idle and clears all personal data from the DOM").
+// The kiosk shell: session, ID card listener, 90-second idle timeout with a
+// "Still here?" warning, and the same nav as the web. Nothing personal is
+// shown once a session ends.
 
 'use client'
 
@@ -29,17 +20,13 @@ const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : us
 const IDLE_TIMEOUT_SECONDS = 90
 const WARNING_AT_SECONDS = 15
 
-// Same pattern as StudentLayout/LibrarianLayout's own getInitials.
 function getInitials(name: string): string {
   return name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
 }
 
 const kioskNav = [
   { label: 'Find a book', icon: <Search size={16} />, href: '/kiosk/catalog' },
-  // "For you" needs a tapped-in student to personalize on — a guest has
-  // no identity for recommendations to key off, so this entry is added
-  // conditionally below rather than shown and falling back to public-only
-  // content, which would just be the "Find a book" tab's job done worse.
+  // "For you" is only shown to tapped-in students.
   { label: 'For you', icon: <Sparkles size={16} />, href: '/kiosk/for-you', requiresSession: true },
   { label: 'Ask Lasallia', icon: <MessageSquare size={16} />, href: '/kiosk/assistant' },
 ]
@@ -48,9 +35,7 @@ function KioskShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const { session, open, end, guestBrowsing, endGuest } = useKioskSession()
-  // Seeded from sessionStorage synchronously (not via an effect) so a
-  // session restored after a refresh isn't mistaken for a brand-new tap —
-  // see readInitialActiveKey's comment.
+  // Read right away, so a refresh isn't mistaken for a new tap.
   const previousActiveKey = useRef<string | null>(readInitialActiveKey())
   const [collapsed, setCollapsed] = useState(false)
 
@@ -74,29 +59,12 @@ function KioskShell({ children }: { children: React.ReactNode }) {
     localStorage.setItem('kiosk-sidebar-collapsed', String(collapsed))
   }, [collapsed])
 
-  // Route the screen to match whatever just happened: a fresh session
-  // (idle -> tapped in, or idle -> guest) goes to the catalog; an end
-  // (timeout, Done/Log out, or guest exit) goes back to idle; a swap (a
-  // new tap interrupting an active session, real or guest) resets to
-  // the catalog root rather than leaving whoever's there now on
-  // whatever page the previous person was viewing.
+  // Move to the right screen: a new session goes to the catalog; no session
+  // goes back to the start screen (from any page); a different student
+  // tapping in starts again at the catalog.
   //
-  // The inactive branch used to only fire on a real active->inactive
-  // transition (prev truthy). That missed landing on a subpage — e.g.
-  // /kiosk/catalog — while already inactive the whole time: nobody ever
-  // tapped in this tab, or sessionStorage had nothing to restore. Every
-  // page under here except the catalog/for-you/assistant tabs themselves
-  // is only reachable via the sidebar, but this route effect is the one
-  // thing standing between a stray/bookmarked URL and getting stuck on a
-  // page with the tap-in-gated sidebar/TopNav missing and no way back —
-  // so this now checks "inactive AND not already on the idle screen",
-  // not just "inactive and just became so".
-  //
-  // One exception: a guest who taps their ID while looking at a book (or
-  // the catalog) is the same person signing in to borrow it, not someone
-  // new walking up — so they stay on that page, now as themselves, instead
-  // of being sent back to the catalog root to find the book again. Catalog
-  // pages show nothing personal, so there's nothing of the guest's to leak.
+  // A guest who taps their ID while on a book or the catalog stays there,
+  // since it's the same person signing in to borrow.
   useEffect(() => {
     const prev = previousActiveKey.current
     const current = session?.id ?? (guestBrowsing ? 'guest' : null)
@@ -121,9 +89,7 @@ function KioskShell({ children }: { children: React.ReactNode }) {
       {active && (
         <>
           <TopNav
-            // student_full_name falls back to first_name — a session
-            // restored from sessionStorage (see KioskSessionProvider) may
-            // predate this field having been added to the stored shape.
+            // Older saved sessions may not have the full name.
             userName={session ? (session.student_full_name || session.student_first_name) : 'Guest'}
             userInitials={session ? getInitials(session.student_full_name || session.student_first_name) : 'G'}
             showNotifications={false}
@@ -204,11 +170,7 @@ function KioskShell({ children }: { children: React.ReactNode }) {
         className={cn('min-h-screen transition-all duration-200', active && (collapsed ? 'md:pl-14' : 'md:pl-(--width-side)'))}
         style={active ? { paddingTop: 'var(--height-nav)' } : undefined}
       >
-        {/* Withholds a subpage's content (e.g. someone lands straight on a
-            bookmarked /kiosk/catalog with nothing tapped in) for the one
-            frame before the route effect above redirects to /kiosk — the
-            actual bug being fixed here: book cards rendering with the
-            sidebar/TopNav gone and nothing on screen to get back with. */}
+        {/* Without a session, show nothing until the redirect to /kiosk. */}
         {(active || pathname === '/kiosk') && children}
       </main>
     </div>

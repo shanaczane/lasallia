@@ -1,11 +1,4 @@
-// apps/web/app/user/library/page.tsx
-// Sprint 4.5 — My Library (unified tabbed page)
-// 4.5.1 Borrowed Books · 4.5.2 Saved · 4.5.3 History
-// QR for BORROWING only — lives on catalog detail page
-// Fix: all three tabs use the same responsive book-card grid as the catalog
-//      (2/3/4/5/6 columns depending on breakpoint), instead of a table/list.
-//      Each tab keeps its own filter pills and the status/date/fine info
-//      specific to that tab, shown on the card itself.
+// My Library: Borrowed, Saved and History tabs, each a grid of book cards.
 
 "use client"
 
@@ -33,9 +26,7 @@ type Tab = "borrowed" | "saved" | "history"
 
 type BorrowStatus = "active" | "due_soon" | "overdue"
 
-// No "lost" status here — nothing in this codebase can mark a loan lost
-// yet (no UI, no endpoint), so it's not offered as a filter rather than
-// faked with a filter that always shows zero results.
+// No "lost" filter: loans can't be marked lost yet.
 type HistoryStatus = "returned" | "overdue_returned"
 
 // ─── Status configs ───────────────────────────────────────────────────────────
@@ -57,12 +48,9 @@ const HISTORY_CFG: Record<
   overdue_returned: { label: "Returned Late", shortLabel: "Late",     icon: <Clock size={11} />,        text: "text-warn",    bg: "bg-warn-bg"    },
 }
 
-// Note: CARD_GRID's column count varies by breakpoint (2/3/4/5/6), so 10
-// only forms whole rows at the lg (5-col) breakpoint — a ragged last row is
-// expected/normal at the other breakpoints, matching BookGrid's own pattern.
 const PAGE_SIZE = 10
 
-// Matches apps/web/app/borrow/[token]/page.tsx — pending real LRC borrow-limit policy
+// Display only (the server enforces the real limit from Settings).
 const BORROW_LIMIT_PLACEHOLDER = 3
 
 // ─── Pagination hook ──────────────────────────────────────────────────────────
@@ -70,9 +58,7 @@ const BORROW_LIMIT_PLACEHOLDER = 3
 function usePagination<T>(items: T[], resetKey?: unknown) {
   const [page, setPage] = useState(1)
 
-  // Reset to page 1 whenever the source list or a tracked key changes
-  // (e.g. when a filter changes). We do this via a derived value so the
-  // hook stays self-contained — callers pass `resetKey` (e.g. the filter).
+  // Keep the page in range if the list got shorter.
   const clampedPage = Math.min(page, Math.max(1, Math.ceil(items.length / PAGE_SIZE)))
 
   const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
@@ -83,8 +69,7 @@ function usePagination<T>(items: T[], resetKey?: unknown) {
     setPage(Math.max(1, Math.min(n, totalPages)))
   }
 
-  // Reset when resetKey changes — call outside render cycle is fine in hooks
-  // but to avoid the "update during render" warning we use a ref pattern:
+  // Back to page 1 when resetKey (e.g. the filter) changes.
   const [lastKey, setLastKey] = useState(resetKey)
   if (resetKey !== undefined && lastKey !== resetKey) {
     setLastKey(resetKey)
@@ -225,7 +210,7 @@ function Badge({
   )
 }
 
-// Deterministic color palette for books without cover images — matches BookCard
+// Placeholder cover colors (same as BookCard).
 const COVER_COLORS = [
   "#1E3A5F", "#5C3D11", "#1B3A2D", "#4A1942",
   "#2C3E50", "#1A1A2E", "#0F4C75", "#154360",
@@ -238,8 +223,7 @@ function getCoverColor(book: Book): string {
   return COVER_COLORS[idx % COVER_COLORS.length]
 }
 
-// Book cover — same visual language as the catalog's BookCard (grid texture +
-// title overlay on the color block when there's no cover image)
+// Book cover, or a placeholder with the title (same as BookCard).
 function Cover({ book, children }: { book: Book; children?: React.ReactNode }) {
   const coverColor = getCoverColor(book)
 
@@ -290,7 +274,7 @@ function EmptyState({ icon, message }: { icon: React.ReactNode; message: string 
   )
 }
 
-// ─── Borrowed Tab (4.5.1) ─────────────────────────────────────────────────────
+// ─── Borrowed tab ─────────────────────────────────────────────────────────────
 
 type BorrowFilter = "all" | BorrowStatus
 
@@ -310,10 +294,7 @@ function formatShortDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
-// Deliberately no per-card "Renew" action: nothing in this codebase can
-// actually extend a due date yet (no endpoint, no renewal_count/
-// renewed_at column, librarian/renewals is a stub page) — shipping a
-// button with nothing behind it would be worse than no button.
+// No "Renew" button: renewals aren't built yet.
 function BorrowedCard({ loan, status }: { loan: ApiLoan; status: BorrowStatus }) {
   const book = loan.books
   const s = BORROW_CFG[status]
@@ -339,12 +320,7 @@ function BorrowedCard({ loan, status }: { loan: ApiLoan; status: BorrowStatus })
             className={cn(s.bg, s.text)}
           />
         </div>
-        {/* Hover/focus reveal — replaces a permanently-visible "View
-            details" button with an overlay cue, so the resting card only
-            shows what a student actually needs at a glance (status, due
-            date). Doesn't rely on hover for anything essential — the
-            whole card is the same Link either way, so touch devices
-            (no hover) lose nothing but the cue itself. */}
+        {/* "View details" overlay on hover; the whole card is a link anyway. */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 group-focus-visible:bg-black/40 transition-colors duration-200 flex items-center justify-center">
           <span
             className="opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-200 px-3 py-1.5 rounded-full bg-white text-ink-900 font-semibold"
@@ -428,11 +404,7 @@ function BorrowedTab({ loans, loading, error }: { loans: ApiLoan[]; loading: boo
   return (
     <div className="flex flex-col gap-4">
 
-      {/* Filter pills + sort. Pills scroll horizontally on mobile instead
-          of wrapping — a lone pill stranded on its own second line (e.g.
-          "Overdue" by itself) read as broken; scrolling keeps them one
-          row and matches how the tab bars above already handle the same
-          not-enough-width problem. */}
+      {/* Filter pills (one scrolling row on phones) and sort */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex gap-2 overflow-x-auto no-scrollbar flex-nowrap sm:flex-wrap sm:overflow-visible min-w-0">
           {filterBtns.map((f) => {
@@ -514,7 +486,7 @@ function BorrowedTab({ loans, loading, error }: { loans: ApiLoan[]; loading: boo
   )
 }
 
-// ─── Saved Tab (4.5.2) ────────────────────────────────────────────────────────
+// ─── Saved tab ────────────────────────────────────────────────────────────────
 
 function SavedCard({
   book,
@@ -545,11 +517,7 @@ function SavedCard({
               className="shadow-sm"
             />
           </div>
-          {/* Hover/focus reveal — replaces the permanently-visible
-              "Borrow"/"View" button with an overlay cue, same pattern as
-              the Borrowed tab's cards. The whole cover+title+author area
-              is this one Link either way, so touch devices (no hover)
-              lose nothing but the cue itself. */}
+          {/* Overlay on hover; the whole card is a link anyway. */}
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 group-focus-visible:bg-black/40 transition-colors duration-200 flex items-center justify-center">
             <span
               className="opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-200 px-3 py-1.5 rounded-full bg-white text-ink-900 font-semibold"
@@ -586,10 +554,7 @@ function SavedCard({
   )
 }
 
-// End-of-grid card linking back to the catalog — same dashed-border
-// "view more" style as the dashboard's CatalogHighlights.tsx, sized to
-// fill its grid cell (stretch) instead of that component's fixed 140px
-// row-card width.
+// "Browse the catalog" card at the end of the grid.
 function BrowseCatalogCard() {
   return (
     <Link
@@ -703,7 +668,7 @@ function SavedTab({ savedBooks, loading, error, onRemove }: { savedBooks: Book[]
   )
 }
 
-// ─── History Tab (4.5.3) ──────────────────────────────────────────────────────
+// ─── History tab ──────────────────────────────────────────────────────────────
 
 type HistoryFilter = "all" | HistoryStatus
 
@@ -751,10 +716,7 @@ function HistoryCard({ loan, status }: { loan: ApiLoan; status: HistoryStatus })
           const fine = fineParts(loan, status)
           const paid = loan.fine_status !== "unsettled"
           return (
-            // Its own footer pinned to the bottom of the card: what the fine
-            // was for and how much on the left, paid/unpaid as a pill on the
-            // right — instead of one wrapping line in warning orange, which
-            // read as a problem even when the fine was already paid.
+            // Fine footer: what it was for and the amount, then a paid/unpaid pill.
             <div className="mt-auto pt-2 border-t border-ink-100 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <p
@@ -788,15 +750,9 @@ function HistoryCard({ loan, status }: { loan: ApiLoan; status: HistoryStatus })
   )
 }
 
-// What the fine was for ("Damage fine", "Late + damage fine") and the total,
-// kept apart so the card can show them on separate lines. `detail` spells
-// out the split for a combined fine ("₱35.00 late + ₱50.00 damage") as a
-// hover tooltip. Loans returned since the parts were recorded separately
-// (overdue_fine_amount / damage_fine_amount) use those exact amounts.
-// Older loans only have the total, so the type is inferred the same way
-// return_loan (routers/loans.py) charges it — late if returned after the
-// due date, damage if it went out in good condition and came back damaged
-// or incomplete.
+// The fine's label ("Late + damage fine"), total, and the split as a tooltip.
+// Older loans only have a total, so the type is worked out from the dates
+// and condition, the way the return desk charges it.
 function fineParts(loan: ApiLoan, status: HistoryStatus): { label: string; amount: string; detail?: string } {
   const amount = `₱${(loan.fine_amount ?? 0).toFixed(2)}`
   const overdue = loan.overdue_fine_amount
@@ -820,16 +776,12 @@ function fineParts(loan: ApiLoan, status: HistoryStatus): { label: string; amoun
   return { label: "Fine", amount }
 }
 
-// Newest return first. Loans come back ordered by borrow date, which
-// doesn't match return order once loans overlap.
+// Newest return first.
 function byReturnedDesc(a: ApiLoan, b: ApiLoan): number {
   return new Date(b.returned_at ?? 0).getTime() - new Date(a.returned_at ?? 0).getTime()
 }
 
-// Every fine across the student's history, not just the latest one — a
-// paid damage fine shouldn't hide an older late fine. The per-loan
-// breakdown is on each History card; the profile page's Outstanding
-// Fines section has the full list.
+// Totals of all the student's fines, not just the latest.
 function getFineSummary(loans: ApiLoan[]) {
   const fined = loans.filter((loan) => loan.status === "returned" && loan.books && (loan.fine_amount ?? 0) > 0)
   if (fined.length === 0) return null
@@ -901,9 +853,7 @@ function HistoryTab({ loans, loading, error }: { loans: ApiLoan[]; loading: bool
   return (
     <div className="flex flex-col gap-4">
 
-      {/* Filter pills — scroll horizontally on mobile instead of wrapping
-          (same fix as the Borrowed tab). The fines summary chip lives
-          in the page header now, not here. */}
+      {/* Filter pills (one scrolling row on phones) */}
       <div className="flex gap-2 overflow-x-auto no-scrollbar flex-nowrap sm:flex-wrap sm:overflow-visible">
         {filterBtns.map((f) => {
           const isActive = filter === f.key
@@ -981,13 +931,10 @@ const TABS: TabDef[] = [
 
 const TAB_ORDER: Tab[] = ["borrowed", "saved", "history"]
 
-// useSearchParams() opts this out of static rendering unless it's under a
-// Suspense boundary — without one, `next build`'s prerender of this page
-// fails outright (see the default export below).
+// Wrapped in Suspense by the default export, which useSearchParams needs
+// for `next build` to work.
 function MyLibraryPage() {
-  // Lets a book detail page's "Back to My Library" link (?tab=saved etc.,
-  // set when a card in that tab was clicked) restore the same tab instead
-  // of always landing back on Borrowed.
+  // ?tab=saved (etc.) reopens that tab, e.g. coming back from a book.
   const searchParams = useSearchParams()
   const initialTab = searchParams.get("tab")
   const [tab, setTab] = useState<Tab>(
@@ -1038,9 +985,7 @@ function MyLibraryPage() {
 
   function TabButton({ t, mobile }: { t: TabDef; mobile: boolean }) {
     const isActive = tab === t.key
-    // Only "Borrowed Books" carries a count today — Saved/History don't
-    // have an equivalent "needs your attention" number the way active
-    // loans do.
+    // Only Borrowed shows a count.
     const count = t.key === "borrowed" ? activeLoanCount : undefined
     return (
       <button
@@ -1095,23 +1040,8 @@ function MyLibraryPage() {
         {tab === "history" && fineSummary && <FineChip summary={fineSummary} />}
       </div>
 
-      {/* Tab bar — sticky under the fixed TopNav so it stays reachable
-          while the list below scrolls, instead of scrolling away with the
-          header on a long Borrowed/Saved/History list. Native `sticky`
-          alone wasn't reliably engaging on phone widths (reported still
-          scrolling away even after ruling out the usual overflow/
-          stacking-context causes). Plain `fixed` isn't a drop-in
-          replacement either — it has no "wait until you'd scroll past
-          me" behavior the way sticky does, so it overlapped this header
-          from the very first render instead of only once scrolled past.
-          useStickyBelowNav reimplements that waiting behavior with an
-          IntersectionObserver: the sentinel marks where the bar naturally
-          sits, and only once it scrolls above the nav does the bar
-          switch to fixed (with a spacer to prevent the layout jump that
-          leaving flow would otherwise cause). Desktop (sm+) keeps plain
-          `sticky` — phone and tablet (including iPad) both get the compact
-          row below, so the breakpoint tracks device class, not just phone
-          width. */}
+      {/* Tab bar: sticks below the nav (useStickyBelowNav on phones and
+          tablets, CSS sticky on desktop). */}
       <div ref={sentinelRef} className="lg:hidden" />
       {isStuck && <div className="lg:hidden h-12" aria-hidden="true" />}
       <div
@@ -1143,9 +1073,7 @@ function MyLibraryPage() {
         </div>
       </div>
 
-      {/* Content — swipeable on touch devices (useSwipeTabs); key={tab}
-          forces a remount on tab change so the slide-in animation replays
-          every time, not just the first. */}
+      {/* Content: swipe to change tabs. key={tab} replays the slide-in. */}
       <div className="flex-1 px-4 sm:px-8 py-5" {...touchHandlers}>
         <div key={tab} className={direction === "forward" ? "tab-enter-forward" : "tab-enter-back"}>
           {tab === "borrowed" && <BorrowedTab loans={loans} loading={loansLoading} error={loansError} />}

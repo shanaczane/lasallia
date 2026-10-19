@@ -1,9 +1,7 @@
 import { Book } from './book'
 
-// 'confirmed' dropped in Phase 5 — becoming 'ready' is automatic now
-// (Phase 4's return handler, or the pickup-window expiry sweep), never a
-// manual librarian pre-approval step. 'fulfilled' = picked up, became a
-// loan. 'expired' = pickup_by passed, unclaimed.
+// 'ready' is set automatically when a copy is free. 'fulfilled' = picked
+// up (became a loan). 'expired' = not picked up in time.
 export type ReservationStatus = 'pending' | 'ready' | 'fulfilled' | 'cancelled' | 'expired'
 
 export type Reservation = {

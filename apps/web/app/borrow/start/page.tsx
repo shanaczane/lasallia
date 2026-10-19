@@ -1,9 +1,5 @@
-// apps/web/app/borrow/start/page.tsx
-// Where "Borrow this book" goes on a phone or tablet (see lib/device.ts)
-// instead of opening the QR modal — there's no second screen to scan it
-// from. Claims the hold right here, behind the same spinner the borrow form
-// shows while loading, then replaces itself with /borrow/[token] so the
-// whole thing reads as one page and Back skips this step.
+// "Borrow this book" on a phone or tablet (no QR step): claims the hold,
+// then replaces itself with /borrow/[token] so Back skips this page.
 
 'use client'
 
@@ -28,8 +24,7 @@ function StartBorrow() {
 
   const [error, setError] = useState<{ message: string; retryable: boolean } | null>(null)
 
-  // Claiming takes the only available copy of a single-copy title, so it
-  // must run once — the ref survives Strict Mode's double-invoked effect.
+  // Claim only once (React dev mode runs effects twice).
   const startedRef = useRef(false)
 
   async function claim() {

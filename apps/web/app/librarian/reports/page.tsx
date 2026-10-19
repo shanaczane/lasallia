@@ -1,11 +1,5 @@
-// Sprint 5.6 – Reports Screen
-// Reports plan Phase 1 — real filterable backend replacing the old
-// client-side derive* functions (moved to apps/api/core/reports.py).
-// Layout pass: Overview is now a fixed grid of report-preview cards
-// (each linking to its own full-report tab) instead of a draggable
-// dashboard, and every full-report tab shares one table chrome
-// (ReportTableCard) — title/subtitle, search, Export CSV, and a
-// footer summary + pagination — so the tabs read as one system.
+// The Reports page: an Overview of report cards, and a tab per full report.
+// Every report tab uses ReportTableCard (search, Export CSV, pagination).
 "use client"
 
 import { Fragment, Suspense, cloneElement, useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -126,10 +120,8 @@ function EmptyState({ text }: { text: string }) {
   )
 }
 
-// ─── Uniform chrome for every full-report tab: title/subtitle, search,
-// Export CSV, then whatever table the caller renders, then a footer
-// summary + pagination. Keeping this one component is what makes
-// Catalogue/Shelf List/Circulation/Patrons/Requests read as one system.
+// ─── Shared frame for every report tab: title, search, Export CSV, the
+// table, then a footer and pagination.
 function ReportTableCard({
   title,
   subtitle,
@@ -150,10 +142,7 @@ function ReportTableCard({
   query?: string
   onQueryChange?: (v: string) => void
   searchPlaceholder?: string
-  // An extra filter control (e.g. a checkbox) rendered in the header row,
-  // between the title and the search box — for a filter beyond plain text
-  // search that still belongs with the other header-level controls, not
-  // floating as its own row above the table.
+  // An extra control in the header row, before the search box.
   headerExtra?: React.ReactNode
   onExport: () => void
   exportDisabled: boolean
@@ -220,8 +209,7 @@ function ReportTableCard({
   )
 }
 
-// ─── Overview preview card — title/subtitle left, an "Open full report"
-// link OR a plain corner note on the right, never both. ─────────────────────
+// ─── Overview card: title on the left, a link or a note on the right. ─────
 function OverviewCard({
   title,
   subtitle,
@@ -270,9 +258,7 @@ function OverviewCard({
   )
 }
 
-// ─── Drag-to-reorder wrapper for the Overview grid — Sprint 5.6.1, kept
-// through the layout pass. Renders whatever OverviewCard the caller gives
-// it, plus a grip handle wired to dnd-kit. ─────────────────────────────────
+// ─── Lets Overview cards be dragged to reorder. ─────────────────────────────
 function SortableOverviewCard({ id, full, children }: { id: string; full?: boolean; children: (dragHandle: React.ReactNode) => React.ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
   const handle = (
@@ -322,13 +308,8 @@ function CatalogueBarList({ data }: { data: CatalogueSlice[] }) {
   )
 }
 
-// Circulation Overview bar chart — a single-series magnitude-by-month view.
-// Bar width/gap are fixed and the viewBox scales with data.length (rather
-// than a fixed 270px canvas sized for exactly 6 bars) so it doesn't crowd
-// or overflow if the range returns a different bucket count. Rounded-top/
-// square-baseline bars, a hairline baseline, and a per-bar hover tooltip
-// (value + share of the period total — context the always-on tip label
-// doesn't carry) replace the old static, unlabeled-baseline version.
+// Loans-per-month bar chart. Its width grows with the number of months, and
+// hovering a bar shows its value and share of the total.
 function BarChartViz({ data }: { data: Bucket[] }) {
   const [hovered, setHovered] = useState<number | null>(null)
 
@@ -357,8 +338,7 @@ function BarChartViz({ data }: { data: Bucket[] }) {
     const h = Math.max(1.5, (d.value / max) * chartH)
     const y = baseline - h
     const r = Math.min(radius, h, bw / 2)
-    // Rounded top corners, square at the baseline — a plain rx rounds all
-    // four corners, which reads as "floating" rather than grown-from-axis.
+    // Round only the top corners.
     const path = `M${x},${y + h} L${x},${y + r} Q${x},${y} ${x + r},${y} L${x + bw - r},${y} Q${x + bw},${y} ${x + bw},${y + r} L${x + bw},${y + h} Z`
     return { ...d, x, y, h, path }
   })
@@ -516,9 +496,7 @@ function ProgramUsageList({ data }: { data: ProgramUsage[] }) {
   )
 }
 
-// ─── Shelf copy status pill — matches book_copies.status values ───────────────
-// Shared with the librarian catalog's Copy Management table (lib/copyStatus.ts)
-// so a copy's status reads identically on both screens.
+// ─── Copy status pill (same as the catalog's copy table) ──────────────────────
 function ShelfStatusBadge({ status }: { status: string }) {
   const cfg = copyStatusConfig(status)
   return (
@@ -803,10 +781,8 @@ function CirculationTable({ rows, onExport }: { rows: CirculationRow[]; onExport
   )
 }
 
-// ─── Requests — faculty book-request inbox. Faculty submit from
-// /user/requests (require_faculty at the API); this lists every one and
-// lets a librarian move it through pending -> approved/rejected ->
-// (approved only) fulfilled. See migrations/0039_book_requests.sql.
+// ─── Requests: faculty book requests. A librarian approves or rejects
+// each one, then marks approved ones fulfilled.
 const REQUEST_STATUS_LABEL: Record<BookRequestStatus, string> = {
   pending: "Pending", approved: "Approved", rejected: "Rejected", fulfilled: "Fulfilled", cancelled: "Cancelled",
 }
@@ -865,9 +841,7 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
     }
   }
 
-  // Respects the same page-level Date Range control every other full-report
-  // tab uses (see activeDateBounds) instead of a second, duplicate control
-  // just for this tab.
+  // Uses the page's date range filter.
   const inRange = requests.filter((r) => {
     const t = new Date(r.created_at).getTime()
     if (dateFrom && t < new Date(dateFrom).getTime()) return false
@@ -1092,15 +1066,9 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
   )
 }
 
-// ─── Weeding tab — Reports plan Phase 2 ────────────────────────────────────────
-// A deterministic heuristic (low/zero borrows + old) decides what's a
-// candidate; AI only narrates that finding in plain English (candidate.reason).
-// The librarian makes every real decision — Archive or Keep — nothing here
-// removes a book on its own.
-// ─── Inventory — full report tab, one row per shelf check ────────────────────
-// Self-contained like WeedingPanel: fetches its own rows, honouring only the
-// page's date range (when each check was started). Two exports — the
-// summary (one row per check) and the per-copy details.
+// ─── Inventory: one row per shelf check ──────────────────────────────────────
+// Loads its own data and only uses the date range filter. Exports a summary
+// or a row per copy.
 const INVENTORY_STATUS_LABEL: Record<InventorySession["status"], string> = {
   in_progress: "In progress",
   completed: "Completed",
@@ -1248,6 +1216,8 @@ function InventoryPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: stri
   )
 }
 
+// ─── Weeding: old, rarely borrowed books. A fixed rule picks them; AI only
+// words the reason. The librarian decides to archive or keep each one.
 function WeedingPanel() {
   const [candidates, setCandidates] = useState<WeedingCandidate[]>([])
   const [events, setEvents] = useState<WeedingEvent[]>([])
@@ -1272,12 +1242,7 @@ function WeedingPanel() {
 
   useEffect(() => { load() }, [])
 
-  // Each "archived" row is a historical log entry, not current state — a
-  // book archived, then later restored, still has that old "archived" row
-  // on record. Only the most recent event for a given book reflects
-  // whether it's actually still archived right now, so Restore should only
-  // ever appear on that one row, computed over the full history (not just
-  // whatever the search box currently has visible).
+  // Only each book's latest log entry shows Restore (older entries are history).
   const currentEventIdByBook = useMemo(() => {
     const latestAt = new Map<string, string>()
     const current = new Map<string, string>()
@@ -1507,13 +1472,12 @@ function matchesStatus(tx: FeedItem, filter: ActivityStatusFilter): boolean {
     case "all":
       return true
     case "active_borrow":
-      // Still checked out — not yet returned.
+      // Still out.
       return tx.type === "checkout" && !!tx.loan && tx.loan.status !== "returned"
     case "recent_return":
       return tx.type === "return"
     case "ongoing_reserve":
-      // Still waiting on the hold shelf or in the queue — not yet picked
-      // up, cancelled, or expired.
+      // Still pending or ready.
       return tx.type === "reserve" && !!tx.reservation && (tx.reservation.status === "pending" || tx.reservation.status === "ready")
   }
 }
@@ -1531,11 +1495,9 @@ function ActivityLogTable({
   onExport: () => void
   patrons: UserProfile[]
   onSelectUser: (patron: UserProfile) => void
-  /** Opens the Activity Detail side panel (same one the dashboard's Recent
-   *  Activity table uses) for the clicked row's event. */
+  /** Opens the activity detail panel for a row. */
   onSelectItem: (item: FeedItem) => void
-  /** ISO bounds from the page-level Date Range filter bar above the tabs —
-   *  this tab doesn't have its own date control, it just respects that one. */
+  /** The page's date range filter. */
   dateFrom?: string
   dateTo?: string
 }) {
@@ -1543,14 +1505,8 @@ function ActivityLogTable({
   const [statusFilter, setStatusFilter] = useState<ActivityStatusFilter>("all")
   const [page, setPage] = useState(1)
 
-  // Three statuses a librarian actually watches for, distinct from the
-  // Type column's plain checkout/return/reserve split: a checkout only
-  // counts here while it's still out (not yet returned), and a
-  // reservation only while it's still pending/ready — not every row of
-  // that type regardless of where it ended up. Derived from the feed's
-  // own rows (each already carries its full Loan/Reservation record)
-  // rather than a second fetch, same "no second source of truth" rule
-  // buildFeed itself follows.
+  // Counts of what's still open: books still out and reservations still
+  // pending or ready.
   const statusCounts = useMemo(() => {
     const counts: Record<ActivityStatusFilter, number> = { all: feed.length, active_borrow: 0, recent_return: 0, ongoing_reserve: 0 }
     for (const tx of feed) {
@@ -1898,10 +1854,7 @@ function FinesTable({
 }: {
   rows: FineRow[]
   onExport: () => void
-  // Librarian-side "we already collected this in person" record-keeping
-  // (same action PatronProfileModal offers per-patron) — only "unsettled"
-  // entries get it; "accruing" isn't final until the book is actually
-  // returned, and "paid" ones already show their receipt number.
+  // Marks an unpaid fine as paid at the desk.
   onSettled: (loanId: string, receiptNumber: string) => void
 }) {
   const [query, setQuery] = useState("")
@@ -2040,10 +1993,7 @@ function FinesTable({
   )
 }
 
-// Same "Record Payment" flow as PatronProfileModal's per-patron Fines
-// tab (receipt number required, PATCH /loans/{id}/settle-fine) — this is
-// the library-wide aggregate view of the same underlying loans, so it
-// gets the same action rather than only being able to look.
+// "Record Payment" for a fine (needs a receipt number), as on a patron's profile.
 function FineEntryActionRow({
   entry,
   onSettled,
@@ -2159,9 +2109,8 @@ function dateRangePresetLabel(preset: DateRangePreset): string {
   return preset === "all" ? "All time" : preset === "week" ? "This week" : preset === "month" ? "This month" : preset === "semester" ? "Semester" : "Custom"
 }
 
-// ─── Custom filter dropdown — a native <select>'s open popup can't be
-// restyled (its own scrollbar/arrows are OS chrome, not CSS-able), so this
-// renders the option list ourselves in a plain scrollable div instead. ──────
+// ─── Custom dropdown, since a native select's list can't be styled.
+// Not used right now. ───────────────────────────────────────────────────────
 function FilterDropdown({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -2238,17 +2187,14 @@ function ReportsPageContent() {
     return (valid as string[]).includes(t ?? "") ? (t as ReportTab) : "overview"
   })
 
-  // `books` populates the Category/Program filter dropdowns and is the full
-  // per-title data source for the Catalogue tab. `patrons` does that too,
-  // but is also how the Activity Log tab resolves a feed row's user id back
-  // to a full profile for the click-to-view-account popup below.
+  // books: for the filters and the Catalogue tab. patrons: for the filters
+  // and opening a patron's profile from the Activity Log.
   const [books, setBooks] = useState<Book[]>([])
   const [patrons, setPatrons] = useState<UserProfile[]>([])
-  // Fixed heuristic, not affected by the report filters — fetched once so
-  // both the Overview preview and the Weeding tab's own count agree.
+  // Loaded once (filters don't apply), so Overview and the tab agree.
   const [weedingCandidates, setWeedingCandidates] = useState<WeedingCandidate[]>([])
 
-  // Overview dashboard card order — Sprint 5.6.1, draggable.
+  // Order of the Overview cards (draggable).
   const [cardOrder, setCardOrder] = useState<string[]>(["catalogue", "circulation", "patrons", "trends", "library-stats", "weeding"])
 
   useEffect(() => {
@@ -2257,14 +2203,11 @@ function ReportsPageContent() {
       .catch(() => {})
   }, [])
 
-  // Activity Log tab — click a user to view their account, same
-  // PatronProfileModal/ConfirmStatusDialog + real updatePatronStatus call
-  // the Patrons page uses (see app/librarian/patrons/page.tsx).
+  // Activity Log: clicking a user opens their profile.
   const [viewingPatron, setViewingPatron] = useState<UserProfile | null>(null)
   const [confirmingStatus, setConfirmingStatus] = useState<UserProfile | null>(null)
 
-  // Activity Log tab — click a row to open the same slide-in detail panel
-  // the dashboard's Recent Activity table uses (see ActivityDetailPanel).
+  // Activity Log: clicking a row opens the activity detail panel.
   const [selectedActivity, setSelectedActivity] = useState<FeedItem | null>(null)
 
   async function handleToggleStatus(userId: string) {
@@ -2278,13 +2221,12 @@ function ReportsPageContent() {
     try {
       await updatePatronStatus(userId, nextStatus)
     } catch {
-      // Revert on failure — the optimistic update above was wrong.
+      // Undo if it failed.
       setPatrons((prev) => prev.map((p) => (p.id === userId ? { ...p, status: current?.status } : p)))
     }
   }
 
-  // Activity Log / Circulation tabs — same real loans/reservations rows the
-  // dashboard's "Recent Activity" preview uses (see lib/activity.ts).
+  // Loans and reservations, for the Activity Log and Circulation tabs.
   const [loans, setLoans] = useState<Loan[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
 
@@ -2294,24 +2236,17 @@ function ReportsPageContent() {
       .catch(() => {})
   }, [])
 
-  // Filter state – Sprint 5.6.2, now actually wired (Reports plan Phase 1)
+  // Filters
   const [dateRange, setDateRange]   = useState<DateRangePreset>("month")
   const [fromDate, setFromDate]     = useState("")
   const [toDate, setToDate]         = useState("")
   const [category, setCategory]     = useState("All Categories")
-  // The borrower's college — narrows every loan-based report to patrons of
-  // that college (profiles.college), like Year Level does for year.
+  // The borrower's college, for loan-based reports.
   const [college, setCollege]       = useState("All Colleges")
   const [yearLevel, setYearLevel]   = useState("All Year Levels")
 
-  // Circulation/Activity Log are the two tabs built client-side from
-  // loans+reservations (lib/activity.ts) rather than a server-filtered
-  // /reports/* endpoint — without this, the Category/Program/Year Level
-  // controls in the filter bar above would visibly sit over these two tabs
-  // but silently do nothing, since buildFeed's output was never run back
-  // through them. Program/year level come from `patrons` (already loaded
-  // for the activity table's own click-to-view-account lookup) rather
-  // than a second fetch, matched by each transaction's userId.
+  // The activity feed with the page's filters applied (these two tabs are
+  // built in the browser, not by the API).
   const activityFeed = useMemo(() => {
     const full = buildFeed(loans, reservations)
     const wantedYear = YEAR_LEVEL_LABELS[yearLevel]
@@ -2344,9 +2279,8 @@ function ReportsPageContent() {
   const [shelfListData, setShelfListData] = useState<ShelfListRow[]>([])
   const topPatronsData = allPatronsData.slice(0, 5)
 
-  // Reports plan Phase 3 — never auto-fetched. Cleared (not left stale)
-  // whenever any filter changes, so an AI sentence can never sit next to
-  // numbers it no longer describes.
+  // AI summaries, only on request. Cleared when a filter changes, so they
+  // never describe old numbers.
   const [summaries, setSummaries] = useState<ReportSummaries | null>(null)
   const [summarizing, setSummarizing] = useState(false)
 
@@ -2361,9 +2295,7 @@ function ReportsPageContent() {
     }
   }, [dateRange, fromDate, toDate, category, college, yearLevel])
 
-  // Just the date half of currentFilters(), for the Activity Log / Circulation
-  // tabs — neither has its own Date Range control, they respect this same
-  // page-level filter bar instead of duplicating it.
+  // The date range on its own, for tabs that filter in the browser.
   const activeDateBounds = resolveDateRange(dateRange, fromDate, toDate)
 
   useEffect(() => {
@@ -2408,8 +2340,7 @@ function ReportsPageContent() {
 
   const handlePrint = () => window.print()
 
-  // Book-centric like the Shelf List, so College means the book's own
-  // college here, not the borrower's.
+  // Here College means the book's college, not the borrower's.
   const catalogueBooks = books.filter((b) =>
     (category === "All Categories" || b.category === category) &&
     (college === "All Colleges" || b.subject === college),
@@ -2465,10 +2396,7 @@ function ReportsPageContent() {
     outstanding: r.outstanding,
   })))
 
-  // Patched locally from settleFine's own inputs, same reasoning
-  // PatronProfileModal's own handleFineSettled gives — moves the amount
-  // from unsettled to paid on whichever row/entry holds this loan, rather
-  // than refetching the whole Reports bundle for one settled fine.
+  // Move the fine from unpaid to paid locally, instead of reloading everything.
   function handleFineSettled(loanId: string, receiptNumber: string) {
     const round2 = (n: number) => Math.round(n * 100) / 100
     setFinesData((prev) =>
@@ -2497,9 +2425,8 @@ function ReportsPageContent() {
     item: tx.item,
   })))
 
-  // Header's global Export CSV button follows whichever tab is open —
-  // Overview/Weeding/Requests have no single table to export, so it's
-  // disabled there instead of guessing which one the librarian meant.
+  // The header's Export CSV exports the open tab (disabled where there's
+  // no single table).
   const headerExport: { fn: () => void; disabled: boolean } | null = (() => {
     switch (tab) {
       case "catalogue":   return { fn: exportCatalogueCsv, disabled: catalogueBooks.length === 0 }
@@ -2518,8 +2445,7 @@ function ReportsPageContent() {
     { label: "Weeding Candidates", value: weedingCandidates.length.toLocaleString(), icon: <BarChart2 size={18} />, color: "text-gold-600", bg: "bg-gold-100" },
   ]
 
-  // Overview dashboard cards — draggable (Sprint 5.6.1). Content only;
-  // order lives in `cardOrder` below.
+  // Overview card contents (their order is in cardOrder).
   const cardDefs: Record<string, React.ReactNode> = {
     catalogue: (
       <OverviewCard
@@ -2680,12 +2606,7 @@ function ReportsPageContent() {
         </p>
       </div>
 
-      {/* ── Filter bar – Sprint 5.6.2 ─────────────────────── */}
-      {/* flex-nowrap + overflow-x-auto instead of flex-wrap: Year Level
-          was dropping to its own second row whenever the other three
-          groups' combined width left it just short of room. Scrolling
-          horizontally in that case reads better than a filter bar whose
-          height changes depending on what's selected. */}
+      {/* ── Filter bar (one row; scrolls sideways if it doesn't fit) ── */}
       <div className="rounded border border-ink-200 bg-white p-4 flex flex-nowrap items-end gap-3 overflow-x-auto no-scrollbar print:hidden" style={{ boxShadow: "var(--shadow)" }}>
         {/* Date range quick select */}
         <div className="flex flex-col gap-1 shrink-0">
@@ -2806,7 +2727,7 @@ function ReportsPageContent() {
         ))}
       </div>
 
-      {/* ── Overview tab – Sprint 5.6.1 & 5.6.3 ──────────── */}
+      {/* ── Overview tab ───────────────────────────────────── */}
       {tab === "overview" && (
         <div className="flex flex-col gap-6">
           {/* Quick stats */}
@@ -2885,7 +2806,7 @@ function ReportsPageContent() {
       {/* ── Circulation tab ────────────────────────────────── */}
       {tab === "circulation" && <CirculationTable rows={circulationRows} onExport={exportCirculationCsv} />}
 
-      {/* ── Overdue & Fines tab – Sprint 5.6.4 ─────────────── */}
+      {/* ── Overdue & Fines tab ────────────────────────────── */}
       {tab === "overdue" && (
         <div className="flex flex-col gap-6">
           {summaries?.overdue && (
@@ -2907,7 +2828,7 @@ function ReportsPageContent() {
         <RequestsPanel dateFrom={activeDateBounds.dateFrom} dateTo={activeDateBounds.dateTo} />
       )}
 
-      {/* ── Weeding tab – Reports plan Phase 2 ────────────── */}
+      {/* ── Weeding tab ───────────────────────────────────── */}
       {tab === "weeding" && <WeedingPanel />}
 
       {/* ── Inventory tab — see InventoryPanel ── */}

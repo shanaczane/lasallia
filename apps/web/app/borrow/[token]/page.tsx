@@ -1,12 +1,8 @@
-// apps/web/app/borrow/[token]/page.tsx
-// Sprint: Phase 2 borrow happy path — the form opened via QR scan (phone)
-// or "Continue on this device" (same device). Public route, no app login
-// required — the hold token in the URL is the only credential this page
-// needs (see apps/api's routers/holds.py, routers/loans.py).
+// The borrow form, opened from the QR code (or on the same device). No
+// login needed: the hold token in the URL is the credential.
 //
-// Box 2 (what book) intentionally has no accession number anywhere on
-// this page — the student types it themselves in Box 3, off the physical
-// label, as proof they actually have the book in hand.
+// The accession number is never shown; the student types it from the book's
+// label, which proves they have it.
 
 'use client'
 
@@ -21,8 +17,7 @@ import { cn } from '@/lib/utils'
 import { BookCover } from '@/components/ui/catalog/BookCover'
 import { fetchHold, confirmLoan, extendHold, reportMissing, releaseHold, NetworkError, type HoldDetail, type Condition } from '@/lib/kiosk'
 
-// Placeholder pending real LRC policy (plan doc's open question #2) —
-// display only, not enforced anywhere yet (that's Phase 3).
+// Display only (the server enforces the real limit from Settings).
 const BORROW_LIMIT_PLACEHOLDER = 3
 
 const CONDITION_OPTIONS: Array<{ value: Condition; label: string }> = [
@@ -35,10 +30,8 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
-// Counts down from the server's own seconds_left, anchored to when this
-// device received it. Only the elapsed time on this device matters, so a
-// phone or kiosk PC whose clock is minutes off no longer sees every hold
-// as already expired (comparing expires_at to Date.now() did exactly that).
+// Counts down from the server's seconds_left, so a device with a wrong
+// clock still shows the right time.
 function useCountdown(deadline: number | null) {
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
 
@@ -74,9 +67,8 @@ function BibRow({ icon, label, value }: { icon: React.ReactNode; label: string; 
 export default function BorrowFormPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params)
 
-  // The kiosk's "Continue on this device" link carries ?from=kiosk. That
-  // student was identified by an ID tap, not a web login, so /user/* would
-  // bounce them to a login — send them back to the kiosk instead.
+  // ?from=kiosk: send them back to the kiosk afterwards (they aren't logged
+  // into the web).
   const [fromKiosk, setFromKiosk] = useState(false)
   useEffect(() => {
     setFromKiosk(new URLSearchParams(window.location.search).get('from') === 'kiosk')
@@ -87,8 +79,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   const [hold, setHold] = useState<HoldDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  // The hold couldn't be loaded because of the connection, not because the
-  // link is dead — worth a "Try again" instead of sending them back.
+  // The connection failed (not the link), so offer "Try again".
   const [loadFailedOffline, setLoadFailedOffline] = useState(false)
   // Bumped by "Try again" to rerun the load below.
   const [loadAttempt, setLoadAttempt] = useState(0)
@@ -109,9 +100,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   const [releasing, setReleasing] = useState(false)
   const router = useRouter()
 
-  // Leaving without borrowing frees the copy right away (or hands it to
-  // the next student in the reservation queue) instead of leaving it
-  // blocked until the hold times out.
+  // Leaving frees the copy right away instead of waiting for the timeout.
   async function handleCancel() {
     if (releasing) return
     setReleasing(true)
@@ -177,9 +166,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
     setLoadAttempt((n) => n + 1)
   }
 
-  // Phones throttle or freeze timers while the screen is off (walking to
-  // the shelf), so re-sync with the server whenever the page is visible
-  // again rather than trusting the local countdown alone.
+  // Phones pause timers with the screen off, so re-sync when visible again.
   useEffect(() => {
     if (!hold || confirmed || reportedMissing) return
     function resync() {
@@ -225,8 +212,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   }
 
   // ── Connection problem loading the hold ──────────────────────────────────
-  // The link may still be perfectly good, so offer a retry rather than the
-  // dead-end screen below.
+  // The link may still work, so offer a retry.
   if (loadError && loadFailedOffline) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-4" style={{ backgroundColor: 'var(--color-paper)' }}>
@@ -290,9 +276,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   }
 
   // ── Reported missing ─────────────────────────────────────────────────────
-  // Same reasoning as the success screen below: the hold behind this page
-  // is already released server-side the instant this fires, so there's
-  // nothing to "go back" to on this URL — link forward instead.
+  // The hold is gone now, so link forward, not back.
   if (reportedMissing) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-4" style={{ backgroundColor: 'var(--color-paper)' }}>
@@ -320,11 +304,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   }
 
   // ── Success ──────────────────────────────────────────────────────────────
-  // No browser-back affordance here on purpose: the hold this page was
-  // built around is already deleted server-side the moment the loan
-  // confirms (routers/loans.py's confirm_loan), so navigating "back" to
-  // this same URL re-fetches a hold that no longer exists and dead-ends on
-  // the terminal error state above. These links go forward instead.
+  // No Back link: the hold is gone after borrowing, so link forward.
   if (confirmed) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-4" style={{ backgroundColor: 'var(--color-paper)' }}>
@@ -366,8 +346,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
   }
 
   const isExpired = secondsLeft === 0
-  // Mirrors routers/holds.py's EXTEND_WINDOW_SECONDS — the API rejects
-  // earlier requests, so the offer only appears once it can succeed.
+  // Matches the API's 45-second "Add time" window.
   const showAddTime = !isExpired && hold.can_extend && secondsLeft !== null && secondsLeft <= 45
   const minutes = secondsLeft !== null ? Math.floor(secondsLeft / 60) : 0
   const seconds = secondsLeft !== null ? secondsLeft % 60 : 0
@@ -407,7 +386,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
           </div>
         )}
 
-        {/* Walk-to-the-shelf action (2.3) */}
+        {/* "I can't find it" */}
         {!isExpired && (
           <div className="flex items-center justify-center">
             <button

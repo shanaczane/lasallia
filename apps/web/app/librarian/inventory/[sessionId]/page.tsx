@@ -1,8 +1,5 @@
-// apps/web/app/librarian/inventory/[sessionId]/page.tsx
-// One inventory check. While it's open: the scan screen (USB scanner or
-// webcam), live counts and the copies still to scan. Once finished: the
-// results grouped Not Found / Misplaced / Found, with one-click Mark
-// Missing / Mark Found on every copy that needs a follow-up.
+// One inventory check: the scan screen while it's open, then the results
+// (Not Found / Misplaced / Found) with Mark Missing / Mark Found buttons.
 
 "use client"
 
@@ -48,9 +45,7 @@ const OUTCOME_STYLE: Record<ScanOutcome, { box: string; icon: React.ReactNode }>
   unknown:         { box: "border-red-200 bg-red-50 text-danger",          icon: <HelpCircle size={18} className="shrink-0" /> },
 }
 
-// A short tone per result, so a librarian walking the shelf doesn't have to
-// look at the screen after every scan. Best-effort: silent if the browser
-// blocks audio.
+// A different tone per result, so the librarian needn't look at the screen.
 function beep(outcome: ScanOutcome) {
   try {
     const ctx = new AudioContext()
@@ -172,8 +167,7 @@ function ScanView({ detail, setDetail }: { detail: InventorySessionDetail; setDe
   const [finishing, setFinishing] = useState(false)
   const [showLeft, setShowLeft] = useState(false)
 
-  // A USB scanner can fire faster than the API answers — run scans one at
-  // a time, in order, so counts never race each other.
+  // Scans can come faster than the API answers, so handle them one at a time.
   const queue = useRef(Promise.resolve())
   const detailRef = useRef(detail)
   useEffect(() => { detailRef.current = detail }, [detail])

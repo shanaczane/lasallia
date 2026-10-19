@@ -1,4 +1,3 @@
-// apps/web/app/librarian/reservations/page.tsx
 "use client"
 
 import { useState, useMemo, useEffect, useRef } from "react"
@@ -27,9 +26,7 @@ const BORROW_CONDITIONS: { value: Condition; label: string }[] = [
   { value: "already_damaged", label: "Already damaged" },
 ]
 
-// Same chevron-as-background-image treatment PatronsToolbar's role filter
-// uses, so every librarian list page's search+filter row reads as one
-// consistent component instead of each page inventing its own select style.
+// Dropdown arrow, same as other selects.
 const SELECT_CHEVRON =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"
 
@@ -58,12 +55,8 @@ function bookAuthor(r: Reservation): string {
   return r.books?.author ?? ""
 }
 
-// Ready reservations sit on the hold shelf for a fixed pickup window
-// (reservation_hold_period_days, Library Settings — 3 days by default)
-// before the sweep in reservations.py automatically expires them and
-// hands the copy to the next person in line. Surfaced as a badge right
-// next to the patron's name so a librarian can scan the whole list and
-// immediately see what's about to lapse, not just read it row by row.
+// A badge showing how soon a ready reservation's pickup deadline is, so
+// librarians can see what's about to expire.
 function pickupUrgency(pickupBy: string): { shortLabel: string; badgeClass: string } {
   const diffDays = Math.ceil((new Date(pickupBy).getTime() - Date.now()) / 86_400_000)
   if (diffDays <= 0) return { shortLabel: "Closes today", badgeClass: "bg-danger-bg text-danger" }
@@ -73,9 +66,7 @@ function pickupUrgency(pickupBy: string): { shortLabel: string; badgeClass: stri
 }
 
 // ─── Status config ────────────────────────────────────────────────────────────
-// Becoming 'ready' is automatic now (Phase 4's return handler, or the
-// pickup-window expiry sweep in the API) — nothing here manually advances
-// a reservation, only cancels one.
+// Reservations become 'ready' automatically; librarians can only cancel.
 const STATUS_CONFIG: Record<
   ReservationStatus,
   { icon: React.ReactNode; iconBg: string; iconColor: string; badge: string; label: string }
@@ -90,10 +81,7 @@ const STATUS_CONFIG: Record<
 // ─── Tab config ───────────────────────────────────────────────────────────────
 type TabKey = "all" | ReservationStatus
 
-// showCount: only the tabs a librarian actually needs to act on carry a
-// count badge — pending requests and ready holds are "unread/ongoing"
-// work. All, picked up, expired, and cancelled are either a plain total or
-// closed history; a count there is just noise, not something to act on.
+// showCount: only tabs that need action (pending, ready) show a count.
 type Tab = { key: TabKey; label: string; shortLabel: string; showCount: boolean }
 
 const TABS: Tab[] = [
@@ -116,9 +104,7 @@ interface RejectModalProps {
 function RejectModal({ reservation, pending, onConfirm, onClose }: RejectModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
   useDialogKeyboard(dialogRef, { onClose: pending ? undefined : onClose })
-  // A "ready" reservation already has a copy pulled and sitting on the
-  // hold shelf — cancelling it releases that specific copy (to the next
-  // person in line, or back toward reshelving), not just a queue spot.
+  // Cancelling a ready reservation also releases its copy.
   const isReady = reservation.status === "ready"
 
   return (
@@ -178,13 +164,8 @@ function RejectModal({ reservation, pending, onConfirm, onClose }: RejectModalPr
 }
 
 // ─── Process Borrow Modal ────────────────────────────────────────────────────
-// Shortcut into the same POST /loans/librarian-assisted flow Borrow & Return's
-// Assisted Borrow panel uses — skips the "tap ID / search for student" step
-// since a reservation already identifies exactly who this copy is held for.
-// The librarian still has to scan/type the accession number themselves: that
-// step is what proves they actually have the right physical copy in hand,
-// same as every other desk checkout, not something a reservation record can
-// stand in for.
+// Checks out a reserved book at the desk, for the student who reserved it.
+// The librarian still scans the accession number to confirm the copy.
 interface ProcessBorrowModalProps {
   reservation: Reservation
   onDone: () => void
@@ -203,10 +184,7 @@ function ProcessBorrowModal({ reservation, onDone, onClose }: ProcessBorrowModal
   const [submitError, setSubmitError] = useState("")
   const [confirmedTitle, setConfirmedTitle] = useState<string | null>(null)
 
-  // Mirrors sessionId/confirmedTitle for the unmount cleanup below — that
-  // closure is fixed at the moment this effect first runs (empty dep array,
-  // intentionally: it should only open one session for this modal's whole
-  // lifetime), so it can't see later state updates directly. Refs can.
+  // Refs, so the cleanup below sees the latest values.
   const sessionIdRef = useRef<string | null>(null)
   const confirmedRef = useRef(false)
 
@@ -217,8 +195,7 @@ function ProcessBorrowModal({ reservation, onDone, onClose }: ProcessBorrowModal
       .catch((err) => { if (!cancelled) setSessionError(err instanceof Error ? err.message : "Could not start this checkout") })
     return () => {
       cancelled = true
-      // Only the "still mid-flow, never confirmed" case needs cleanup — a
-      // successful confirm already closed it out via handleConfirm below.
+      // End the session if the borrow was never confirmed.
       if (sessionIdRef.current && !confirmedRef.current) endSession(sessionIdRef.current).catch(() => {})
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -431,9 +408,7 @@ function EmptyState() {
 interface ReservationRowProps {
   reservation: Reservation
   isLast: boolean
-  // The status pill is redundant on a tab already filtered to one status
-  // (Pending, Ready, etc.) — only the All tab mixes statuses, so only
-  // there does the row need to say which one this is.
+  // Only the All tab needs a status pill.
   showStatus: boolean
   onReject: (r: Reservation) => void
   onProcessBorrow: (r: Reservation) => void
@@ -518,9 +493,7 @@ function ReservationRow({ reservation: r, isLast, showStatus, onReject, onProces
             <span className="hidden sm:inline">{isReady ? "Cancel Hold" : "Reject"}</span>
           </button>
         ) : (
-          // Reserve the same footprint as the action button on rows where
-          // there's nothing to cancel, so the right edge of the list stays
-          // aligned instead of going ragged.
+          // Empty space where the button would be, to keep rows aligned.
           <div aria-hidden="true" className="invisible h-8 w-8 sm:w-auto sm:min-w-30 sm:px-3" />
         )}
       </div>
@@ -629,9 +602,7 @@ export default function LibrarianReservationsPage() {
       </div>
 
       <div className="border-b border-ink-200">
-        {/* Phone and tablet (including iPad) get the compact, horizontally
-            scrollable tab row below lg (1024px) — only real desktop widths
-            keep the wide fixed layout. */}
+        {/* Phones and tablets: a scrollable tab row. */}
         <div className="flex lg:hidden w-full overflow-x-auto px-2 scrollbar-none">
           {TABS.map((tab) => <TabButton key={tab.key} tab={tab} isMobile={true} />)}
         </div>

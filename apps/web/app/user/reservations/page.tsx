@@ -1,4 +1,3 @@
-// apps/web/app/user/reservations/page.tsx
 "use client"
 
 import { useRef, useState } from "react"
@@ -110,10 +109,7 @@ const canCancel = (status: ReservationStatus) => status === "pending" || status 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 type TabKey = "all" | ReservationStatus
 
-// showCount: matches the librarian's own Reservation Queue page — only the
-// tabs a student actually needs to act on carry a count badge (pending
-// requests and ready holds are "unread/ongoing"). All, picked up, expired,
-// and cancelled are either a plain total or closed history.
+// showCount: only tabs the student needs to act on (pending, ready) show a count.
 type Tab = { key: TabKey; label: string; shortLabel: string; showCount: boolean }
 
 const TABS: Tab[] = [
@@ -418,11 +414,7 @@ export default function ReservationsPage() {
         </div>
       </div>
 
-      {/* Tab bar — see student/library/page.tsx's matching note: native
-          sticky wasn't reliably engaging below sm, and plain fixed
-          overlapped the header above it (no "wait until scrolled past"
-          behavior). useStickyBelowNav reimplements that waiting behavior
-          via IntersectionObserver. Desktop (sm+) keeps plain sticky. */}
+      {/* Tab bar: sticks below the nav (useStickyBelowNav below lg). */}
       <div ref={sentinelRef} className="lg:hidden" />
       {isStuck && <div className="lg:hidden h-12" aria-hidden="true" />}
       <div
@@ -432,9 +424,7 @@ export default function ReservationsPage() {
         )}
         style={{ top: "var(--height-nav)" }}
       >
-        {/* Phone and tablet (including iPad) get the compact, horizontally
-            scrollable tab row below lg (1024px) — only real desktop widths
-            keep the wide fixed layout. */}
+        {/* Phones and tablets: a scrollable tab row. */}
         <div className="flex lg:hidden w-full h-12 items-center overflow-x-auto px-2 no-scrollbar">
           {TABS.map((tab) => <TabButton key={tab.key} tab={tab} isMobile={true} />)}
         </div>

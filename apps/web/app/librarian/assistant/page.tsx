@@ -1,4 +1,3 @@
-// apps/web/app/librarian/assistant/page.tsx
 export default function LibraryAssistantPage() {
   return (
     <div className="p-6">

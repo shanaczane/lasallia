@@ -1,6 +1,4 @@
-// apps/web/app/guest/catalog/page.tsx
-// Sprint 3.1.1–3.1.3 — Guest Public Catalog Screen (Static UI)
-// Responsive filters: desktop sidebar / mobile bottom sheet (sprint: responsive catalog filters)
+// The public (guest) catalog.
 
 'use client'
 
@@ -181,9 +179,7 @@ function GuestCatalogContent() {
             </div>
           </div>
 
-          {/* Desktop only — QuickChipRow below (lg:hidden) is the phone/
-              compact equivalent; without this gate both render at once
-              under lg. */}
+          {/* Desktop only; smaller screens use QuickChipRow below. */}
           <div className="hidden lg:block">
             <FilterPillBar
               filters={filters}

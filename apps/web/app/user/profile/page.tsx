@@ -1,17 +1,5 @@
-// apps/web/app/user/profile/page.tsx
-// Profile / Settings — reached from the TopNav avatar dropdown (not the
-// sidebar, since this is account-level, not a primary destination).
-// One page, two tabs (?tab=settings deep-links straight to Settings, same
-// convention routers/loans.py already uses for notification links like
-// /librarian/borrow-return?tab=reshelving) — mirrors every other
-// multi-view surface in this app (librarian/settings, My Library,
-// Reservations, PatronProfileModal), none of which split closely-related
-// sub-views into separate routes.
-//
-// Settings' Full Name + Change Password reuse the exact same self-service
-// endpoints (PATCH /auth/me, POST /auth/change-password) the librarian's
-// own Account tab already uses — both are already role-agnostic, so
-// nothing new was needed on the API side.
+// The student's Profile and Settings tabs (from the avatar menu).
+// ?tab=settings opens Settings directly.
 
 "use client"
 
@@ -36,10 +24,7 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
 }
 
-// Fine summary — same shape as PatronProfileModal's fineEntries/
-// outstandingFines (librarian's Patrons screen), just against the
-// signed-in student's own loans instead of a patron they're looking up,
-// and without that view's librarian-facing condition/reason breakdown.
+// The student's own fines, like the librarian's patron Fines tab.
 type FineKind = "unsettled" | "accruing" | "paid"
 
 type FineEntry = {
@@ -48,8 +33,7 @@ type FineEntry = {
   amount: number
   kind: FineKind
   detail: string
-  // Longer explanation of why this fine exists, shown when the row is
-  // expanded — the collapsed `detail` line stays terse.
+  // The longer "why", shown when the row is expanded.
   reason: string
 }
 
@@ -75,12 +59,7 @@ function StudentProfileContent() {
   const [profile, setProfile] = useState<AuthUser | null>(null)
   const [fullName, setFullName] = useState("")
   useEffect(() => {
-    // getUser() only reads localStorage — still deferred a tick so it
-    // doesn't run during Next's SSR pass of this client component. Both
-    // set together (not fullName via a second effect keyed on profile) —
-    // same shape as librarian/settings/page.tsx's identical Account-tab
-    // bootstrap, and avoids a setState-in-effect chained off state that
-    // was itself just set in an effect.
+    // Read the user after mount (no storage during server rendering).
     Promise.resolve().then(() => {
       const u = getUser()
       setProfile(u)
@@ -88,12 +67,7 @@ function StudentProfileContent() {
     })
   }, [])
 
-  // Own loans only — fetchLoans() with no id/studentId argument. There is
-  // no way to pass another student's id in from this page, and even if
-  // there were, the API's RLS policy (0009) scopes GET /loans to the
-  // caller's own rows for anyone who isn't a librarian — the JWT sent in
-  // the Authorization header (getToken(), inside fetchLoans) is what
-  // decides whose rows come back, not anything this component controls.
+  // The student's own loans (the API only returns their own).
   const [loans, setLoans] = useState<ApiLoan[]>([])
   const [loansLoading, setLoansLoading] = useState(true)
   useEffect(() => {
@@ -139,8 +113,7 @@ function StudentProfileContent() {
     [fineEntries]
   )
 
-  // Which fine rows have their "why" explanation expanded — a set rather
-  // than a single id, so more than one can be open at once.
+  // Fine rows that are expanded (several can be open).
   const [expandedFines, setExpandedFines] = useState<Set<string>>(new Set())
   function toggleFine(loanId: string) {
     setExpandedFines((prev) => {
@@ -176,12 +149,8 @@ function StudentProfileContent() {
     }
   }
 
-  // Settings tab — Change Password / Set a Password. Which form shows
-  // depends on whether the account has a password at all yet — a Google
-  // sign-in never sets one, so "Current Password" has nothing to verify
-  // against for that account until this runs once (see GET
-  // /auth/password-status). null while loading, so neither form flashes
-  // before we actually know.
+  // Settings tab: "Change Password", or "Set a Password" for Google-only
+  // accounts. null while loading, so neither form flashes.
   const [hasPassword, setHasPassword] = useState<boolean | null>(null)
 
   useEffect(() => {
@@ -241,9 +210,7 @@ function StudentProfileContent() {
   }
 
   return (
-    // Full width like the catalog pages rather than a narrow centered
-    // column, with each tab's two cards side by side from xl up so neither
-    // side is left as dead space.
+    // Full width; each tab's two cards sit side by side on wide screens.
     <div className="flex flex-col gap-6 px-4 py-5 sm:px-8 sm:py-6 w-full">
 
       {/* Header */}
@@ -314,10 +281,7 @@ function StudentProfileContent() {
                     disabled
                   />
                 )}
-                {/* Program/College/Year Level — same fields the librarian's
-                    Patron Record shows about this same account (see
-                    PatronProfileModal.tsx), read-only here since this is
-                    enrollment data, not something a student edits. */}
+                {/* Program, college and year level (read-only). */}
                 {profile.role === "student" ? (
                   <>
                     {profile.program && <Field label="Program" value={profile.program} onChange={() => {}} disabled />}

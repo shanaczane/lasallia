@@ -1,10 +1,5 @@
-// apps/web/app/user/requests/page.tsx
-// Faculty-only "request a book" form + a self-service history of what
-// they've submitted. Lives under /user because faculty share the whole
-// student route tree (require_student, core/deps.py) — StudentLayout only
-// shows the nav link when role === 'faculty', but this page still checks
-// for itself since a student could type the URL directly; the real gate is
-// require_faculty on the API (routers/book_requests.py).
+// Faculty book requests: the form and their request history. Students who
+// open the URL see a "faculty only" message (the API checks too).
 
 "use client"
 
@@ -25,9 +20,7 @@ import { Pagination } from "@/components/ui/catalog"
 import { resolveDateRange, type DateRangePreset } from "@/lib/reports"
 import { pressable } from "@/lib/a11y"
 
-// Same chevron-as-background-image treatment used by the librarian
-// Reservations/Reports pages' own selects, so every select on the site
-// looks the same instead of falling back to the OS's native arrow.
+// Dropdown arrow, same as other selects.
 const SELECT_CHEVRON =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"
 
@@ -59,9 +52,7 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "cancelled", label: "Cancelled" },
 ]
 
-// No "custom" here — keep it to quick presets for a self-service history
-// list. Same DateRangePreset/resolveDateRange the librarian Reports page
-// uses, so "This month" means the same thing in both places.
+// Date presets (same meanings as on the Reports page).
 const DATE_FILTERS: { key: DateRangePreset; label: string }[] = [
   { key: "all", label: "All time" },
   { key: "week", label: "This week" },
@@ -74,8 +65,7 @@ function formatDate(iso: string): string {
 }
 
 export default function RequestABookPage() {
-  // null = role not checked yet — avoids a flash of the "faculty only"
-  // message for an actual faculty account before getUser() resolves.
+  // null until checked, so faculty don't see the message flash.
   const [isFaculty, setIsFaculty] = useState<boolean | null>(null)
   const [requests, setRequests] = useState<BookRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -143,10 +133,8 @@ export default function RequestABookPage() {
         copies,
         course: course.trim() || undefined,
       })
-      // Attachments are a separate call (the request needs an id to attach
-      // to first) — if this leg fails, the request itself is already
-      // submitted, so surface it as a warning rather than losing the
-      // request from view.
+      // Attachments are uploaded after the request. If that fails, the
+      // request is still saved, so just warn.
       if (files.length > 0) {
         try {
           await uploadRequestAttachments(created.id, files)
@@ -192,9 +180,7 @@ export default function RequestABookPage() {
         </p>
       </div>
 
-      {/* Wide screens: form and history side by side, so neither a centered
-          column nor a left-hugging one leaves a dead band of empty space.
-          Narrower screens stack them as before. */}
+      {/* Form and history side by side on wide screens, stacked otherwise. */}
       <div className="w-full px-4 sm:px-8 pb-8 grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] xl:gap-8 items-start">
         <section className="flex flex-col gap-2 min-w-0">
           <div className="flex items-center min-h-8">
@@ -450,8 +436,7 @@ export default function RequestABookPage() {
               )
             }
             const totalPages = Math.ceil(visible.length / REQUESTS_PER_PAGE)
-            // Clamped in case the list shrank under the current page (e.g. a
-            // request cancelled from the modal on the last page).
+            // In case the list got shorter than the current page.
             const currentPage = Math.min(page, totalPages)
             const start = (currentPage - 1) * REQUESTS_PER_PAGE
             const pageItems = visible.slice(start, start + REQUESTS_PER_PAGE)

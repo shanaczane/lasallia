@@ -1,11 +1,5 @@
-// apps/web/app/kiosk/page.tsx
-// The idle screen — tap an ID, or log in manually if you don't have your
-// card on hand (build plan 1.4: "a convenience, not a fallback"), or
-// continue as a guest. Once a session opens, the layout's effect routes
-// to /kiosk/catalog. Styled to match /login (components/login/LoginSection.tsx)
-// — same blurred-photo background + centered card treatment — since this
-// is the kiosk's equivalent entry screen, just tap-first instead of
-// email/password-first.
+// The kiosk start screen: tap an ID, log in by hand, or continue as a guest.
+// Styled like /login.
 
 'use client'
 
@@ -24,14 +18,11 @@ export default function KioskEntryPage() {
   async function handleManualSubmit(e: React.FormEvent) {
     e.preventDefault()
     await open({ authMethod: 'manual_login', email, password })
-    // Cleared regardless of outcome — never left sitting in state past
-    // submission (kiosk hygiene: "password field clears on... any
-    // navigation away").
+    // Always clear the password after submitting (shared kiosk).
     setPassword('')
   }
 
-  // Layout's effect is already navigating to /kiosk/catalog — this is
-  // just the brief frame before that lands.
+  // The layout is already moving to /kiosk/catalog.
   if (session || guestBrowsing) return null
 
   return (

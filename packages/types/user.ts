@@ -5,21 +5,14 @@ export type UserAccountStatus = 'active' | 'inactive'
 export type UserProfile = {
   id: string
   email: string
-  // Nullable — profiles created by Supabase Auth's signup trigger don't
-  // require it, and it's not enforced anywhere at the database level.
-  // Every reader must handle null, not assume a name was ever set.
+  // May be null: not every account has a name.
   full_name: string | null
   role: UserRole
-  // School-issued student/faculty number — unique same as email, just
-  // assigned by the school instead of chosen by the account holder.
-  // Nullable for the same reasons `program`/`college` are: not backfilled
-  // for every existing row, and a guest/librarian account never gets one.
+  // School-issued student/faculty number, unique. May be missing.
   id_number?: string
   program?: string
-  // One of the catalog's fixed college codes (apps/web/lib/colleges.ts).
-  // Nullable — not backfilled for every existing row; the frontend falls
-  // back to guessing from `program` (apps/web/lib/collegeForProgram.ts)
-  // when this is unset.
+  // A college code (apps/web/lib/colleges.ts). If missing, the frontend
+  // guesses it from `program`.
   college?: string
   year_level?: number
   avatar_url?: string

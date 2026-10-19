@@ -1,12 +1,5 @@
-// apps/web/app/kiosk/for-you/page.tsx
-// The kiosk's "For you" tab — mirrors the student dashboard's content
-// (app/user/dashboard/page.tsx) minus the stat cards, which need loan/
-// reservation data the kiosk doesn't fetch here. Fed by the tapped-in
-// station session (no JWT at a kiosk) instead of localStorage/GET /auth/me,
-// and links into the kiosk catalog. A guest visit has no identity to
-// personalize on, so both sections fall back to their honest public
-// versions ("Popular at the LRC" / New Arrivals only — see ForYouSection
-// and CatalogHighlights).
+// The kiosk's "For you" tab: like the student dashboard, without the stat
+// cards, for the student who tapped in.
 
 'use client'
 
@@ -28,9 +21,7 @@ export default function KioskForYouPage() {
   const { session, guestBrowsing } = useKioskSession()
   const router = useRouter()
 
-  // Guests have no identity to personalize on, and the nav tab is hidden
-  // for them (see app/kiosk/layout.tsx) — this only catches a stray/
-  // bookmarked URL, same guard style as the layout's own route effect.
+  // Guests don't get this tab; send them away if they reach the URL.
   useEffect(() => {
     if (guestBrowsing && !session) router.replace('/kiosk/catalog')
   }, [guestBrowsing, session, router])
@@ -40,10 +31,7 @@ export default function KioskForYouPage() {
   return (
     <div className="px-5 sm:px-8 py-7 flex flex-col gap-6">
 
-      {/* Greeting — same tone as the student dashboard's, without the
-          "Find a book" CTA next to it: the kiosk sidebar already has a
-          permanent "Find a book" nav item, so a second one here would just
-          compete with it for attention. */}
+      {/* Greeting (no "Find a book" button; the sidebar already has one). */}
       <h1
         className="text-ink-900 font-semibold leading-tight"
         style={{ fontSize: 'var(--text-4xl)', fontFamily: 'var(--font-display)' }}
@@ -51,13 +39,9 @@ export default function KioskForYouPage() {
         {greeting()}, <span className="italic text-green-700">{session.student_full_name || session.student_first_name}</span>.
       </h1>
 
-      {/* For You — recommendations plan Phase 6, same section the student
-          dashboard shows. */}
+      {/* For You */}
       <ForYouSection
-        // Keyed so a different student tapping in gets a fresh fetch, never
-        // the previous student's list left on screen. Prefixed — CatalogHighlights
-        // below is keyed off the same session id, and React only requires
-        // uniqueness among siblings, not that every key in the tree is distinct.
+        // Keyed by session, so a new student never sees the last one's list.
         key={`for-you-${session.id}`}
         fetcher={() => fetchKioskRecommendations(session.id)}
         hrefPrefix="/kiosk/catalog"
@@ -65,11 +49,8 @@ export default function KioskForYouPage() {
         cacheKey={null}
       />
 
-      {/* New Arrivals plus the tapped-in student's own program. identity
-          comes from the station session, never getUser()/localStorage: this
-          is a shared terminal, and that fallback could show a different
-          student's program than the one actually standing here. The
-          college row stays off to keep the tab short. */}
+      {/* New Arrivals and the student's program, from the kiosk session (never
+          browser storage, which could hold another student). */}
       <CatalogHighlights
         key={`highlights-${session.id}`}
         identity={{ program: session.program ?? null, college: session.college ?? null }}

@@ -1,9 +1,5 @@
-// apps/web/app/librarian/inventory/page.tsx
-// Inventory module (docs/lasallia-inventory-build-plan.md) — every copy in
-// the collection with its status, pick an aisle or a whole floor and start
-// a shelf check, see past checks, and follow up
-// on every copy currently flagged missing or misplaced or reported by a
-// student as not on its shelf.
+// The Inventory page: start a shelf check, see past checks, every copy's
+// status, and follow up on missing, misplaced and reported books.
 
 "use client"
 
@@ -34,15 +30,14 @@ import {
 
 const body = (size = "var(--text-sm-body)") => ({ fontFamily: "var(--font-body)", fontSize: size })
 
-// Both lists page at this size, same idea as My Requests.
+// Rows per page in both lists.
 const PAGE_SIZE = 5
 
-// Same chevron-as-background-image the other selects on the site use.
+// Dropdown arrow, same as other selects.
 const SELECT_CHEVRON =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"
 
-// "Showing 1–5 of 12" plus the page buttons, as on the Patrons page. Renders
-// nothing when everything fits on one page.
+// "Showing 1–5 of 12" and page buttons. Hidden when there's only one page.
 function ListPager({ page, total, onChange }: { page: number; total: number; onChange: (page: number) => void }) {
   const totalPages = Math.ceil(total / PAGE_SIZE)
   if (totalPages <= 1) return null
@@ -59,8 +54,7 @@ function ListPager({ page, total, onChange }: { page: number; total: number; onC
   )
 }
 
-// A list can shrink under the current page (e.g. a flagged copy gets
-// resolved); clamp so it never shows an empty page.
+// The current page's items; moves back a page if the list got shorter.
 function pageOf<T>(items: T[], page: number): { items: T[]; page: number } {
   const last = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
   const current = Math.min(page, last)
@@ -73,8 +67,7 @@ const SESSION_STATUS: Record<InventorySessionStatus, { label: string; style: str
   cancelled:   { label: "Cancelled",   style: "bg-ink-100 text-ink-600" },
 }
 
-// Same look as the librarian dashboard's stat cards. Each links down to the
-// list below that its count is taken from.
+// A count card that links to its list below.
 function FlagCountCard({
   href, icon, iconBg, label, value, sub,
 }: {
@@ -148,8 +141,7 @@ export default function InventoryPage() {
         setFlagged(f)
         setCopies(c)
         setReports(r)
-        // Default to the first aisle rather than a whole floor — the
-        // smaller check is the common one.
+        // Default to the first aisle (smaller checks are more common).
         const first = l.find((x) => x.aisle) ?? l[0]
         if (first) setSelected(locationKey(first))
       })
@@ -216,8 +208,7 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* Available / missing / misplaced at a glance — counted from the
-          lists below, so they always agree. */}
+      {/* Counts, taken from the lists below so they always agree. */}
       <div className="grid grid-cols-3 gap-3 sm:gap-4">
         <FlagCountCard
           href="#all-books"
@@ -307,8 +298,7 @@ export default function InventoryPage() {
         {startError && <p className="text-danger" style={body("var(--text-xs)")}>{startError}</p>}
       </section>
 
-      {/* Students' "Can't find this book on the shelf" reports — the
-          librarian checks just that one book. Linked from the notification. */}
+      {/* Students' "Can't find this book on the shelf" reports. */}
       {reports.length > 0 && (
         <section id="reported" className="flex flex-col gap-3 scroll-mt-20">
           <h2 className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}>
@@ -365,8 +355,7 @@ export default function InventoryPage() {
           Checks
         </h2>
         <div className="bg-white rounded-(--radius) border border-ink-200 overflow-x-auto">
-          {/* Fixed widths so the number columns sit evenly instead of
-              bunching up on the right with a wide gap after "Started". */}
+          {/* Fixed column widths so the numbers line up. */}
           <table className="w-full min-w-160 table-fixed">
             <colgroup>
               <col style={{ width: "22%" }} />
@@ -433,7 +422,7 @@ export default function InventoryPage() {
         <ListPager page={checks.page} total={sessions.length} onChange={setChecksPage} />
       </section>
 
-      {/* Follow-up list — the Missing / Misplaced cards at the top link here. */}
+      {/* Missing and misplaced copies (linked from the cards at the top). */}
       <section id="flagged" className="flex flex-col gap-3 scroll-mt-20">
         <h2 className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-xl)" }}>
           Missing &amp; misplaced copies

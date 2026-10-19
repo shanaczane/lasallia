@@ -1,6 +1,4 @@
-// apps/web/app/librarian/catalog/[bookId]/page.tsx
-// Fix: Copy Management now shows real book_copies rows (GET /books/{id}/
-// copies) instead of fabricated ones — see CopyManagementTable.tsx.
+// Librarian book page: details, copies, and edit/archive actions.
 
 'use client'
 
@@ -79,8 +77,7 @@ const FUNDING_LABEL: Record<NonNullable<Book['funding_source']>, string> = {
   purchased: 'Purchased', donated: 'Donated', grant: 'Grant',
 }
 
-// "348 pages : illustrations ; 28 cm" — the same order a catalog record
-// prints the physical description in.
+// e.g. "348 pages : illustrations ; 28 cm".
 function physicalDescription(book: Book): string | null {
   const parts = [book.physical_extent, book.physical_illustrations, book.physical_dimensions]
   if (!parts.some(Boolean)) return null
@@ -124,9 +121,7 @@ export default function LibrarianBookDetailPage({
   const [archiveError, setArchiveError] = useState('')
   const [editError, setEditError] = useState('')
 
-  // Real book_copies rows (accession_number/status/shelf_location) — one
-  // fetch feeds both the Copy Management table below and the missing-copies
-  // banner (derived from it, not a second fetch).
+  // The book's copies, for the copy table and the missing-copies banner.
   const [copies, setCopies] = useState<BookCopy[]>([])
   useEffect(() => {
     if (!book) return
@@ -211,9 +206,8 @@ export default function LibrarianBookDetailPage({
     }
   }
 
-  // Delete still stays local-only (see handleDelete below) — only archive
-  // and edit are wired to real endpoints. Only navigates away once the
-  // archive actually succeeds.
+  // Navigates away only once the archive succeeds. Note: handleDelete below
+  // doesn't delete anything yet; it only goes back to the catalog.
   async function handleArchive(book: Book) {
     try {
       await archiveBook(book.id)
@@ -227,9 +221,7 @@ export default function LibrarianBookDetailPage({
     router.push('/librarian/catalog')
   }
 
-  // Only the statuses actually present on this title's copies get a pill —
-  // most books never see 'overdue'/'lost'/'damaged', so always showing all
-  // 8 would just be empty noise.
+  // A pill only for statuses this book's copies actually have.
   const copyStatusCounts = COPY_STATUSES
     .map((status) => ({ status, count: copies.filter((c) => c.status === status).length }))
     .filter((s) => s.count > 0)
@@ -315,7 +307,7 @@ export default function LibrarianBookDetailPage({
       {/* ── Hero ── */}
       <div className="flex flex-col sm:flex-row gap-5 sm:gap-7 mb-8">
 
-        {/* Cover — bigger on detail page */}
+        {/* Cover */}
         <div
           className="shrink-0 rounded-(--radius) overflow-hidden shadow-(--shadow) self-start relative"
           style={{
@@ -396,7 +388,7 @@ export default function LibrarianBookDetailPage({
               )}
             </div>
 
-            {/* Edit / Remove — stack vertically on very narrow, row on sm+ */}
+            {/* Edit / Remove */}
             <div className="flex flex-row sm:flex-row items-center gap-2 shrink-0 mt-1">
               <button
                 type="button"
@@ -461,13 +453,8 @@ export default function LibrarianBookDetailPage({
         </div>
       </div>
 
-      {/* ── Two-column metadata ──
-          Everything the Add/Edit form collects shows up here. The patron
-          catalog only ever sees the bibliographic side — the API nulls the
-          accession number and acquisition record for non-librarians
-          (routers/books.py's _redact_for_patrons). */}
-      {/* Both columns stretch to the taller one so the cards' bottom edges
-          line up instead of leaving a ragged gap under the shorter side. */}
+      {/* ── Two-column details: everything from the book form. Patrons only
+          see the bibliographic part. Columns stretch to the same height. ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
 
         {/* Bibliographic */}
@@ -565,8 +552,7 @@ export default function LibrarianBookDetailPage({
             )}
           </div>
 
-          {/* Acquisition — librarian-only record. flex-1 takes up whatever
-              height the Bibliographic card adds on the left. */}
+          {/* Acquisition (librarians only) */}
           <div className="bg-white rounded-(--radius) border border-ink-200 p-5 lg:flex-1">
             <SectionHeading>Acquisition (librarian only)</SectionHeading>
             {book.date_acquired && (
@@ -627,7 +613,7 @@ export default function LibrarianBookDetailPage({
         </div>
       )}
 
-      {/* ── Copy Management (5.2.4) ── */}
+      {/* ── Copy Management ── */}
       <div className="bg-white rounded-(--radius) border border-ink-200 p-5">
         <div className="flex items-center justify-between gap-3 mb-1">
           <SectionHeading>Copy Management</SectionHeading>

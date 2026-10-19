@@ -1,4 +1,3 @@
-// apps/web/app/librarian/notifications/page.tsx
 "use client"
 
 import { useEffect, useState } from "react"
@@ -17,20 +16,8 @@ import {
 import { usePolling } from "@/lib/hooks/usePolling"
 import type { Notification } from "@lasallia/types"
 
-// Every librarian-facing row core/notify.py inserts comes in as one type,
-// "student_activity" (notify_librarians loops one insert per librarian,
-// for every student/guest transaction — checkout, return, reshelving,
-// reservation placed/cancelled/picked up). The other NotificationType
-// values (due_reminder, overdue, reservation_confirmed/cancelled,
-// return_confirmed, loan_confirmed) are only ever written to a *student's*
-// user_id — see loans.py/reservations.py's notify() call sites — so they
-// can't actually reach this page today. Bucketing everything as one
-// generic "Student Activity" feed made three of five tabs permanently
-// empty; instead, sub-categorize student_activity rows by title keyword
-// (the titles notify_librarians() sends are a small fixed set) so the
-// tabs mirror the Borrow & Return page's own Borrow/Return/Reshelving
-// split. The student-facing types are still mapped, defensively, in case
-// this account ever legitimately receives one.
+// Librarian notifications all have the type "student_activity", so they're
+// sorted into tabs by their title (Borrow, Return, Reshelving, Reservation).
 type LibCategory = "borrow" | "return" | "reshelving" | "reservation" | "other"
 
 function titleCategory(title: string): LibCategory {
@@ -100,11 +87,7 @@ export default function LibrarianNotificationsPage() {
   const [filters, setFilters] = useState<NotificationFilterState>(DEFAULT_NOTIFICATION_FILTERS)
   const { refresh, revision } = useNotifications()
 
-  // Polled every 20s (same interval as the sidebar bell's NotificationContext,
-  // and the same reason — no websocket/Realtime in this codebase, so a
-  // librarian who already has this page open otherwise never sees a
-  // student's transaction land here until they reload) — silent after the
-  // first load, so it doesn't flash back to the "Loading…" state.
+  // Check for new notifications every minute, without showing "Loading…" again.
   usePolling(() => {
     fetchNotifications()
       .then(setNotifications)
@@ -112,8 +95,7 @@ export default function LibrarianNotificationsPage() {
       .finally(() => setLoading(false))
   }, 60_000)
 
-  // Refetch when the bell dropdown marks something read, so this list
-  // doesn't keep showing it as unread until the next poll.
+  // Refetch when something is marked read from the bell.
   useEffect(() => {
     if (revision === 0) return
     fetchNotifications().then(setNotifications).catch(() => {})
@@ -157,11 +139,7 @@ export default function LibrarianNotificationsPage() {
     }
   }
 
-  // Every notify()/notify_librarians() call already sets a link to the
-  // relevant screen (e.g. the Reshelving tab, or Reservations) — nothing
-  // used it before this, so a librarian had to read the message, then go
-  // find the screen themselves. Marking read is fire-and-forget, same as
-  // markRead already was; navigation doesn't wait on it.
+  // Open the notification's link, marking it read in the background.
   function openNotification(n: Notification) {
     markRead(n.id)
     if (n.link) router.push(n.link)

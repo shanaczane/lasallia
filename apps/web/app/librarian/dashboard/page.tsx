@@ -1,4 +1,3 @@
-// apps/web/app/librarian/dashboard/page.tsx
 "use client"
 
 import { useEffect, useState } from "react"
@@ -20,8 +19,7 @@ import { ActivityDetailPanel } from "@/components/dashboard/ActivityDetailPanel"
 import type { Reservation } from "@lasallia/types"
 import { pressable } from "@/lib/a11y"
 
-// Dashboard only ever shows a short preview — the full, searchable history
-// lives on the Reports "Activity Log" tab (see "See all" link below).
+// Only a preview here; the full list is in Reports > Activity Log.
 const ACTIVITY_PREVIEW_COUNT = 8
 
 const OVERDUE_FLAG_DAYS = 7
@@ -58,8 +56,7 @@ export default function LibrarianDashboard() {
 
   const feed = buildFeed(loans, reservations).slice(0, ACTIVITY_PREVIEW_COUNT)
 
-  // Latest first, top 2 — same "short preview, full history lives on the
-  // Activity Log" pattern as the Recent Activity feed above.
+  // The 2 latest returns.
   const recentReturns = [...loans]
     .filter((l) => l.status === "returned" && l.returned_at)
     .sort((a, b) => new Date(b.returned_at!).getTime() - new Date(a.returned_at!).getTime())
@@ -162,8 +159,7 @@ export default function LibrarianDashboard() {
 
             {feed.length > 0 && (
               <>
-                {/* Mobile: stacked cards — a table forces horizontal scroll
-                    at phone width, so this stays a simple list instead. */}
+                {/* Mobile: a simple list (a table would scroll sideways). */}
                 <div className="flex flex-col divide-y divide-ink-100 sm:hidden">
                   {feed.map((tx) => {
                     const cfg = TX_CONFIG[tx.type]
@@ -193,17 +189,8 @@ export default function LibrarianDashboard() {
                   })}
                 </div>
 
-                {/* Desktop: a real <table> — the header and body used to be
-                    separate flex rows with matching fixed widths (w-24/w-40)
-                    that only lined up as long as no cell's content needed
-                    more room than its box, which the all-caps tracked-out
-                    header text didn't reliably fit.
-                    table-fixed + percentage <col> widths (rather than
-                    auto-layout with a min-w-* + overflow-x-auto escape
-                    hatch) so the table always spans exactly the container's
-                    width — no horizontal scrollbar at any size — and every
-                    column truncates its own content instead of pushing the
-                    table wider. */}
+                {/* Desktop: a fixed-layout table that always fits its
+                    container; long cell text is cut off. */}
                 <div className="hidden sm:block">
                   <table className="w-full table-fixed">
                     <colgroup>

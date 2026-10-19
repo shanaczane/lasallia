@@ -1,7 +1,4 @@
-// apps/web/app/auth/callback/page.tsx
-// Landing page after Google sign-in. Supabase has already exchanged the OAuth
-// code for a session (detectSessionInUrl); this hands it to the app's own
-// session store and routes by the role in profiles.
+// Where Google sign-in returns. Saves the session and redirects by role.
 "use client"
 
 import { useEffect, useRef, useState } from "react"
@@ -13,7 +10,7 @@ import { getSupabaseAuth } from "@/lib/supabaseBrowser"
 export default function AuthCallbackPage() {
   const router = useRouter()
   const [error, setError] = useState("")
-  // Strict-mode double effect would try to use the one-time code twice.
+  // React dev mode runs effects twice; the sign-in code only works once.
   const started = useRef(false)
 
   useEffect(() => {

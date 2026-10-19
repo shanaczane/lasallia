@@ -1,15 +1,5 @@
-// apps/web/app/user/catalog/[bookId]/page.tsx
-// Sprint 4.3.3 — 'You may also like' recommendations row
-// Sprint 4.3.4 — Save to Favorites bookmark button
-// Sprint 4.5.4 — Borrow QR button (available books only)
-//
-// Borrowing logic (simplified):
-//   AVAILABLE  → "Borrow this book" button → QR modal → show to librarian
-//   RESERVED   → "Join waitlist" only (notify me when available)
-//   BORROWED   → "Join waitlist" only
-//   MISSING    → informational only
-// "Place on Hold" reservation date picker removed — not applicable when
-//   book is already available for immediate borrowing
+// Student book page: details, save button, borrow or reserve, and
+// "You may also like".
 
 'use client'
 
@@ -55,12 +45,7 @@ function getCoverColor(id: string, override?: string): string {
   return COVER_COLORS[idx % COVER_COLORS.length]
 }
 
-// A ready reservation sits on the hold shelf for a fixed pickup window
-// (reservation_hold_period_days, Library Settings — 3 days by default)
-// before it's automatically cancelled and handed to the next person in
-// line (reservations.py's expiry sweep) — same deadline math as the
-// librarian's own Reservation Queue page, plain inline text here to match
-// this panel's simpler, single-line style.
+// How soon a ready reservation's pickup deadline is (it then expires).
 function pickupUrgency(pickupBy: string): { shortLabel: string; textClass: string } {
   const diffDays = Math.ceil((new Date(pickupBy).getTime() - Date.now()) / 86_400_000)
   if (diffDays <= 0) return { shortLabel: 'Closes today', textClass: 'text-danger' }
@@ -69,18 +54,14 @@ function pickupUrgency(pickupBy: string): { shortLabel: string; textClass: strin
   return { shortLabel: `${diffDays} days left`, textClass: 'text-green-700' }
 }
 
-// Newly-catalogued copies get seeded with a literal 'Unassigned' shelf
-// location (scripts/seed_books.py) until a librarian assigns a real one —
-// showing that as-is reads as "go to Unassigned," which looks broken
-// rather than informative.
+// "Unassigned" isn't a real location, so it isn't shown.
 function hasKnownShelfLocation(book: Book): boolean {
   return !!book.shelf_location && book.shelf_location.trim().toLowerCase() !== 'unassigned'
 }
 
 // ─── "Can't find it on the shelf?" ─────────────────────────────────────────────
-// Under the Available panel: the catalog says a copy is on the shelf, but
-// the student couldn't find it. Tells the librarian to check just this one
-// book (core/shelf_reports.py), instead of waiting for a full inventory.
+// For when a book shows as available but isn't on the shelf; tells the
+// librarians to check it.
 
 function ShelfReportLink({ bookId }: { bookId: string }) {
   const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle')
@@ -122,11 +103,9 @@ function ShelfReportLink({ bookId }: { bookId: string }) {
   )
 }
 
-// ─── Action panel — simplified borrowing logic ────────────────────────────────
-//
-// AVAILABLE  → green "Borrow this book" button → opens QR modal
-// NOT AVAILABLE → grey waitlist panel with "Notify me" toggle
-// No date picker, no "Place on Hold" — reservation is handled by librarians
+// ─── Action panel ─────────────────────────────────────────────────────────────
+// Available: Borrow. Not available: Reserve, or the student's place in line.
+// Also covers books they already have, and library-use-only books.
 
 function ActionPanel({
   book,
@@ -153,11 +132,8 @@ function ActionPanel({
   const reserved = !!reservation
   const { refreshReservationCount } = useStudentCounts()
 
-  // Recommendations plan Phase 9 — a reserve here can only be
-  // attributed back to a "For You" card via these two query params
-  // (components/ui/dashboard/ForYouSection.tsx sets them on the card's
-  // href), since the reserve action itself lives on a different page
-  // than the card that led here.
+  // fromRec and rank (from a "For You" card) let a reservation be credited
+  // to that card.
   const searchParams = useSearchParams()
   const fromRec = searchParams.get('fromRec') === '1'
   const recRank = searchParams.get('rank')
@@ -193,9 +169,7 @@ function ActionPanel({
     }
   }
 
-  // Reference/Thesis/Capstone/MTR/Archives — library use only, checked
-  // before everything else below (including an existing loan, which
-  // shouldn't be reachable for one of these in the first place).
+  // Library-use-only books, checked first.
   if (isLibraryUseOnly(book)) {
     return (
       <div className="rounded-[10px] border border-ink-200 bg-ink-50 px-4 py-3 flex items-center gap-3">
@@ -207,8 +181,7 @@ function ActionPanel({
     )
   }
 
-  // Hard rule: an active loan on this exact book always wins — never offer
-  // Borrow or Reserve for a title the student already has out.
+  // Never offer Borrow or Reserve for a book the student already has.
   if (loan) {
     return (
       <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
@@ -227,10 +200,7 @@ function ActionPanel({
     return (
       <div className="flex flex-col gap-2">
         <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
-          {/* Just the count and where it is — the borrow modal explains the
-              QR-at-the-counter step, so it isn't repeated here. */}
-          {/* Stacked on phones; one line with a divider on wider screens so
-              the panel doesn't leave a big empty gap before the button. */}
+          {/* How many are available and where (stacked on phones). */}
           <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
             <p className="flex items-center gap-2 font-semibold text-green-900">
               <span className="w-3.5 flex justify-center shrink-0">
@@ -268,17 +238,9 @@ function ActionPanel({
   // Not available — reserve / queue status
   if (reserved && reservation) {
     if (reservation.status === 'ready') {
-      // Ready reservations borrow through the exact same QR flow as a
-      // genuinely available book (onBorrow -> BorrowModal) rather than a
-      // separate "type the accession number on My Reservations" step —
-      // holds.py routes this student straight to their own held copy, so
-      // "Borrow this book" here only ever works for them, never anyone
-      // else browsing the same title.
-      // Same simple shape as the "not available" panel below: one icon,
-      // two lines of stacked text, one button pinned to the right. No
-      // separate cancel action here — it's already one tap away on My
-      // Reservations, and this panel exists to get the student to the
-      // shelf and borrowing, not to manage the reservation itself.
+      // A ready reservation borrows with the normal Borrow button; the
+      // server gives this student the copy held for them. Cancel is on
+      // My Reservations.
       const urgency = reservation.pickup_by ? pickupUrgency(reservation.pickup_by) : null
       return (
         <div className="rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-3">
@@ -399,12 +361,8 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
-// ─── You may also like (4.3.3, re-wired onto the real similarity engine) ──────
-// Used to be a plain same-category filter over the whole catalog — no
-// ranking, and "same program" isn't "similar book". Now reads this book's
-// actual TF-IDF/cosine-similarity neighbors (book_similarities, the same
-// data the dashboard's "For You" section is built from), so this row is a
-// genuine "books like this one", not a category coincidence.
+// ─── You may also like ────────────────────────────────────────────────────────
+// The books most similar to this one by content.
 
 function Recommendations({
   currentId,
@@ -462,18 +420,14 @@ export default function StudentBookDetailPage({
   const [showQR, setShowQR]   = useState(false)
   const router = useRouter()
 
-  // A phone or tablet is already the device the student borrows on, so it
-  // skips the QR modal and goes straight to the borrow form.
+  // Phones and tablets skip the QR code and go straight to the borrow form.
   function handleBorrow() {
     if (isHandheld()) router.push(`/borrow/start?book=${encodeURIComponent(bookId)}`)
     else setShowQR(true)
   }
 
-  // Where "Back" returns to — defaults to the catalog search results, but a
-  // linking page (My Library's Borrowed/Saved/History tabs, Reservations)
-  // can carry the visitor's origin via ?from= so this doesn't always bounce
-  // them to Catalog. Same query-param idiom borrow/[token]/page.tsx already
-  // uses for kiosk vs. student back-nav.
+  // Where Back goes: the catalog, unless ?from= says otherwise (My Library,
+  // Reservations, the chatbot).
   const backSearchParams = useSearchParams()
   const from = backSearchParams.get('from')
   const libraryTab = backSearchParams.get('tab')
@@ -496,10 +450,7 @@ export default function StudentBookDetailPage({
   useEffect(() => {
     fetchLoans().then(setLoans).catch(() => {})
   }, [])
-  // Explicit allow-list, not `status !== 'returned'` — loans.status is a
-  // closed DB enum ('active' | 'returned' | 'overdue', 0006_phase2_holds_and_loans.sql),
-  // but spelling out what counts as "still has it" keeps this correct even
-  // if a future status gets added that shouldn't count as active.
+  // The student's loan of this book, if they still have it.
   const activeLoan = loans.find(
     (l) => l.books?.id === bookId && (l.status === 'active' || l.status === 'overdue')
   )
@@ -655,7 +606,7 @@ export default function StudentBookDetailPage({
               </div>
             )}
 
-            {/* Title + save button (4.3.4) */}
+            {/* Title + save button */}
             <div className="flex items-start gap-3 mb-1">
               <h1
                 className="text-ink-900 leading-tight flex-1"
@@ -741,7 +692,7 @@ export default function StudentBookDetailPage({
           </div>
         </div>
 
-        {/* ── Action panel (simplified borrowing) ──────────────────────────── */}
+        {/* ── Action panel ────────────────────────────────────────────────────── */}
         <div className="mb-8">
           <ActionPanel
             book={book}
@@ -826,7 +777,7 @@ export default function StudentBookDetailPage({
           </div>
         </div>
 
-        {/* ── You may also like (4.3.3) ─────────────────────────────────────── */}
+        {/* ── You may also like ─────────────────────────────────────────────── */}
         <Recommendations
           currentId={book.id}
           savedBookIds={savedBookIds}
@@ -835,7 +786,7 @@ export default function StudentBookDetailPage({
 
       </div>
 
-      {/* QR Borrow Modal (4.5.4) */}
+      {/* Borrow (QR) modal */}
       {showQR && <BorrowModal book={book} onClose={() => setShowQR(false)} />}
     </>
   )

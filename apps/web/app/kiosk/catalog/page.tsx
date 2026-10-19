@@ -1,11 +1,5 @@
-// apps/web/app/kiosk/catalog/page.tsx
-// Browse, kiosk-side. Reuses the same filter sidebar/pill-bar/sheet the
-// student and guest catalogs already use (components/ui/catalog) — the
-// "filter sidebar is skipped this pass" note from the original build
-// plan no longer applies, brought in for UI consistency with the rest
-// of the app. Layout (sticky search bar, header block, grid) matches
-// the guest/user catalog screens exactly; only the header subtitle
-// differs, since the kiosk needs to show who's borrowing.
+// The kiosk catalog. Same as the web catalog, except the header shows who's
+// borrowing.
 
 'use client'
 
@@ -182,9 +176,7 @@ function KioskCatalogContent() {
             </div>
           </div>
 
-          {/* Desktop only — QuickChipRow below (lg:hidden) is the phone/
-              compact equivalent; without this gate both render at once
-              under lg. */}
+          {/* Desktop only; smaller screens use QuickChipRow below. */}
           <div className="hidden lg:block">
             <FilterPillBar
               filters={filters}
