@@ -1,17 +1,5 @@
-// components/ui/profile/CompleteProfileModal.tsx
-// Shown once to a student/faculty account missing program/year level/college
-// or id_number — e.g. someone who signed in with Google but wasn't in the
-// librarian's card enrollment spreadsheet, so no account was pre-filled for
-// them, or (for id_number specifically) any account that predates that
-// column. Saves via PATCH /auth/me; never asks for a card (only a librarian
-// assigns those).
-//
-// The password offer (a Google sign-in never has one) used to live here
-// too, stacked under these fields — too much on one screen for a brand-new
-// student's very first look at the dashboard. Moved out to its own
-// dismissible dashboard banner instead (SetPasswordBanner.tsx), and now also
-// its own follow-up modal (SetPasswordModal.tsx, step 2 of 2) — optional
-// things shouldn't share a blocking modal with required ones.
+// Asks a student or faculty account for missing profile details (program,
+// year level, college, ID number). The ID card is assigned by librarians.
 "use client"
 
 import { useRef, useState } from "react"
@@ -30,9 +18,7 @@ const fieldClass = cn(
   "focus:outline-none focus:border-green-700 focus:shadow-(--shadow-focus-green)"
 )
 
-// The native <select> arrow hugs the right edge and differs per browser —
-// hide it and draw our own chevron with the same inset as the text
-// (same approach as the Reports page filters).
+// Hide the browser's select arrow and draw our own.
 const selectClass = cn(fieldClass, "appearance-none cursor-pointer pr-10")
 const selectArrowStyle: React.CSSProperties = {
   backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
@@ -47,10 +33,7 @@ type Seed = {
   id_number?: string | null
 }
 
-// Only id_number is ever guaranteed missing here — isIncomplete (see
-// StudentLayout.tsx) also re-opens this for an otherwise-complete account
-// that predates that column, so program/year_level/college (already set)
-// need to come in pre-filled rather than forcing a redundant re-entry.
+// Fields already set come in pre-filled (often only the ID number is missing).
 export function CompleteProfileModal({ role, initial, step, onDone }: { role: "student" | "faculty"; initial?: Seed; step?: { current: number; total: number }; onDone: () => void }) {
   const dialogRef = useRef<HTMLFormElement>(null)
   useDialogKeyboard(dialogRef)
@@ -63,10 +46,8 @@ export function CompleteProfileModal({ role, initial, step, onDone }: { role: "s
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
 
-  // Suggest a college once a program is picked, until they override it.
-  // Faculty have no program field to guess from — they pick their college
-  // directly (see routers/patrons.py: a faculty row's "program" column
-  // holds a college name, not a degree program, same as the mock data).
+  // Suggest a college from the program, until they pick one. Faculty choose
+  // their college directly.
   const suggested = isFaculty ? null : collegeForProgram(program)
   const effectiveCollege = college || suggested || ""
 

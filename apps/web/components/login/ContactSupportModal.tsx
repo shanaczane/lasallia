@@ -1,12 +1,5 @@
-// apps/web/components/login/ContactSupportModal.tsx
-// Login footer's "Contact Support" link. Three tabs: a static FAQ (answers
-// the common cases before anyone needs a human), a ticket form (submits to
-// POST /support-tickets and hands back a ticket number — see the librarian
-// inbox, the Support tab on the Settings page
-// (components/support/SupportTicketsPanel.tsx), and a tracker for following up
-// on one already submitted. Direct phone/email are pulled from the
-// librarian-managed Settings page (GET /settings/public) so they're never
-// a second, driftable copy of what a librarian actually set.
+// "Contact Support" on the login page: FAQ, a ticket form, and a ticket
+// tracker. Phone and email come from library Settings.
 
 'use client'
 

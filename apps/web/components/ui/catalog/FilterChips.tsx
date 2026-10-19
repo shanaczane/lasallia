@@ -1,7 +1,4 @@
-// apps/web/components/ui/catalog/FilterChips.tsx
-// Mobile quick-chip row (Filters button + shortcuts) and the applied-filter chip row
-// shown below the search bar. Both render from the shared filterConfig — no duplicated
-// filter option data.
+// The phone's quick filter chips and the row of applied filters.
 
 'use client'
 
@@ -43,8 +40,7 @@ export function QuickChipRow({
   genres,
   subjects,
 }: QuickChipRowProps) {
-  // getUser() reads browser storage, so it's only read after mount — reading
-  // it during render would differ between the server and client HTML.
+  // Read the user after mount (storage doesn't exist during server rendering).
   const [profile, setProfile] = useState<{ program: string | null; college: string | null }>({
     program: null,
     college: null,

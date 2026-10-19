@@ -1,11 +1,5 @@
-// apps/web/components/kiosk/RfidListener.tsx
-// A hidden, always-refocused text input that captures RFID tap input.
-// This is the realistic integration point, not a fake stand-in: real
-// RFID readers attached to a kiosk act as USB keyboards — they "type" the
-// tag UID and send Enter. Mounted for the lifetime of the kiosk shell
-// (not just the idle screen) so a NEW tap can interrupt an active session
-// (build plan: "Tapping a different ID immediately ends the previous
-// session").
+// A hidden input that catches ID card taps (the reader types the card's id
+// and presses Enter). Always mounted, so a new tap can end the current session.
 
 'use client'
 
@@ -16,9 +10,7 @@ export function RfidListener({ onTap }: { onTap: (uid: string) => void }) {
 
   useEffect(() => {
     function refocus() {
-      // Never steal focus from a real field — e.g. the manual-login
-      // email/password inputs. Only refocus when nothing else is
-      // deliberately focused.
+      // Only take focus when nothing else has it.
       const active = document.activeElement
       if (!active || active === document.body) inputRef.current?.focus({ preventScroll: true })
     }
@@ -42,14 +34,8 @@ export function RfidListener({ onTap }: { onTap: (uid: string) => void }) {
     <input
       ref={inputRef}
       type="text"
-      // Not aria-hidden — this element is real DOM focus itself for most
-      // of the kiosk shell's lifetime (see refocus() above), and
-      // aria-hidden on a focused element is an invalid, self-contradictory
-      // combination (Chrome flags it: "aria-hidden...because its
-      // descendant retained focus"). aria-label instead gives assistive
-      // tech an honest name for what it lands on, same intent as
-      // aria-hidden without the contradiction. tabIndex={-1} still keeps
-      // it out of normal Tab order.
+      // aria-label, not aria-hidden: this input usually has focus, and a
+      // focused element can't be aria-hidden.
       aria-label="RFID scanner input (background, not for manual use)"
       tabIndex={-1}
       autoComplete="off"

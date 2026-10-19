@@ -1,10 +1,5 @@
-// apps/web/components/ui/patrons/PatronsTable.tsx
-// Sprint 5.5.1 — users list table with search and filter
-//
-// Columns lead with what a librarian acts on — books out, overdue, fines
-// owed, account status — with program/year folded into the College cell as
-// a small second line. Role isn't shown per row; the Students/Faculty summary
-// cards filter by it, and the profile shows it.
+// The patrons table: books out, overdue, fines owed and status first, with
+// program and year under the college.
 
 "use client"
 
@@ -19,14 +14,13 @@ import { PatronActionsMenu } from "./PatronActionsMenu"
 export type PatronStats = {
   booksOut: number
   overdue: number
-  // Unsettled fines on returned books plus what's accruing on overdue ones —
-  // the same "Outstanding" total the profile's Fines tab shows.
+  // Unpaid plus still-growing fines (same as the profile's "Outstanding").
   owed: number
 }
 
 export const EMPTY_STATS: PatronStats = { booksOut: 0, overdue: 0, owed: 0 }
 
-// Shared column template for the header AND every row — keeps them pixel-aligned.
+// One column layout for the header and every row, so they line up.
 // md: Name | Books out | Overdue | Fines | Status | Actions
 // lg: Name | College | Books out | Overdue | Fines | Status | Actions
 const ROW_GRID =
@@ -64,8 +58,7 @@ export function PatronsTable({ patrons, stats, onView, onToggleStatus, selfId }:
   return (
     <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
 
-      {/* Desktop/tablet header — identical grid classes to each row below, so labels
-          always sit directly above their matching column content */}
+      {/* Desktop/tablet header */}
       <div
         className={cn("hidden md:grid items-center px-4 py-2.5 border-b border-ink-100 text-ink-400 font-semibold uppercase gap-3", ROW_GRID)}
         style={{
@@ -92,9 +85,7 @@ export function PatronsTable({ patrons, stats, onView, onToggleStatus, selfId }:
         </div>
       ) : (
         patrons.map((patron) => {
-          // full_name is nullable — fall back to email for the initials
-          // (something to show in the avatar) and "No name on file" for
-          // the row text, rather than crash on a patron with none set.
+          // Some patrons have no name: use the email for initials.
           const displayName = patron.full_name || "No name on file"
           const initials = initialsOf(patron)
           const s = stats[patron.id] ?? EMPTY_STATS
@@ -170,8 +161,7 @@ export function PatronsTable({ patrons, stats, onView, onToggleStatus, selfId }:
                 />
               </div>
 
-              {/* Mobile card — name and college on the left; the things that
-                  need attention (overdue, fines) as small pills under them. */}
+              {/* Mobile card: overdue and fines as small pills. */}
               <div className="flex md:hidden items-center gap-2.5 px-4 py-3.5">
                 <button onClick={() => onView(patron)} className="flex items-center gap-3 min-w-0 flex-1 text-left">
                   <div

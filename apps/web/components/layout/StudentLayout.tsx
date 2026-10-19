@@ -1,5 +1,3 @@
-// apps/web/components/layout/StudentLayout.tsx
-// Sprint 4.5 — Updated: renamed "Borrowed Books" nav item to "My Library"
 
 "use client"
 
@@ -42,9 +40,7 @@ type NavSection = {
   items: NavItem[]
 }
 
-// Faculty share this whole layout/route tree with students (require_student
-// covers both, core/deps.py) — isFaculty just adds the one nav item neither
-// role needs from the other, rather than forking into a separate layout.
+// Faculty use the same layout; they just get the extra "Request a Book" item.
 function getStudentNav(isFaculty: boolean): NavSection[] {
   return [
     {
@@ -61,7 +57,7 @@ function getStudentNav(isFaculty: boolean): NavSection[] {
     {
       title: "My Library",
       items: [
-        // Sprint 4.5 — single entry point for Borrowed, Saved, and History tabs
+        // Borrowed, Saved and History tabs
         { label: "My Library", icon: <Library size={16} />, href: "/user/library" },
       ],
     },
@@ -87,10 +83,8 @@ export function StudentLayout({ children, userName, userInitials, initialUnread 
   )
 }
 
-// Whether to show the first-login "Set a password" step. true/false from
-// GET /auth/password-status; null if it still failed after a few tries —
-// on a slow phone connection one failed request used to silently drop
-// step 2 entirely. "Skip for now" only lasts this browser session.
+// Whether to show the "Set a password" step: true/false, or null if the
+// check kept failing. Retries a few times for slow connections.
 async function checkNeedsPassword(): Promise<boolean | null> {
   try { if (sessionStorage.getItem(PASSWORD_PROMPT_SKIP_KEY) === "true") return false } catch {}
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -147,10 +141,7 @@ function StudentLayoutInner({
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("sidebar-collapsed") === "true") setCollapsed(true)
-    // getUser(), not a direct localStorage read — a "Remember me" unchecked
-    // login only exists in sessionStorage (see lib/auth.ts), and reading
-    // localStorage directly here would show a signed-out-looking header for
-    // that session even while it's still active.
+    // getUser() checks both storages (see lib/auth.ts).
     const user = getUser()
     if (user) {
       // Already accepted per the cached login copy → no wait, no flash.
@@ -168,16 +159,9 @@ function StudentLayoutInner({
     localStorage.setItem("sidebar-collapsed", String(collapsed))
   }, [collapsed])
 
-  // Google sign-in: a student/faculty account that isn't in the enrollment
-  // spreadsheet has empty academic fields (a student needs program + year
-  // level; a faculty account — role assigned automatically at signup from
-  // the email's local part, see scripts/reclassify_dlsl_roles.py — only
-  // needs a college; there's no librarian UI to change a role by hand).
-  // Both also need id_number (0045) — the enrollment spreadsheet never
-  // carried one (see import_rfid_enrollment.py), so every real account
-  // predates this field. The cached login copy can be stale (a librarian
-  // may have filled these in since), so confirm against the API before
-  // asking.
+  // Missing profile details: students need program and year level, faculty
+  // need a college, and both need an ID number. Confirmed with the API
+  // first, since the saved copy may be out of date.
   const isIncomplete = (u: { role: string; program?: string | null; year_level?: number | null; college?: string | null; id_number?: string | null }) =>
     u.role === "student" ? !u.program || u.year_level == null || !u.id_number
     : u.role === "faculty" ? !u.college || !u.id_number
@@ -193,14 +177,11 @@ function StudentLayoutInner({
     if (!cached) return
     let cancelled = false
 
-    // One /auth/me round trip serves both checks — the cached login copy can
-    // be stale for either (accepted on another device, details filled in by
-    // a librarian).
+    // One /auth/me call serves both checks (the saved copy may be out of date).
     const latest: Promise<UserProfile | null> =
       isIncomplete(cached) || !cached.privacy_accepted_at ? refreshCachedUser() : Promise.resolve(cached)
 
-    // A failed refresh (null) counts as not accepted — the notice shows
-    // rather than letting the dashboard through unconfirmed.
+    // If the check fails, show the notice rather than skip it.
     const privacyCheck: Promise<boolean> = cached.privacy_accepted_at
       ? Promise.resolve(false)
       : latest.then((fresh) => !fresh?.privacy_accepted_at)
@@ -213,9 +194,8 @@ function StudentLayoutInner({
     Promise.all([privacyCheck, profileCheck, checkNeedsPassword()]).then(([needsPrivacy, seed, noPassword]) => {
       if (cancelled) return
       const privacySteps = needsPrivacy ? 1 : 0
-      // null = the check failed (e.g. a flaky mobile connection) — still
-      // count the password step after a profile step, and re-check once the
-      // profile step is done.
+      // null = the check failed; count the password step anyway and
+      // re-check after the profile step.
       setSetupSteps(privacySteps + (seed ? 1 : 0) + (noPassword === true || (seed && noPassword === null) ? 1 : 0))
       setPrivacyStep(privacySteps)
       setPrivacy(needsPrivacy ? "required" : "accepted")

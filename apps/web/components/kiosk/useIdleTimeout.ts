@@ -1,8 +1,5 @@
-// apps/web/components/kiosk/useIdleTimeout.ts
-// 90-second inactivity timeout for the kiosk shell (build plan Phase 6).
-// Any click/keypress/touch/mouse-move resets the clock, including during
-// the "Still here?" warning window — the warning is a UI nudge, not the
-// only way to cancel it.
+// Kiosk 90-second idle timeout. Any click, key, touch or mouse move resets
+// it, even during the "Still here?" warning.
 
 'use client'
 
@@ -22,9 +19,8 @@ export function useIdleTimeout({
   const [secondsLeft, setSecondsLeft] = useState(timeoutSeconds)
   const lastActivityRef = useRef(Date.now())
   const expiredRef = useRef(false)
-  // Callers pass a fresh inline function every render. Depending on it
-  // directly re-ran the effect below on every tick, and its reset() kept
-  // pushing the deadline back — so the timeout never actually fired.
+  // Keep the latest callback in a ref, so a new function each render
+  // doesn't restart the timer.
   const onExpireRef = useRef(onExpire)
   onExpireRef.current = onExpire
 

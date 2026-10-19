@@ -28,19 +28,9 @@ export function useNotifications() {
   return useContext(NotificationContext)
 }
 
-// Sidebar badge count — self-fetches the real unread count rather than
-// trusting a prop threaded down from a static layout.tsx, which can only
-// ever be a guess about what's actually in the notifications table.
-// `initialUnread` is just the pre-fetch render (avoids a 0->N flash for
-// a returning user), immediately overwritten once the real count lands.
-//
-// Polled, not pushed — there's no websocket/Realtime subscription
-// anywhere in this codebase (every notify()/notify_librarians() call is a
-// plain synchronous DB insert, "no background job infra," same reality
-// core/notify.py's own comments describe). Without this, a librarian
-// with the app already open would only see a student's transaction after
-// their next full navigation or reload; this is what makes it show up on
-// its own instead.
+// Unread count for the bell and sidebar badge, checked every minute so new
+// notifications show up without a reload. `initialUnread` is shown until
+// the first check.
 const POLL_INTERVAL_MS = 60_000
 
 export function NotificationProvider({

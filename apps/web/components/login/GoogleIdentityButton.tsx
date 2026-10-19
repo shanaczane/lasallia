@@ -1,9 +1,5 @@
-// components/login/GoogleIdentityButton.tsx
-// Google's own sign-in button (Google Identity Services). It returns an ID
-// token right here on www.lasallia.com, instead of redirecting through
-// Supabase's domain — which is why Google's sign-in screen used to say
-// "continue to <project>.supabase.co". Rendered by LoginSection only when
-// NEXT_PUBLIC_GOOGLE_CLIENT_ID is set.
+// Google's own sign-in button, so Google's screen shows our site instead of
+// the Supabase address. Only used when NEXT_PUBLIC_GOOGLE_CLIENT_ID is set.
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -42,8 +38,8 @@ function loadGis(): Promise<GoogleId> {
   })
 }
 
-// Supabase checks the raw nonce; Google is given its SHA-256 (hex), and
-// puts that in the ID token. Stops a captured token from being replayed.
+// A one-time value (Google gets its hash, Supabase checks the original), so
+// a stolen token can't be reused.
 async function makeNonce(): Promise<{ raw: string; hashed: string }> {
   const raw = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw))
@@ -67,8 +63,7 @@ export function GoogleIdentityButton({ clientId, onError }: { clientId: string; 
         gis.initialize({
           client_id: clientId,
           nonce: nonce.hashed,
-          // Only filters Google's account picker; the role is still decided
-          // server-side by the profiles trigger.
+          // Only filters Google's account list; the server decides the role.
           hd: 'dlsl.edu.ph',
           ux_mode: 'popup',
           auto_select: false,

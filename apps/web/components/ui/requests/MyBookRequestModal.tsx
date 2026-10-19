@@ -1,9 +1,4 @@
-// apps/web/components/ui/requests/MyBookRequestModal.tsx
-// Faculty-side view/edit for a single request on /user/requests. A
-// request can be edited (title/author/isbn/format/copies/course/note, plus
-// attachments) only while still "pending" — once a librarian has approved,
-// rejected, or fulfilled it, this renders read-only. Backend enforces the
-// same rule (PATCH /book-requests/{id}/edit, routers/book_requests.py).
+// Faculty view of one of their book requests. Editable only while pending.
 
 "use client"
 
@@ -399,12 +394,7 @@ export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookReq
           </div>
         </div>
 
-        {/* Footer actions — destructive action (Cancel Request) always sits
-            in its own slot on the left, separated from Close/Edit on the
-            right, so it's never sandwiched between two harmless buttons
-            where a misclick could withdraw a request by accident. Danger
-            styling matches the soft-fill convention PatronProfileModal's
-            Deactivate button already uses, not a bordered outline. */}
+        {/* Cancel Request sits apart on the left, so it isn't hit by mistake. */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 p-4 sm:p-5 border-t border-ink-100 shrink-0">
           {editing ? (
             <>

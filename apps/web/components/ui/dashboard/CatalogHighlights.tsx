@@ -1,10 +1,5 @@
-// apps/web/components/ui/dashboard/CatalogHighlights.tsx
-// Sprint 5.7 — extra dashboard sections beyond "For You":
-// New Arrivals, and the student's own Program/College. All three are
-// derived client-side from the same full-catalog fetch the student
-// catalog page already uses (apps/api's /books is a small, one-shot,
-// client-filtered list — see apps/api/routers/books.py's own comment on
-// that) rather than needing a dedicated recommendations pipeline.
+// Dashboard rows: New Arrivals, and books from the student's program and
+// college. Built from the full catalog list.
 
 "use client"
 
@@ -22,9 +17,7 @@ import { programLabel } from "@/lib/programLabels"
 import { ScrollRow } from "./ScrollRow"
 
 const SECTION_SIZE = 12
-// 8, not 4 — same reasoning as ForYouSection.tsx's SKELETON_COUNT: a wide
-// viewport fits more than 4 of the 140px cards before the row needs to
-// scroll, so 4 skeletons under-filled the row next to the real cards.
+// Enough placeholder cards to fill a wide screen.
 const SKELETON_COUNT = 8
 // The catalog isn't per-user, so one copy serves the dashboard and the kiosk.
 const BOOKS_CACHE_KEY = "books"
@@ -43,9 +36,7 @@ function SkeletonCard() {
   )
 }
 
-// End-of-row card linking back to the catalog (optionally pre-filtered) —
-// same height as the book cards beside it via the row's default flex
-// stretch, so it reads as part of the row, not a stray button after it.
+// "View catalog" card at the end of a row.
 function ViewMoreCard({ href }: { href: string }) {
   return (
     <Link
@@ -80,9 +71,7 @@ function Section({
   viewMoreHref: string
   hrefPrefix: string
 }) {
-  // Supplementary sections, same rule Phase 6 set for "For You": nothing
-  // to show yet is not an error — just don't render the section rather
-  // than filling the dashboard with empty-state cards.
+  // Hide an empty row instead of showing an empty state.
   if (!loading && books.length === 0) return null
 
   return (
@@ -120,18 +109,13 @@ function Section({
   )
 }
 
-// identity/hrefPrefix default to the student dashboard's behavior (read the
-// signed-in student from localStorage); the kiosk's "For you" tab passes its
-// own (a kiosk tap has no JWT/localStorage session to read — see
-// app/kiosk/for-you/page.tsx). identity is passed as an object, even with
-// null fields, specifically so this never falls back to getUser() on a
-// shared kiosk terminal — that would risk showing whatever student happens
-// to be cached in that browser's localStorage from an unrelated tab/visit.
+// On the dashboard, the program and college come from the signed-in user.
+// The kiosk passes `identity` instead (even with empty fields), so a shared
+// kiosk never shows another user's saved details.
 export function CatalogHighlights({
   identity,
   hrefPrefix = "/user/catalog",
-  // The kiosk's "For you" tab shows the program row but not the college
-  // one, so each can be switched off on its own.
+  // Each row can be turned off (the kiosk hides the college row).
   showProgram = true,
   showCollege = true,
 }: {
@@ -143,9 +127,7 @@ export function CatalogHighlights({
   // Memory copy from earlier in this visit — instant, no skeletons.
   const [books, setBooks] = useState<Book[] | null>(() => peekMemory<Book[]>(BOOKS_CACHE_KEY) ?? null)
   const [failed, setFailed] = useState(false)
-  // getUser() reads localStorage, which doesn't exist during Next's SSR
-  // pass of this client component — has to run post-hydration, in an
-  // effect, same reasoning as student/dashboard/page.tsx's firstName.
+  // Read the user in an effect, since storage doesn't exist during server rendering.
   const [program, setProgram] = useState<string | null>(identity?.program ?? null)
   const [college, setCollege] = useState<string | null>(identity?.college ?? null)
 
@@ -176,11 +158,8 @@ export function CatalogHighlights({
     ? [...books].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, SECTION_SIZE)
     : []
 
-  // A profile's program ("BS Nursing") is named differently from the
-  // catalog's Program ("Nursing"), and some programs are shelved under more
-  // than one name ("Computer Science" and "BS Computer Science"), so a plain
-  // equality check left this row empty for most students. Every catalog
-  // Program that maps to the student's program counts.
+  // Profile and catalog program names differ ("BS Nursing" vs "Nursing"),
+  // so include every catalog program that matches.
   const genres = books ? [...new Set(books.map((b) => b.category))] : []
   const programCategories = new Set(genres.filter((g) => catalogProgramFor(program, [g]) !== null))
   const catalogProgram = catalogProgramFor(program, genres)
@@ -189,8 +168,7 @@ export function CatalogHighlights({
     ? books.filter((b) => programCategories.has(b.category)).slice(0, SECTION_SIZE)
     : []
 
-  // Excludes the student's own program so this section reads as "the rest
-  // of your college", not a re-list of the section right above it.
+  // Leave out the student's own program (it has its own row).
   const collegeBooks = books && college
     ? books.filter((b) => b.subject === college && !programCategories.has(b.category)).slice(0, SECTION_SIZE)
     : []
@@ -212,8 +190,7 @@ export function CatalogHighlights({
             loading={loading}
             books={programBooks}
             hrefPrefix={hrefPrefix}
-            // genre is the catalog filter's own param name for Program (see
-            // useCatalogFilters.ts) — pre-filters the catalog to match.
+            // "genre" is the catalog's URL filter for Program.
             viewMoreHref={`${hrefPrefix}?genre=${encodeURIComponent(catalogProgram ?? "")}`}
           />
       )}
@@ -224,7 +201,7 @@ export function CatalogHighlights({
             loading={loading}
             books={collegeBooks}
             hrefPrefix={hrefPrefix}
-            // subject is the catalog filter's own param name for College.
+            // "subject" is the catalog's URL filter for College.
             viewMoreHref={`${hrefPrefix}?subject=${encodeURIComponent(college ?? "")}`}
           />
       )}

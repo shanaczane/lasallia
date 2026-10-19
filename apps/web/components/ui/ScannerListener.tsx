@@ -1,14 +1,6 @@
-// apps/web/components/ui/ScannerListener.tsx
-// A hidden, always-refocused text input that captures 2D barcode scanner
-// input. Same integration point as components/kiosk/RfidListener.tsx: a
-// USB "plug and play" barcode scanner is a HID keyboard-wedge device — it
-// "types" the decoded value into whatever has focus and sends Enter,
-// indistinguishable from someone typing fast. Visible accession-number
-// inputs already work with a scanner for free; this exists for the
-// screens where no such input is on-screen (a confirmation/result card,
-// or after a click moved focus to a button) so a scan is never silently
-// lost. Only refocuses when nothing else is deliberately focused, so it
-// never steals input from a field the librarian is actually typing into.
+// A hidden input that catches USB barcode scans (the scanner types the code
+// and presses Enter). For screens with no visible input, so scans aren't
+// lost. It only takes focus when nothing else has it.
 
 'use client'
 

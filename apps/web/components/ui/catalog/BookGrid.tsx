@@ -1,6 +1,4 @@
-// apps/web/components/ui/catalog/BookGrid.tsx
-// Sprint 3.1 — Responsive grid wrapper with empty/loading states
-// Sprint 4.3.4 — Pass showBookmark through to BookCard
+// Grid of book cards, with loading and empty states.
 
 import { Book } from '@lasallia/types'
 import { BookCard } from './BookCard'

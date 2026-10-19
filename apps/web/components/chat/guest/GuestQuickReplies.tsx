@@ -15,7 +15,6 @@ interface GuestQuickRepliesProps {
 
 export default function GuestQuickReplies({ onSelect }: GuestQuickRepliesProps) {
   return (
-    // px-6 py-3, border-top ink-100, horizontal scroll no scrollbar
     <div
       className="shrink-0 flex items-center gap-2 px-6 py-3 border-t overflow-x-auto"
       style={{

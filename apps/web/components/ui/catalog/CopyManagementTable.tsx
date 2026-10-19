@@ -1,16 +1,6 @@
-// apps/web/components/ui/catalog/CopyManagementTable.tsx
-// Sprint 5.2.4 — Copy management table (per-copy status, read-only)
-// Fix: wired to real book_copies data (GET /books/{id}/copies) instead of
-// rows fabricated from total_copies/available_copies. There's no backend
-// endpoint for a librarian to freely set a copy's status or create one
-// ad hoc — the status machine (apps/api migration 0004) only moves through
-// real flows (borrow/return, reshelving, mark-found), and copies are
-// created by the accession process, not here — so this is display-only.
-// Borrower/due date come from the copy's matching active loan (joined in
-// server-side); shelf location comes from the book itself, not the copy —
-// book_copies.shelf_location is never actually populated (every row in the
-// DB reads the literal string "Unassigned"), since a copy shelves wherever
-// its title does. See app/librarian/catalog/[bookId]/page.tsx.
+// Read-only table of a book's copies: status, and borrower and due date for
+// copies on loan. Statuses only change through borrowing, returns and
+// reshelving. The shelf location comes from the book.
 
 'use client'
 
@@ -31,9 +21,7 @@ export type BookCopy = {
 
 type CopyManagementTableProps = {
   copies: BookCopy[]
-  // The book's own shelf location — same for every copy of this title (see
-  // header comment). Omitted entirely rather than showing "Unassigned" for
-  // a title that genuinely has none yet.
+  // The book's shelf location (the same for every copy).
   shelfLocation?: string | null
   className?: string
 }

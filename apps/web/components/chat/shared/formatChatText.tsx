@@ -1,10 +1,5 @@
-// apps/web/components/chat/shared/formatChatText.tsx
-// The model writes markdown-ish text (**bold**, "- " / "1. " lists) even
-// though ChatMessage renders bot replies as plain text — without this,
-// the raw "**" and list markers show up literally in the bubble instead
-// of the emphasis/structure they're meant to convey. A full markdown
-// library is overkill for the handful of patterns the system prompt's
-// "keep prose short" style actually produces, so this only handles those.
+// Renders the bits of markdown the chatbot uses (**bold** and lists)
+// instead of showing the raw symbols.
 
 import type { ReactNode } from "react"
 

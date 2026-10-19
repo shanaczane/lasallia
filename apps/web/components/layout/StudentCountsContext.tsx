@@ -34,11 +34,8 @@ export function useStudentCounts() {
   return useContext(StudentCountsContext)
 }
 
-// Sidebar badge counts (Reservations, My Library) — self-fetching, same
-// reasoning as NotificationContext: a layout.tsx prop can only ever guess.
-// Exposed as context so pages that mutate a reservation or loan (cancel,
-// pick up, reserve) can call the matching refresh function after their own
-// action succeeds, instead of the sidebar only catching up on next reload.
+// Sidebar badge counts (Reservations, My Library). Pages call the refresh
+// functions after changing a loan or reservation, so the badges update.
 export function StudentCountsProvider({ children }: { children: React.ReactNode }) {
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [loans, setLoans] = useState<Loan[]>([])

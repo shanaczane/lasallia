@@ -1,6 +1,4 @@
-// components/login/LoginSection.tsx
-// Compact single-form login (Variant A) — no role selector; the server
-// determines the role from the login response and the redirect follows it.
+// The login page. The server decides the role, and the redirect follows it.
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -15,19 +13,14 @@ import { SystemStatusModal } from './SystemStatusModal'
 
 const DLSL_EMAIL_PATTERN = /^[^\s@]+@dlsl\.edu\.ph$/i
 
-// Set -> Google's own button on this site (no Supabase address on Google's
-// screen). Unset -> the original Supabase redirect, so sign-in keeps
-// working until the client ID is configured.
+// If set, use Google's own button; otherwise the Supabase redirect.
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
 
 export default function LoginSection() {
   const { signIn, loading, error, setError } = useSignIn()
   const searchParams = useSearchParams()
 
-  // A session that got force-logged-out (TopNav's periodic check, see
-  // lib/auth.verifySessionActive) lands back here with this flag — the
-  // account was deactivated while the tab stayed open, so there's no login
-  // failure to otherwise explain why they were kicked out.
+  // Explain why a deactivated account was signed out.
   useEffect(() => {
     if (searchParams.get('deactivated') === '1') {
       setError('Your account has been deactivated. Please contact a librarian.')
@@ -158,9 +151,7 @@ export default function LoginSection() {
                   name="email"
                   type="email"
                   autoComplete="email"
-                  // No autoFocus: on phones it pops the keyboard the instant
-                  // this page loads, resizing the viewport mid-paint and
-                  // reading as a flicker/jump on the min-h-dvh layout below.
+                  // No autoFocus: on phones the keyboard would pop up and make the page jump.
                   required
                   value={email}
                   onChange={handleEmailChange}

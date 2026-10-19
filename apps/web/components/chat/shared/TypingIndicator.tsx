@@ -1,7 +1,5 @@
-// apps/web/components/chat/shared/TypingIndicator.tsx
-// Chatbot Phase 2.4 — a status-aware typing indicator ("searching the
-// catalog" vs "writing a reply"), not a generic dot animation, since a
-// tool call adds latency the student can otherwise misread as a freeze.
+// Shows what the chatbot is doing ("searching the catalog", "writing a
+// reply"), so a slow reply doesn't look frozen.
 
 "use client"
 

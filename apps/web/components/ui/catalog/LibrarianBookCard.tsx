@@ -1,6 +1,4 @@
-// apps/web/components/ui/catalog/LibrarianBookCard.tsx
-// Sprint 5.2.1 — Librarian book card with admin metadata (total copies, acquisition date)
-// Fix: bigger cover thumbnail, responsive layout
+// Librarian book card, with copies and acquisition date and edit/delete actions.
 
 'use client'
 
@@ -42,7 +40,7 @@ export function LibrarianBookCard({ book, onEdit, onDelete, className }: Librari
         className
       )}
     >
-      {/* Cover thumbnail — bigger: 72×102 on mobile, 88×124 on sm+ */}
+      {/* Cover thumbnail */}
       <Link
         href={`/librarian/catalog/${book.id}`}
         className="shrink-0 rounded-sm overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700"

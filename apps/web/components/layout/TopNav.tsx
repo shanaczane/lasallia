@@ -1,4 +1,3 @@
-// apps/web/components/layout/TopNav.tsx
 "use client"
 
 import { useEffect, useRef, useState } from "react"

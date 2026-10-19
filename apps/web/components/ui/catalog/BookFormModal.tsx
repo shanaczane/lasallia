@@ -1,11 +1,5 @@
-// apps/web/components/ui/catalog/BookFormModal.tsx
-// Sprint 5.2.2 — Add New Book form
-// Sprint 5.2.3 — Edit / Update Book form (pre-populated)
-// Tabbed layout — mirrors how the LRC's own cataloging tool (Destiny) splits
-// a title into Brief Title / Series-Notes / Subjects / Added Entries tabs,
-// scaled down to what this app tracks. Split into 6 focused tabs (rather than
-// fewer, longer ones) specifically so no single tab's content needs its own
-// scroll on a typical screen — the modal body scrolls only if it truly has to.
+// The Add / Edit book form, in tabs (like Destiny's) short enough that
+// most don't need to scroll.
 
 'use client'
 
@@ -64,20 +58,14 @@ type BookFormModalProps = {
   book?: Book            // pre-populated when editing
   isOpen: boolean
   onClose: () => void
-  // May return a promise — the modal disables its buttons until it settles,
-  // so a second click while the save is still running can't send a second
-  // create (which the first one's accession number would then reject).
+  // Buttons are disabled until this finishes, so a double click can't save twice.
   onSubmit: (data: BookFormData) => void | Promise<void>
-  // Already-loaded catalog rows — a duplicate accession number is caught
-  // live as the librarian types rather than only after a 409 from the API,
-  // and (mode: 'add' only) a same title/author or same-ISBN match offers
-  // "add copies to that title" instead of cataloging a near-duplicate.
+  // Used to catch a duplicate accession number while typing, and (when
+  // adding) to offer "add copies" if the book already exists.
   existingBooks?: Book[]
-  // A server-side rejection (e.g. the same accession check, re-run
-  // authoritatively on submit) surfaced inline instead of only as a toast.
+  // An error from the server, shown on its field.
   externalError?: { field: keyof BookFormData; message: string } | null
-  // mode: 'add' only — called when the librarian confirms adding copies to
-  // an existing title instead of creating a new one.
+  // Add mode: add copies to an existing book instead of creating a new one.
   onAddCopies?: (existingBook: Book, count: number) => void | Promise<void>
 }
 
@@ -142,12 +130,9 @@ const FUNDING_SOURCE_OPTIONS: Array<{ value: FundingSource; label: string }> = [
 
 const FLOOR_OPTIONS = ['Floor 1', 'Floor 2', 'Floor 3', 'Floor 4']
 
-// Mirrors apps/api/core/loans.py's NON_BORROWABLE_COLLECTION_TYPES (Reference,
-// Thesis, Capstone, MTR, Archives — library use only, Borrow/Reserve hidden
-// on every catalog view) plus HOURLY_FINE_COLLECTION_TYPES (Reserve, Story
-// book, Bible — borrowable, just on a stricter fine schedule) and the
-// General default. Distinct from "Format" above (print/digital/reference,
-// lowercase) despite the similar-sounding "reference" value.
+// Collection types: library-use-only ones (Reference, Thesis, Capstone, MTR,
+// Archives), hourly-fine ones (Reserve, Story book, Bible), and General.
+// Not the same as Format, even though both have "reference".
 const COLLECTION_TYPE_OPTIONS = [
   'General', 'Reference', 'Reserve', 'Thesis', 'Capstone', 'MTR', 'Archives', 'Story book', 'Bible',
 ]
@@ -165,8 +150,7 @@ const TABS: Array<{ key: TabKey; label: string; icon: React.ReactNode }> = [
   { key: 'subjects',        label: 'Subjects & Notes', icon: <Tags size={14} /> },
 ]
 
-// Which tab each validated field lives on — used to badge a tab with an
-// error dot, and to jump the user straight to the first tab that failed.
+// Which tab each field is on, to mark tabs with errors and jump to them.
 const TAB_FOR_FIELD: Partial<Record<keyof BookFormData, TabKey>> = {
   title: 'titleAuthors',
   authors: 'titleAuthors',
@@ -270,9 +254,7 @@ function FormSection({
 }
 
 // ─── Author picker ────────────────────────────────────────────────────────────
-// One text field + a "+" button, building up a chip list — covers primary
-// authors, co-authors, editors, and illustrators alike (no separate role
-// picker; add each contributor as its own chip).
+// Add authors (and editors, illustrators) one at a time as chips.
 
 function AuthorPicker({
   authors,
@@ -477,9 +459,8 @@ function firstErrorTab(errors: FormErrors): TabKey | null {
 }
 
 // ─── Duplicate-title detection (Add only) ──────────────────────────────────────
-// Catches a librarian re-cataloging a title that's already in the system as
-// a second, separate book — same ISBN (when both sides have one), else same
-// title and same set of authors (order-insensitive, so "A, B" matches "B, A").
+// Finds an existing book with the same ISBN, or the same title and
+// authors (in any order).
 
 function normalize(s: string): string {
   return s.trim().toLowerCase()
@@ -513,12 +494,11 @@ export function BookFormModal({
   const [submitted, setSubmitted] = useState(false)
   const [tab, setTab] = useState<TabKey>('titleAuthors')
   const [authorDraft, setAuthorDraft] = useState('')
-  // Set when handleSubmit finds an existing title matching this one (Add
-  // mode only) — swaps the footer to "add copies instead?" until resolved.
+  // A matching existing book; the footer asks "add copies instead?".
   const [duplicate, setDuplicate] = useState<Book | null>(null)
   const [saving, setSaving] = useState(false)
 
-  // One save at a time — see onSubmit's note above.
+  // One save at a time.
   async function runSave(save: () => void | Promise<void>) {
     if (saving) return
     setSaving(true)
@@ -584,9 +564,7 @@ export function BookFormModal({
   const dialogRef = useRef<HTMLDivElement>(null)
   useDialogKeyboard(dialogRef, { open: isOpen, onClose })
 
-  // A 409 from the create/update call (e.g. another book claimed the same
-  // accession number between page load and submit) — shown on the right
-  // field/tab, same as a locally-caught validation error.
+  // Show a server error (e.g. accession number taken) on its field and tab.
   useEffect(() => {
     if (!externalError) return
     setErrors((e) => ({ ...e, [externalError.field]: externalError.message }))
@@ -638,16 +616,14 @@ export function BookFormModal({
     runSave(() => onSubmit(form))
   }
 
-  // "Add as copies" — adds this submission's copy count to the matched
-  // title instead of creating a second book for it.
+  // "Add as copies" to the matching book.
   function confirmAddCopies() {
     if (!duplicate) return
     const count = parseInt(form.total_copies, 10) || 1
     if (onAddCopies) runSave(() => onAddCopies(duplicate, count))
   }
 
-  // "No, this is a different book" — the librarian knows better than the
-  // title/author/ISBN heuristic; proceed with creating a new book.
+  // "No, this is a different book": create it anyway.
   function confirmCreateAnyway() {
     setDuplicate(null)
     runSave(() => onSubmit(form))
@@ -714,9 +690,7 @@ export function BookFormModal({
           })}
         </div>
 
-        {/* Body — the ONLY scrollable region; min-h-0 lets this flex child
-            actually shrink to fit inside the fixed-height card above instead
-            of forcing the whole modal to overflow the viewport. */}
+        {/* Body: the only part that scrolls (min-h-0 lets it shrink). */}
         <div className="flex-1 min-h-0 overflow-y-auto px-8 py-6 flex flex-col gap-7">
 
           {tab === 'titleAuthors' && (

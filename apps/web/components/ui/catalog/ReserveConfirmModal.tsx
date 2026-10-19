@@ -1,9 +1,5 @@
-// apps/web/components/ui/catalog/ReserveConfirmModal.tsx
-// Shown when a student taps "Reserve this book" — before anything is
-// placed, it tells them where they'd land in the queue and roughly when a
-// copy should be ready for them, so they can decide whether the wait is
-// worth it. The date is an estimate from the API (due dates of the copies
-// out, plus a full loan period per person ahead), never a promise.
+// "Reserve this book": shows the student's place in line and a rough ready
+// date before they confirm. The date is an estimate, not a promise.
 
 'use client'
 
@@ -22,8 +18,7 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-PH', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' })
 }
 
-// "today" / "in about 5 days" / "in about 2 weeks" — a soft label so the
-// date reads as approximate rather than a commitment.
+// "today", "in about 5 days", "in about 2 weeks".
 export function relativeWait(iso: string): string {
   const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000)
   if (days <= 0) return 'any time now'
@@ -137,8 +132,7 @@ export function ReserveConfirmModal({
           </div>
         )}
 
-        {/* Checked before Confirm, so an ineligible student sees why up
-            front instead of getting the same error after tapping it. */}
+        {/* Why the student can't reserve, shown before Confirm. */}
         {blocked && (
           <div className="flex items-start gap-2 rounded-[10px] bg-danger-bg border border-danger/20 p-3">
             <AlertCircle size={14} className="text-danger shrink-0 mt-0.5" />

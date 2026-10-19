@@ -1,5 +1,4 @@
-// apps/web/components/ui/catalog/CatalogSearchBar.tsx
-// Sprint 3.1.1 — Prominent search bar (search by title, author, category)
+// Catalog search bar (title, author, category).
 
 'use client'
 

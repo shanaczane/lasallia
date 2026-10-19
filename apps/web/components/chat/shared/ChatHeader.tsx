@@ -29,20 +29,12 @@ export default function ChatHeader({ onMenuClick, canDelete, onDeleteChat }: Cha
   }, [])
 
   return (
-    // px-4 sm:px-6 py-4, border-bottom ink-100 — matches TopNav's own
-    // px-4 sm:px-6 edge padding so this row's icon column lines up with
-    // the hamburger in the nav bar above it, not offset from it.
+    // Same side padding as TopNav, so the icons line up.
     <header
       className="shrink-0 flex items-center gap-3 px-4 sm:px-6 py-4 bg-white border-b"
       style={{ borderColor: "var(--color-ink-100)" }}
     >
-      {/* Hamburger — below lg, where the sidebar is a drawer instead of
-          always in-flow. Was `hidden md:flex lg:hidden` (tablet only),
-          which left phones with no way to open the drawer at all — the
-          sidebar's own drawer logic already covers everything below lg,
-          so the toggle needs to match it. -ml-1 mirrors TopNav's own
-          hamburger button for the same reason — aligns the icon glyph
-          itself, not just the button's padding box. */}
+      {/* Menu button for the chat list, below lg (where it's a drawer). */}
       <button
         type="button"
         onClick={onMenuClick}
@@ -52,7 +44,7 @@ export default function ChatHeader({ onMenuClick, canDelete, onDeleteChat }: Cha
         <PanelLeft size={18} />
       </button>
 
-      {/* Avatar — 40px green circle, online dot — 8px green-500 */}
+      {/* Avatar with online dot */}
       <div className="relative shrink-0">
         <div
           className="flex items-center justify-center rounded-full text-white font-bold"
@@ -71,7 +63,7 @@ export default function ChatHeader({ onMenuClick, canDelete, onDeleteChat }: Cha
         />
       </div>
 
-      {/* Name — font-display 18px green-800 · Subtitle — ink-400 13px */}
+      {/* Name and subtitle */}
       <div className="flex-1 min-w-0">
         <p
           className="leading-tight font-semibold"

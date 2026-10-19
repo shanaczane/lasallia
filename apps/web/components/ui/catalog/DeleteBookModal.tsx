@@ -1,5 +1,4 @@
-// apps/web/components/ui/catalog/DeleteBookModal.tsx
-// Sprint 5.2.5 — Book deletion / archive modal with confirmation
+// Archive or delete a book, with confirmation.
 
 'use client'
 

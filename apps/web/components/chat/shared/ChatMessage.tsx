@@ -24,7 +24,7 @@ export default function ChatMessage({ role, content, timestamp, books, sources, 
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
 
-      {/* Bot avatar — 32px */}
+      {/* Bot avatar */}
       {!isUser && (
         <div
           className="shrink-0 flex items-center justify-center rounded-full text-white font-bold self-start mt-0.5"
@@ -43,7 +43,7 @@ export default function ChatMessage({ role, content, timestamp, books, sources, 
         className={`flex flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}
         style={{ maxWidth: isUser ? 400 : 520 }}
       >
-        {/* Bubble — px-4 py-3, rounded-lg */}
+        {/* Bubble */}
         <div
           className={`px-4 py-3 rounded-lg ${isUser ? "rounded-tr-sm" : "rounded-tl-sm shadow-sm"}`}
           style={{
@@ -85,7 +85,7 @@ export default function ChatMessage({ role, content, timestamp, books, sources, 
           )}
         </div>
 
-        {/* Timestamp — ink-400 11px */}
+        {/* Timestamp */}
         <span
           className={isUser ? "text-right" : ""}
           style={{ fontFamily: "var(--font-body)", fontSize: 11, color: "var(--color-ink-400)" }}

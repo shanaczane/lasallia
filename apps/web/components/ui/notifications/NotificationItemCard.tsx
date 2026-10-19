@@ -1,4 +1,3 @@
-// components/ui/notifications/NotificationItemCard.tsx
 
 import { cn } from "@/lib/utils"
 import type { Notification, NotificationType } from "@lasallia/types"

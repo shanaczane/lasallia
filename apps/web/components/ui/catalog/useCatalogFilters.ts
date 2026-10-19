@@ -1,6 +1,4 @@
-// apps/web/components/ui/catalog/useCatalogFilters.ts
-// Single source of truth for catalog filter state — synced to URL search params
-// so filtered views are shareable and back-button friendly.
+// Catalog filter state, kept in the URL so links and Back work.
 
 'use client'
 

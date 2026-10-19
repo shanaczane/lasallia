@@ -1,8 +1,4 @@
-// apps/web/components/support/SupportTicketsPanel.tsx
-// Librarian inbox for tickets submitted through the login page's Contact
-// Support form (lib/supportTickets.ts). Lives inside Settings (its own
-// tab) rather than a standalone page — list + detail/update only, no
-// incident/status-page management here, that was explicitly out of scope.
+// Settings tab where librarians read and update support tickets.
 
 "use client"
 
@@ -50,8 +46,7 @@ const TABS: { key: TabKey; label: string; showCount: boolean }[] = [
   { key: "resolved",    label: "Resolved",    showCount: false },
 ]
 
-// Same chevron-as-background-image treatment used by every other styled
-// <select> on the site (librarian Reservations/Reports, student Requests).
+// Dropdown arrow, same as other selects on the site.
 const SELECT_CHEVRON =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"
 

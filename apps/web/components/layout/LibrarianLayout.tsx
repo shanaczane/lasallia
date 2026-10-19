@@ -1,4 +1,3 @@
-// apps/web/components/layout/LibrarianLayout.tsx
 "use client"
 
 import { useRef, useState, useEffect, useLayoutEffect } from "react"
@@ -72,8 +71,7 @@ function getInitials(name: string): string {
   return name.split(" ").map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase()
 }
 
-// Real unread count, not a static prop guessed at from layout.tsx — see
-// NotificationContext.tsx's self-fetching provider.
+// The unread count comes from NotificationContext.
 export function LibrarianLayout({ children, userName, userInitials }: LibrarianLayoutProps) {
   return (
     <NotificationProvider>
@@ -107,8 +105,7 @@ function LibrarianLayoutInner({
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("librarian-sidebar-collapsed") === "true") setCollapsed(true)
-    // getUser(), not a direct localStorage read — a "Remember me" unchecked
-    // login only exists in sessionStorage (see lib/auth.ts).
+    // getUser() checks both storages (see lib/auth.ts).
     const user = getUser()
     if (user) {
       if (user.full_name) {
@@ -144,13 +141,7 @@ function LibrarianLayoutInner({
               {section.items.map((item) => {
                 // Also active on sub-pages (an inventory check, a catalog book).
                 const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
-                // Notifications is the one nav item with a live count —
-                // same unreadCount the bell shows (StudentLayout already
-                // does this for its own Notifications item; this brings
-                // Librarian's in line), so the two never disagree. It
-                // only ever drops via an explicit mark-read/mark-all-read
-                // action (NotificationContext.markRead/markAllRead),
-                // never just by visiting this page or a re-render.
+                // Notifications shows the same unread count as the bell.
                 const badge = item.href === "/librarian/notifications" ? (unreadCount || undefined) : item.badge
                 return (
                   <li key={item.href}>

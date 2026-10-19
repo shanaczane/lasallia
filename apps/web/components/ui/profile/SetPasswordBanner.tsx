@@ -1,12 +1,5 @@
-// components/ui/profile/SetPasswordBanner.tsx
-// Dashboard-only, dismissible nudge for a Google-only account (no password
-// set — see routers/auth.py's GET /auth/password-status) to add one, so
-// manual login works for them too (kiosk included). Deliberately NOT part
-// of CompleteProfileModal — that one blocks on required fields; this is
-// optional, so it reads as a suggestion, not a second thing to fill in
-// before the dashboard shows. Dismissing hides it for good on this device
-// (localStorage) — the student can still always reach Settings by hand if
-// they change their mind, same place this links to.
+// Dashboard banner suggesting a Google-only account set a password (so they
+// can also log in at the kiosk). Dismissing hides it on this device.
 "use client"
 
 import { useEffect, useState } from "react"

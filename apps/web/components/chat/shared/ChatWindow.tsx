@@ -16,12 +16,8 @@ import { pillStatusFor } from "@/components/ui/pills/availability-pill"
 interface ChatWindowProps {
   onMenuClick: () => void
   quickRepliesSlot?: (onSelect: (text: string) => void) => ReactNode
-  // Chatbot Phase 7 — surface governs history retention, not capability.
-  // Kiosk always supplies sessionId (the station session's own id, from
-  // KioskSessionProvider) since that IS the chat session for that visit.
-  // Web: the page owns which conversation is open (so the sidebar can
-  // switch it without a reload) and keeps it in sessionStorage so a
-  // refresh can still find it. undefined = not read yet, null = new chat.
+  // Kiosk: sessionId is the station session's id. Web: the page picks the
+  // open chat (undefined = not loaded yet, null = new chat).
   surface?: ChatSurface
   sessionId?: string | null
   // Web only — this window started a new conversation or deleted the open one.
@@ -32,21 +28,12 @@ interface ChatWindowProps {
 
 const GREETING_TEXT = "Hi there! I'm Lasallia, your library assistant at De La Salle Lipa. I can help you find books and check availability. How can I help you today?"
 
-// A kiosk chat session's id is the station session's own id (always
-// present, tap-in to walk-away), unlike web's — so there's no natural
-// "no id yet" signal for "this visitor hasn't actually said anything".
-// Without this, hydrate() below would call fetchChatHistory() for every
-// kiosk visit, including the very first message of a brand-new session,
-// which is guaranteed to 404 since chat_sessions rows are only created on
-// the first POST /chat/message. Tracked in sessionStorage (not state) so
-// it survives a navigate-away-and-back within the same station session.
+// Marks that this kiosk visit has sent a message, so history is only
+// loaded when there is some (otherwise the request would 404).
 const KIOSK_CHAT_STARTED_KEY_PREFIX = "lasallia-kiosk-chat-started-"
 
-// Chat history (GET /chat/sessions/{id}) only replays message text, so the
-// book cards would vanish when a visitor clicks one and comes back. Each
-// reply's cards are kept per session in sessionStorage — one entry per
-// saved assistant reply (failed turns are never saved server-side, so they
-// get no entry either) — and matched back onto the history on hydrate.
+// Chat history only has text, so each reply's book cards are saved here
+// and matched back onto the history when it reloads.
 const CHAT_BOOKS_KEY_PREFIX = "lasallia-chat-books-"
 
 function readSavedBooks(sessionId: string): (BookCardData[] | null)[] {
@@ -91,33 +78,25 @@ function greeting(): ChatMessageData {
 export default function ChatWindow({
   onMenuClick, quickRepliesSlot, surface = "web", sessionId, onSessionChange, onSessionsChanged,
 }: ChatWindowProps) {
-  // Empty until mount, not [greeting()] — a timestamp computed at module
-  // load time runs once during SSR and again on the client, producing two
-  // different strings and a hydration mismatch. Adding it in an effect
-  // keeps the very first render (server and client) identical.
+  // Starts empty; the greeting (with its timestamp) is added after mount to
+  // avoid a hydration mismatch.
   const [messages, setMessages] = useState<ChatMessageData[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [typingStatus, setTypingStatus] = useState<TypingStatus | null>(null)
   const [hasSession, setHasSession] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const sessionIdRef = useRef<string | null>(sessionId ?? null)
-  // The session whose messages are on screen right now. A reply that lands
-  // after the student has switched to another chat checks this so it never
-  // shows up in the wrong conversation.
+  // The chat on screen, so a late reply never lands in the wrong chat.
   const shownIdRef = useRef<string | null>(null)
-  // Conversations already opened this visit, so switching back to one is
-  // instant instead of refetching its history.
+  // Chats already opened, so switching back is instant.
   const cacheRef = useRef(new Map<string, ChatMessageData[]>())
-  // A conversation switch jumps straight to the newest message; only new
-  // messages within the same chat scroll smoothly.
+  // Jump (not scroll) to the bottom when switching chats.
   const jumpScrollRef = useRef(true)
-  // Whether the student is at (or near) the last message — see the
-  // ResizeObserver effect below.
+  // Whether the view is at the last message.
   const stickToBottomRef = useRef(true)
   const contentRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
-  // Shared by the student (faculty too), guest and kiosk assistants — each
-  // card opens that portal's own book page. Sprint 5.4
+  // Book cards link to this portal's own catalog (user, guest or kiosk).
   const pathname = usePathname()
   const catalogBase =
     surface === "kiosk" ? "/kiosk/catalog"
@@ -128,21 +107,16 @@ export default function ChatWindow({
   // setting state here is the point of this effect.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    // Web: the page reads the saved session id after mount and passes it
-    // down — undefined means it hasn't yet.
+    // Web: wait until the page has read the saved session id.
     if (surface === "web" && sessionId === undefined) return
 
-    // Kiosk: the id is fixed to this visit's station session, but only
-    // worth fetching if a message was actually sent earlier this same
-    // visit (navigated to catalog, came back) — otherwise there's
-    // nothing server-side to find yet.
+    // Kiosk: only load history if a message was sent earlier this visit.
     const existingId =
       surface === "kiosk"
         ? (sessionId && sessionStorage.getItem(`${KIOSK_CHAT_STARTED_KEY_PREFIX}${sessionId}`) ? sessionId : null)
         : (sessionId ?? null)
 
-    // This window just created the session itself (first reply of a new
-    // chat) — its messages are already on screen.
+    // This window just created the chat; its messages are already shown.
     if (existingId && existingId === shownIdRef.current) return
 
     let cancelled = false
@@ -175,8 +149,7 @@ export default function ChatWindow({
           setMessages([greeting()])
           return
         }
-        // Aligned from the end, so a history that was trimmed at the
-        // start still lines up with the newest replies' cards.
+        // Match from the end, in case the history is shortened at the start.
         const savedBooks = readSavedBooks(id)
         let replyIndex = savedBooks.length - history.filter((m) => m.role === "assistant").length
         setMessages(
@@ -198,9 +171,7 @@ export default function ChatWindow({
 
     hydrate(existingId)
     return () => { cancelled = true }
-    // Only re-hydrate if the underlying session identity actually
-    // changes (picking another chat, a kiosk swap to a new station
-    // session) — not on every render.
+    // Only reload when the chat changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [surface, sessionId])
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -211,12 +182,9 @@ export default function ChatWindow({
     if (id && messages.length > 0) cacheRef.current.set(id, messages)
   }, [messages])
 
-  // A layout effect, so a switched-to conversation is already at its last
-  // message on the first frame drawn — a plain effect paints it at the top
-  // first and then jumps.
+  // Layout effect, so a switched chat opens at the bottom with no jump.
   useLayoutEffect(() => {
-    // Scrolls the message list only — scrollIntoView would also scroll the
-    // page itself (the kiosk shell adds its own top padding around this).
+    // Scroll only the message list, not the page.
     const list = messagesRef.current
     if (!list) return
     if (jumpScrollRef.current) {
@@ -228,9 +196,7 @@ export default function ChatWindow({
     if (messages.length > 0) jumpScrollRef.current = false
   }, [messages, typingStatus])
 
-  // Book covers load after the messages are drawn and make them taller,
-  // which would leave the view short of the last message. While the
-  // student is at the bottom, keep it there as the content grows.
+  // Stay at the bottom while book covers load and make messages taller.
   useEffect(() => {
     const list = messagesRef.current
     const content = contentRef.current
@@ -267,8 +233,7 @@ export default function ChatWindow({
         appendSavedBooks(result.session_id, books ?? null)
         if (surface === "kiosk") sessionStorage.setItem(`${KIOSK_CHAT_STARTED_KEY_PREFIX}${result.session_id}`, "1")
 
-        // Switched to another chat while this reply was being written —
-        // drop the stale cached copy so reopening it refetches the reply.
+        // The user switched chats; drop the cached copy so it reloads with the reply.
         if (shownIdRef.current !== sentFrom) {
           cacheRef.current.delete(result.session_id)
           if (surface === "web" && sentFrom !== result.session_id) onSessionsChanged?.()

@@ -1,9 +1,4 @@
-// apps/web/components/ui/dashboard/ForYouSection.tsx
-// Recommendations plan Phase 6 — "For You" section on the student
-// dashboard. Reuses components/ui/catalog/BookCard (no second book
-// card) with its new optional `reason` prop. Fetches its own data so
-// the dashboard page doesn't have to know anything about
-// recommendations beyond rendering this component.
+// The dashboard's "For You" row. Loads its own recommendations.
 
 "use client"
 
@@ -19,9 +14,7 @@ import { logEvent, logImpressions } from "@/lib/recommendationEvents"
 import type { RecommendationItem, RecommendationsResponse } from "@lasallia/types"
 import { ScrollRow } from "./ScrollRow"
 
-// 8, not 4 — a wide viewport fits more than 4 of the 140px cards before the
-// row needs to scroll, so 4 skeletons visibly under-filled the row and the
-// real (up to 12) cards would jump the row wider the instant they loaded in.
+// Enough placeholder cards to fill a wide screen.
 const SKELETON_COUNT = 8
 
 function SkeletonCard() {
@@ -38,9 +31,7 @@ function SkeletonCard() {
   )
 }
 
-// End-of-row card linking back to the full catalog — same height as the
-// book cards beside it (flex row's default stretch), so it reads as part
-// of the row rather than a stray button tacked on the end.
+// "View catalog" card at the end of the row.
 function ViewMoreCard({ href }: { href: string }) {
   return (
     <Link
@@ -76,24 +67,17 @@ function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
   )
 }
 
-// Recommendations plan Phase 7 — GET /recommendations/me now falls
-// through rungs 1 (personal) -> 2 (program) -> 3/4 (library-wide
-// popular) server-side, and reports which one actually produced the
-// response as `rung`. This is just the header/subtitle copy for each,
-// so the section never claims personalization it didn't do. The title is
-// the same for every rung: it renders before the rung is known, so a
-// different one flashed "For You" and then swapped while loading.
+// Subtitle for each kind of list (personal, program, popular), so the row
+// never claims to be personal when it isn't. The title stays the same.
 const RUNG_COPY: Record<RecommendationsResponse["rung"], { title: string; subtitle: string }> = {
   personal: { title: "For You", subtitle: "Based on what you've borrowed." },
   program: { title: "For You", subtitle: "Popular in your program." },
   popular: { title: "For You", subtitle: "Picks from around the LRC." },
 }
 
-// fetcher/hrefPrefix default to the student dashboard's behavior; the kiosk's
-// "For you" tab passes its own (no JWT there — see fetchKioskRecommendations).
-// The signed-in user's last recommendations, keyed by account so a shared
-// browser never shows one person's picks to the next. The kiosk passes
-// cacheKey={null} — a tapped-in session isn't the browser's user.
+// Cache key for the signed-in user's picks, per account, so a shared browser
+// never shows one person's picks to the next. The kiosk passes its own
+// fetcher and cacheKey={null}.
 function dashboardCacheKey(): string | null {
   const id = typeof window === "undefined" ? null : getUser()?.id
   return id ? `recs:${id}` : null
@@ -108,8 +92,7 @@ export function ForYouSection({
   hrefPrefix?: string
   cacheKey?: (() => string | null) | null
 } = {}) {
-  // Coming back to the dashboard within the app: show the last picks at
-  // once instead of skeletons (memory only here — see peekMemory).
+  // Show the last picks at once when coming back to the dashboard.
   const [initial] = useState(() => {
     const key = cacheKey?.()
     return key ? peekMemory<RecommendationsResponse>(key) : undefined
@@ -117,15 +100,11 @@ export function ForYouSection({
   const [items, setItems] = useState<RecommendationItem[] | null>(initial?.recommendations ?? null)
   const [rung, setRung] = useState<RecommendationsResponse["rung"]>(initial?.rung ?? "personal")
   const [loading, setLoading] = useState(!initial)
-  // Plan 6's error state: "Hide the section entirely. Do not show an
-  // error card on a dashboard." — tracked separately from "loaded but
-  // empty" so those two cases can render differently.
+  // On error, hide the row (no error card on the dashboard).
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
-    // React 18 Strict Mode (dev only) double-invokes this effect — without
-    // the guard, logImpressions() below fired twice with the same items,
-    // double-posting to /recommendations/events on every load.
+    // Guard against React dev mode running this twice (double logging).
     let cancelled = false
     let fresh = false
     const key = cacheKey?.() ?? null
@@ -145,8 +124,7 @@ export function ForYouSection({
         if (key) remember(key, res)
         setItems(res.recommendations)
         setRung(res.rung)
-        // Phase 9 — one batched call for the whole rendered list, not
-        // one per card.
+        // One logging call for the whole row.
         logImpressions(res.recommendations)
       })
       .catch(() => { if (!cancelled) setFailed(true) })
@@ -167,8 +145,7 @@ export function ForYouSection({
         >
           {copy.title}
         </h2>
-        {/* Kept in the layout but hidden until the rung is known, so the
-            subtitle doesn't flash the "personal" copy and then swap. */}
+        {/* Hidden until loaded, so the wrong subtitle doesn't flash. */}
         <p
           className={cn("text-ink-400", loading && "invisible")}
           style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
@@ -188,13 +165,9 @@ export function ForYouSection({
             <BookCard
               key={item.book.id}
               book={item.book}
-              // fromRec/rank let the detail page attribute a later
-              // reserve action back to this card (Phase 9).
+              // Lets the book page credit a reservation to this card.
               href={`${hrefPrefix}/${item.book.id}?fromRec=1&rank=${item.rank}`}
-              // The popular rung's stored reason is just "Popular at the
-              // LRC" for every row — redundant under the card when the
-              // section header already says so (or, now, says "Recommended
-              // for You" instead of claiming personalization it didn't do).
+              // Popular picks all say "Popular at the LRC", so skip it.
               reason={rung === "popular" ? undefined : item.reason}
               className="w-[140px] shrink-0"
               onClick={() => logEvent("click", item.book.id, item.rank)}
@@ -203,10 +176,7 @@ export function ForYouSection({
           <ViewMoreCard href={hrefPrefix} />
         </ScrollRow>
       ) : (
-        // Only reachable now if the nightly job has never run at all for
-        // this account (brand-new, or popular_recommendations itself is
-        // empty) — /me's fallthrough (rungs 1-4) means a student with
-        // any stored data at all gets real items, not this placeholder.
+        // Only when there are no recommendations at all yet.
         <EmptyState
           title="Nothing picked yet"
           subtitle="Borrow a book and we'll start recommending titles based on it."

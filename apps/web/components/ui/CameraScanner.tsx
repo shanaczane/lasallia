@@ -1,8 +1,5 @@
-// apps/web/components/ui/CameraScanner.tsx
-// Webcam barcode reader — the alternative to a USB scanner (ScannerListener)
-// for the Inventory scan screen. A camera only hands the browser a picture;
-// ZXing finds and decodes the barcode in each frame. Needed because Chrome
-// on Windows has no built-in BarcodeDetector.
+// Reads barcodes from the webcam (the alternative to a USB scanner). Uses
+// ZXing because Chrome on Windows has no built-in barcode reader.
 
 'use client'
 
@@ -10,8 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser'
 import { BarcodeFormat, DecodeHintType } from '@zxing/library'
 
-// The accession stickers' symbologies: linear library barcodes plus QR
-// (Book.accession_no is also encoded as a QR code). Fewer formats = faster.
+// Barcode types on the stickers (plus QR). Fewer types decode faster.
 const FORMATS = [
   BarcodeFormat.CODE_128,
   BarcodeFormat.CODE_39,
@@ -21,8 +17,7 @@ const FORMATS = [
   BarcodeFormat.QR_CODE,
 ]
 
-// The camera keeps seeing the same sticker while it's held up — report a
-// code once, then ignore it for this long.
+// Ignore the same code for this long, since the camera keeps seeing it.
 const REPEAT_COOLDOWN_MS = 2500
 
 export function CameraScanner({ onScan }: { onScan: (value: string) => void }) {

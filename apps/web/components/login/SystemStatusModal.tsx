@@ -1,13 +1,5 @@
-// apps/web/components/login/SystemStatusModal.tsx
-// Login footer's "System Status" link. Two real, checkable things rather
-// than a decorative "all systems operational" — there's no incident-
-// history/uptime-tracking infrastructure in this app, so this only ever
-// reports what it can actually verify right now:
-//   - API reachability, via a live GET /health.
-//   - Whether the library is open right now, computed from the same
-//     operating-hours fields the librarian Settings page manages
-//     (GET /settings/public) — the same source core/calendar.py's fine
-//     math already treats as authoritative.
+// "System Status" on the login page: whether the API is reachable, and
+// whether the library is open now (from the hours in Settings).
 
 'use client'
 
@@ -45,9 +37,7 @@ function formatClock(t: string): string {
   return new Date(2000, 0, 1, Number(h), Number(m)).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
 }
 
-// Same weekday/Saturday/Sunday grouping core/calendar.py uses server-side
-// for fine accrual — mirrored here client-side just to answer "open right
-// now?", not to make any authoritative decision.
+// Today's hours, using the same weekday/Saturday/Sunday groups as the server.
 function hoursForToday(info: PublicLibrarySettings, day: number): [string | null, string | null] {
   if (day === 0) return [info.sunday_open_time, info.sunday_close_time]
   if (day === 6) return [info.saturday_open_time, info.saturday_close_time]
@@ -153,8 +143,7 @@ export function SystemStatusModal({ onClose }: SystemStatusModalProps) {
         ref={dialogRef} role="dialog" aria-modal="true" className="bg-white rounded-t-2xl sm:rounded-2xl shadow-(--shadow-lg) w-full sm:max-w-lg h-[85vh] sm:h-[480px] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header — same padding/shell as ContactSupportModal so the two
-            login-footer modals read as one consistent size/system. */}
+        {/* Header (same layout as ContactSupportModal) */}
         <div className="flex items-start justify-between gap-3 px-6 pt-6 pb-4 shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 shrink-0">
@@ -177,7 +166,7 @@ export function SystemStatusModal({ onClose }: SystemStatusModalProps) {
           </button>
         </div>
 
-        {/* Body — top-aligned, same as ContactSupportModal. */}
+        {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 pb-6 flex flex-col gap-2.5">
           <StatusRow
             label="Website"

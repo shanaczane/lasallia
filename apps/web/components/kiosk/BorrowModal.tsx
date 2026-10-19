@@ -1,17 +1,8 @@
-// apps/web/components/kiosk/BorrowModal.tsx
-// The QR-claim modal shown when a student taps "Borrow this book" —
-// claims a 3-minute soft hold on the earliest available copy the instant
-// it opens, then shows a QR the student's phone can scan (or "Continue on
-// this device" for the same device) to reach /borrow/[token], where they
-// type the accession number themselves. Never shows it here: the whole
-// point is proving they have the actual physical book.
+// "Borrow this book": holds a copy for 3 minutes and shows a QR code. On
+// the phone, the student types the accession number from the book itself,
+// which proves they have it (so it's never shown here).
 //
-// Shared between the student portal (apps/web/app/user/catalog/[bookId])
-// and the kiosk terminal (apps/web/app/kiosk/catalog/[bookId], Phase 6) —
-// the only difference is where the station session comes from: an
-// already-logged-in student's own JWT (student portal, default), or an
-// already-open kiosk session from an RFID tap/manual login at the
-// terminal (stationSessionId prop, kiosk).
+// Used on the web (the student's login) and the kiosk (stationSessionId).
 
 'use client'
 
@@ -25,8 +16,7 @@ import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 type ClaimState =
   | { status: 'claiming' }
   | { status: 'ready'; hold: ClaimHoldResponse }
-  // retryable: the request never got an answer (connection, timeout). An
-  // answer of "no" — no copies left, unpaid fines — won't change on a retry.
+  // retryable: no answer came back (connection, timeout), so retrying may work.
   | { status: 'error'; message: string; retryable: boolean }
 
 export function BorrowModal({
@@ -42,21 +32,15 @@ export function BorrowModal({
   const dialogRef = useRef<HTMLDivElement>(null)
   useDialogKeyboard(dialogRef, { onClose: () => handleClose() })
 
-  // Claiming a hold consumes the only available copy of a single-copy
-  // title, so it must run exactly once per modal open. startedRef guards
-  // against React 19 dev-mode's double-invoke of effects (mount ->
-  // cleanup -> mount again). openRef tracks whether the user has actually
-  // closed the modal — set only from handleClose below, deliberately NOT
-  // from this effect's own cleanup, since Strict Mode's synthetic
-  // cleanup fires on every mount (not just a real close) and would
-  // otherwise make an in-flight claim release itself the instant it
-  // resolves, leaving the modal stuck on its loading spinner.
+  // The hold must be claimed once per open. startedRef stops React's dev
+  // mode from claiming twice. openRef is only cleared by handleClose (not
+  // effect cleanup, which dev mode also runs), so a claim isn't released
+  // while it's still loading.
   const startedRef = useRef(false)
   const openRef = useRef(true)
 
-  // Also what "Try again" calls after a failed claim. Safe to repeat: the
-  // API releases any hold this same student left on the title before
-  // claiming a new one (routers/holds.py's claim_hold).
+  // Also used by "Try again". Safe to repeat: the API releases the student's
+  // old hold first.
   async function startClaim() {
     setClaim({ status: 'claiming' })
     try {
@@ -65,8 +49,7 @@ export function BorrowModal({
       if (openRef.current) {
         setClaim({ status: 'ready', hold })
       } else {
-        // Closed while the claim was still in flight — don't leave a
-        // copy held with no UI left to release it.
+        // Closed while claiming: release the copy.
         releaseHold(hold.token).catch(() => {})
       }
     } catch (err) {

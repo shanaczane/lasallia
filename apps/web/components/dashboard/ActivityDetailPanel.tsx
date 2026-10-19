@@ -1,9 +1,5 @@
-// apps/web/components/dashboard/ActivityDetailPanel.tsx
-// Slide-in detail view for a Recent Activity row on the librarian dashboard.
-// Shows everything known about that one event (condition, fine, dates, who
-// processed it), plus the same book's other recent checkouts/returns/
-// reservations so a librarian isn't stuck piecing that together by scanning
-// the flat feed themselves.
+// Slide-in details for a dashboard activity row, plus the same book's other
+// recent activity.
 
 'use client'
 
@@ -25,9 +21,8 @@ type ActivityDetailPanelProps = {
   onClose: () => void
 }
 
-// Same placeholder palette as LibrarianBookCard/BookCard — hashed off an id
-// so a given book always lands on the same color instead of it looking
-// random between screens.
+// Placeholder cover colors, picked from the book id so each book always
+// gets the same one.
 const COVER_COLORS = [
   '#1E3A5F', '#5C3D11', '#1B3A2D', '#4A1942',
   '#2C3E50', '#1A1A2E', '#0F4C75', '#154360',
@@ -55,10 +50,7 @@ function Field({ label, value, danger }: { label: string; value: React.ReactNode
   )
 }
 
-// Each section renders as its own card (the app's standard bg-white +
-// border-ink-200 card, e.g. the dashboard's reservation cards) instead of a
-// plain divider-separated block — groups related fields more clearly and
-// reads closer to a formal record than a flat scrolling list.
+// A titled card grouping related fields.
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-(--radius) border border-ink-200 p-3.5">
@@ -73,8 +65,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-// A related event for the same book, shown as a compact row — not the full
-// Field/Section detail the main event above gets.
+// Another event for the same book, shown as a short row.
 type RelatedEvent = { key: string; type: TxType; date: string; time: string; user: string }
 
 function relatedEventsForBook(bookId: string | null, excludeId: string, loans: Loan[], reservations: Reservation[]): RelatedEvent[] {
@@ -300,10 +291,7 @@ export function ActivityDetailPanel({ item, loans, reservations, onClose }: Acti
             </Section>
           )}
 
-          {/* No photo-capture feature exists yet anywhere in the return/
-              condition-report flow — this section is a placeholder so the
-              panel already has a slot for it once that's built, rather than
-              silently omitting something the librarian was told to expect. */}
+          {/* Placeholder: condition photos aren't built yet. */}
           <Section title="Condition Photos">
             <div className="flex items-center gap-1.5 text-ink-400 py-1.5" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
               <Camera size={14} />

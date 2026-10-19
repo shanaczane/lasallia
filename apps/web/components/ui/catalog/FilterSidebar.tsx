@@ -1,5 +1,4 @@
-// apps/web/components/ui/catalog/FilterSidebar.tsx
-// Desktop persistent filter sidebar (lg and up only). Mobile filtering lives in FilterSheet.
+// Desktop filter sidebar (phones use FilterSheet).
 
 'use client'
 
@@ -430,9 +429,7 @@ export function FilterSidebar({
     </div>
   )
 
-  // Drawer variant: width animates between 0 and its normal size instead of mounting/unmounting,
-  // so opening/closing on desktop slides smoothly rather than popping in and out. It has no
-  // collapse-to-rail state — 'collapsed' only applies to the persistent sidebar variant.
+  // The drawer slides by animating its width. 'collapsed' only applies to the sidebar variant.
   const desktopClosed = isDrawer && !isOpen
   const desktopCollapsedToRail = !isDrawer && collapsed
   const desktopWidth = desktopClosed ? 0 : (desktopCollapsedToRail ? 56 : 220)

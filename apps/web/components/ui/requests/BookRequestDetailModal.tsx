@@ -1,10 +1,4 @@
-// apps/web/components/ui/requests/BookRequestDetailModal.tsx
-// Sprint 5.6 — full-detail view for a single faculty book request, opened
-// by clicking a row in the librarian Reports > Requests "Wishlist and
-// request log" table. Shows every field the table row collapses (note,
-// ISBN, course, review timestamps) plus each attachment the faculty
-// member uploaded, with view/download actions — the table row already
-// links attachments inline, this is the same data in a fuller view.
+// Full details of a book request, with its attachments (Reports > Requests).
 
 "use client"
 

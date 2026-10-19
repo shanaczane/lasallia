@@ -1,6 +1,4 @@
-// apps/web/components/ui/catalog/BookCard.tsx
-// Sprint 3.1.3 — Book card grid component (cover color indicator, title, author, year, availability pill)
-// Sprint 4.3.4 — Added showBookmark prop (Save to Favorites)
+// A book card: cover, title, author, year and availability, with an optional bookmark.
 
 'use client'
 
@@ -17,17 +15,12 @@ type BookCardProps = {
   href?: string
   className?: string
   showBookmark?: boolean
-  // Controlled save state — omit to fall back to local-only state (no
-  // persistence). Callers that want the bookmark to actually stick
-  // (anywhere backed by /saved-books) should pass both.
+  // Pass both to save bookmarks for real; without them it's local only.
   isSaved?: boolean
   onToggleSave?: (book: Book) => void
-  // Recommendations plan Phase 6 — "For You" cards show why a book was
-  // suggested, e.g. "Because you borrowed Clean Code". Omitted entirely
-  // by every other caller of this card.
+  // Why it was recommended, e.g. "Because you borrowed Clean Code".
   reason?: string
-  // Recommendations plan Phase 9 — fires before navigation, for
-  // click-through logging. Omitted entirely by every other caller.
+  // Called before opening the book (used to log clicks).
   onClick?: () => void
 }
 
@@ -56,12 +49,8 @@ export function BookCard({ book, href, className, showBookmark = false, isSaved,
     : book.author
 
   return (
-    // className (caller-provided sizing like a fixed width + shrink-0 for a
-    // horizontal scroll row) has to land on THIS div — it's the actual flex/
-    // grid item a caller like CardRow lays out. Putting it on the <Link>
-    // below instead left this wrapper unsized, so flexbox was free to shrink
-    // it to whatever width the row's math produced — different per card,
-    // while the fixed-width Link inside just overflowed that shrunk box.
+    // className goes on this outer div (the flex/grid item), or cards in a
+    // row end up different widths.
     <div className={cn("relative", className)}>
       {/* Bookmark button — overlaid on cover top-right */}
       {showBookmark && (
@@ -163,9 +152,7 @@ export function BookCard({ book, href, className, showBookmark = false, isSaved,
             <AvailabilityPill status={pillStatusFor(book)} />
           </div>
           {reason && (
-            // line-clamp wraps at word boundaries and clips whole lines,
-            // never mid-word — a hard `truncate` (nowrap + ellipsis)
-            // would cut a long reason off mid-word instead.
+            // line-clamp, not truncate, so words aren't cut in half.
             <p
               className="text-ink-400 leading-snug mt-1"
               style={{

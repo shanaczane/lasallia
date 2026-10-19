@@ -26,7 +26,7 @@ export default function BookCard({ title, author, callNumber, availability, loca
 
   const body = (
     <>
-      {/* Cover gradient — 120px height */}
+      {/* Cover */}
       <div
         className="relative overflow-hidden"
         style={{
@@ -36,9 +36,7 @@ export default function BookCard({ title, author, callNumber, availability, loca
       >
         {showCover ? (
           <>
-            {/* Cover fills the banner, anchored to the top where a cover's
-                title/artwork usually is; the bottom fade keeps the title
-                overlay readable over any image. Sprint 5.4 */}
+            {/* Cover image, top-aligned; a bottom fade keeps the title readable. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={coverUrl}
@@ -75,7 +73,7 @@ export default function BookCard({ title, author, callNumber, availability, loca
         </div>
       </div>
 
-      {/* Book info — px-3 py-2.5 */}
+      {/* Book info */}
       <div className="px-3 py-[10px] space-y-1.5 bg-white">
         <p className="text-ink-700 font-medium leading-tight" style={{ fontFamily: "var(--font-body)", fontSize: 13 }}>
           {author}
@@ -94,7 +92,6 @@ export default function BookCard({ title, author, callNumber, availability, loca
     </>
   )
 
-  // mt-3, rounded-lg border ink-100, overflow-hidden, w-[300px]
   const cardClass = "mt-3 block rounded-lg overflow-hidden w-[300px] max-w-full border border-ink-100"
 
   if (!href) return <div className={cardClass}>{body}</div>

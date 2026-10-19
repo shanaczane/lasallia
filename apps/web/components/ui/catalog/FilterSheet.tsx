@@ -1,6 +1,4 @@
-// apps/web/components/ui/catalog/FilterSheet.tsx
-// Mobile filter panel — slides up from the bottom. Renders from the same
-// FILTER_SECTIONS config + filter state as FilterSidebar (single source of truth).
+// Phone filter panel that slides up from the bottom.
 
 'use client'
 

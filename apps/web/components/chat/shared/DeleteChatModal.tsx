@@ -1,8 +1,4 @@
-// apps/web/components/chat/shared/DeleteChatModal.tsx
-// Confirmation dialog for deleting a chat session — used by both
-// ChatSidebar (any past conversation) and ChatHeader/ChatWindow (the
-// conversation currently open). Same overlay/card shell as
-// DeleteBookModal and BorrowModal, trimmed to a single action.
+// Confirms deleting a chat.
 
 'use client'
 

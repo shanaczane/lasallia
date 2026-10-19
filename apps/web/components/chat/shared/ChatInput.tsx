@@ -31,10 +31,7 @@ export default function ChatInput({ onSend, disabled, hintText }: ChatInputProps
     setValue(e.target.value)
     const el = e.target
     el.style.height = "auto"
-    // scrollHeight leaves out the border but the box's height includes it
-    // (border-box), so sizing to scrollHeight alone left the text 2px short
-    // and showed a scrollbar even on one line. Scrolling only kicks in once
-    // the box hits its max height.
+    // Add the border to scrollHeight, or a one-line box shows a scrollbar.
     const fullHeight = el.scrollHeight + el.offsetHeight - el.clientHeight
     el.style.height = `${Math.min(fullHeight, MAX_HEIGHT)}px`
     el.style.overflowY = fullHeight > MAX_HEIGHT ? "auto" : "hidden"
@@ -48,13 +45,12 @@ export default function ChatInput({ onSend, disabled, hintText }: ChatInputProps
   }
 
   return (
-    // px-6 py-4, border-top ink-100
     <div
       className="shrink-0 px-6 py-4 bg-white border-t"
       style={{ borderColor: "var(--color-ink-100)" }}
     >
       <div className="flex items-end gap-3">
-        {/* Input — full width, rounded-xl, border ink-200, px-4 py-3, 14px */}
+        {/* Input */}
         <textarea
           ref={ref}
           value={value}
@@ -74,7 +70,7 @@ export default function ChatInput({ onSend, disabled, hintText }: ChatInputProps
             background: "var(--color-ink-50)",
           } as React.CSSProperties}
         />
-        {/* Send — green-700, rounded-full, 40px */}
+        {/* Send */}
         <button
           type="button"
           onClick={submit}
@@ -87,7 +83,7 @@ export default function ChatInput({ onSend, disabled, hintText }: ChatInputProps
         </button>
       </div>
 
-      {/* Hint text — ink-400 11px center */}
+      {/* Hint */}
       <p
         className="text-center mt-2"
         style={{ fontFamily: "var(--font-body)", fontSize: 11, color: "var(--color-ink-400)" }}

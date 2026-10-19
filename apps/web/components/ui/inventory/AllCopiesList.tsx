@@ -1,8 +1,5 @@
-// apps/web/components/ui/inventory/AllCopiesList.tsx
-// The Inventory page's All books list: every copy in the collection with
-// its current status (available, on loan, missing, misplaced, …), where it
-// belongs, and when it was last known to be in hand. Filter by status or
-// location, or search by title, accession number or call number.
+// Inventory's "All books" list: every copy with its status, location and
+// when it was last seen. Filterable and searchable.
 
 "use client"
 
@@ -16,7 +13,7 @@ import type { InventoryCopy, InventoryLocation } from "@/lib/inventory"
 
 const PAGE_SIZE = 10
 
-// Always shown, even at 0 — these are what the inventory is monitoring.
+// Always shown, even at 0.
 const KEY_STATUSES: CopyStatus[] = ["available", "missing", "misplaced"]
 
 const body = (size = "var(--text-sm-body)") => ({ fontFamily: "var(--font-body)", fontSize: size })

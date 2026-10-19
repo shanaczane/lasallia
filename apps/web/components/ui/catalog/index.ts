@@ -1,4 +1,3 @@
-// apps/web/components/ui/catalog/index.ts
 export { BookCard } from './BookCard'
 export { BookGrid } from './BookGrid'
 export { CatalogSearchBar } from './CatalogSearchBar'
@@ -18,7 +17,6 @@ export {
   buildFilterSections,
   filterBooksByCatalogFilters,
 } from './filterConfig'
-// Librarian Sprint 5.2
 export { LibrarianBookCard } from './LibrarianBookCard'
 export { BookFormModal } from './BookFormModal'
 export type { BookFormData } from './BookFormModal'

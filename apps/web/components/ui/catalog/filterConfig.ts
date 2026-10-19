@@ -1,6 +1,4 @@
-// apps/web/components/ui/catalog/filterConfig.ts
-// Single source of truth for catalog filter sections, defaults, and matching logic.
-// Consumed by FilterSidebar (desktop), FilterSheet (mobile), and FilterChips.
+// Catalog filter sections, defaults and matching, used by every filter UI.
 
 import { Book, BookStatus, BookFormat } from '@lasallia/types'
 import { programLabel } from '@/lib/programLabels'

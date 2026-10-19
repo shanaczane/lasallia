@@ -1,6 +1,4 @@
-// apps/web/components/ui/catalog/Pagination.tsx
-// Client-side pagination for catalog grids/lists — pairs with a results
-// array already fetched, filtered, and sorted in memory.
+// Page buttons for a list that's already loaded.
 'use client'
 
 import { ChevronLeft, ChevronRight } from 'lucide-react'
@@ -10,15 +8,9 @@ type PaginationProps = {
   page: number
   totalPages: number
   onChange: (page: number) => void
-  // No margin by default — a caller embedding this inline next to other
-  // content (e.g. a "Showing X of Y" count in a flex row, as ReportTableCard
-  // and the patrons page do) would otherwise get pushed out of alignment
-  // with its siblings. Pass "mt-8" explicitly for the standalone-below-a-
-  // grid usage (catalog pages, borrow-return) that wants that spacing.
+  // No margin by default; pass "mt-8" below a grid.
   className?: string
-  // Catalog grids opt in so a page change brings the reader back to the top
-  // of the new results instead of leaving them mid-page. Off by default:
-  // inline uses (reports tables, patrons) shouldn't yank the whole window.
+  // Scroll to the top on page change (catalog grids).
   scrollToTop?: boolean
 }
 

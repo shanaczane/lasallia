@@ -1,4 +1,3 @@
-// components/ui/notifications/NotificationFeed.tsx
 "use client"
 
 import { useState } from "react"
@@ -140,9 +139,7 @@ export function NotificationFeed({
 
       {/* ── Page header ────────────────────────────────────────────────── */}
       <div className="px-4 sm:px-8 pt-6 pb-4">
-        {/* Button stays top-right at every width, same as Reservations'
-            "Refresh list" — stacking it under the title on phones left it
-            floating on its own row. */}
+        {/* Button stays top-right at every width. */}
         <div className="flex items-start justify-between gap-3">
           <div>
             <h1
@@ -175,13 +172,8 @@ export function NotificationFeed({
         <NotificationFilters value={filters} onChange={setFilters} className="mt-4" />
       </div>
 
-      {/* ── Tab filters — see student/library/page.tsx's matching note:
-          native sticky wasn't reliably engaging below sm, and plain fixed
-          overlapped the header above it (no "wait until scrolled past"
-          behavior). useStickyBelowNav reimplements that waiting behavior
-          via IntersectionObserver. Real desktop (lg+) keeps plain sticky —
-          phone and tablet (including iPad) both get the compact row below
-          that, so the breakpoint tracks device class, not just phone width. ── */}
+      {/* ── Tab filters: stick below the nav (useStickyBelowNav on phones and
+          tablets, CSS sticky on desktop). ── */}
       <div ref={sentinelRef} className="lg:hidden" />
       {isStuck && <div className="lg:hidden h-12" aria-hidden="true" />}
       <div

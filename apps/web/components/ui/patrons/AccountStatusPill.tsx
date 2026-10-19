@@ -1,6 +1,4 @@
-// apps/web/components/ui/patrons/AccountStatusPill.tsx
-// Sprint 5.5.1 — status column pill (Active / Inactive)
-// Fix: fixed width + centered label so pills stay compact and aligned across rows
+// Active / Inactive pill. Fixed width so pills line up across rows.
 
 import { cn } from "@/lib/utils"
 import type { UserAccountStatus } from "@lasallia/types"

@@ -1,11 +1,5 @@
-// components/ui/profile/SetPasswordModal.tsx
-// Second step of the first-login flow (after CompleteProfileModal) for a
-// Google-only account that has no password yet (GET /auth/password-status).
-// Kept as its own modal instead of more fields under CompleteProfileModal so
-// neither screen gets too long. "Skip for now" is remembered for this
-// browser session only (sessionStorage), so it asks again on the next login;
-// SetPasswordBanner on the dashboard still reminds them until they set one
-// or dismiss that too.
+// Optional first-login step: set a password on a Google-only account.
+// "Skip for now" lasts until the next login.
 "use client"
 
 import { useRef, useState } from "react"
@@ -52,8 +46,7 @@ export function SetPasswordModal({ step, onDone }: { step?: { current: number; t
     setSaving(true)
     try {
       await setPassword(newPassword)
-      // Same key as "Skip for now" — so a refresh right after never re-asks
-      // even if password-status is slow to reflect the change.
+      // Also set the skip flag, so a quick refresh doesn't ask again.
       try { sessionStorage.setItem(PASSWORD_PROMPT_SKIP_KEY, "true") } catch {}
       window.dispatchEvent(new Event(PASSWORD_SET_EVENT))
       onDone()

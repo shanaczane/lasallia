@@ -1,11 +1,5 @@
-// apps/web/components/ui/patrons/PatronProfileModal.tsx
-// Sprint 5.5.2 — user profile view modal
-// Tabs: Active Loans · Reservations · History
-//
-// Backed by the real GET /loans?student_id= and GET /reservations?user_id=
-// endpoints (this patron's own rows only) instead of the Sprint 5.5 mock
-// data — every real account was showing "0" across all three tabs since
-// lib/mock/patrons.ts only ever had entries for four fake patron ids.
+// A patron's profile: details on the left, and tabs for loans,
+// reservations, history and fines.
 
 "use client"
 
@@ -27,8 +21,7 @@ type PatronProfileModalProps = {
   patron: UserProfile
   onClose: () => void
   onToggleStatus: () => void
-  // The signed-in librarian viewing their own profile — Deactivate is
-  // disabled (PATCH /patrons/{id} rejects it too). Sprint 5.5.3
+  // The librarian's own profile: Deactivate is disabled (the API blocks it too).
   isSelf?: boolean
 }
 
@@ -38,17 +31,14 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
 }
 
-// Bordered rectangular tags rather than filled pills — reads as a formal
-// record label (ledger/registry style) instead of a casual chat badge.
+// Loan status tags.
 const LOAN_CFG = {
   active:   { label: "Active",   text: "text-success", bg: "bg-success-bg", border: "border-success/30" },
   due_soon: { label: "Due Soon", text: "text-warn",    bg: "bg-warn-bg",    border: "border-warn/30" },
   overdue:  { label: "Overdue",  text: "text-danger",  bg: "bg-danger-bg",  border: "border-danger/30" },
 }
 
-// Keyed by the real ReservationStatus values (pending/ready/fulfilled/
-// cancelled/expired) — same five the librarian Reservation Queue page
-// already uses, so a patron's status reads the same everywhere.
+// Reservation status tags, same as the Reservations page.
 const RES_CFG: Record<ReservationStatus, { label: string; text: string; bg: string; border: string }> = {
   pending:   { label: "Pending",   text: "text-warn",    bg: "bg-warn-bg",    border: "border-warn/30" },
   ready:     { label: "Ready",     text: "text-success", bg: "bg-success-bg", border: "border-success/30" },
@@ -64,18 +54,15 @@ const HISTORY_CFG = {
 
 type FineKind = "unsettled" | "accruing" | "paid"
 
-// unsettled: a returned loan whose fine was never marked Paid at the desk.
-// accruing: still out and already overdue — fine_amount doesn't exist yet
-// (only return_loan sets it), so this previews what it'll be if returned
-// today, same compute_fine the Reports overdue table already trusts.
+// unsettled: returned, fine not paid yet.
+// accruing: still out and overdue; the amount is what it would be today.
 const FINE_CFG: Record<FineKind, { label: string; text: string; bg: string; border: string }> = {
   unsettled: { label: "Unsettled", text: "text-danger",  bg: "bg-danger-bg",  border: "border-danger/30" },
   accruing:  { label: "Accruing",  text: "text-warn",    bg: "bg-warn-bg",    border: "border-warn/30" },
   paid:      { label: "Paid",      text: "text-success", bg: "bg-success-bg", border: "border-success/30" },
 }
 
-// Vocabularies the API stores (see schemas/loan.py's Condition/ReturnCondition)
-// spelled out for a librarian reading a fine's reason, not the raw enum value.
+// Readable names for the stored condition values.
 const BORROW_CONDITION_LABEL: Record<string, string> = {
   good: "Good",
   minor_wear: "Minor wear",
@@ -94,9 +81,7 @@ type FineEntry = {
   amount: number
   kind: FineKind
   detail: string
-  /** "Why this amount?" as label/value rows — only what's actually on the
-   * loan (dates, declared vs. found condition, the recorded late/damage
-   * split when there is one), never an amount the frontend made up. */
+  /** "Why this amount?" rows, using only what's recorded on the loan. */
   reasons: FineReason[]
 }
 
@@ -117,8 +102,7 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
   const [loans, setLoans] = useState<Loan[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [loadingActivity, setLoadingActivity] = useState(true)
-  // Captured once the fetch below resolves, not read live during render —
-  // Date.now() is an impure call the render path can't call directly.
+  // Set after loading, since Date.now() can't be called during render.
   const [now, setNow] = useState<number | null>(null)
 
   useEffect(() => {
@@ -233,24 +217,16 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
     () => fineEntries.filter((e) => e.kind !== "paid").reduce((sum, e) => sum + e.amount, 0),
     [fineEntries]
   )
-  // The two parts of the Fines tab's summary beside Outstanding: what's
-  // still adding up on books not yet returned, and what's been settled.
+  // Still growing (books not returned) and already paid.
   const accruingFines = fineEntries.filter((e) => e.kind === "accruing").reduce((sum, e) => sum + e.amount, 0)
   const paidFines = fineEntries.filter((e) => e.kind === "paid").reduce((sum, e) => sum + e.amount, 0)
 
-  // Patched locally from the settle-fine response's own inputs rather than
-  // its response body — the endpoint doesn't return days_overdue/
-  // preview_fine_amount (GET /loans-only computed fields), so merging its
-  // full response back in would blank those out on the still-open modal.
+  // Update the loan locally; the response lacks some computed fields.
   function handleFineSettled(loanId: string, receiptNumber: string) {
     setLoans((prev) => prev.map((l) => (l.id === loanId ? { ...l, fine_status: "paid", receipt_number: receiptNumber } : l)))
   }
 
-  // full_name is nullable (a profile from Supabase Auth signup doesn't
-  // require one) — fall back rather than crash on a patron nobody's
-  // named yet. Initials still derive from the email (so there's always
-  // something to show in the avatar); the heading says so plainly
-  // instead of just repeating the email that's already shown below it.
+  // Some patrons have no name; initials then come from the email.
   const displayName = patron.full_name || "No name on file"
   const initials = (patron.full_name || patron.email)
     .split(" ")
@@ -259,20 +235,11 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
     .join("")
     .toUpperCase()
 
-  // Students carry a specific degree program in `program` (e.g. "BS Computer
-  // Science"); faculty/librarian/guest accounts store their college there
-  // instead (see lib/mock/patrons.ts). `patron.college` (0036) is the real,
-  // librarian-set value when it exists; collegeForProgram's keyword guess
-  // is only a fallback for rows nobody's backfilled yet — either way it
-  // resolves to the same college codes the catalog itself filters by
-  // (lib/colleges.ts), so "what college are they in" never shows a second,
-  // differently spelled college name. Year level only ever applies to students.
+  // College: patron.college if set, else guessed from the program. Year
+  // level is for students only.
   const isStudent = patron.role === "student"
   const resolvedCollege = patron.college || collegeForProgram(patron.program)
-  // id_number (0045) is school-issued, same identity-level field for
-  // either role, so it's prepended to both branches below rather than
-  // living inside the student-only/faculty-only split the rest of this
-  // list makes.
+  // ID number applies to every role, so it goes first.
   const idNumberField = patron.id_number
     ? [{ label: isStudent ? "Student No." : "Faculty No.", value: patron.id_number }]
     : []
@@ -307,8 +274,6 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
   ]
 
   // Two columns: who the patron is (sidebar) and what they have (tabs).
-  // Replaces a full-width header, a thin meta row and a separate footer,
-  // which left most of the window empty around a short list.
   return (
     <div className="fixed inset-0 z-(--z-modal) flex items-end sm:items-center justify-center sm:p-4">
       <div className="absolute inset-0 bg-ink-900/40" onClick={onClose} />
@@ -324,8 +289,7 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
         {/* ── Sidebar: identity, figures, details, account action ── */}
         <aside className="shrink-0 md:w-[360px] max-h-[45%] md:max-h-none bg-ink-50 border-b md:border-b-0 md:border-r border-ink-100 flex flex-col min-h-0">
           <div className="flex-1 min-h-0 overflow-y-auto">
-          {/* Avatar beside the name, not stacked above it — keeps the
-              header short so the whole sidebar fits without scrolling. */}
+          {/* Avatar beside the name, to keep the header short. */}
           <div className="px-5 md:px-6 pt-5 md:pt-6 pb-4 flex items-center gap-3.5">
             <div
               className="flex items-center justify-center rounded-full bg-green-200 text-green-800 font-semibold shrink-0 w-14 h-14"
@@ -401,8 +365,7 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
 
           </div>
 
-          {/* Account action — its own footer, always visible below the
-              scrolling details instead of falling off the bottom. */}
+          {/* Account action, always visible at the bottom. */}
           <div className="shrink-0 px-5 md:px-6 py-4 border-t border-ink-100 flex flex-col gap-2">
             {blockSelfDeactivate && (
               <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
@@ -427,11 +390,7 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
 
         {/* ── Main: tabs and their lists ── */}
         <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-          {/* Segmented control — a grey track filling the row, split into
-              four equal segments, with the open view as a white pill. Reads
-              as switching views inside a pop-up better than a page-style
-              underline row. min-w-max lets it scroll on narrow screens
-              instead of squashing the labels. */}
+          {/* Tab switcher. Scrolls on narrow screens instead of squashing labels. */}
           <div className="flex items-center gap-3 px-4 sm:px-6 py-3 border-b border-ink-100 shrink-0">
             <div className="flex-1 min-w-0 overflow-x-auto">
               <div role="tablist" aria-label="Patron activity" className="flex w-full min-w-max items-center gap-1 p-1 rounded-full bg-ink-100">
@@ -538,9 +497,7 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
               )}
               {tab === "fines" && (
                 <div className="flex flex-col gap-3">
-                  {/* Three figures side by side, then a one-line note on how
-                      fines get settled — instead of one wide box with a
-                      paragraph squeezed in beside the total. */}
+                  {/* Three totals, then a note on how fines are paid. */}
                   <div className="grid grid-cols-3 gap-2.5">
                     {[
                       { label: "Outstanding", value: outstandingFines, tone: outstandingFines > 0 ? "text-danger" : "text-ink-900" },
@@ -611,10 +568,8 @@ function FinesList({
   )
 }
 
-// Librarian-side "we already collected this in person" record-keeping —
-// not a payment gateway. Only unsettled entries get the action; accruing
-// fines aren't final until the book is actually returned, and paid ones
-// already show their receipt number.
+// A fine row. Unpaid fines can be marked paid at the desk (records the
+// receipt, takes no payment).
 function FineRow({
   entry,
   onSettled,
@@ -761,9 +716,7 @@ type ActivityItem = {
   cfg: { label: string; text: string; bg: string; border: string }
 }
 
-// One bordered list with dividers, a small cover per row and the status as a
-// rounded pill — instead of a separate outlined box per item, which left a
-// lone heavy card floating at the top of an otherwise empty panel.
+// A list of loans or reservations with a small cover and status pill.
 function ActivityList({ items, empty }: { items: ActivityItem[]; empty: string }) {
   if (items.length === 0) {
     return (

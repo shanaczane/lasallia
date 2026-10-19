@@ -1,6 +1,4 @@
-// apps/web/components/ui/patrons/PatronActionsMenu.tsx
-// Sprint 5.5.3 — user account actions (activate/deactivate)
-// Fix: Edit role action removed per product request
+// Account actions menu (activate / deactivate).
 
 "use client"
 
@@ -13,8 +11,7 @@ type PatronActionsMenuProps = {
   patron: UserProfile
   onView: () => void
   onToggleStatus: () => void
-  // The signed-in librarian's own row — Deactivate is shown disabled
-  // (PATCH /patrons/{id} rejects it too). Sprint 5.5.3
+  // The librarian's own row: Deactivate is disabled (the API blocks it too).
   isSelf?: boolean
 }
 

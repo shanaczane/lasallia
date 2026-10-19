@@ -1,6 +1,4 @@
-// apps/web/components/ui/patrons/RoleBadge.tsx
-// Sprint 5.5.1 — role column badge
-// Fix: fixed width + centered label so pills stay compact and aligned across rows
+// Role badge. Fixed width so badges line up across rows.
 
 import { cn } from "@/lib/utils"
 import type { UserRole } from "@lasallia/types"

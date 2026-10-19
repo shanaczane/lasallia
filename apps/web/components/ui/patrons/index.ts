@@ -1,4 +1,3 @@
-// apps/web/components/ui/patrons/index.ts
 export * from "./AccountStatusPill"
 export * from "./RoleBadge"
 export * from "./PatronsToolbar"

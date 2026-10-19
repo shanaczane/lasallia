@@ -1,4 +1,3 @@
-// apps/web/components/layout/GuestLayout.tsx
 "use client"
 
 import { useRef, useState, useEffect, useLayoutEffect } from "react"

@@ -28,10 +28,7 @@ function relativeTime(iso: string): string {
   return `${weeks}w ago`
 }
 
-// Web-only "Recent Chats" (Chatbot Phase 7) — requires login, so this
-// simply renders nothing for a guest rather than an empty/broken list.
-// Not rendered at all on the kiosk assistant page (nothing to list —
-// kiosk history is gone the moment the session ends).
+// "Recent Chats" on the web (logged-in users only). Not used on the kiosk.
 export default function ChatSidebar({ open, onClose, activeSessionId, onSelectSession, refreshKey }: ChatSidebarProps) {
   // Below lg the sidebar slides over the chat like a drawer: Esc closes it
   // and Tab stays inside. At lg+ it's a normal always-visible column.
@@ -98,7 +95,7 @@ export default function ChatSidebar({ open, onClose, activeSessionId, onSelectSe
 
         {sessions.length > 0 && (
           <>
-            {/* RECENT CHATS — 11px, tracking 0.08em, uppercase, ink-400, mb-2, mt-6 */}
+            {/* RECENT CHATS heading */}
             <p
               className="mt-6 mb-2 uppercase font-semibold"
               style={{ fontFamily: "var(--font-body)", fontSize: 11, letterSpacing: "0.08em", color: "var(--color-ink-400)" }}
@@ -108,7 +105,6 @@ export default function ChatSidebar({ open, onClose, activeSessionId, onSelectSe
             <ul className="space-y-0.5">
               {sessions.map((s) => (
                 <li key={s.id} className="group relative">
-                  {/* px-3 py-2, title ink-900 14px, timestamp ink-400 12px, flex justify-between */}
                   <button
                     type="button"
                     onClick={() => onSelectSession(s.id)}

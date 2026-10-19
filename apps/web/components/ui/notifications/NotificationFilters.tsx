@@ -1,4 +1,3 @@
-// components/ui/notifications/NotificationFilters.tsx
 "use client"
 
 import { Search, X } from "lucide-react"

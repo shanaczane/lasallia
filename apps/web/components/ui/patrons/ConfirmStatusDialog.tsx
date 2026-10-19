@@ -1,5 +1,4 @@
-// apps/web/components/ui/patrons/ConfirmStatusDialog.tsx
-// Sprint 5.5.3 — activate / deactivate confirmation modal
+// Confirms activating or deactivating an account.
 
 "use client"
 

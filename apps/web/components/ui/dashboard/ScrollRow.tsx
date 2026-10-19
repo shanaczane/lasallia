@@ -1,19 +1,12 @@
-// components/ui/dashboard/ScrollRow.tsx
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-// Single horizontally-scrolling row of cards. The browser scrollbar stays
-// hidden (no-scrollbar — its look varies by OS and can't be reliably
-// restyled), so every device gets ‹ › buttons instead: a plain wheel only
-// scrolls vertically, which left these rows stuck past the first few cards,
-// and on touch screens they make it obvious the row scrolls at all (swipe
-// still works too). Slightly smaller below sm so they cover less of the
-// cards on narrow screens. Edge fades hint that more cards sit off-screen;
-// each button and fade only shows while there's something to scroll toward
-// on that side.
+// A horizontal row of cards with ‹ › buttons (the scrollbar is hidden, and
+// a mouse wheel only scrolls up and down). Buttons and edge fades only show
+// when there's more to scroll to on that side.
 export function ScrollRow({
   children,
   label,

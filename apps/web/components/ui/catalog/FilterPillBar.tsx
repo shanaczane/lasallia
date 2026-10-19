@@ -1,10 +1,5 @@
-// apps/web/components/ui/catalog/FilterPillBar.tsx
-// Inline per-category filter dropdowns shown beside the search bar, matching
-// the "Program: X ⌄ Availability ⌄ Format ⌄ Floor ⌄ College ⌄ Call no." pattern.
-// Covers every field in CatalogFilters directly — no separate "more filters"
-// panel needed. "genre"/"subject" are the internal filter keys (unchanged,
-// mirror Book.category/Book.subject) — only their display labels changed to
-// Program/College to match how the LRC actually organizes its catalog.
+// Filter dropdowns beside the search bar. "genre" and "subject" are shown
+// as Program and College.
 
 'use client'
 

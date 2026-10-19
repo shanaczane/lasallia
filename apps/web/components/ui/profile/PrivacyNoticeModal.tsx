@@ -1,14 +1,8 @@
-// components/ui/profile/PrivacyNoticeModal.tsx
-// First step of the first-login flow, before CompleteProfileModal /
-// SetPasswordModal, for any account with no privacy_accepted_at yet. Can't
-// be dismissed — no close button or backdrop click; the only ways out are
-// Accept (POST /auth/accept-privacy) or Decline (signs out).
+// First-login privacy notice. Can't be closed: Accept or Decline (signs out).
 //
-// NOT SHIPPABLE AS-IS: the notice text (lib/privacyNotice.ts) and ACCEPT_LABEL
-// are an unreviewed DRAFT template, not official or legally reviewed text.
-// They are pending review by DLSL's Data Protection Officer. Keep this on a
-// feature branch until the team confirms the final text; only then change
-// PRIVACY_NOTICE_VERSION in routers/auth.py from "placeholder".
+// DRAFT: the text (lib/privacyNotice.ts) and ACCEPT_LABEL aren't yet
+// reviewed by DLSL's Data Protection Officer. Once approved, change
+// PRIVACY_NOTICE_VERSION in apps/api/routers/auth.py.
 "use client"
 
 import { useRef, useState } from "react"
@@ -40,9 +34,7 @@ export function PrivacyNoticeModal({ step, onDone }: { step?: { current: number;
     }
   }
 
-  // Provisional: declining signs the user out, so the account can't be used
-  // without accepting. The team may want a different outcome here — this
-  // isn't a final decision.
+  // For now, declining signs the user out. Not a final decision.
   function handleDecline() {
     clearSession()
     window.location.replace("/login")

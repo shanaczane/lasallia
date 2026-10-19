@@ -1,8 +1,4 @@
-// apps/web/components/ui/patrons/PatronsToolbar.tsx
-// Sprint 5.5.1 — search + filter controls for the users list table
-// Search plus college and account-status filters, beside each other
-// (flex-row) on every device; the row wraps onto a second line only when
-// the screen is too narrow to fit them all.
+// Search, filters and export for the patrons table.
 
 "use client"
 
@@ -12,7 +8,7 @@ import { COLLEGES } from "@/lib/colleges"
 
 export type StatusFilter = "all" | "active" | "inactive"
 
-// Shared select chevron — matches the Sort control on the Catalog tab
+// Dropdown arrow, same as other selects.
 const SELECT_CHEVRON =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"
 
@@ -24,8 +20,7 @@ type PatronsToolbarProps = {
   statusFilter: StatusFilter
   onStatusFilterChange: (v: StatusFilter) => void
   resultCount: number
-  /** Exports whatever `resultCount` describes — the search+role-filtered
-   *  list, not the full unfiltered patron directory. */
+  /** Exports the filtered list, not every patron. */
   onExport: () => void
   exportDisabled?: boolean
 }
@@ -56,10 +51,7 @@ export function PatronsToolbar({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Search + role filter — sticky so it stays reachable while scrolling.
-          Beside each other on every device: search grows to fill space; the
-          select has a comfortable min-width and only drops to its own line
-          on truly tiny viewports. */}
+      {/* Search and filters, sticky while scrolling. */}
       <div
         className="sticky z-40 bg-paper/95 backdrop-blur-sm border-b border-ink-100 py-3 -mt-3 flex flex-row flex-wrap items-stretch gap-2"
         style={{ top: 'var(--height-nav)' }}
@@ -121,8 +113,7 @@ export function PatronsToolbar({
           <option value="inactive">Inactive</option>
         </select>
 
-        {/* Export CSV — follows the search + role filter above, same as
-            every report tab's Export CSV button. */}
+        {/* Export CSV (of the filtered list) */}
         <button
           type="button"
           onClick={onExport}
