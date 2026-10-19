@@ -1,4 +1,3 @@
-// apps/web/lib/hooks/useBooks.ts
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -7,7 +6,7 @@ import { fetchBook, fetchBooks } from '@/lib/books'
 import { subscribeToBookChanges } from '@/lib/realtime'
 
 // Both hooks stay live by default: a book_copies status change bumps the
-// parent book (migration 0033), the subscription fires, and the data is
+// parent book, the subscription fires, and the data is
 // refetched through the same API path as the initial load — silently, so the
 // page doesn't flash a loading state.
 export function useBooks({ live = true, full = false }: { live?: boolean; full?: boolean } = {}) {

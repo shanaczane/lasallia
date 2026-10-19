@@ -1,6 +1,4 @@
-// apps/web/lib/sync.ts
-// Fetch layer for /sync/* — catalog import from a Destiny MARC export or the
-// LRC's own Excel sheet. Librarian-only.
+// API calls for Catalog Import (librarians only).
 
 import { getToken } from "@/lib/auth"
 
@@ -80,9 +78,8 @@ export function isSpreadsheet(file: File): boolean {
   return file.name.toLowerCase().endsWith(".xlsx")
 }
 
-// dryRun=true only previews; dryRun=false applies. The same file is sent
-// both times — the API keeps nothing between the two calls. `college` is
-// only used for .xlsx uploads (the sheets don't say which college they're for).
+// dryRun=true previews, dryRun=false applies; send the same file both times.
+// `college` is only used for .xlsx files.
 export async function importCatalog(file: File, dryRun: boolean, college?: string): Promise<SyncPreview> {
   const form = new FormData()
   form.append("file", file)

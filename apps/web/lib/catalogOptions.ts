@@ -1,8 +1,5 @@
-// apps/web/lib/catalogOptions.ts
-// Derives filter dropdown options (course/floor) from the real, fetched book
-// list instead of a hardcoded mock list. College is the one exception — it's
-// a fixed, closed taxonomy (see lib/colleges.ts), so it's offered in full
-// even before every book has been tagged with one.
+// Builds the catalog filter options from the loaded books. Colleges are a
+// fixed list (lib/colleges.ts), so all of them are always offered.
 
 import { Book } from '@lasallia/types'
 import { COLLEGES } from './colleges'
@@ -11,9 +8,7 @@ function distinctSorted(values: Array<string | null | undefined>): string[] {
   return Array.from(new Set(values.filter((v): v is string => !!v))).sort()
 }
 
-// Each program lives under exactly one college in the source data, so the
-// mapping is derived from the loaded books (its most common college) instead of
-// being hardcoded — new programs work the moment their books are imported.
+// Each program's college, taken from its books, so new programs just work.
 function deriveProgramToCollege(books: Book[]): Record<string, string> {
   const counts = new Map<string, Map<string, number>>()
   for (const b of books) {

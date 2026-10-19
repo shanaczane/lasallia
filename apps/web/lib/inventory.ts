@@ -1,7 +1,4 @@
-// apps/web/lib/inventory.ts
-// Fetch layer for /inventory/* — the Inventory module
-// (docs/lasallia-inventory-build-plan.md). Librarian-only, except
-// reportBookNotOnShelf, which any signed-in student can call.
+// API calls for Inventory (librarians only, except reportBookNotOnShelf).
 
 import { getToken } from "@/lib/auth"
 

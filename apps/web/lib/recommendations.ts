@@ -1,7 +1,4 @@
-// apps/web/lib/recommendations.ts
-// Fetch layer for GET /recommendations/me — the "For You" dashboard
-// section (recommendations plan Phase 6). Backend does all the scoring
-// offline (Phase 5); this is a plain authenticated GET.
+// API calls for "For You" recommendations.
 
 import { getToken } from "@/lib/auth"
 import type { RecommendationsResponse } from "@lasallia/types"
@@ -25,19 +22,15 @@ export async function fetchRecommendations(limit = 8): Promise<RecommendationsRe
   return res.json()
 }
 
-// Recommendations plan Phase 7, rung 0 — fully public, no auth. Same
-// response shape as fetchRecommendations, so callers that just want
-// "whatever's best available" can try one then the other without a
-// separate rendering path.
+// Public popular list (no login). Same shape as fetchRecommendations.
 export async function fetchPopularRecommendations(limit = 8): Promise<RecommendationsResponse> {
   const res = await fetch(`${API_URL}/recommendations/popular?limit=${limit}`)
   if (!res.ok) return parseErrorOrThrow(res, "Failed to load popular books")
   return res.json()
 }
 
-// The kiosk's "For you" tab. A kiosk tap never produces a JWT — the open station
-// session id is the identity (same trust as holds and kiosk chat). No session
-// (a guest visit) gets the public popular rung from the server.
+// The kiosk's "For you" tab. The kiosk session identifies the student;
+// guests get the popular list.
 export async function fetchKioskRecommendations(sessionId: string | null, limit = 8): Promise<RecommendationsResponse> {
   const params = new URLSearchParams({ limit: String(limit) })
   if (sessionId) params.set('session_id', sessionId)

@@ -1,28 +1,20 @@
-// apps/web/lib/kiosk.ts
-// Fetch layer for the borrow/return kiosk flow: station sessions, holds,
-// and loans. /holds/{token} and /loans are token-authorized, not JWT-
-// authorized — the token itself is the credential (see apps/api's
-// routers/holds.py, routers/loans.py), since the phone that scans the QR
-// is a second, separate, unauthenticated device.
+// API calls for borrowing: kiosk sessions, holds and loans. Hold calls use
+// the hold token instead of a login, since the phone that scans the QR
+// code isn't signed in.
 
 import { getToken } from '@/lib/auth'
 import type { Book } from '@lasallia/types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
-// No response arrived at all — the API is down, the phone has no signal,
-// or the request timed out. Unlike an error the API sent back (expired
-// hold, no copies left), trying the same thing again can work, so pages
-// check for this to offer "Try again" instead of a dead end.
+// No response at all (API down, no signal, timeout). Pages offer "Try again"
+// for this, since retrying can work.
 export class NetworkError extends Error {}
 
-// A request on a weak signal can otherwise hang with no error at all,
-// leaving a spinner that never stops.
+// So a request on a weak signal can't hang forever.
 const REQUEST_TIMEOUT_MS = 20_000
 
-// fetch() itself rejects (a bare TypeError: "Failed to fetch") only when no
-// response arrived at all — API down, no signal on the phone, or blocked by
-// CORS. Say that in words a student can act on instead.
+// fetch() with a timeout, turning "Failed to fetch" into a clear message.
 async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
@@ -41,8 +33,7 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
 
 async function parseErrorOrThrow(res: Response, fallback: string): Promise<never> {
   const body = await res.json().catch(() => ({}))
-  // A FastAPI validation error (422) sends detail as an array of objects,
-  // not a string — reading it as one would show "[object Object]".
+  // Validation errors (422) send detail as a list, not text.
   throw new Error(typeof body.detail === 'string' ? body.detail : fallback)
 }
 
@@ -50,24 +41,18 @@ export type StationSession = {
   id: string
   student_id: string
   student_first_name: string
-  // Full name for the TopNav account badge — same field StudentLayout/
-  // LibrarianLayout read off profiles.full_name, so a logged-in kiosk
-  // session matches the web portal's display instead of showing first
-  // name only. student_first_name stays first-name-only on purpose for
-  // the greeting/"Borrowing as" copy elsewhere.
+  // For the account badge; greetings use student_first_name.
   student_full_name: string
   auth_method: 'manual_login' | 'rfid' | 'librarian_assisted'
   station_id: string
   started_at: string
   ended_at: string | null
-  // For the kiosk "For you" tab's CatalogHighlights section — a kiosk tap
-  // has no JWT for GET /auth/me, so these ride on the session instead.
+  // For the kiosk's "For you" tab.
   program: string | null
   college: string | null
 }
 
-// The student is already logged into the web portal — reuses that JWT
-// rather than asking them to retype their password.
+// Opens a session for a student already logged into the web portal.
 export async function openSessionFromToken(): Promise<StationSession> {
   const token = getToken()
   if (!token) throw new Error('Not signed in')
@@ -79,13 +64,8 @@ export async function openSessionFromToken(): Promise<StationSession> {
   return res.json()
 }
 
-// The physical/shared-terminal path (Phase 6) — an RFID tap or a manual
-// login typed at the kiosk itself. Not behind auth for those two: this is
-// what the kiosk calls to find out who's standing in front of it in the
-// first place (mirrors apps/api/routers/sessions.py's open_session).
-// librarian_assisted is the exception — the student supplies no credential
-// at all (the librarian found them via searchPatrons below), so the
-// caller's own librarian JWT is sent as the credential instead.
+// Opens a kiosk session from an ID tap or a typed login (no token needed).
+// librarian_assisted sends the librarian's login instead.
 export async function openSession(
   stationId: string,
   auth:
@@ -116,9 +96,7 @@ export async function openSession(
   return res.json()
 }
 
-// Idle timeout, "Done / Log out", or a new tap interrupting this one
-// (Phase 6). Not behind auth, same reasoning as openSession — an
-// rfid-tapped session has no JWT to authenticate this call with.
+// Ends a kiosk session (timeout, "Done", or a new tap).
 export async function endSession(sessionId: string): Promise<void> {
   const res = await apiFetch(`${API_URL}/station-sessions/${sessionId}/end`, { method: 'POST' })
   if (!res.ok && res.status !== 404) return parseErrorOrThrow(res, 'Could not end this session')
@@ -127,8 +105,7 @@ export async function endSession(sessionId: string): Promise<void> {
 export type ClaimHoldResponse = {
   token: string
   expires_at: string
-  // Measured on the API's clock — count down from this, not expires_at,
-  // which a device with a wrong clock would misread.
+  // Count down from this, not expires_at, in case the device clock is wrong.
   seconds_left: number
   qr_url: string
 }
@@ -145,8 +122,7 @@ export async function claimHold(bookId: string, stationSessionId: string): Promi
 
 export type BorrowEligibility = { can_borrow: boolean; reason: string | null }
 
-// Same checks claim_hold runs, asked up front — so the kiosk can show why a
-// student can't borrow a book instead of offering a button that fails.
+// Whether the student can borrow, so the kiosk can explain why not.
 export async function fetchBorrowEligibility(bookId: string, stationSessionId: string): Promise<BorrowEligibility> {
   const params = new URLSearchParams({ book_id: bookId, station_session_id: stationSessionId })
   const res = await apiFetch(`${API_URL}/holds/eligibility?${params}`)
@@ -159,17 +135,14 @@ export async function releaseHold(token: string): Promise<void> {
   if (!res.ok && res.status !== 404) return parseErrorOrThrow(res, 'Could not release the hold')
 }
 
-// "Add time" — tops the soft hold back up to 3 minutes. The API only
-// accepts it in the last 45 seconds, and caps a hold's total lifetime.
+// "Add time": resets the hold to 3 minutes (only in the last 45 seconds).
 export async function extendHold(token: string): Promise<{ expires_at: string; seconds_left: number; can_extend: boolean }> {
   const res = await apiFetch(`${API_URL}/holds/${token}/extend`, { method: 'POST' })
   if (!res.ok) return parseErrorOrThrow(res, 'Could not extend this hold')
   return res.json()
 }
 
-// "I can't find it" — distinct from releaseHold: also flags the copy
-// `missing` for librarian attention rather than silently freeing it back
-// to available.
+// "I can't find it": releases the hold and marks the copy missing.
 export async function reportMissing(token: string): Promise<void> {
   const res = await apiFetch(`${API_URL}/holds/${token}/report-missing`, { method: 'POST' })
   if (!res.ok && res.status !== 404) return parseErrorOrThrow(res, 'Could not report this copy as missing')
@@ -227,15 +200,13 @@ export type Loan = {
   condition_at_return: ReturnCondition | null
   condition_notes: string | null
   fine_amount: number | null
-  // The two parts of fine_amount — null on loans returned before they
-  // were recorded separately.
+  // The two parts of fine_amount (null on older loans).
   overdue_fine_amount?: number | null
   damage_fine_amount?: number | null
   fine_status: FineStatus | null
   profiles: Borrower | null
   receipt_number: string | null
-  // Set only for a desk-side librarian-assisted checkout (the librarian's
-  // profile id) — null for every ordinary self-service loan.
+  // The librarian, for desk checkouts.
   assisted_by: string | null
   books: Book | null
   // Only set by GET /loans for status === 'overdue' rows.
@@ -243,14 +214,9 @@ export type Loan = {
   preview_fine_amount: number | null
 }
 
-// Authenticated, unlike the rest of this file — this is the student
-// reading their own history, not a kiosk-flow write. RLS (0009) scopes it:
-// students see their own loans, librarians see all.
-// studentId (librarian-only, per RLS) narrows this to one patron's loans —
-// used by the Patrons profile modal instead of fetching every loan.
-// dateFilters backs Borrow & Return's "Borrowed/Returned Today" lists —
-// the caller computes the local-day boundary (see todayRangeIso in
-// borrow-return/page.tsx) rather than this function guessing a timezone.
+// Loans: students get their own, librarians get all. studentId limits it to
+// one patron; dateFilters are for the "Today" lists (the caller works out
+// the day's start and end).
 export async function fetchLoans(
   studentId?: string,
   dateFilters?: { borrowedFrom?: string; borrowedTo?: string; returnedFrom?: string; returnedTo?: string }
@@ -291,10 +257,7 @@ export async function confirmLoan(params: {
   return res.json()
 }
 
-// Patrons > Fines tab: records that a fine left "unsettled" at return time
-// has since been paid at the desk — not a payment gateway, just marking
-// that the librarian already collected it in person. The loan is already
-// closed by this point, so only fine_status/receipt_number change.
+// Records that an unpaid fine was paid at the desk.
 export async function settleFine(loanId: string, receiptNumber: string): Promise<Loan> {
   const token = getToken()
   if (!token) throw new Error('Not signed in')
@@ -307,11 +270,8 @@ export async function settleFine(loanId: string, receiptNumber: string): Promise
   return res.json()
 }
 
-// Desk-side checkout: the librarian already tapped the student's ID
-// (openSession above, auth_method 'rfid') and has the physical book in
-// hand — accession_number identifies the exact copy directly instead of
-// the kiosk's auto-pick-then-verify soft hold. Librarian-authenticated,
-// unlike the rest of this file.
+// Checkout at the desk (librarians): the scanned accession number picks
+// the copy, so no hold is needed.
 export async function createAssistedLoan(params: {
   stationSessionId: string
   accessionNumber: string

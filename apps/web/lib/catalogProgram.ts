@@ -1,11 +1,5 @@
-// apps/web/lib/catalogProgram.ts
-// Maps a patron's profile `program` (a DLSL roster name from lib/programs.ts,
-// e.g. "BS Computer Science") to the catalog's own Program value
-// (books.category — the Excel sheet name, e.g. "Computer Science"). The two
-// taxonomies were named independently, so most programs need translating
-// before they can be used as a catalog filter, and a few have no shelf of
-// their own at all (BS Biology, BS Legal Management, …) — those return null
-// rather than a filter that would always come back empty.
+// Maps a profile program ("BS Computer Science") to the catalog's program
+// name ("Computer Science"). Programs with no books return null.
 
 // Roster names whose catalog Program isn't just the name minus its degree
 // prefix. Everything else falls through to the prefix-stripping match below.

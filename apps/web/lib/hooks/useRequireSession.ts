@@ -1,10 +1,5 @@
-// apps/web/lib/hooks/useRequireSession.ts
-// Sends a signed-out visitor to /login. Checked on mount (fresh load,
-// including Back/Forward that reloads the document) AND on `pageshow` with
-// persisted=true: a back/forward cache restore resumes the frozen page as-is
-// — no remount, no effects re-run — so without it, Back after sign-out shows
-// the last-rendered account. visibilitychange/storage catch a sign-out in
-// another tab.
+// Sends signed-out visitors to /login. Also checks when a page is restored
+// with the Back button, and when the user signs out in another tab.
 'use client'
 
 import { useEffect } from 'react'

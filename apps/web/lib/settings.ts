@@ -1,7 +1,4 @@
-// apps/web/lib/settings.ts
-// Fetch layer for /settings — the librarian Settings page's Library Info
-// and Borrowing Rules tabs (one shared, persisted row; see
-// apps/api/migrations/0024_library_settings.sql). Librarian-only.
+// API calls for library settings (librarians only, except the public ones).
 
 import { getToken } from "@/lib/auth"
 
@@ -33,10 +30,7 @@ export type LibrarySettings = {
   reservation_hold_period_days: number
   max_active_reservations: number
 
-  // "HH:MM" (or "HH:MM:SS"). All three groups are nullable — null on
-  // both means closed that group entirely (weekday included, e.g. a
-  // semester break), and fines don't accrue for it (core/calendar.py
-  // reads these same fields).
+  // "HH:MM" or "HH:MM:SS". Both null means closed (no fines those days).
   weekday_open_time: string | null
   weekday_close_time: string | null
   saturday_open_time: string | null
@@ -44,14 +38,10 @@ export type LibrarySettings = {
   sunday_open_time: string | null
   sunday_close_time: string | null
 
-  // null only in the pre-migration fallback (is_default: true) — a row
-  // that's actually been saved always has this set.
+  // null only when the defaults are being used.
   updated_at: string | null
   updated_by: string | null
-  // True only when migrations/0024 hasn't been applied to this database
-  // yet — the API still answers with the same defaults every borrow/
-  // reservation endpoint falls back to, but Save has nothing to upsert
-  // into until the migration runs.
+  // True when the settings table is missing, so saving won't work.
   is_default: boolean
 }
 
@@ -73,9 +63,7 @@ export type PublicLibrarySettings = Pick<
   | "sunday_open_time" | "sunday_close_time"
 >
 
-// No auth header — GET /settings/public is the one settings route that
-// doesn't require require_librarian, for the login page's Contact
-// Support / System Status links (nobody's signed in yet at that point).
+// No login needed (used by the login page).
 export async function fetchPublicLibrarySettings(): Promise<PublicLibrarySettings> {
   const res = await fetch(`${API_URL}/settings/public`)
   if (!res.ok) return parseErrorOrThrow(res, "Failed to load library info")

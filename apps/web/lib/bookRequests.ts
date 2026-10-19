@@ -1,8 +1,5 @@
-// apps/web/lib/bookRequests.ts
-// Fetch layer for /book-requests. Every call is authenticated: submit,
-// attach, and "my requests" are faculty-only (require_faculty), list/update
-// are the librarian Reports inbox (require_librarian) — see
-// routers/book_requests.py.
+// API calls for book requests. Faculty submit and track their own;
+// librarians list and update them.
 
 import { getToken } from "@/lib/auth"
 
@@ -43,8 +40,7 @@ function authHeaders(): HeadersInit {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
 }
 
-// No Content-Type here — the browser sets the multipart boundary itself
-// when the body is a FormData, same reasoning as any other file upload.
+// No Content-Type: the browser sets it for file uploads.
 function authOnlyHeaders(): HeadersInit {
   const token = getToken()
   if (!token) throw new Error("Not signed in")
@@ -95,10 +91,8 @@ export async function deleteRequestAttachment(requestId: string, attachmentId: s
   return res.json()
 }
 
-// Faculty editing their own not-yet-reviewed request. Every field is
-// optional — only send what changed. 409s once a librarian has already
-// approved/rejected/fulfilled it (routers/book_requests.py enforces this
-// server-side; the UI should already be hiding the edit action by then).
+// Faculty edit their own pending request; send only what changed. Fails
+// (409) once a librarian has acted on it.
 export async function updateMyBookRequest(
   id: string,
   fields: Partial<{

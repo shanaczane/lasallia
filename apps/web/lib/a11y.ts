@@ -1,4 +1,3 @@
-// apps/web/lib/a11y.ts
 import type { KeyboardEvent } from 'react'
 
 // Makes a clickable element that isn't a <button> (a table row, a list

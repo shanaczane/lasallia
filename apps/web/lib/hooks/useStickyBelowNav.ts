@@ -1,15 +1,6 @@
-// apps/web/lib/hooks/useStickyBelowNav.ts
-// JS-driven replacement for `position: sticky` on the phone-width tab
-// bars (My Library / Notifications / Reservations) — native sticky
-// wasn't reliably engaging at phone widths in testing even after ruling
-// out the usual overflow/stacking-context causes, and plain
-// `position: fixed` overlaps the header above it because fixed has no
-// concept of "wait until you'd scroll past me, then stick" the way
-// sticky does. This reimplements that waiting behavior with an
-// IntersectionObserver watching a zero-height sentinel placed right
-// where the bar naturally sits — once the sentinel scrolls above the
-// nav, the bar switches to `fixed`; scroll back down and it returns to
-// its normal-flow position. Desktop keeps plain CSS `sticky` untouched.
+// Makes a tab bar stick below the nav on phones, where CSS `sticky` didn't
+// work reliably. A hidden marker shows when the bar has scrolled past the
+// nav, and the bar switches to `fixed`. Desktop still uses CSS `sticky`.
 
 import { useEffect, useRef, useState } from "react"
 

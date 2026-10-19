@@ -1,4 +1,3 @@
-// apps/web/lib/hooks/useDialogKeyboard.ts
 'use client'
 
 import { useEffect, useRef, type RefObject } from 'react'

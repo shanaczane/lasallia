@@ -1,5 +1,4 @@
-// apps/web/lib/weeding.ts
-// Fetch layer for /weeding/* — Reports plan Phase 2. Librarian-only.
+// API calls for weeding (librarians only).
 
 import { getToken } from "@/lib/auth"
 

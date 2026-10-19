@@ -1,9 +1,6 @@
-// apps/web/lib/collectionType.ts
-// Mirrors apps/api/core/loans.py's NON_BORROWABLE_COLLECTION_TYPES — kept in
-// sync by hand since this is a fixed, rarely-changing list, not data the
-// frontend fetches from anywhere. The backend is still the authoritative
-// enforcement (check_borrow_eligibility / routers/reservations.py); this is
-// only so the Borrow/Reserve actions don't show up in the first place.
+// Library-use-only collections, so Borrow/Reserve can be hidden. Keep in sync
+// with NON_BORROWABLE_COLLECTION_TYPES in apps/api/core/loans.py (the server
+// enforces it).
 import type { Book } from '@lasallia/types'
 
 export const NON_BORROWABLE_COLLECTION_TYPES = new Set([

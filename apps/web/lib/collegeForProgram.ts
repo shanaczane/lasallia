@@ -1,28 +1,13 @@
-// apps/web/lib/collegeForProgram.ts
-// Best-effort mapping from a patron's stored `program` — a specific degree
-// program for students, or a free-text college name for faculty (see
-// components/ui/patrons/PatronProfileModal.tsx; there's no separate
-// `college` column on UserProfile, or anywhere in the Supabase schema) —
-// to one of the catalog's fixed college codes (see lib/colleges.ts). A
-// patron's college should read the same way the catalog itself organizes
-// collections, not a second, inconsistent spelling of the same college.
-//
-// Checks the exact DLSL program roster (lib/programs.ts) first — every
-// program picked from CompleteProfileModal's dropdown resolves this way.
-// Falls back to keyword matching for older free-typed values already on
-// file ("BS Information Tech" vs "BSIT" vs "BS Information Technology")
-// that predate the fixed dropdown. Extend the list below if a real
-// program/college string comes through unresolved.
-// Returns null rather than guessing when nothing matches — same fallback
-// shape as apps/api/scripts/shelf_location.py's UNASSIGNED.
+// Guesses a college code (lib/colleges.ts) from a profile's `program`, for
+// profiles with no college set. Checks the program list first, then
+// keywords for older typed-in values. Returns null if nothing matches; add
+// keywords below for values that don't resolve.
 import { COLLEGES } from './colleges'
 import { collegeCodeForProgram } from './programs'
 
 const KEYWORD_TO_COLLEGE: [RegExp, string][] = [
-  // Order matters: "engineering"/"business" are broad fallbacks (a faculty
-  // profile may just say "College of Engineering" with no sub-discipline),
-  // checked after the more specific programs above them still win first —
-  // e.g. "electronics eng" matches its own clause before falling through.
+  // Order matters: specific programs come before broad words like
+  // "engineering" or "business".
   [/\bcite\b|computer science|information tech|computer eng|electronics eng|electrical eng|industrial eng|civil eng|chemical eng|mechanical eng|engineering/i, 'CITE'],
   [/\bcbeam\b|accountancy|business admin|management accounting|marketing|financial management|\beconomics\b|entrepreneur|\bbusiness\b/i, 'CBEAM'],
   [/\bceas\b|education|psychology|communication|political science|criminology|\bbiology\b|arts and sciences|arts & sciences/i, 'CEAS'],

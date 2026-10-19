@@ -1,15 +1,10 @@
-// apps/web/lib/clientCache.ts
-// Last-loaded copy of slow dashboard data (the catalog, recommendations), so
-// a revisit shows it instantly while a fresh copy loads in the background.
-// Memory survives in-app navigation; sessionStorage survives a reload of the
-// same tab. Never the source of truth — callers always refetch.
+// Keeps the last-loaded dashboard data (catalog, recommendations) so a
+// revisit shows it at once while fresh data loads. Callers always refetch.
 
 const memory = new Map<string, unknown>()
 const PREFIX = "lasallia-cache:"
 
-// Memory only — safe to call during render (a useState initializer): on a
-// full page load it's empty on both the server and the client, so it can't
-// cause a hydration mismatch.
+// Memory only, so it's safe during render (no hydration mismatch).
 export function peekMemory<T>(key: string): T | undefined {
   return memory.get(key) as T | undefined
 }
@@ -36,8 +31,7 @@ export function remember<T>(key: string, value: T): void {
   }
 }
 
-// On sign-out, so the next person on a shared browser never sees the last
-// person's recommendations.
+// Called on sign-out, so the next person doesn't see the last one's data.
 export function clearClientCache(): void {
   memory.clear()
   try {

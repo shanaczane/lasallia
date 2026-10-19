@@ -41,9 +41,8 @@ export async function loginRequest(email: string, password: string): Promise<Tok
   return res.json()
 }
 
-// Google sign-in — redirects to Google via Supabase, which returns to
-// /auth/callback. `hd` only filters Google's account picker; the role
-// (student vs guest) is decided server-side by the profiles trigger.
+// Google sign-in through a Supabase redirect, back to /auth/callback. `hd`
+// only filters Google's account list; the server decides the role.
 export async function signInWithGoogle(): Promise<void> {
   const { error } = await getSupabaseAuth().auth.signInWithOAuth({
     provider: "google",
@@ -55,12 +54,9 @@ export async function signInWithGoogle(): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
-// Google sign-in without the Supabase redirect: Google's own button
-// (components/login/GoogleIdentityButton.tsx) hands back an ID token on
-// www.lasallia.com, so Google's screen names our site instead of the
-// Supabase project address. Supabase verifies the token and the nonce.
-// Used when NEXT_PUBLIC_GOOGLE_CLIENT_ID is set; signInWithGoogle above
-// stays as the fallback.
+// Google sign-in with Google's own button, so Google's screen shows our
+// site instead of the Supabase address. Used when
+// NEXT_PUBLIC_GOOGLE_CLIENT_ID is set; otherwise signInWithGoogle is used.
 export async function signInWithGoogleIdToken(idToken: string, rawNonce: string): Promise<UserProfile> {
   const { data, error } = await getSupabaseAuth().auth.signInWithIdToken({
     provider: "google",
@@ -71,9 +67,8 @@ export async function signInWithGoogleIdToken(idToken: string, rawNonce: string)
   return adoptSupabaseSession(data.session)
 }
 
-// Hands a Supabase session (from either Google flow) to this app's own
-// session store, then drops supabase-js's copy so only lib/auth.ts owns
-// the tokens. Google sign-in has no "remember me" box, so it's remembered.
+// Saves a Google sign-in session here and drops Supabase's copy. It's always
+// remembered (there's no "remember me" box).
 export async function adoptSupabaseSession(session: {
   access_token: string
   refresh_token: string
@@ -90,8 +85,7 @@ export async function adoptSupabaseSession(session: {
   return user
 }
 
-// Profile (role included) for a Supabase access token that didn't come
-// from /auth/login — i.e. the Google callback.
+// The user's profile for a token from Google sign-in.
 export async function fetchMe(accessToken: string): Promise<UserProfile> {
   const res = await fetch(`${API_URL}/auth/me`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -100,11 +94,8 @@ export async function fetchMe(accessToken: string): Promise<UserProfile> {
   return res.json()
 }
 
-// Readable by middleware to gate /librarian/* routes. This is routing
-// convenience only, NOT the security boundary — a client-writable cookie can
-// be forged, so every request that touches librarian-only data must still
-// verify the caller's role server-side (the same job an RLS policy would do
-// if this were backed by Supabase). The API stub does not enforce that yet.
+// Lets proxy.ts keep non-librarians off /librarian pages. Only a
+// convenience: the cookie can be faked, so the API checks roles itself.
 const SESSION_ROLE_COOKIE = "lasallia_role"
 
 function setSessionCookie(role: Role): void {
@@ -115,12 +106,8 @@ function clearSessionCookie(): void {
   document.cookie = `${SESSION_ROLE_COOKIE}=; path=/; max-age=0; SameSite=Lax`
 }
 
-// "Remember me" — unchecked, the session lives in sessionStorage (gone the
-// moment the tab/browser closes); checked (and Google sign-in, which has no
-// checkbox — see app/auth/callback/page.tsx), it lives in localStorage
-// (survives closing the browser entirely). Before this, everything always
-// went to localStorage regardless of the checkbox, so unchecking it did
-// nothing — signing out was the only way to actually end the session.
+// "Remember me" on (and Google sign-in): localStorage, kept after closing
+// the browser. Off: sessionStorage, gone when the tab closes.
 const SESSION_KEYS = ["access_token", "refresh_token", "user"] as const
 
 function sessionStore(remember: boolean): Storage {
@@ -133,15 +120,12 @@ export function saveSession(data: TokenResponse, remember: boolean = true): void
   store.setItem("access_token", data.access_token)
   store.setItem("refresh_token", data.refresh_token)
   store.setItem("user", JSON.stringify(data.user))
-  // Clear the other storage so a session from an earlier, differently-
-  // checked login doesn't linger there and get picked up by getToken().
+  // Clear the other storage so an older session there isn't picked up.
   for (const key of SESSION_KEYS) other.removeItem(key)
   setSessionCookie(data.user.role)
 }
 
-// sessionStorage checked first — if "remember me" was off, that's the only
-// place the session exists, and it deliberately has nothing to fall back to
-// once the tab closes.
+// sessionStorage first, then localStorage.
 export function getToken(): string | null {
   return sessionStorage.getItem("access_token") ?? localStorage.getItem("access_token")
 }
@@ -151,10 +135,8 @@ export function getUser(): UserProfile | null {
   return raw ? JSON.parse(raw) : null
 }
 
-// After a successful PATCH /auth/me, so getUser() reflects the change
-// immediately everywhere it's read — without this, the cached copy from
-// login would keep showing the old name until the next full sign-in.
-// Written back to whichever storage actually holds the session.
+// Updates the saved user after a profile change, in whichever storage
+// holds the session.
 function setCachedUser(user: UserProfile): void {
   const store = sessionStorage.getItem("access_token") ? sessionStorage : localStorage
   store.setItem("user", JSON.stringify(user))
@@ -166,9 +148,7 @@ function authHeaders(): HeadersInit {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
 }
 
-// Settings' Account tab — self-service full name change. Email isn't
-// wired here: it needs Supabase Auth's own confirm-by-email flow, a
-// separate feature.
+// Changes the user's own name (email changes aren't supported yet).
 export async function updateProfile(fullName: string): Promise<UserProfile> {
   const res = await fetch(`${API_URL}/auth/me`, {
     method: "PATCH",
@@ -184,9 +164,7 @@ export async function updateProfile(fullName: string): Promise<UserProfile> {
   return user
 }
 
-// Re-reads the signed-in user's profile from the API and refreshes the
-// cached copy. The login response's copy goes stale when a librarian fills
-// in program/year level afterward (Patrons screen or the enrollment import).
+// Reloads the user's profile, e.g. after a librarian changed it.
 export async function refreshCachedUser(): Promise<UserProfile | null> {
   const token = getToken()
   if (!token) return null
@@ -199,11 +177,8 @@ export async function refreshCachedUser(): Promise<UserProfile | null> {
   }
 }
 
-// First-login "complete your profile" form (students/faculty who signed in
-// with Google and aren't in the enrollment spreadsheet yet). A student sends
-// program+year_level(+college); faculty send college only (the API 403s a
-// faculty caller that sends program/year_level — see routers/auth.py).
-// rfid_uid is not here on purpose — only a librarian assigns a card.
+// The first-login "complete your profile" form. Students send program and
+// year level (and college); faculty send college only.
 export async function updateAcademicProfile(fields: {
   program?: string
   year_level?: number
@@ -224,10 +199,7 @@ export async function updateAcademicProfile(fields: {
   return user
 }
 
-// Settings' Account tab — "Change Password". The API re-verifies
-// currentPassword by signing in with it before applying newPassword; a
-// wrong current password comes back as a normal thrown Error, same as
-// every other call here.
+// Changes the password. A wrong current password throws an Error.
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   const res = await fetch(`${API_URL}/auth/change-password`, {
     method: "POST",
@@ -240,17 +212,14 @@ export async function changePassword(currentPassword: string, newPassword: strin
   }
 }
 
-// Settings' Account tab — whether to show "Set a password" (a Google
-// sign-in never has one) or the existing "Change Password" form.
+// Whether the account has a password (Google-only accounts don't).
 export async function fetchPasswordStatus(): Promise<{ has_password: boolean }> {
   const res = await fetch(`${API_URL}/auth/password-status`, { headers: authHeaders() })
   if (!res.ok) throw new Error("Could not check your account")
   return res.json()
 }
 
-// Settings' Account tab — "Set a password" (Google-only account, nothing
-// to verify against). Adds a second way to sign in; "Continue with
-// Google" keeps working exactly as before either way.
+// Sets a first password on a Google-only account. Google sign-in still works.
 export async function setPassword(newPassword: string): Promise<void> {
   const res = await fetch(`${API_URL}/auth/set-password`, {
     method: "POST",
@@ -263,8 +232,7 @@ export async function setPassword(newPassword: string): Promise<void> {
   }
 }
 
-// First-login privacy notice (PrivacyNoticeModal). No body — the API
-// stamps the time and notice version itself.
+// Records that the user accepted the privacy notice.
 export async function acceptPrivacyNotice(): Promise<UserProfile> {
   const res = await fetch(`${API_URL}/auth/accept-privacy`, { method: "POST", headers: authHeaders() })
   if (!res.ok) {
@@ -276,12 +244,8 @@ export async function acceptPrivacyNotice(): Promise<UserProfile> {
   return user
 }
 
-// Polled by TopNav (mounted on every authenticated page across all three
-// role layouts) so a patron deactivated mid-session loses access without
-// waiting for their token to expire or for them to hit an API call that
-// happens to need get_current_user. false only means "the server
-// confirmed this account is inactive" — any other failure (expired token,
-// flaky connection) is left for the normal auth flow to handle, not this.
+// Checked regularly by TopNav, so a deactivated account is signed out
+// quickly. false only means the server said the account is inactive.
 export async function verifySessionActive(): Promise<boolean> {
   const token = getToken()
   if (!token) return true
@@ -309,8 +273,7 @@ export function clearSession(): void {
 export function roleRedirect(role: string): string {
   switch (role) {
     case "librarian": return "/librarian/dashboard"
-    // Faculty share the student site and rules — same route, no separate
-    // faculty layout to keep in sync.
+    // Faculty use the same pages as students.
     case "student":
     case "faculty":   return "/user/dashboard"
     case "guest":     return "/guest/dashboard"

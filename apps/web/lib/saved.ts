@@ -1,7 +1,4 @@
-// apps/web/lib/saved.ts
-// Fetch layer for /saved-books — the "Saved" tab in My Library and the
-// bookmark buttons on the catalog/detail pages. RLS scopes every call to
-// the caller's own rows (0013_saved_books.sql).
+// API calls for saved books (My Library's Saved tab and bookmark buttons).
 
 import { getToken } from "@/lib/auth"
 import type { Book } from "@lasallia/types"

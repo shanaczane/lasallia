@@ -1,17 +1,12 @@
-// apps/web/lib/chat.ts
-// Chatbot Phase 2 — fetch layer for POST /chat/message. The endpoint
-// streams Server-Sent Events (status updates, then a final "done" event),
-// which rules out the browser's EventSource (GET-only) — read the
-// response body as a stream and parse SSE frames by hand instead.
+// API calls for the chatbot. Replies stream as server-sent events, read by
+// hand because EventSource only supports GET.
 
 import { getToken } from "@/lib/auth"
 import type { Book } from "@lasallia/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
-// Shared between ChatWindow (reads/writes on send) and ChatSidebar
-// (reads/writes on "New chat" / picking a past conversation) — web only,
-// kiosk never touches sessionStorage for chat (see ChatWindow's own note).
+// Where the web chat keeps its current session id (the kiosk doesn't).
 export const WEB_CHAT_SESSION_STORAGE_KEY = "lasallia_chat_session_id"
 
 export type ChatStatus = "searching" | "writing"
@@ -102,8 +97,7 @@ export async function sendChatMessage(
   }
 }
 
-// Chatbot Phase 7 — web-only "Recent Chats." Requires login: there's no
-// persistent identity to list sessions by for a guest.
+// A past web chat in "Recent Chats" (logged-in users only).
 export type ChatSessionSummary = {
   id: string
   started_at: string
@@ -118,12 +112,8 @@ export async function fetchChatSessions(): Promise<ChatSessionSummary[]> {
   return res.json()
 }
 
-// Hydrates a page on load/refresh (web), or loads a fresh empty history
-// for a brand-new kiosk session id. A guest-created web session is
-// fetchable by anyone with its exact id (no auth needed — the id itself
-// is the credential, matching this codebase's soft_holds/station_sessions
-// pattern); a logged-in student's session additionally requires their
-// token to match, enforced server-side.
+// A chat's messages. A guest chat is readable with just its id; a student's
+// chat only by that student.
 export async function fetchChatHistory(sessionId: string): Promise<ChatMessage[]> {
   const token = getToken()
   const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}

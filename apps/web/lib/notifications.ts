@@ -1,6 +1,4 @@
-// apps/web/lib/notifications.ts
-// Fetch layer for /notifications — RLS scopes every call to the caller's
-// own rows (0001_core_schema.sql), so no role branching is needed here.
+// API calls for the signed-in user's notifications.
 
 import { getToken } from "@/lib/auth"
 import type { Notification } from "@lasallia/types"

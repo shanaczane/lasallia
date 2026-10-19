@@ -1,9 +1,4 @@
-// apps/web/lib/reports.ts
-// Fetch layer for /reports/* — the librarian Reports page (reports plan
-// Phase 1). Field names on the first four types match the backend
-// Pydantic models field-for-field, which in turn mirror what this
-// page's old client-side derive* functions used to produce locally —
-// this file is a data-source swap for that page, not a rewrite of it.
+// API calls for the librarian Reports page. Types match the API's models.
 
 import { getToken } from "@/lib/auth"
 import type { InventorySession } from "@/lib/inventory"
@@ -79,9 +74,7 @@ export type ShelfListRow = {
   status: string
 }
 
-// Reports plan Phase 3 — one optional field per AI-summarized report.
-// null means no summary is available (no OPENAI_API_KEY configured, or
-// the call failed) — never a placeholder string.
+// AI summary per report. null means no summary is available.
 export type ReportSummaries = {
   catalogue: string | null
   circulation: string | null
@@ -103,10 +96,7 @@ export type ReportFilters = {
   yearLevel?: number
 }
 
-// Resolves the filter bar's quick-select into actual ISO from/to bounds.
-// "all" means unbounded on both ends (no filtering at all). "custom" passes
-// the picked dates through as-is (empty string -> no bound, same as not
-// filtering that side at all).
+// Turns a date range choice into from/to dates. "all" means no limits.
 export function resolveDateRange(preset: DateRangePreset, customFrom: string, customTo: string): { dateFrom?: string; dateTo?: string } {
   if (preset === "all") return {}
   if (preset === "custom") {
@@ -192,16 +182,12 @@ export async function fetchShelfList(filters: ReportFilters, floor?: string, ais
   return getReport("shelf-list", params)
 }
 
-// Reports plan Phase 3 — deliberately not auto-fetched on every filter
-// change (see "Generate Insights" in reports/page.tsx); only called
-// when the librarian explicitly asks for it.
+// Only called when the librarian clicks "Generate Insights".
 export async function fetchReportSummaries(filters: ReportFilters): Promise<ReportSummaries> {
   return getReport("summaries", filterParams(filters))
 }
 
-// Client-side CSV export (plan: "no new backend/library needed") —
-// the Shelf List and Overdue table both exist to be printed or handed
-// off, not just viewed on screen.
+// Builds a CSV file in the browser.
 export function toCsv(rows: Record<string, string | number>[]): string {
   if (rows.length === 0) return ""
   const headers = Object.keys(rows[0])
@@ -223,8 +209,7 @@ export function downloadCsv(filename: string, rows: Record<string, string | numb
 }
 
 // ─── Inventory tab ────────────────────────────────────────────────────────────
-// Only the date range applies. One row per check, and one row per copy per
-// check for "Export details".
+// Only the date range filter applies.
 
 export type InventoryReportItem = {
   session_id: string

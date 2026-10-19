@@ -1,7 +1,5 @@
-// apps/web/lib/device.ts
-// Phones and tablets borrow on the device in hand — there's no second
-// screen for a QR to be scanned from. A touchscreen laptop or the kiosk PC
-// still counts as a desktop: it has a fine pointer alongside the touch one.
+// True on phones and tablets, which borrow on the device itself (no QR step).
+// Touchscreen laptops and the kiosk count as desktops.
 export function isHandheld(): boolean {
   if (typeof window === 'undefined') return false
   const ua = navigator.userAgent

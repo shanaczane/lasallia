@@ -1,11 +1,5 @@
-// apps/web/lib/activity.ts
-// Shared "recent activity" feed — merges loans + reservations into one
-// chronological list. There's no single unified activity-log table on the
-// backend, so this is derived client-side from the same real rows the rest
-// of the app already fetches (not a separate fake source). Used by the
-// librarian dashboard's preview widget and the Reports "Activity Log" tab
-// (see app/librarian/reports/page.tsx) so both stay in sync off one source
-// of truth.
+// The "recent activity" feed: loans and reservations merged into one list,
+// newest first. Used by the librarian dashboard and the Activity Log report.
 
 import type { Loan } from './kiosk'
 import type { Reservation } from '@lasallia/types'
@@ -22,10 +16,7 @@ export type FeedItem = {
   userId: string | null
   item: string
   bookId: string | null
-  // The full record this entry was derived from — lets a detail view (the
-  // dashboard's activity side panel) show everything about the event
-  // without a second fetch; the feed itself only ever needed the strings
-  // above.
+  // The full record, for the activity detail panel.
   loan?: Loan
   reservation?: Reservation
 }
@@ -40,9 +31,7 @@ export function timeLabel(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
 }
 
-// "Today" / "Yesterday" for anything within the last two days, otherwise a
-// short absolute date — keeps the common case scannable without hiding when
-// something happened.
+// "Today", "Yesterday", or a short date.
 export function dateLabel(iso: string): string {
   const d = new Date(iso)
   const now = new Date()
@@ -53,9 +42,7 @@ export function dateLabel(iso: string): string {
   return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
 }
 
-// Merges loans + reservations into one feed, newest first. Callers decide
-// how much of it to show (dashboard slices to a short preview, the Reports
-// "Activity Log" tab paginates the full list).
+// Loans and reservations as one feed, newest first.
 export function buildFeed(loans: Loan[], reservations: Reservation[]): FeedItem[] {
   const items: FeedItem[] = []
 

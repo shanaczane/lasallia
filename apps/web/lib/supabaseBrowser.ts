@@ -1,10 +1,6 @@
-// apps/web/lib/supabaseBrowser.ts
-// Google sign-in only. Supabase handles the OAuth round trip; the resulting
-// session is handed straight to lib/auth.ts's saveSession and this client's
-// own copy is dropped (see app/auth/callback/page.tsx), so the app keeps a
-// single source of truth for tokens. autoRefreshToken is off for the same
-// reason — the API's /auth/refresh owns rotation, and two refreshers would
-// invalidate each other's refresh token.
+// Supabase client used only for Google sign-in. Its session is handed to
+// lib/auth.ts and then dropped. Auto-refresh is off because the API refreshes
+// tokens, and two refreshers would break each other.
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 let client: SupabaseClient | null = null

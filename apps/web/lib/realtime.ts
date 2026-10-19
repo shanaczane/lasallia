@@ -1,9 +1,5 @@
-// apps/web/lib/realtime.ts
-// Realtime catalog availability. Anonymous client on purpose: the only thing
-// subscribed to is the public `books` table (book_copies is RLS-locked and
-// carries accession numbers). A change event only says "this book changed" —
-// callers refetch through the API, so availability is still computed by the
-// backend's _apply_real_availability, never from the event payload.
+// Live catalog updates. Listens to the public `books` table only; an event
+// just says "this book changed", and callers refetch from the API.
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 let client: SupabaseClient | null = null

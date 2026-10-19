@@ -1,7 +1,4 @@
-// apps/web/lib/returns.ts
-// Fetch layer for the librarian-side return flow (kiosk plan Phase 4):
-// lookup, search, confirm return, reshelve. All authenticated as a
-// librarian — RLS/require_librarian on the API side is the real boundary.
+// API calls for returns and reshelving (librarians only).
 
 import { getToken } from "@/lib/auth"
 import type { Book } from "@lasallia/types"
@@ -55,14 +52,11 @@ export type LoanLookupResult = Loan & {
   preview_fine_amount: number
 }
 
-// Set on the POST /loans/{id}/return response only — tells the Return
-// tab which way the copy was just routed so it can point the librarian
-// at the right next step (Reshelving queue vs. already held for a
-// reservation) without a second request.
+// The return response: needs_reshelving is false if the copy is held for
+// a reservation.
 export type ReturnedLoan = Loan & { needs_reshelving: boolean }
 
-// GET /loans/reshelving-queue — the Reshelving tab's browse list, same
-// idea as listActiveLoans/"Active Borrowers" above.
+// A copy waiting to be reshelved.
 export type ReshelvingQueueItem = {
   id: string // book_copies.id
   accession_number: string | null
@@ -70,12 +64,7 @@ export type ReshelvingQueueItem = {
   returned_at: string | null
 }
 
-// Powers the Return tab's "Active Borrowers" list — the same GET /loans
-// every other librarian screen already uses (RLS: librarians see every
-// loan), just filtered down to what's still out. Browsing this list is a
-// shortcut to *finding* who has what; it still routes through
-// lookupLoanByAccession (same accession_number the row already carries)
-// rather than skipping that verification step.
+// Loans still out, for the Return tab's "Active Borrowers" list.
 export async function listActiveLoans(): Promise<Loan[]> {
   const res = await fetch(`${API_URL}/loans`, { headers: authHeaders() })
   if (!res.ok) return parseErrorOrThrow(res, "Failed to load active loans")
@@ -136,16 +125,14 @@ export async function reshelveCopy(accessionNumber: string): Promise<{ id: strin
   return res.json()
 }
 
-// Powers the Reshelving tab's browse list — same "pick it instead of
-// typing an accession number" convenience listActiveLoans gives Return.
+// Copies waiting to be reshelved.
 export async function fetchReshelvingQueue(): Promise<ReshelvingQueueItem[]> {
   const res = await fetch(`${API_URL}/loans/reshelving-queue`, { headers: authHeaders() })
   if (!res.ok) return parseErrorOrThrow(res, "Failed to load the reshelving queue")
   return res.json()
 }
 
-// GET /loans/reshelved — already-reshelved copies (book_copies.reshelved_at
-// set), distinct from fetchReshelvingQueue's still-awaiting-reshelving list.
+// A copy that has been reshelved.
 export type ReshelvedItem = {
   id: string // book_copies.id
   accession_number: string | null
@@ -153,11 +140,8 @@ export type ReshelvedItem = {
   reshelved_at: string
 }
 
-// Borrow & Return's "Borrowed/Returned Today" lists — real data instead of
-// browser-memory state, so it survives a refresh and resets only when the
-// caller's own day-boundary does. The caller computes that boundary (see
-// todayRangeIso in borrow-return/page.tsx) rather than this guessing a
-// timezone server-side.
+// Loans borrowed or returned in a time range ("Today" lists). The caller
+// works out the day's start and end.
 export async function fetchLoansInRange(filters: {
   borrowedFrom?: string
   borrowedTo?: string
@@ -174,7 +158,7 @@ export async function fetchLoansInRange(filters: {
   return res.json()
 }
 
-// "Reshelved Today" — same day-boundary convention as fetchLoansInRange.
+// Copies reshelved in a time range.
 export async function fetchReshelvedInRange(filters: { reshelvedFrom?: string; reshelvedTo?: string }): Promise<ReshelvedItem[]> {
   const params = new URLSearchParams()
   if (filters.reshelvedFrom) params.set("reshelved_from", filters.reshelvedFrom)

@@ -1,8 +1,5 @@
-// apps/web/lib/hooks/usePolling.ts
-// Runs `fn` now, then every `ms` — but only while the tab is visible, and once
-// more the moment it becomes visible again. A hidden tab (another tab in
-// front, phone screen off) has nobody to show fresh data to, so polling it
-// just spends the API's time.
+// Runs `fn` now and every `ms`, but only while the tab is visible (and once
+// more when it becomes visible again).
 
 'use client'
 

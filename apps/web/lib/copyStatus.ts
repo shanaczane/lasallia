@@ -1,10 +1,5 @@
-// apps/web/lib/copyStatus.ts
-// Shared display config for book_copies.status (apps/api migration 0004's
-// status machine — a DB trigger enforces these transitions, so this list is
-// exhaustive: available, on_loan, reserved, for_reshelving, overdue, lost,
-// damaged, missing, misplaced — misplaced added by 0055). Single source for label/colors so a copy's status reads
-// the same everywhere it's shown (Reports' Shelf List tab, the librarian
-// catalog's Copy Management table) instead of each screen inventing its own.
+// Label and colors for each copy status, so a status looks the same on
+// every screen.
 
 export type CopyStatus =
   | 'available'
@@ -30,13 +25,11 @@ export const COPY_STATUS_CONFIG: Record<CopyStatus, { label: string; text: strin
   lost:           { label: 'Lost',            text: 'text-[#B91C1C]', bg: 'bg-[#FEE2E2]' },
   damaged:        { label: 'Damaged',         text: 'text-[#B45309]', bg: 'bg-[#FEF3C7]' },
   missing:        { label: 'Missing',         text: 'text-[#6D28D9]', bg: 'bg-[#EDE9FE]' },
-  // On the wrong shelf — found by an inventory scan somewhere it doesn't belong.
+  // Found on the wrong shelf by an inventory scan.
   misplaced:      { label: 'Misplaced',       text: 'text-[#9D174D]', bg: 'bg-[#FCE7F3]' },
 }
 
-// Falls back to the raw status string rather than throwing — a status this
-// list hasn't caught up to should still render something instead of
-// crashing the page it's on.
+// Unknown statuses show their raw name instead of crashing.
 export function copyStatusConfig(status: string): { label: string; text: string; bg: string } {
   return COPY_STATUS_CONFIG[status as CopyStatus] ?? { label: status, text: 'text-ink-600', bg: 'bg-ink-100' }
 }

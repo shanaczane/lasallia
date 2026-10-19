@@ -1,6 +1,4 @@
-// apps/web/lib/borrow.ts
-// Fetch layer for /borrow — every call is authenticated (RLS scopes
-// results server-side: patrons see their own loans, librarians see all).
+// API calls for /borrow. Patrons see their own records, librarians see all.
 
 import { BorrowStatus, BorrowTransaction } from '@lasallia/types'
 import { getToken } from '@/lib/auth'

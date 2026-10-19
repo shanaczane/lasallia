@@ -1,8 +1,5 @@
-// apps/web/lib/recommendationEvents.ts
-// Recommendations plan Phase 9 — click-through logging for the "For
-// You" section. Every call here is fire-and-forget: a failed log write
-// must never break the dashboard, so nothing here throws or is awaited
-// by its caller.
+// Logs views and clicks on "For You" books. Never throws, so a logging
+// failure can't break the dashboard.
 
 import { getToken } from "@/lib/auth"
 import type { RecommendationItem } from "@lasallia/types"
@@ -10,8 +7,7 @@ import type { RecommendationItem } from "@lasallia/types"
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 const SESSION_KEY = "lasallia_rec_session_id"
 
-// Guest funnel attribution only — meaningless (and unused server-side)
-// once a caller is logged in, but harmless to always send.
+// A random id per browser, used for guests.
 function getOrCreateSessionId(): string {
   let id = sessionStorage.getItem(SESSION_KEY)
   if (!id) {
@@ -29,26 +25,19 @@ async function post(events: { event_type: EventType; book_id: string; rank?: num
   if (token) headers.Authorization = `Bearer ${token}`
 
   try {
-    // Always send session_id, even alongside a token — a stale/expired
-    // token still passes the truthy check here but gets silently treated
-    // as anonymous server-side (get_optional_user swallows the 401), so
-    // omitting session_id whenever *a* token merely exists left the
-    // backend with neither a valid user nor a session_id to rate-limit
-    // against, which 400s. The backend already prefers a valid user over
-    // session_id when both are present, so sending both is never wrong.
+    // Always send session_id too: an expired token is treated as a guest,
+    // and the server needs session_id then.
     await fetch(`${API_URL}/recommendations/events`, {
       method: "POST",
       headers,
       body: JSON.stringify({ events, session_id: getOrCreateSessionId() }),
     })
   } catch {
-    // Logging is best-effort — a network hiccup here shouldn't surface
-    // to the student in any way.
+    // Ignore logging errors.
   }
 }
 
-// One batched call per section render, not one per card — matches the
-// plan's own "batch impressions" instruction.
+// One request for the whole row, not one per book.
 export function logImpressions(items: RecommendationItem[]): void {
   if (items.length === 0) return
   void post(items.map((item) => ({ event_type: "impression", book_id: item.book.id, rank: item.rank })))

@@ -1,13 +1,9 @@
-// apps/web/lib/privacyNotice.ts
-// The Data Privacy Notice text — one source for the first-login modal
-// (components/ui/profile/PrivacyNoticeModal.tsx) and the public
-// /privacy page Google's OAuth verification links to, so the two can't
-// drift apart.
+// The Data Privacy Notice text, used by the first-login popup and the
+// public /privacy page.
 //
-// NOT SHIPPABLE AS-IS: this is an unreviewed DRAFT template, not official
-// or legally reviewed text. It is pending review by DLSL's Data Protection
-// Officer. Once the final text is confirmed, update it here and change
-// PRIVACY_NOTICE_VERSION in routers/auth.py from "placeholder".
+// DRAFT: not yet reviewed by DLSL's Data Protection Officer. When the final
+// text is approved, update it here and change PRIVACY_NOTICE_VERSION in
+// apps/api/routers/auth.py.
 
 export const NOTICE_INTRO = `De La Salle Lipa – Learning Resource Center ("DLSL LRC," "we," "us") values your privacy. This notice explains how we collect, use, and protect your personal data when you use the Lasallia library system, in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173) and its Implementing Rules and Regulations.`
 

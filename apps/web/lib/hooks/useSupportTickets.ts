@@ -1,4 +1,3 @@
-// apps/web/lib/hooks/useSupportTickets.ts
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'

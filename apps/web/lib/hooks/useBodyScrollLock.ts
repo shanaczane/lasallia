@@ -1,4 +1,3 @@
-// apps/web/lib/hooks/useBodyScrollLock.ts
 'use client'
 
 import { useEffect } from 'react'

@@ -1,7 +1,5 @@
-// apps/web/lib/supportTickets.ts
-// Fetch layer for /support-tickets. Submit and track are public (no auth —
-// the login page is exactly where a locked-out user ends up); list and
-// update are the librarian inbox, same auth pattern as lib/reservations.ts.
+// API calls for support tickets. Submit and track need no login; list and
+// update are for librarians.
 
 import { getToken } from "@/lib/auth"
 

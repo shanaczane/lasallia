@@ -1,5 +1,4 @@
-// apps/web/lib/users.ts
-// Fetch layer for /users — the librarian Patrons screen (build plan 5.5).
+// API calls for the librarian Patrons screen.
 
 import { getToken } from "@/lib/auth"
 import type { UserProfile, UserRole } from "@lasallia/types"
@@ -23,9 +22,7 @@ export async function fetchPatrons(): Promise<UserProfile[]> {
   return res.json()
 }
 
-// Librarian-assisted borrow's fallback student picker, when there's no ID
-// card to tap — searches by name, email, or id_number (routers/patrons.py),
-// scoped to students only.
+// Finds patrons by name, email or ID number (e.g. at the desk without an ID card).
 export async function searchPatrons(q: string, role?: UserRole): Promise<UserProfile[]> {
   const params = new URLSearchParams()
   if (q.trim()) params.set("q", q.trim())
@@ -53,8 +50,7 @@ export async function updatePatron(userId: string, changes: PatronUpdate): Promi
   return res.json()
 }
 
-// Thin wrapper kept for the existing deactivate/activate call site — same
-// endpoint, just the one field.
+// Shortcut for activating or deactivating an account.
 export async function updatePatronStatus(userId: string, status: "active" | "inactive"): Promise<UserProfile> {
   return updatePatron(userId, { status })
 }

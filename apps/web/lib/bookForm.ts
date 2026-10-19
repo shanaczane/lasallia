@@ -1,14 +1,10 @@
-// apps/web/lib/bookForm.ts
-// Shared by the catalog list page and the book detail page — both submit
-// BookFormModal's Add/Edit form and need the same flat-strings-to-BookWrite
-// mapping (schemas.book.BookWrite on the API).
+// Turns the book form's values into what the API expects.
 
 import type { Book } from '@lasallia/types'
 import type { BookFormData } from '@/components/ui/catalog/BookFormModal'
 import type { BookWritePayload } from '@/lib/books'
 
-// BookFormModal hands back keywords as one comma-separated string (plain
-// <input>, not a tag picker) — split it into the array Book.keywords wants.
+// "a, b, c" -> ["a", "b", "c"].
 export function parseKeywords(raw: string): string[] | undefined {
   const list = raw.split(',').map((k) => k.trim()).filter(Boolean)
   return list.length > 0 ? list : undefined

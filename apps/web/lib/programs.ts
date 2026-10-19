@@ -1,24 +1,8 @@
-// apps/web/lib/programs.ts
-// Canonical DLSL program roster, grouped by college, backing the student
-// Program field in CompleteProfileModal.tsx. That field used to be free
-// text, so the same program ended up typed as "bs computer science",
-// "BS COMPUTER SCIENCE", "Computer Science", etc. — lists, filters, and
-// reports never agreed on a program's spelling. A fixed dropdown makes
-// every new value exactly one of these strings.
+// The official DLSL program list, grouped by college, for the profile's
+// Program dropdown. Each program appears once.
 //
-// `collegeCode` is the code lib/colleges.ts already uses to tag catalog
-// books (CITE/CBEAM/CEAS/CITHM/CON/GEN-AD/GRADUATE SCHOOL) — a separate,
-// closed taxonomy tied to the Excel source files in apps/api/data. Two real
-// DLSL colleges below (Law, Criminal Justice Education) don't have their
-// own catalog code, so they fold into the closest existing one (see
-// per-group comments) purely so "for you" book recommendations keep
-// working; it has no bearing on the program label itself. See
-// collegeForProgram.ts, which consumes this list.
-//
-// "Graduate Programs" in the source roster was a cross-college summary
-// (its entries already appear under their home college above), so it's
-// folded into CBEAM/CEAS below rather than kept as its own group — every
-// program appears exactly once.
+// `collegeCode` is the catalog college code (lib/colleges.ts). Law and
+// Criminal Justice have no code of their own, so they use the closest one.
 
 export type ProgramGroup = {
   college: string
@@ -91,15 +75,13 @@ export const PROGRAM_GROUPS: ProgramGroup[] = [
   },
   {
     college: "College of Law",
-    // Juris Doctor is a post-baccalaureate professional doctorate, so it
-    // folds into the GRADUATE SCHOOL catalog code rather than going uncoded.
+    // Juris Doctor is a graduate degree.
     collegeCode: "GRADUATE SCHOOL",
     programs: ["Juris Doctor Program"],
   },
   {
     college: "College of Criminal Justice Education",
-    // No dedicated catalog code — CEAS already covers the closest existing
-    // discipline (criminology, per collegeForProgram.ts's keyword list).
+    // No catalog code of its own; CEAS is the closest.
     collegeCode: "CEAS",
     programs: ["Bachelor of Forensic Science"],
   },

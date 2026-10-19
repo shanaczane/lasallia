@@ -1,10 +1,9 @@
-// apps/web/lib/mock/patrons.ts
-// Sprint 5.5 — Static mock data for Librarian "Manage Users" (Patrons) screen
-// Replace with real API calls in a later backend sprint (GET /api/librarian/users)
+// Old mock patron data. Only ROLE_LABEL is still used (by RoleBadge and the
+// Patrons page).
 
 import type { UserProfile, UserRole, UserAccountStatus } from '@lasallia/types'
 
-// ─── Patron directory (5.5.1) ────────────────────────────────────────────────
+// ─── Patron directory ────────────────────────────────────────────────
 
 export const MOCK_PATRONS: UserProfile[] = [
   { id: 'p1',  email: 'shan.cruz@dlsl.edu.ph',      full_name: 'Shan Cruz',        role: 'student',   id_number: '21-00456', program: 'BS Computer Science',  year_level: 3, status: 'active',   created_at: '2024-06-01T00:00:00Z' },
@@ -35,7 +34,7 @@ export const STATUS_LABEL: Record<UserAccountStatus, string> = {
   inactive: 'Inactive',
 }
 
-// ─── Per-patron activity, for the profile modal (5.5.2) ─────────────────────
+// ─── Per-patron activity ─────────────────────
 
 export type PatronLoan = {
   bookId: string

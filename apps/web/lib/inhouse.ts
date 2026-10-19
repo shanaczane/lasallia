@@ -1,7 +1,4 @@
-// apps/web/lib/inhouse.ts
-// Fetch layer for the librarian-side guest / in-house loan flow (kiosk
-// plan Phase 7). Entirely librarian-driven — a guest never calls any of
-// this themselves, they have no session and no JWT.
+// API calls for guests' in-library use, recorded by librarians.
 
 import { getToken } from "@/lib/auth"
 import type { Book } from "@lasallia/types"

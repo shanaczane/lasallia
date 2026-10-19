@@ -1,22 +1,14 @@
-// apps/web/lib/hooks/useSwipeTabs.ts
-// Swipe-to-change-tab, shared by My Library, Notifications, and
-// Reservations — the three student pages with a horizontal tab bar over a
-// scrollable list. No gesture library in this repo (no framer-motion,
-// no @use-gesture) — raw touchstart/touchend is plenty for a one-axis
-// swipe-between-tabs gesture.
+// Swipe left or right to change tabs (My Library, Notifications, Reservations).
 
 import { useRef, useState } from "react"
 
 const SWIPE_THRESHOLD_PX = 50
-// A drag with more vertical than horizontal movement is a scroll, not a
-// tab swipe — bail out rather than fighting the page's own scrolling.
+// Mostly vertical movement is a scroll, not a swipe.
 const MAX_VERTICAL_DRIFT_PX = 60
 
 export type SlideDirection = "forward" | "back"
 
-// tabs: the order tab keys appear in the tab bar — swiping left moves
-// forward through this list (like flipping to the next page), swiping
-// right moves back.
+// tabs: in tab bar order. Swiping left goes to the next tab.
 export function useSwipeTabs<T extends string>(tabs: readonly T[], active: T, onChange: (next: T) => void) {
   const [direction, setDirection] = useState<SlideDirection>("forward")
   const touchStart = useRef<{ x: number; y: number } | null>(null)
@@ -29,8 +21,7 @@ export function useSwipeTabs<T extends string>(tabs: readonly T[], active: T, on
     onChange(next)
   }
 
-  // Also used by TabButton clicks, so tapping a tab slides the same way a
-  // swipe to it would have — direction stays meaningful either way.
+  // Also used for tab clicks, so the slide direction matches a swipe.
   function changeTo(next: T) {
     const i = tabs.indexOf(active)
     const nextI = tabs.indexOf(next)
