@@ -1,14 +1,9 @@
-# apps/api/core/rules.py
-# Rule-based fast path for the chatbot (thesis: "Hybrid Rule-Based and
-# NLP-Driven"). A keyword/regex matcher over a small fixed set of policy
-# intents, in English, Filipino and Taglish. NOT a classifier.
+# Chatbot fast path: answers common policy questions (hours, fines, limits,
+# visitors) with keyword rules, in English, Filipino and Taglish.
 #
-# The answer text is never hardcoded: each intent points at a policy_chunks
-# row (by section_title) and pulls the relevant line(s) out of that row's
-# chunk_text, so re-ingesting a revised handbook changes the answers with
-# no code change. A miss (no match, ambiguous match, chunk missing, line not
-# found) returns None and routers/chat.py falls through to the RAG path
-# exactly as before — a miss must cost nothing.
+# Answers are read from the handbook chunks, never hardcoded, so updating
+# the handbook updates them. Anything unclear returns None and goes to the
+# normal AI path.
 
 import re
 import time
@@ -172,16 +167,8 @@ def _extract(intent: str, chunk: str) -> str | None:
     return None
 
 
-# This path never goes through the model, so it never sees the system
-# prompt's "always reply in English" rule — the handbook is English-only
-# today, so in practice this was never visibly broken, but nothing
-# actually guaranteed that. A short blocklist of common Filipino/Taglish
-# function words that have no business appearing in an English handbook
-# excerpt turns "happens to be English" into a real guarantee: if a
-# chunk ever gets edited to include non-English text (or a future intent
-# pulls from somewhere less reliably English), this intent is treated as
-# a miss and falls through to the RAG path below, which enforces English
-# properly via the model.
+# This path skips the AI, so it can't rely on the "reply in English" rule.
+# If an answer contains common Filipino words, use the AI path instead.
 _NON_ENGLISH_WORD_RE = re.compile(
     r"\b(ang|ng|mga|nang|ito|iyon|dito|doon|hindi|oo|opo|hinihiram|libro|aklat|"
     r"kailangan|pwede|puwede|maaari|bawat|kada|bago|pagkatapos|magkano|ilan|ilang)\b",
@@ -194,9 +181,7 @@ def _is_english(text: str) -> bool:
 
 
 def answer_for(intent: str) -> tuple[str, ChatSource] | None:
-    """The cited handbook answer for an intent and the section it came
-    from, or None if the chunk or the expected line isn't there (caller
-    falls through to RAG)."""
+    """The handbook answer and its section, or None if it can't be found."""
     try:
         rows = (
             get_admin_client().table("policy_chunks")
@@ -230,8 +215,7 @@ def match_and_answer(message: str) -> tuple[str, str, ChatSource] | None:
 
 
 # ─── Instrumentation ────────────────────────────────────────────────────
-# In-memory like core/rate_limit.py: single-instance deployment, resets on
-# restart, no new dependency. Each request also prints one log line.
+# Counts and timings per path, in memory (reset on restart).
 
 _stats: dict[str, dict[str, float]] = {
     "rule": {"count": 0, "total_ms": 0.0},

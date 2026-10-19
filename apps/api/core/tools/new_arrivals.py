@@ -1,9 +1,7 @@
-"""The get_new_arrivals tool — "what are the newly added books?"
+"""Chatbot tool: the most recently added books.
 
-search_catalog can't answer that: it ranks by how well a book matches a
-topic, and "new" isn't a topic. This lists the catalog by when each title
-was added (books.created_at), newest first — the same ordering as the
-catalog's "Recently added" sort.
+search_catalog ranks by topic, and "new" isn't a topic, so this sorts by
+when each book was added.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -17,9 +15,8 @@ MAX_LIMIT = 20
 
 
 def get_new_arrivals(limit: int = DEFAULT_LIMIT, days: int | None = None) -> list[Book]:
-    """Most recently added titles, newest first. `days`, when given, keeps
-    only titles added within that many days — so "anything new this week?"
-    can honestly come back empty instead of listing older books."""
+    """Newest titles first. `days` limits to books added in that window,
+    so "anything new this week?" can honestly return nothing."""
     admin = get_admin_client()
     limit = max(1, min(int(limit or DEFAULT_LIMIT), MAX_LIMIT))
 

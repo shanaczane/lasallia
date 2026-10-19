@@ -4,12 +4,9 @@ from supabase import Client
 
 from core.settings import get_library_settings
 
-# Fine-rate constants (build plan 4.4) — hourly-rate collection types get
-# charged for open library hours elapsed; everything else is general
-# circulation, charged per school day at Settings' "Fine per Day" rate
-# (fine_per_day, read live below), capped at "Maximum Fine per Book"
-# (max_fine_per_book). No Settings field for the hourly rate yet, so that
-# one's still a fixed constant.
+# These collections are fined per open library hour. Everything else is
+# fined per school day at Settings' rate, up to the per-book maximum. The
+# hourly rate isn't in Settings yet, so it's fixed here.
 HOURLY_FINE_COLLECTION_TYPES = {"Reserve", "Story book", "Bible"}
 HOURLY_FINE_RATE = 2.0
 
@@ -30,9 +27,7 @@ def _calendar_rows(db: Client, start: datetime, end: datetime) -> dict[str, dict
 
 
 def _dates_after_start(start: datetime, end: datetime):
-    # The due date's own calendar day isn't a day overdue yet — a book is
-    # only overdue once that day has passed. So this walks the day *after*
-    # start's date through end's date, inclusive.
+    # The due date itself doesn't count as overdue, so start the day after.
     d = start.date() + timedelta(days=1)
     while d <= end.date():
         yield d
@@ -40,12 +35,8 @@ def _dates_after_start(start: datetime, end: datetime):
 
 
 def _weekly_hours(cfg: dict, d: date) -> tuple[time | None, time | None]:
-    """The library's configured hours for d's day of week (Settings'
-    Operating Hours), used whenever library_calendar has no specific
-    override row for that date — which is every date today, since
-    nothing has ever populated that table. None/None means closed that
-    day (Sunday, by default): no fine accrues for a day the library was
-    never open."""
+    """Settings' opening hours for that day of the week. None/None means
+    closed, so no fine builds up that day."""
     weekday = d.weekday()  # Monday = 0 ... Sunday = 6
     if weekday <= 4:
         open_key, close_key = "weekday_open_time", "weekday_close_time"
@@ -60,10 +51,8 @@ def _weekly_hours(cfg: dict, d: date) -> tuple[time | None, time | None]:
 
 
 def _day_hours(cfg: dict, calendar: dict[str, dict], d: date) -> tuple[time | None, time | None]:
-    """Open/close time for one date — a library_calendar override row if
-    one exists for it, else the weekly Settings schedule. None/None means
-    closed (a school holiday marked in library_calendar, or a day outside
-    Operating Hours like an unconfigured Sunday)."""
+    """Opening hours for one date: a library_calendar entry (e.g. a
+    holiday) if there is one, else the weekly schedule. None/None = closed."""
     row = calendar.get(d.isoformat())
     if row:
         if not row["is_school_day"]:
@@ -73,9 +62,8 @@ def _day_hours(cfg: dict, calendar: dict[str, dict], d: date) -> tuple[time | No
 
 
 def count_school_days(db: Client, start: datetime, end: datetime, cfg: dict) -> int:
-    """Days elapsed between start and end that the library was actually
-    open on, per Settings' Operating Hours (or a library_calendar
-    override) — the ₱/day general rate only accrues for these."""
+    """Days between start and end when the library was open. The daily
+    fine only counts these."""
     if end <= start:
         return 0
     calendar = _calendar_rows(db, start, end)
@@ -88,10 +76,8 @@ def count_school_days(db: Client, start: datetime, end: datetime, cfg: dict) -> 
 
 
 def count_library_hours(db: Client, start: datetime, end: datetime, cfg: dict) -> float:
-    """Open library hours elapsed between start and end — the ₱/hour
-    Reserve/Story book/Bible rate. A day-level approximation (full
-    open->close hours per open day), not minute-exact within the first
-    or last day — documented as a placeholder until real policy is set."""
+    """Open library hours between start and end, for the hourly fine.
+    Counts whole open days only (not minute-exact) until the policy is final."""
     if end <= start:
         return 0.0
     calendar = _calendar_rows(db, start, end)
@@ -106,12 +92,8 @@ def count_library_hours(db: Client, start: datetime, end: datetime, cfg: dict) -
 
 
 def compute_fine(db: Client, due_date_iso: str, collection_type: str) -> tuple[int, float]:
-    """Returns (days_overdue, fine_amount) for an open loan, as of now.
-    days_overdue is always day-based (for display); fine_amount uses
-    whichever rate applies to the collection type. Shared by
-    routers/loans.py (live previews at the return counter) and
-    core/reports.py (the Overdue report) — one implementation, so the
-    two can't quietly drift apart on what "overdue" or "owed" means."""
+    """(days_overdue, fine_amount) for an open loan as of now. Used by both
+    the return counter and the Overdue report, so they always agree."""
     due_date = datetime.fromisoformat(due_date_iso)
     now = datetime.now(timezone.utc)
     cfg = get_library_settings(db)

@@ -1,14 +1,6 @@
-# apps/api/core/weeding.py
-# Reports plan, Phase 2 — weeding candidates: a deterministic heuristic
-# decides what gets flagged (low/zero borrows over a lookback window +
-# old), AI only narrates that decision in plain English. Same "AI
-# narrates, doesn't decide" boundary the chatbot and recommendations
-# modules already hold to. If OPENAI_API_KEY isn't configured, or the
-# call fails for any reason, the feature still works — every candidate
-# falls back to its heuristic_reason untouched. A weeding report that
-# silently stopped working without an API key would violate the same
-# "must degrade, never blank" principle the recommendations plan states
-# outright.
+# Weeding candidates: old books that are rarely borrowed. A fixed rule picks
+# them; AI only rewords the reason. Without an OpenAI key (or if the call
+# fails) the plain reason is used, so the report still works.
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -18,9 +10,7 @@ from supabase import Client
 
 from core.config import OPENAI_API_KEY
 
-# Policy thresholds — genuinely a librarian judgment call, not a
-# technical one. Kept as named constants in one place, not scattered,
-# same as the recommendations plan's COOCCURRENCE_ALPHA.
+# Library policy choices, not technical ones.
 WEEDING_LOOKBACK_MONTHS = 24
 WEEDING_MAX_BORROWS_IN_WINDOW = 1  # 0 or 1 borrow in the window counts as "low"
 WEEDING_MIN_AGE_YEARS = 10.0  # by published_year, falling back to created_at if published_year is missing
@@ -72,10 +62,8 @@ def _heuristic_reason(borrow_count: int, published_year: int | None, years_since
 
 
 def find_weeding_candidates(admin: Client) -> list[WeedingCandidateData]:
-    """Live heuristic scan — no precompute, no staleness. This is a
-    librarian-triggered report, not a student-facing hot path, so it
-    doesn't need Phase 5's precompute treatment; it just needs to be
-    correct and current, same as every other report in core/reports.py."""
+    """Scans the catalog live each time (it's a librarian report, so
+    speed matters less than being current)."""
     now = datetime.now(timezone.utc)
     lookback_start = now - timedelta(days=WEEDING_LOOKBACK_MONTHS * 30)
 
@@ -136,9 +124,7 @@ def find_weeding_candidates(admin: Client) -> list[WeedingCandidateData]:
 
 
 def narrate(candidate: WeedingCandidateData) -> str:
-    """Returns an AI-polished version of candidate.heuristic_reason, or
-    the heuristic_reason itself if no key is configured or the call
-    fails for any reason."""
+    """AI-reworded reason, or the plain reason if AI isn't available."""
     client = _get_client()
     if client is None:
         return candidate.heuristic_reason
@@ -179,9 +165,8 @@ def restore_book(admin: Client, book_id: str, performed_by: str) -> None:
 
 
 def dismiss_candidate(admin: Client, book_id: str, performed_by: str, reason: str | None = None) -> None:
-    """Librarian looked at a flagged candidate and decided to keep it —
-    excluded from future candidate scans from here on, distinct from
-    archiving (the book stays fully in the live catalog)."""
+    """The librarian chose to keep this book. It stays in the catalog and
+    won't be flagged again."""
     admin.table("books").update({"weeding_dismissed_at": datetime.now(timezone.utc).isoformat()}).eq("id", book_id).execute()
     _log_event(admin, book_id, "dismissed", reason, performed_by)
 

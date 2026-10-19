@@ -1,18 +1,10 @@
-# apps/api/core/settings.py
-# Reads the one library_settings row (migrations/0024) that every
-# borrowing-rule constant across routers/borrow.py, holds.py, loans.py,
-# and reservations.py now defers to, instead of each hardcoding its own
-# copy of the same number. Always a live read — no caching, no
-# precompute — same reasoning core/weeding.py and core/reports.py give
-# for not caching a librarian-triggered read: this is cheap (one row)
-# and must never show a stale rule to a borrow that's happening right now.
+# Reads the library's settings (loan limits, fines, hours) from the single
+# library_settings row. Not cached, so a rule change applies immediately.
 
 from supabase import Client
 
-# Matches the migration's own column defaults exactly, so a database that
-# hasn't had 0024 applied yet still enforces the same real limits the
-# code hardcoded before this table existed — "must degrade, never crash,"
-# same as core/weeding.py's AI-narration fallback.
+# Used when the settings row or a column is missing. Must match the
+# database column defaults.
 _DEFAULTS: dict[str, object] = {
     "library_name": "De La Salle Lipa — Learning Resource Center",
     "address": "Sen. Jose Diokno Building, 1962 J.P. Laurel National Highway, Lipa City, Batangas 4217",
@@ -52,17 +44,11 @@ def get_library_settings(admin: Client) -> dict:
     if not res.data:
         return {**_DEFAULTS, "is_default": True}
 
-    # _DEFAULTS underneath, not just around, the real row — a column a
-    # later migration added (e.g. 0025's operating-hours fields) that
-    # hasn't been applied to this database yet simply isn't a key in
-    # res.data[0] at all; without this, LibrarySettings' required fields
-    # would fail validation instead of degrading like everything else here.
+    # Defaults fill in any column a newer migration added but this
+    # database doesn't have yet.
     row = {**_DEFAULTS, **res.data[0]}
-    # PostgREST serializes numeric(10,2) columns as JSON strings (to avoid
-    # float-precision surprises on the wire), but every caller here does
-    # real arithmetic with these values (fine math, timedelta(days=...))
-    # — coerce explicitly rather than let a raw '5.00' silently turn a
-    # multiplication into Python string-repeat or a timedelta TypeError.
+    # Numeric columns arrive as strings like '5.00'; convert them so the
+    # math below works.
     for key in _INT_FIELDS:
         if row.get(key) is not None:
             row[key] = int(row[key])

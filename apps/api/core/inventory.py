@@ -1,10 +1,6 @@
-# apps/api/core/inventory.py
-# Inventory module (docs/lasallia-inventory-build-plan.md). A librarian
-# picks one aisle (or a whole floor), scans every copy on it, and the check
-# sorts copies into found / misplaced / not found.
-#
-# Location comes from the book (books.floor + books.aisle), never the copy:
-# book_copies.shelf_location reads "Unassigned" on every row.
+# Shelf inventory checks: scan an aisle or floor and sort copies into found,
+# misplaced and not found. Location comes from the book (floor + aisle),
+# since book_copies.shelf_location is always "Unassigned".
 
 import re
 from datetime import datetime, timedelta, timezone
@@ -27,15 +23,14 @@ from schemas.inventory import (
     ScanResult,
 )
 
-# Decision 3: a copy out on loan, held for a reservation (it sits on the
-# hold shelf) or already written off as lost isn't expected on the shelf.
-# Missing copies ARE expected, so a check can recover one.
+# Copies not expected on the shelf: on loan, on the hold shelf, or lost.
+# Missing copies are expected, so a check can find them again.
 NOT_EXPECTED_STATUSES = {"on_loan", "overdue", "reserved", "lost"}
 
-# Statuses a copy can only leave through for_reshelving (migration 0055).
+# Statuses a copy can only leave through for_reshelving.
 _SIDE_STATES = {"missing", "lost", "misplaced"}
 
-# A smart check skips copies seen this recently (migration 0056).
+# A smart check skips copies seen this recently.
 SEEN_WINDOW_DAYS = 180
 
 
@@ -245,7 +240,7 @@ def start_session(
     """Opens a check and snapshots every copy expected there as 'pending'.
     A smart check (skip_recently_seen) leaves out copies seen in the last
     SEEN_WINDOW_DAYS. If a check of this exact location is already open,
-    returns that one instead (decision 6: two librarians share one check)."""
+    returns that one instead, so two librarians share one check."""
     def open_one() -> dict | None:
         query = admin.table("inventory_sessions").select("*").eq("status", "in_progress").eq("floor", floor)
         query = query.eq("aisle", aisle) if aisle else query.is_("aisle", "null")
@@ -284,8 +279,8 @@ def start_session(
             new_session["skip_seen_since"] = since
         session = admin.table("inventory_sessions").insert(new_session).execute().data[0]
     except APIError:
-        # Lost a race with another librarian starting the same location —
-        # the partial unique index (0053) let only one through. Join theirs.
+        # Another librarian started the same location at the same moment;
+        # the database only allows one, so join theirs.
         existing = open_one()
         if existing:
             return _summaries(admin, [existing])[0]
@@ -393,8 +388,7 @@ def scan(admin: Client, session_id: str, code: str, librarian_id: str) -> ScanRe
     if existing and existing[0]["result"] != "pending":
         return result("already_scanned", f'"{title}" was already scanned in this check', existing[0]["id"])
 
-    # Decision 5: the record says this copy isn't on any shelf — fix the
-    # record at the desk first rather than guess here.
+    # The record says this copy isn't on a shelf; fix it at the desk first.
     if copy["status"] in ("on_loan", "overdue"):
         return result("on_loan", f'"{title}" is recorded as on loan — check it in at the desk first')
     if copy["status"] == "reserved":
@@ -416,8 +410,7 @@ def scan(admin: Client, session_id: str, code: str, librarian_id: str) -> ScanRe
                 return result("already_scanned", f'"{title}" was already scanned in this check', existing[0]["id"])
             item_id = existing[0]["id"]
         else:
-            # A lost copy turning up on its own shelf — wasn't expected
-            # (decision 3), but it's here.
+            # A lost copy turned up on its own shelf.
             item_id = _insert_item(admin, session_id, copy, book, expected=False, item_result="found", scanned=scanned)
             if item_id is None:
                 return result("already_scanned", f'"{title}" was already scanned in this check')
@@ -467,8 +460,8 @@ def _count_in_other_checks(admin: Client, session: dict, copy: dict, book: dict,
 
 
 def _insert_item(admin: Client, session_id: str, copy: dict, book: dict, *, expected: bool, item_result: str, scanned: dict) -> str | None:
-    """Returns the new row's id, or None when another device already added
-    this copy to the check (the unique constraint in 0054)."""
+    """Returns the new row's id, or None if another device already added
+    this copy to the check."""
     try:
         return admin.table("inventory_items").insert({
             "session_id": session_id, "book_copy_id": copy["id"], "expected": expected,

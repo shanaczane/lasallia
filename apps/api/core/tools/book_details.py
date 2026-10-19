@@ -1,10 +1,7 @@
-"""Chatbot Phase 3 — the get_book_details tool.
+"""Chatbot tool: the full catalog record for one book.
 
-Returns the full catalog record for one title. When the description is
-empty, the caller (the chat orchestration layer, using the system
-prompt) must fall back to the honest "catalog has no description"
-response (plan 3.3) — this function's job is only to return what's
-actually in the record, never to fill gaps from model knowledge.
+Returns only what's in the record. If there's no description, the model
+must say so rather than describe the book from its own knowledge.
 """
 
 from pydantic import BaseModel
@@ -16,22 +13,13 @@ from schemas.book import Book
 
 class BookDetailsResult(BaseModel):
     book: Book
-    # Book (schemas/book.py) doesn't carry collection_type — it's a
-    # Phase-1-kiosk-plan field on the raw books row, not exposed to the
-    # rest of the frontend's Book type. Kept here, separately, since
-    # plan 3.1 explicitly wants it in the model's context.
+    # Not on the Book schema, so passed separately for the model.
     collection_type: str
-    # Plan 3.3's optional-but-cheap fallback: physical neighbors are
-    # topical neighbors under library classification. Only populated
-    # when book.abstract is empty — no cost when there's a real
-    # description to summarize instead.
+    # Books shelved next to it (similar topic). Only filled when the book
+    # has no description.
     nearby_by_call_number: list[dict] | None = None
-    # Substitute suggestions — only populated when `book` itself isn't
-    # available, so the model has something concrete to offer instead of
-    # just "it's checked out." Reuses book_similarities (core/similarities.py,
-    # the same content-similarity table the "For You" dashboard's rung 1
-    # is built on) rather than leaving the model to guess a related
-    # search_catalog query — same reasoning as recommend_for_my_course.
+    # Similar books that are available now. Only filled when this book
+    # isn't available, so the model can suggest an alternative.
     similar_available_books: list[Book] | None = None
 
 
@@ -45,10 +33,8 @@ def _find_nearby_by_call_number(admin, book_id: str, limit: int = 3) -> list[dic
 
 
 def _find_similar_available(admin, book_id: str, limit: int = 3) -> list[Book]:
-    """Content-similar neighbors (book_similarities, highest rank first)
-    that are actually available right now — a substitute nobody can
-    borrow either isn't a useful suggestion. Overfetches since some
-    neighbors will be filtered out by availability or archival."""
+    """Most similar books that are available right now. Fetches extra
+    because some get filtered out."""
     neighbor_rows = (
         admin.table("book_similarities")
         .select("neighbor_book_id, rank")
@@ -72,18 +58,15 @@ def _find_similar_available(admin, book_id: str, limit: int = 3) -> list[Book]:
 
 
 def get_book_details(book_id: str) -> BookDetailsResult:
-    """Tool handler for `get_book_details`. Full bibliographic record:
-    description, subject headings, edition, year, publisher, collection
-    type, call number, availability."""
+    """Full record: description, subjects, edition, year, publisher,
+    collection type, call number and availability."""
     admin = get_admin_client()
 
     res = admin.table("books").select("*").eq("id", book_id).execute()
     if not res.data:
         raise ValueError(f"No book found with id {book_id}")
     raw = res.data[0]
-    # This tool has no notion of librarian-vs-student caller (unlike
-    # GET /books/{id}) — treated as not-found for everyone, same as
-    # search_catalog already never surfacing it in the first place.
+    # Archived books are hidden from the chatbot for everyone.
     if raw.get("archived_at"):
         raise ValueError(f"No book found with id {book_id}")
 

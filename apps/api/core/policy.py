@@ -1,21 +1,8 @@
-"""Chatbot Phase 4 — LRC handbook ingestion and chunking.
+"""Loads the LRC handbook into searchable chunks for the chatbot.
 
-Mirrors core/embeddings.py's shape for a second document type. Chunks
-by section, not fixed character count (plan 4.1) — a rule split across
-two chunks retrieves as two half-answers. Each chunk keeps its section
-title so an answer can cite it, and keeping a version/date means
-re-ingesting a revised handbook replaces old chunks outright rather than
-accumulating contradictory ones (plan 4.4).
-
-Text extraction: pdfplumber, not a plain `pdftotext -layout` subprocess.
-Measured directly against this handbook's own tables (the Hours of
-Service and Loan Policies/fines tables): pdftotext's positional text
-flow scrambles multi-column tables into the wrong row/column pairing —
-it read Saturday's hours as the College's Monday-Friday hours, a wrong
-answer the model would have cited as if authoritative. pdfplumber's
-extract_tables() preserves real row structure, so table rows are
-flattened as explicit "Label: Value" lines instead of trusting
-positional reading order.
+Splits by section (not by length) so a rule isn't cut in half, and keeps
+each section's title so answers can cite it. Uses pdfplumber because it
+keeps table rows together; other tools mixed up the hours and fines tables.
 """
 
 import re
@@ -27,11 +14,7 @@ from core.embeddings import DEFAULT_MODEL, embed_text
 
 MIN_CHUNK_CHARS = 80
 
-# Repeats verbatim on every page of this document (doc-control header,
-# title bar, page-number line) — filtered by exact/pattern line match
-# rather than a single multi-line regex, which broke the moment the
-# extractor (and therefore exact whitespace/line-wrap) changed. A
-# per-line filter is robust to that in a way a block regex isn't.
+# Header lines repeated on every page, removed line by line.
 _BOILERPLATE_LINES = {
     "DE LA SALLE LIPA",
     "INSTITUTIONAL QUALITY ASSURANCE OFFICE",
@@ -49,18 +32,9 @@ _BOILERPLATE_LINE_RES = [
 
 _PAGE_MARKER_RE = re.compile(r"^Page: (\d+) of (\d+)\s*$")
 
-# Top-level roman-numeral sections ("I. INTRODUCTION") and numbered
-# subsection headings ("9. LIBRARY PATRONS", "3.2.1. The school ID...").
-# The handbook's own numbering restarts across sections (there are two
-# "10."s) — tolerated rather than "fixed", since citing "section 10
-# (Referral Services)" is still unambiguous once paired with the nearest
-# enclosing roman-numeral heading.
-#
-# [IVXLC]+ alone also matches single letters from this document's
-# lettered sub-bullets ("C. Legal forms", "F. General dictionary") since
-# C/L/V/I/X are individually valid roman numerals — those are Title Case,
-# while every real top-level heading in this document is ALL CAPS, so
-# .isupper() is the actual disambiguator, checked after the regex match.
+# Section headings: "I. INTRODUCTION" (top level) and "3.2.1. The school ID"
+# (subsections). Lettered bullets like "C. Legal forms" also match the roman
+# numeral pattern, so top-level headings must also be ALL CAPS (checked below).
 _TOP_SECTION_RE = re.compile(r"^([IVXLC]+)\.\s+([A-Z][A-Za-z\s\-/]+)\s*$")
 _SUBSECTION_RE = re.compile(r"^(\d+(?:\.\d+)*)\.\s+([A-Z][A-Za-z0-9\s,()/&\-]{2,60})\s*$")
 
@@ -82,11 +56,8 @@ def _is_boilerplate_table_row(row: list) -> bool:
 
 
 def extract_pdf_text(pdf_path: str) -> str:
-    """Renders a PDF to the plain-text format chunk_handbook expects:
-    page markers (`\\x0cPage: N of TOTAL`) followed by that page's prose,
-    followed by any tables on that page flattened into unambiguous
-    "Label: Value" lines. See the module docstring for why tables get
-    special handling instead of trusting extract_text() alone."""
+    """PDF to text: a page marker, the page's text, then its tables as
+    "Label: Value" lines."""
     parts: list[str] = []
     with pdfplumber.open(pdf_path) as pdf:
         total = len(pdf.pages)
@@ -115,9 +86,8 @@ def extract_pdf_text(pdf_path: str) -> str:
 
 
 def _strip_boilerplate(text: str) -> tuple[str, dict[int, int]]:
-    """Removes the repeating per-page header lines and the `\\x0cPage: N
-    of TOTAL` markers themselves. Returns the cleaned text plus a char
-    offset -> page-number map, used to tag chunks with source_page."""
+    """Removes page headers and page markers. Also returns where each page
+    starts, so chunks can be tagged with their page number."""
     cleaned_lines: list[str] = []
     page_at_offset: dict[int, int] = {}
     current_page: int | None = None
@@ -140,11 +110,8 @@ def _strip_boilerplate(text: str) -> tuple[str, dict[int, int]]:
 
 
 def chunk_handbook(text: str) -> list[dict]:
-    """Splits handbook text into section-bounded chunks. Each returned
-    dict has `chunk_text`, `section_title`, and `source_page` — whole
-    enough to be self-contained (plan 4.1: a chunk saying "the fine is
-    ₱5.00" is useless without the sentence establishing what it applies
-    to)."""
+    """Splits the handbook into one chunk per section, each with
+    `chunk_text`, `section_title` and `source_page`."""
     cleaned, page_map = _strip_boilerplate(text)
     page_offsets = sorted(page_map.keys())
 
@@ -202,18 +169,12 @@ def chunk_handbook(text: str) -> list[dict]:
 
 
 def ingest_handbook(admin: Client, source_path: str, version: str) -> int:
-    """Reads the handbook at `source_path` — a .pdf (extracted here via
-    pdfplumber) or an already-extracted .txt in chunk_handbook's expected
-    format — chunks it, embeds each chunk (reusing core/embeddings.py's
-    embed_text), and replaces any prior version's rows in policy_chunks
-    — never accumulates alongside them (plan 4.4). Returns the number
-    of chunks stored."""
+    """Loads a .pdf (or already-extracted .txt) handbook, embeds each chunk
+    and replaces that version's old chunks. Returns how many were stored."""
     if source_path.lower().endswith(".pdf"):
         text = extract_pdf_text(source_path)
     else:
-        # errors="replace": PDF font encodings occasionally produce a
-        # stray byte that doesn't round-trip cleanly to UTF-8 (observed:
-        # a soft-hyphen, 0xAD). Losing one odd character beats crashing.
+        # Replace odd bytes from the PDF rather than crash on them.
         with open(source_path, encoding="utf-8", errors="replace") as f:
             text = f.read()
 
@@ -232,9 +193,7 @@ def ingest_handbook(admin: Client, source_path: str, version: str) -> int:
             "embedding": embedding,
         })
 
-    # Replace, not accumulate: delete this version's prior rows (a
-    # re-ingest of the same version means "the extraction changed, not
-    # the policy") before inserting the fresh set.
+    # Replace this version's old chunks instead of adding duplicates.
     admin.table("policy_chunks").delete().eq("version", version).execute()
     admin.table("policy_chunks").insert(rows).execute()
     return len(rows)

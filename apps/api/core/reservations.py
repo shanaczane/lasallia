@@ -11,39 +11,21 @@ from core.settings import get_library_settings
 
 logger = logging.getLogger(__name__)
 
-# Philippine time has no DST, so a fixed offset is exact — and avoids
-# zoneinfo, which needs the tzdata package on Windows.
+# Philippine time has no DST, so a fixed offset works (and avoids needing
+# tzdata on Windows).
 MANILA = timezone(timedelta(hours=8))
 
 
 def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
-    """Hands a freshly-freed copy to the oldest pending reservation on this
-    title, if any, promoting it straight to 'ready' (Phase 5: automatic, no
-    librarian pre-approval) and notifying that student. If that leaves a
-    new reservation at the front of the queue, that student is notified
-    too — they aren't getting the book yet, but "you're next" is worth
-    knowing on its own rather than only surfacing on their next visit to
-    the book page.
+    """Gives a freed copy to the first student in the reservation queue,
+    sets their reservation to 'ready' and notifies them. The next student
+    in line is told they're now first.
 
-    Shared by every place a copy would otherwise go back into open
-    circulation (loans.py's return_loan and reshelve_copy, reservations.py's
-    expiry sweep and ready-reservation cancellation) — without one shared
-    check, any of those paths could hand the copy to a walk-in instead of
-    the person who's been waiting.
-
-    Returns whether a reservation was promoted. Callers still decide the
-    copy's own resulting status from that — a promoted copy is always
-    'reserved', but what happens when nothing was promoted differs by
-    caller (back to for_reshelving on a return, straight to available on
-    the reshelving scan)."""
-    # Idempotency guard: a copy is only ever held for one reservation at a
-    # time. Without this, two near-simultaneous calls for the same copy_id
-    # (a double-submitted return/reshelve request, a retried request, two
-    # tabs open on the same action) would each independently query "the
-    # oldest still-pending reservation" — the first call promotes student
-    # A and flips them out of 'pending', so the second call's query no
-    # longer sees A and promotes student B on top of the exact same
-    # physical copy, leaving two reservations both 'ready' for one book.
+    Call this anywhere a copy is freed, so it goes to the queue before
+    anyone else. Returns True if a reservation got the copy; the caller
+    then sets the copy's status."""
+    # Already held for someone: stop, so a repeated request can't give the
+    # same copy to two students.
     already_held = (
         admin.table("reservations")
         .select("id")
@@ -105,8 +87,7 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
         notify(
             pending[1]["user_id"], "reservation_queue_advanced",
             "You're now first in line",
-            # Neutral on purpose: this runs after a pickup, a cancellation or
-            # an expired pickup window alike, so "fulfilled" was often wrong.
+            # Neutral wording: the person ahead may have picked up, cancelled or expired.
             f'You\'re now first in line for "{book_title}" — we\'ll notify you when it\'s ready for pickup.',
             link="/user/reservations",
             email=EmailContent(
@@ -126,20 +107,15 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
 
 
 def advance_or_release(admin: Client, reservation: dict) -> None:
-    """A 'ready' reservation whose copy is no longer going to be picked up
-    by that student — either its pickup_by passed, or they cancelled.
-    Hands the copy to the next pending reservation on the same title (and
-    notifies whoever that leaves at the new front of the queue), or
-    releases it back toward general circulation if nobody's waiting.
+    """For a ready reservation that won't be picked up (expired or
+    cancelled): gives the copy to the next in line, or sends it to
+    reshelving if nobody is waiting.
 
-    The reservation must already be marked expired/cancelled before this
-    runs: promote_next_reservation treats any 'ready' row on the copy as
-    "already held" and would otherwise skip the queue, leaving the copy
-    stuck as 'reserved'."""
+    Mark the reservation expired/cancelled first, or the copy looks
+    "already held" and gets stuck as 'reserved'."""
     promoted = promote_next_reservation(admin, reservation["book_id"], reservation["book_copy_id"])
     if not promoted and reservation.get("book_copy_id"):
-        # available -> for_reshelving isn't legal, but reserved -> for_reshelving
-        # is — same "never straight to available" rule Phase 4 already follows.
+        # Back via reshelving, never straight to available.
         admin.table("book_copies").update({"status": "for_reshelving"}).eq("id", reservation["book_copy_id"]).execute()
 
 
@@ -157,9 +133,8 @@ def sweep_expired_reservations(admin: Client) -> int:
 
     expired_count = 0
     for row in overdue:
-        # Conditional on still being 'ready', so two sweeps racing on the
-        # same row (two requests landing at once) only expire, notify and
-        # hand the copy on once — the loser's update matches nothing.
+        # Only update rows still 'ready', so two requests at once can't
+        # expire the same reservation twice.
         claimed = (
             admin.table("reservations")
             .update({"status": "expired"})
@@ -171,9 +146,8 @@ def sweep_expired_reservations(admin: Client) -> int:
             continue
         expired_count += 1
 
-        # The expired student is notified before the copy is handed on, so
-        # a failure in the handoff can't swallow their notice — the row is
-        # already 'expired' and won't be picked up by a later sweep.
+        # Notify before handing the copy on, so a handoff error can't skip
+        # the notice (a later sweep won't retry this row).
         book_res = admin.table("books").select("title").eq("id", row["book_id"]).execute()
         book_title = book_res.data[0]["title"] if book_res.data else "your reserved book"
         notify(
@@ -205,16 +179,9 @@ def sweep_expired_reservations(admin: Client) -> int:
 
 
 def estimate_ready_at(admin: Client, book_id: str, ahead: int, cfg: dict | None = None) -> datetime | None:
-    """Rough date a copy of this title should be ready for whoever has
-    `ahead` pending reservations in front of them. Only an estimate: it
-    assumes every borrower returns on their due date and everyone ahead
-    picks up right away and keeps the book for a full loan period.
-
-    Each usable copy gets a "free at" time — its loan's due date, now for
-    a copy waiting to be reshelved, or one loan period from now for a copy
-    already held for someone. The queue is then played forward: each person
-    ahead takes the earliest-free copy and returns it a loan period later.
-    Returns None when no copy is expected back at all (all lost/missing)."""
+    """Rough date a copy will be ready for someone with `ahead` people in
+    front of them. Assumes everyone returns on time and keeps the book for
+    a full loan period. None if no copy is expected back (all lost/missing)."""
     cfg = cfg or get_library_settings(admin)
     loan_period = timedelta(days=cfg["standard_loan_period_days"])
     now = datetime.now(timezone.utc)
@@ -257,20 +224,15 @@ def estimate_ready_at(admin: Client, book_id: str, ahead: int, cfg: dict | None 
     return free_at[0]
 
 
-# The sweep runs on a timer (run_expiry_loop, started from main.py) so a
-# lapsed pickup is expired, emailed and handed on within about a minute
-# even when nobody is using the app. It also still piggybacks on ordinary
-# traffic (catalog, book page, kiosk borrow, loans list, notifications) as
-# a backstop, throttled per process so those hot paths pay for the query
-# at most once a minute.
+# Expired pickups are handled every minute by run_expiry_loop (started in
+# main.py). Busy endpoints also trigger it as a backup, at most once a minute.
 SWEEP_MIN_INTERVAL_SECONDS = 60
 _last_sweep_at: float | None = None
 
 
 async def run_expiry_loop() -> None:
-    """Runs the expiry sweep every SWEEP_MIN_INTERVAL_SECONDS for the life
-    of the API process. The sweep itself is blocking (supabase-py is sync),
-    so it runs in a worker thread to keep the event loop free."""
+    """Runs the expiry sweep every minute, in a thread so it doesn't block
+    the server."""
     import asyncio
 
     from core.supabase import get_admin_client
@@ -281,8 +243,8 @@ async def run_expiry_loop() -> None:
 
 
 def maybe_sweep_expired_reservations(admin: Client) -> None:
-    """Throttled, never-raising sweep for endpoints whose real job is
-    something else — an expiry hiccup must not break the catalog."""
+    """Runs the sweep at most once a minute and never raises, so it can't
+    break the endpoint calling it."""
     global _last_sweep_at
     now = time.monotonic()
     if _last_sweep_at is not None and now - _last_sweep_at < SWEEP_MIN_INTERVAL_SECONDS:

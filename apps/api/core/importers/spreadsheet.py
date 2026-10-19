@@ -1,19 +1,8 @@
-# apps/api/core/importers/spreadsheet.py
-# The LRC's own Excel catalog sheets as an import source. Librarians can't
-# export from Follett Destiny today, so the catalog reaches Lasallia as
-# hand-encoded spreadsheets — the same layout as the per-college files in
-# data/ (one sheet per program, one row per physical copy). This turns them
-# into the same ParsedRecord list the MARC importer produces, so matching,
-# preview and apply are shared (core/importers/marc.py).
+# Reads the LRC's Excel catalog sheets (one sheet per program, one row per
+# copy) into the same records the MARC importer produces.
 #
-# A row with only an accession number (all other cells blank) is another
-# copy of the title above it — that's how the LRC sheets list extra copies.
-#
-# Since the rows are typed by hand, it also checks them:
-#   errors   — the row can't be imported (no accession number, no title
-#              and not a copy row, accession number used twice)
-#   warnings — imported, but probably a typo worth fixing (year that isn't
-#              a year, ISBN of the wrong length, no call number/author)
+# A row with only an accession number is another copy of the book above it.
+# Errors block a row; warnings flag likely typos but still import it.
 
 import io
 import re
@@ -101,10 +90,8 @@ def parse_spreadsheet(data: bytes, college: str | None) -> tuple[list[ParsedReco
                 errors.append(ImportIssue(row_count, title, f"Accession {accession} is already used at {seen_accessions[accession]}", where))
                 continue
 
-            # The LRC's way of encoding more copies of a title: the rows right
-            # under it carry only an accession number, every other cell blank.
-            # (seed_books.py skipped these rows, so those copies never made it
-            # into book_copies.)
+            # A row with only an accession number is another copy of the
+            # book above it.
             if not title:
                 only_accession = all(v is None for k, v in cell.items() if k != "Book ID (Accession No.)")
                 if only_accession and previous is not None:

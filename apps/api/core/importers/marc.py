@@ -1,25 +1,12 @@
-# apps/api/core/importers/marc.py
-# Destiny catalog import. Reads a MARC 21 export from Follett Destiny and
-# works out what it would change in books/book_copies, then (separately)
-# applies that plan. One-way only: Destiny -> Lasallia, never back.
+# Imports a MARC 21 catalog export (from Follett Destiny) into books and
+# book_copies. One-way only. parse_marc() and plan_import() don't touch the
+# database, so they can be tested; apply_plan() writes the result.
 #
-# Split in three so the matching rules are testable without a database:
-#   parse_marc()  bytes -> ParsedRecord list        (pure)
-#   plan_import() records + current rows -> plan    (pure)
-#   apply_plan()  writes the plan through the admin client
+# Rules: never change a copy's status, never delete anything, and only
+# overwrite a field when the file has a value for it (Lasallia-only fields
+# like cover_url and category are never touched).
 #
-# Ground rules, because an import writes into the same tables the kiosk,
-# loans and holds read from:
-#   - Never touches book_copies.status. Circulation state is owned by
-#     Lasallia's own flows (and the status-machine trigger in 0004 would
-#     reject most direct writes anyway).
-#   - Never deletes. A copy Lasallia has but the export doesn't is only
-#     reported (copies_not_in_export) for a librarian to look at.
-#   - Only overwrites a field when the export actually has a value for it,
-#     and never touches Lasallia-only fields (cover_url, category, subject,
-#     collection_type, archived_at).
-#
-# Field mapping (MARC tag -> books column):
+# MARC tag -> books column:
 #   245 $a $b      -> title
 #   100 $a (700)   -> author
 #   020 $a         -> isbn

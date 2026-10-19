@@ -1,10 +1,5 @@
-# apps/api/core/report_summaries.py
-# Reports plan, Phase 3 — AI narrates already-computed report data, and
-# only that. Same "narrates, doesn't decide" boundary as
-# core/weeding.py's narrate() and every other AI feature in this
-# codebase: the numbers are already final by the time this file sees
-# them (core/reports.py already did the real work), so there is nothing
-# left for AI to compute, decide, or discover — only to describe.
+# AI-written one-line summaries of reports. The AI only describes numbers
+# core/reports.py already computed; it never calculates anything.
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -44,12 +39,8 @@ def _serialize(payload: Any) -> str:
 
 
 def summarize(report_name: str, payload: Any) -> str | None:
-    """Returns None — not an error, not a placeholder string — when
-    OPENAI_API_KEY isn't configured or the call fails for any reason.
-    There's no deterministic fallback text for a "summary" the way
-    core/weeding.py's narrate() has heuristic_reason to fall back to, so
-    the honest behavior here is showing nothing for that report rather
-    than something fabricated."""
+    """Returns None if there's no OpenAI key or the call fails, so the page
+    shows no summary rather than a made-up one."""
     client = _get_client()
     if client is None:
         return None
@@ -68,11 +59,8 @@ def summarize(report_name: str, payload: Any) -> str | None:
 
 
 def summarize_many(payloads: dict[str, Any]) -> dict[str, str | None]:
-    """Runs summarize() for every (report_name, payload) pair
-    concurrently — seven sequential gpt-4o-mini round trips would
-    otherwise stack into multi-second latency for one page load, same
-    reasoning as core/recommendations.py's use of ThreadPoolExecutor for
-    parallel Supabase calls."""
+    """Summarizes all reports in parallel, so the page doesn't wait for
+    each AI call in turn."""
     if not payloads:
         return {}
     with ThreadPoolExecutor(max_workers=len(payloads)) as pool:

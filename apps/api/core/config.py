@@ -9,14 +9,10 @@ SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 FRONTEND_ORIGIN_REGEX = os.getenv("FRONTEND_ORIGIN_REGEX", "")
 
-# Not in the required-vars check below — the app must keep running
-# without one. core/embeddings.py is what fails loudly, and only when
-# search is actually called, until a real key is added.
+# Optional: the app runs without it; only search fails until it's set.
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
-# Same lazy pattern as OPENAI_API_KEY — core/notify.py logs and skips the
-# email send (never raises) when this is empty, so the app keeps working
-# with in-app-only notifications until a real key is added.
+# Optional: without it, notifications are in-app only (emails are skipped).
 RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
 
 _missing = [

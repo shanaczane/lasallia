@@ -8,17 +8,11 @@ from core.email_template import EmailContent, long_date, peso, staff_alert
 from core.reservations import promote_next_reservation
 from core.settings import get_library_settings
 
-# These collection types are for library use only and never leave the
-# building — matches the build plan's Part 1.3 list exactly. Shared by both
-# the digital kiosk's claim_hold (routers/holds.py) and the librarian-
-# assisted desk checkout (routers/loans.py) so the two paths can't silently
-# drift apart on what's borrowable.
+# Library-use-only collections; they can't be borrowed. Shared by the kiosk
+# and desk checkout so both follow the same rule.
 NON_BORROWABLE_COLLECTION_TYPES = {"Reference", "Thesis", "Capstone", "MTR", "Archives"}
 
-# One wording per cause — the same failure used to read differently depending
-# on which endpoint hit it first. Kiosk sessions start with an ID tap, so
-# that's what the student is told to do again. Shared by routers/holds.py
-# and routers/loans.py.
+# Error messages shared by the kiosk and desk borrowing endpoints.
 SESSION_INVALID = "Your session isn't valid — please tap your ID again"
 SESSION_ENDED = "Your session has ended — please tap your ID again"
 HOLD_GONE = "This hold has expired or was already used — please start over at the kiosk"
@@ -27,10 +21,8 @@ COPY_BEING_BORROWED = "Someone else is borrowing the last available copy right n
 
 
 def check_borrow_eligibility(db, student_id: str, book_id: str) -> None:
-    """Every Phase 3 blocking check that must pass before a copy is handed
-    to a student, shared by the digital kiosk flow and the librarian-
-    assisted desk flow so the same student gets the same answer regardless
-    of who's driving. Raises HTTPException on the first failing check."""
+    """All checks before a student can borrow, used by both the kiosk and
+    the desk. Raises HTTPException on the first one that fails."""
     book_res = db.table("books").select("collection_type").eq("id", book_id).execute()
     if not book_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
@@ -60,9 +52,7 @@ def check_borrow_eligibility(db, student_id: str, book_id: str) -> None:
     if len(current_loans) >= cfg["max_books_per_borrower"]:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"You've reached your borrowing limit of {cfg['max_books_per_borrower']} books")
 
-    # Phase 4 closes the gap Phase 3 deferred here for lack of data: an
-    # unsettled fine can exist on an already-returned loan, so this is a
-    # separate, status-unscoped query rather than reusing current_loans.
+    # Separate query: an unpaid fine can be on a loan that's already returned.
     unsettled = (
         db.table("loans")
         .select("id", count="exact")
@@ -75,13 +65,8 @@ def check_borrow_eligibility(db, student_id: str, book_id: str) -> None:
 
 
 def ensure_initial_copy(admin, book_id: str) -> None:
-    """Gives a title its first physical book_copies row if it has none yet.
-    The catalog form only ever wrote the books row, so a freshly added title
-    showed as available (from the plain total_copies fallback) but had no
-    copy for claim_copy_for_book to hold — "Borrow" always failed. Same row
-    shape as scripts/backfill_missing_copies.py: the book's own accession_no,
-    status available. Idempotent, so claim_hold can also call it to heal
-    titles added before this existed."""
+    """Creates a book's first copy (using its accession number) if it has
+    none, so it can be borrowed. Safe to call more than once."""
     if admin.table("book_copies").select("id").eq("book_id", book_id).limit(1).execute().data:
         return
     book_res = admin.table("books").select("accession_no, shelf_location").eq("id", book_id).execute()
@@ -97,13 +82,8 @@ def ensure_initial_copy(admin, book_id: str) -> None:
 
 
 def find_removal_blocker(admin, book_id: str) -> str | None:
-    """None if this title is safe to archive/delete; otherwise the reason it
-    isn't — an outstanding loan on one of its copies, or a returned loan
-    that still has an unsettled fine (a real, reachable state: see
-    routers/loans.py's return-loan handler, which can set status="returned"
-    and fine_status="unsettled" in the same update). Shared by the archive
-    route (routers/weeding.py) and the delete route (routers/books.py) so
-    neither escape hatch skips the other's check.
+    """None if the book can be archived or deleted, otherwise why not (a
+    copy is on loan, or a returned loan still has an unpaid fine).
     """
     copy_ids = [c["id"] for c in admin.table("book_copies").select("id").eq("book_id", book_id).execute().data]
     if not copy_ids:
@@ -135,10 +115,9 @@ def create_loan_and_notify(
     assisted_by: str | None = None,
     hold_token: str | None = None,
 ) -> dict:
-    """Writes the loan, flips the copy to on_loan, closes a matching ready
-    reservation, and fires the same 2 notifications as the digital kiosk
-    flow — shared by confirm_loan (kiosk) and the librarian-assisted desk
-    checkout, so both produce an identical record."""
+    """Creates the loan, marks the copy on loan, closes the student's ready
+    reservation for it, and notifies the student and librarians. Used by
+    both the kiosk and the desk."""
     cfg = get_library_settings(db)
     due_date = (datetime.now(timezone.utc) + timedelta(days=cfg["standard_loan_period_days"])).isoformat()
 
@@ -156,15 +135,10 @@ def create_loan_and_notify(
     if not loan_res.data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not create the loan")
 
-    # available -> on_loan, or reserved -> on_loan (a queued pickup claimed
-    # via holds.py's ready-reservation branch): both legal per Phase 1's
-    # status-machine trigger.
+    # From available, or from reserved when it's a reservation pickup.
     db.table("book_copies").update({"status": "on_loan"}).eq("id", book_copy_id).execute()
 
-    # If this copy was being held for a reservation (a queued pickup, not a
-    # walk-in claim on a genuinely available copy), close that reservation
-    # out now — a copy can have at most one 'ready' reservation attached at
-    # a time, so this only ever touches the one it was actually held for.
+    # If the copy was held for this student's reservation, mark it fulfilled.
     db.table("reservations").update({
         "status": "fulfilled",
         "fulfilled_at": datetime.now(timezone.utc).isoformat(),
@@ -221,29 +195,20 @@ def create_loan_and_notify(
 
 
 def reshelve_copy_now(admin, copy: dict, accession_display: str) -> str:
-    """The step that puts a for_reshelving copy back into circulation, once
-    it's physically on its shelf. Shared by the Reshelving scan
-    (POST /loans/reshelve) and an inventory scan that finds the copy on its
-    own shelf, so there's still only one path to 'available'.
+    """Puts a copy back into circulation once it's on its shelf. The only
+    way a copy becomes 'available' (used by the Reshelving scan and by
+    inventory scans).
 
-    A reservation can form after a copy already landed in for_reshelving
-    (the book shows as "borrowed" the whole time it sits there, so a
-    student joining the queue is exactly the expected move) — re-check
-    before opening this copy back up to anyone, so a walk-in can't grab it
-    out from under someone who's been waiting in line. Returns the copy's
-    new status: 'reserved' or 'available'."""
+    Someone may have reserved the book meanwhile, so they get it first.
+    Returns the new status: 'reserved' or 'available'."""
     promoted = promote_next_reservation(admin, copy["book_id"], copy["id"])
     admin.table("book_copies").update({
         "status": "reserved" if promoted else "available",
-        # Recorded regardless of which status it lands on — this is a log of
-        # the reshelving scan itself (Borrow & Return's "Reshelved Today"
-        # list), not of the copy's current shelf availability.
+        # Feeds the "Reshelved Today" list, whatever the new status is.
         "reshelved_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", copy["id"]).execute()
 
-    # Closes the loop the same way checkout/return already do — every
-    # librarian's activity feed sees the copy actually made it back to the
-    # shelf, not just that it was returned to the desk.
+    # Tell librarians the copy is back on the shelf (or on hold).
     book_res = admin.table("books").select("title").eq("id", copy["book_id"]).execute()
     book_title = book_res.data[0]["title"] if book_res.data else "A book"
     if promoted:

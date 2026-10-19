@@ -1,21 +1,9 @@
-# apps/api/core/recommendations.py
-# Recommendations plan, Phase 3 — content-based recommendations for one
-# student. Reads book_similarities (Phase 2) and the student's own
-# borrow/reservation history.
+# Book recommendations for a student, based on books similar to what they
+# borrowed or reserved. Each pick is tied to the book that caused it (no
+# averaging), so a student who reads poetry and networking gets both.
 #
-# No averaging: a student who reads both poetry and networking should
-# get poetry AND networking recommendations, each traceable to the book
-# that caused it. Averaging into one profile vector would blur that into
-# neither, and would also make the reason string impossible to write
-# honestly.
-#
-# Phase 4 — collaborative re-ranking. book_cooccurrence IS a
-# cross-student signal, carefully gated: ≥3-student threshold enforced
-# before a row is ever written (core/cooccurrence.py), multiplicative
-# blend only (never introduces a candidate content similarity didn't
-# already surface), and with the table empty — today's real state, see
-# docs/data-audit.md — the blend is a provable no-op. Built ahead of
-# having enough co-occurring pairs to actually change anything.
+# "Students who read this also borrowed" data can boost a pick but never
+# adds one. That table is empty until enough students borrow.
 
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -26,12 +14,8 @@ from supabase import Client
 
 from core.cooccurrence import LIFT_CEILING
 
-# plan's source weighting table. Fulfilled/expired reservations are
-# deliberately absent here: fulfilled becomes a loan (already covered by
-# LOAN_WEIGHTS below, so counting it again here would double-weight the
-# same real-world event), and expired is treated like cancelled — the
-# student never actually got the book, so it shouldn't count as a signal
-# they wanted it, same reasoning the plan gives for excluding cancelled.
+# How much each kind of history counts. Fulfilled reservations already
+# count as loans; expired and cancelled ones don't count.
 LOAN_WEIGHTS = {"returned": 1.0, "active": 1.0, "overdue": 1.0}
 ACTIVE_RESERVATION_STATUSES = {"pending", "ready"}
 RESERVATION_WEIGHT = 0.7
@@ -40,43 +24,28 @@ RECENCY_HALF_LIFE_DAYS = 180
 DIVERSITY_CAP_PER_CATEGORY = 3
 DEFAULT_LIMIT = 10
 
-# Phase 4 — collaborative re-ranking. Single tunable constant, not
-# scattered through the code; report this value in the thesis if it's
-# ever changed from the plan's starting point.
+# Strength of the "students also borrowed" boost. Note it in the thesis
+# if changed.
 COOCCURRENCE_ALPHA = 0.3
 
-# Program-match re-ranking (CBEAM/CEAS/CITE/CITHM/…, whatever the student's
-# own profiles.program says — not hardcoded per college). Same
-# "multiplicative, re-ranking only, never invents a candidate" shape as
-# COOCCURRENCE_ALPHA above: a book only gets this boost if it already
-# earned a spot via content similarity to something the student borrowed —
-# this just nudges an already-legitimate candidate higher when it also
-# happens to match their program. A deliberately light nudge (15%), not a
-# hard "program books first" rule — rung 1 is supposed to stay personal to
-# the student, program is a steer, not a replacement for their own history.
+# Small boost (15%) for picks that match the student's program. Like the
+# boost above, it only reorders picks; it never adds one.
 PROGRAM_ALPHA = 0.15
 
-# Phase 7 — rungs 2-4 of the cold-start ladder.
+# Fallbacks for students with no history: program favorites, popular
+# books, then recently added.
 POPULAR_LOOKBACK_DAYS = 365
 POPULAR_REASON = "Popular at the LRC"
 RECENT_REASON = "Recently added"
-# Plan's "≥3-student aggregation rule" for rung 2 — below this, a
-# program's "most borrowed" list would just be reconstructable back to
-# one or two individual students' actual borrowing history.
+# Privacy: a program's "most borrowed" list needs at least 3 students, or
+# it could reveal one person's borrowing.
 MIN_PROGRAM_STUDENTS = 3
 
-# Same set routers/reservations.py and routers/holds.py already use to
-# gate what can be borrowed at all — reused here rather than inventing a
-# parallel "is_archived" concept the schema doesn't actually have.
-# Recommending a book nobody can check out would be a worse bug than
-# missing the plan's literal column name.
+# Library-use-only collections; never recommended since they can't be borrowed.
 NON_BORROWABLE_COLLECTION_TYPES = {"Reference", "Thesis", "Capstone", "MTR", "Archives"}
 
-# How close a second source's contribution has to be to the top
-# contributor's to count as "comparable" in the reason string (plan:
-# "if two or more sources contributed comparably"). Not specified
-# numerically by the plan — chosen so "and 2 others" only fires when
-# those others are genuinely close, not just nonzero.
+# Other books only count toward "and 2 others" in the reason if they
+# contributed at least 70% as much as the top one.
 COMPARABLE_CONTRIBUTION_RATIO = 0.7
 
 
@@ -102,11 +71,8 @@ def _recency_decay(anchor_iso: str, now: datetime) -> float:
 
 
 def _collect_sources(admin: Client, student_id: str, now: datetime) -> dict[str, _Source]:
-    """One _Source per distinct book_id the student has engaged with. If
-    a book was engaged with more than once (e.g. borrowed, returned, then
-    borrowed again), only the single strongest (weight × decay) event
-    counts — summing every past engagement with the same book would
-    reward re-borrow frequency, which isn't what this phase is scoring."""
+    """One entry per book the student borrowed or reserved. If a book shows
+    up more than once, only its strongest event counts."""
     sources: dict[str, _Source] = {}
 
     def consider(book_id: str, base_weight: float, anchor_iso: str, verb: str) -> None:
@@ -115,11 +81,7 @@ def _collect_sources(admin: Client, student_id: str, now: datetime) -> dict[str,
         if existing is None or weight > existing.weight:
             sources[book_id] = _Source(book_id=book_id, weight=weight, verb=verb)
 
-    # book_copies embedded via the FK rather than a second round trip,
-    # and loans+reservations fired concurrently rather than sequentially
-    # — this whole path is on the hot request (Phase 5's <200ms budget),
-    # not just the nightly job, so every extra network round trip here
-    # is real latency a student waits on.
+    # Runs on live requests too, so fetch loans and reservations in parallel.
     with ThreadPoolExecutor(max_workers=2) as pool:
         loans_future = pool.submit(
             lambda: admin.table("loans")
@@ -157,10 +119,8 @@ NON_BORROWABLE_CACHE_TTL_SECONDS = 300
 
 
 def _non_borrowable_book_ids(admin: Client) -> set[str]:
-    """Catalog-wide, not student-specific, and changes only when a
-    librarian edits a book's collection type — cached briefly so this
-    endpoint isn't paying a network round trip for near-static data on
-    every single request (Phase 5's <200ms budget)."""
+    """Ids of non-borrowable books, cached for 5 minutes since they rarely
+    change."""
     global _non_borrowable_cache
     now = time.monotonic()
     if _non_borrowable_cache is not None and now - _non_borrowable_cache[0] < NON_BORROWABLE_CACHE_TTL_SECONDS:
@@ -178,11 +138,8 @@ def _non_borrowable_book_ids(admin: Client) -> set[str]:
 
 
 def _excluded_book_ids(admin: Client, student_id: str, source_book_ids: set[str]) -> set[str]:
-    """Plan's exclusion list, applied before ranking. `source_book_ids`
-    already covers "ever borrowed" and "active reservation" — every
-    active reservation became a source in _collect_sources, so there's
-    nothing left to re-derive there; only the catalog-wide
-    non-borrowable set needs adding."""
+    """Books never to recommend: ones the student already borrowed or
+    reserved, and non-borrowable ones."""
     return set(source_book_ids) | _non_borrowable_book_ids(admin)
 
 
@@ -202,11 +159,8 @@ def _build_reason(contributions: dict[str, float], titles: dict[str, str], verbs
 
 
 def get_currently_excluded_book_ids(admin: Client, student_id: str) -> set[str]:
-    """Public entry point for Phase 5's live re-exclusion: the endpoint
-    re-checks this against last night's stored recommendations at
-    request time, so a book borrowed since the job last ran can't slip
-    through. Recomputes from current DB state — no caching — since the
-    whole point is catching what changed since the job ran."""
+    """Books to hide from the stored recommendations right now, so a book
+    borrowed since the nightly job doesn't show up. Never cached."""
     now = datetime.now(timezone.utc)
     sources = _collect_sources(admin, student_id, now)
     return _excluded_book_ids(admin, student_id, set(sources.keys()))
@@ -218,10 +172,8 @@ def get_recommendations_for_student(admin: Client, student_id: str, limit: int =
     if not sources:
         return []
 
-    # For the program boost below. This function only ever runs from the
-    # nightly job (see this file's own header comment — nothing here runs
-    # on the live request path), so one extra query per student here costs
-    # nothing a student waits on.
+    # For the program boost. Only runs in the nightly job, so the extra
+    # query is fine.
     profile_res = admin.table("profiles").select("program").eq("id", student_id).execute()
     student_program = profile_res.data[0]["program"] if profile_res.data else None
 
@@ -248,11 +200,7 @@ def get_recommendations_for_student(admin: Client, student_id: str, limit: int =
     if not candidate_ids:
         return []
 
-    # Phase 4 — same shape as the neighbor_rows fetch above, just against
-    # book_cooccurrence instead. Empty today (no student has borrowed 2+
-    # books yet), so cooc_lookup is {} and every candidate falls through
-    # to the "no boost" branch below — the no-op property this phase was
-    # built around.
+    # "Students also borrowed" data. Usually empty for now, so no boost.
     cooc_rows = (
         admin.table("book_cooccurrence")
         .select("book_id, neighbor_book_id, lift")
@@ -278,46 +226,28 @@ def get_recommendations_for_student(admin: Client, student_id: str, limit: int =
         content_score = sum(cand_contributions.values())
         reason, reason_book_id = _build_reason(cand_contributions, titles, verbs)
 
-        # Phase 4 blend — multiplicative and re-ranking only, checked
-        # against the same source book the reason string already credits
-        # (reason_book_id), so the boost's "why" never disagrees with the
-        # displayed reason. content_score=0 candidates can't reach here
-        # at all (they'd never have entered `contributions`), which is
-        # what makes "a candidate with content_score=0 cannot appear
-        # regardless of boost" true by construction, not a runtime check.
+        # Boost uses the same book the reason names, so the two agree.
         lift = cooc_lookup.get((reason_book_id, candidate_id))
         if lift is not None:
-            # lift's own "no signal" baseline is 1.0, not 0 — anchoring
-            # the [0,1] boost range there means a negative-correlation
-            # pair (lift < 1) can only ever fail to help, never penalize.
+            # Lift 1.0 means no link; below 1 gives no boost (never a penalty).
             normalized_boost = max(0.0, min((lift - 1) / (LIFT_CEILING - 1), 1.0))
             score = content_score * (1 + COOCCURRENCE_ALPHA * normalized_boost)
             reason = f"{reason} · popular with students who read it"
         else:
             score = content_score
 
-        # Program-match boost — stacks with the co-occurrence blend above
-        # rather than replacing it; both are independent "does this extra
-        # signal apply" multipliers on the same content_score baseline.
+        # Stacks with the boost above.
         if student_program and categories.get(candidate_id) == student_program:
             score *= (1 + PROGRAM_ALPHA)
             reason = f"{reason} · matches your program"
 
         scored.append((candidate_id, score, reason_book_id, reason))
 
-    # Deterministic order: score desc, then book_id as a stable tiebreak
-    # so two candidates with an identical score don't reorder between
-    # runs depending on incidental dict/DB iteration order.
+    # Highest score first; book_id breaks ties so the order is stable.
     scored.sort(key=lambda t: (-t[1], t[0]))
 
-    # Plan's diversity cap groups by "subject/classification" — that's
-    # `books.subject` by name, but Phase 1's audit found it 0% populated
-    # (docs/data-audit.md), which would put nearly every book in the
-    # same empty-string bucket and collapse the cap to ~3 results total.
-    # `category` is the field that's actually populated (General,
-    # Reference, Story book, ...) and is genuinely a classification
-    # field, just coarser — used here instead so the cap does what it's
-    # meant to instead of accidentally gutting the list.
+    # At most 3 picks per category, for variety. Uses `category` because
+    # `subject` is mostly empty.
     results: list[Recommendation] = []
     category_counts: dict[str | None, int] = {}
     for candidate_id, score, reason_book_id, reason in scored:
@@ -333,13 +263,10 @@ def get_recommendations_for_student(admin: Client, student_id: str, limit: int =
 
 
 def _borrow_counts(admin: Client, since_iso: str, program: str | None = None) -> tuple[dict[str, int], set[str]]:
-    """book_id -> borrow count since `since_iso`, plus the set of distinct
-    student_ids that contributed — both restricted to `program` when
-    given. Aggregated in Python since PostgREST has no GROUP BY, same
-    approach _collect_sources already uses for the per-student case."""
-    # profiles!loans_student_id_fkey — see routers/loans.py's
-    # _embed_book_and_borrower for why a bare profiles(...) embed from
-    # loans is ambiguous since migration 0028 added loans.assisted_by.
+    """Borrow count per book since `since_iso`, and which students borrowed,
+    optionally for one program only. Counted in Python (no GROUP BY in
+    PostgREST)."""
+    # loans has two links to profiles, so name the borrower one.
     rows = (
         admin.table("loans")
         .select("student_id, book_copies(book_id), profiles!loans_student_id_fkey(program)")
@@ -363,13 +290,8 @@ def _borrow_counts(admin: Client, since_iso: str, program: str | None = None) ->
 def _fallback_recommendations(
     admin: Client, counts: dict[str, int], limit: int, matched_reason: str = POPULAR_REASON
 ) -> list[Recommendation]:
-    """Shared rung-2/3/4 assembly: rank by borrow count desc, top up with
-    recently-added books if thin. Used for both the global popular list
-    and a single program's list — `counts` and `matched_reason` are the
-    only things that differ between the two call sites, so a rung-2 card
-    says why it's actually there instead of reusing rung-3's generic
-    library-wide copy. No reason_book_id — unlike Phase 3's per-student
-    recs, nothing here traces back to one book the student engaged with."""
+    """Most-borrowed books first, topped up with recently added ones if
+    there aren't enough. Used for both the popular and program lists."""
     excluded = _non_borrowable_book_ids(admin)
     ranked = sorted((bid for bid in counts if bid not in excluded), key=lambda b: (-counts[b], b))
 
@@ -380,9 +302,7 @@ def _fallback_recommendations(
 
     if len(results) < limit:
         have = excluded | {r.book_id for r in results}
-        # Overfetch generously — some of these will land in `have` and
-        # get filtered out, and there's no cheap way to ask Postgres for
-        # "N rows not already in this set" through the fluent builder.
+        # Fetch extra, since some are filtered out below.
         recent = (
             admin.table("books")
             .select("id")
@@ -402,29 +322,16 @@ def _fallback_recommendations(
 
 
 def get_popular_recommendations(admin: Client, limit: int = DEFAULT_LIMIT) -> list[Recommendation]:
-    """Rung 3 (+4 top-up) — library-wide, last 12 months. Backs both a
-    logged-in student's fallback (GET /recommendations/me) and the fully
-    public GET /recommendations/popular (rung 0, guests)."""
+    """Most borrowed in the last year, library-wide. Also what guests see."""
     since = (datetime.now(timezone.utc) - timedelta(days=POPULAR_LOOKBACK_DAYS)).isoformat()
     counts, _students = _borrow_counts(admin, since)
     return _fallback_recommendations(admin, counts, limit)
 
 
 def get_program_recommendations(admin: Client, program: str, limit: int = DEFAULT_LIMIT) -> list[Recommendation]:
-    """Rung 2 — most-borrowed among students in the same program, gated
-    by MIN_PROGRAM_STUDENTS so a small program's aggregate can't be
-    reverse-engineered back to one or two students' actual history.
-
-    Below that threshold (a new deployment, or a program nobody's
-    borrowed under yet), tops up with the catalog's own program-tagged
-    books (books.category) instead of returning too little/nothing — the
-    router's fallback ladder (_fallback_response) would otherwise skip
-    straight to the generic library-wide "Popular at the LRC" list for
-    every new student in that program, which isn't program-relevant at
-    all. This needs no borrow history to exist — same reasoning as the
-    "top up with recently-added books" branch in _fallback_recommendations
-    below, just filtered to this program's own tagged books instead of
-    the whole catalog."""
+    """Most borrowed by students in this program (needs at least 3 students,
+    for privacy). Tops up with books tagged for the program, so new
+    programs still get relevant picks."""
     since = (datetime.now(timezone.utc) - timedelta(days=POPULAR_LOOKBACK_DAYS)).isoformat()
     counts, students = _borrow_counts(admin, since, program=program)
     results = (
@@ -436,10 +343,7 @@ def get_program_recommendations(admin: Client, program: str, limit: int = DEFAUL
         return results
 
     excluded = _non_borrowable_book_ids(admin) | {r.book_id for r in results}
-    # Overfetch generously, same reasoning as _fallback_recommendations'
-    # own top-up: some rows will land in `excluded` and get filtered out,
-    # and there's no cheap way to ask Postgres for "N rows not already in
-    # this set" through the fluent builder.
+    # Fetch extra, since some are filtered out below.
     catalog_rows = (
         admin.table("books")
         .select("id")

@@ -1,8 +1,4 @@
-# apps/api/core/shelf_reports.py
-# "Can't find this book on the shelf" reports (migration 0056). A student
-# who can't find a book the catalog says is available reports it from the
-# book page; the librarian is notified and checks just that one book
-# instead of running a whole-aisle inventory check.
+# Student reports of a book they couldn't find on its shelf.
 
 from datetime import datetime, timezone
 

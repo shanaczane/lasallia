@@ -1,12 +1,7 @@
-"""The get_library_hours tool — the library's weekly schedule as clean,
-pre-formatted rows.
+"""Chatbot tool: the library's opening hours.
 
-Hours used to go through search_policy, but the handbook's Hours of
-Service table comes back from retrieval as flattened, mis-paired text
-(IS/SMILES/College columns run together), and the model relayed it
-verbatim. Settings' Operating Hours (migration 0025) is the schedule
-the librarian actually maintains and the one fine math already uses, so
-answering from it keeps the chatbot consistent with the rest of the app.
+Reads the hours librarians set in Settings (the same ones fines use), not
+the handbook, whose hours table comes out garbled.
 """
 
 from datetime import datetime, time, timedelta, timezone

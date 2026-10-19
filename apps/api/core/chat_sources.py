@@ -1,17 +1,7 @@
-"""Where a chatbot answer came from — the "Sources" footer under each reply.
+"""Builds the "Sources" list shown under each chatbot reply.
 
-routers/chat.py collects one entry per tool result as it dispatches them;
-this module turns those raw results into the small ChatSource records the
-frontend renders and chat_messages stores (migration 0053).
-
-Handbook sections are the one kind that needs filtering: search_policy
-returns up to five chunks, and most of them are near misses the model
-reads and ignores. Only sections the reply actually names are kept —
-the system prompt already requires naming the section ("According to the
-Loan Policies section..."), so a section the reply never mentions is one
-it didn't answer from. A reply that names none (e.g. "I'm not certain,
-please ask the librarian") gets no handbook source rather than a
-misleading one.
+Handbook sections are only listed if the reply actually names them, since
+search returns several near misses the model doesn't use.
 """
 
 import re
@@ -20,17 +10,15 @@ from schemas.chat import ChatSource
 
 
 def citation_name(section_title: str) -> str:
-    """The short, human name of a handbook section — "4.3.2.1. Loan
-    Policies - Fines Table" under a top-level heading becomes "Loan
-    Policies". Same name the rule path cites in its reply text."""
+    """Short name of a handbook section, e.g. "4.3.2.1. Loan Policies -
+    Fines Table" becomes "Loan Policies"."""
     tail = section_title.split("—")[-1].strip()
     tail = re.sub(r"^[\d.]+\s*", "", tail)
     return tail.split(" - ")[0].strip()
 
 
 def _name_variants(section_title: str) -> set[str]:
-    """Every way a reply might reasonably name this section: the short
-    citation name, plus each heading level with its numbering stripped."""
+    """The ways a reply might name this section, lowercased."""
     variants = {citation_name(section_title)}
     for part in section_title.split("—"):
         part = re.sub(r"^[\d.]+\s*", "", part.strip())

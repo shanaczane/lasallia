@@ -3,32 +3,18 @@ import resend
 from core.config import RESEND_API_KEY
 from core.email_template import EmailContent, render_html, render_text
 from core.supabase import get_admin_client
-# schemas/notification.py is the single source of truth for this — it's also
-# GET /notifications' response_model, so a type notify() can insert but that
-# Pydantic model doesn't know about would fail response validation for the
-# *entire* list (one bad row 500s the whole endpoint). Importing it here
-# instead of re-declaring the Literal is what keeps the two from drifting —
-# they already did once (this file had loan_confirmed/student_activity
-# before schemas/notification.py did, and every GET /notifications call
-# silently 500'd for any user with one of those rows until it was fixed).
+# Import the type list instead of copying it: a type missing from
+# schemas/notification.py breaks GET /notifications for that user.
 from schemas.notification import NotificationType
 
-# lasallia.com verified on Resend (DKIM/SPF/DMARC all confirmed) — real
-# recipients (e.g. @dlsl.edu.ph) now receive mail, not just the sandbox
-# testing address this used to point at.
+# lasallia.com is verified on Resend.
 FROM_ADDRESS = "Lasallia <notifications@lasallia.com>"
 
 
-# Same fire-and-forget rule as notify() below: an email problem must
-# never be the reason a real action (borrow, return, reservation) fails,
-# so every failure here is logged and swallowed, never raised. Also
-# no-ops quietly when RESEND_API_KEY isn't set — same lazy-key pattern
-# as core/embeddings.py's OPENAI_API_KEY check — so the app keeps
-# working with in-app-only notifications until a real key is added.
+# Never raises: an email problem must not fail a borrow, return or
+# reservation. Skips sending when RESEND_API_KEY isn't set.
 def send_email(to_email: str, content: EmailContent, recipient_name: str | None = None) -> None:
-    # .invalid is a reserved TLD (RFC 2606) — only ever used by audit/UI-test
-    # accounts (zz-audit-*, zz-ui-*), never a real inbox. Sending to them just
-    # produces "Delivery Delayed" noise in Resend and hurts sender reputation.
+    # .invalid addresses are test accounts, not real inboxes.
     if to_email.lower().endswith(".invalid"):
         return
 
@@ -59,29 +45,10 @@ def email_user(user_id: str, content: EmailContent) -> None:
         print(f"email_user() failed (user_id={user_id}): {e}")
 
 
-# Fire-and-forget insert used by write endpoints across loans.py/reservations.py
-# at the moment something actually happens to a user's loan or reservation —
-# not a queue, not retried, matching this codebase's existing "no background
-# job infra" reality. Due-date reminders (due_reminder/overdue) are the one
-# exception: they're written by the daily Edge Function in
-# supabase/functions/loan-reminders, which inserts into notifications (and
-# emails) itself since it can't call this Python code.
-#
-# "Fire-and-forget" has to mean the caller is never affected by this failing
-# — every call site here runs inline, after the actual loan/reservation
-# write already succeeded, so a notification problem (a type the DB's check
-# constraint doesn't know about yet, a dropped connection, whatever) must
-# never bubble up and fail the borrow/return/reservation itself. Swallowed
-# and logged, not raised. The email send (see send_email above) inherits
-# the exact same rule — a flaky email provider must never be why a real
-# checkout/return/reservation fails.
-#
-# The in-app notification always goes out; an email only when the caller
-# passes `email` — the events worth an inbox message (due reminders, a
-# ready reservation, a fine, a request decision…), written in the shared
-# layout from core/email_template.py rather than reusing the one-line
-# in-app message. Everything else (each checkout/return a librarian sees
-# in their feed, a reservation being placed) stays in-app only.
+# Sends an in-app notification, plus an email when `email` is given.
+# Never raises: it runs after the real action already succeeded, so a
+# notification problem must not fail it. Due-date reminders are sent
+# separately by supabase/functions/loan-reminders.
 def notify(
     user_id: str,
     type: NotificationType,
@@ -106,11 +73,7 @@ def notify(
     if email is not None:
         email_user(user_id, email)
 
-# notifications is a per-user_id row table (RLS scopes each caller to their
-# own rows, librarian included — see routers/notifications.py) — there's no
-# "broadcast to a role" concept, so notifying every librarian means one row
-# per librarian. Used for "every student transaction" (checkout, return,
-# reservation placed/cancelled) via the "student_activity" type.
+# Notifies every librarian (one notification row each).
 def notify_librarians(
     title: str,
     message: str,

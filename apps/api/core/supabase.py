@@ -10,13 +10,8 @@ from postgrest.constants import DEFAULT_POSTGREST_CLIENT_TIMEOUT
 from supabase import create_client, Client, ClientOptions
 from core.config import SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 
-# supabase-py talks HTTP/2 by default, but these two clients are process-wide
-# singletons hit from many worker threads at once (every page load fires
-# several API calls, plus the reservation-expiry loop). A shared HTTP/2
-# connection breaks under that — once it does, every request riding on it
-# fails together, which is how leaving the borrow form landed on a catalog
-# whose /books and /loans calls both 500'd. httpx's HTTP/1.1 pool is
-# thread-safe, so both clients get one of those instead.
+# Use HTTP/1.1: these clients are shared across threads, and a shared
+# HTTP/2 connection can fail all requests on it at once.
 def _http1_options() -> ClientOptions:
     return ClientOptions(
         httpx_client=httpx.Client(
@@ -44,20 +39,12 @@ def get_admin_client() -> Client:
         _admin_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, _http1_options())
     return _admin_client
 
-# User-scoped client — anon key + the caller's own access token, so RLS
-# policies see auth.uid() as that user. This is the real authorization
-# boundary for anything row-owner-scoped (reservations, borrow history):
-# the caller only ever sees/touches what their own RLS policies allow.
+# User client: runs queries as the logged-in user, so RLS policies decide
+# what they can see. This is the real security check for per-user data.
 #
-# Only PostgREST is needed here (every caller just does .table()/.rpc()), so
-# this builds a bare PostgREST client instead of a full supabase client —
-# create_client() also initialises auth/storage/realtime/functions clients and
-# cost ~1.1 s per request, which was most of the wait on every logged-in page.
-# What actually cost the time was building an SSL context (~0.4 s, loads the CA
-# bundle) inside every new HTTP client — so one context is built once and shared.
-# Clients are cached per exact token string (so one only ever carries the
-# Authorization header of the person who owns that token) to reuse the open
-# connection on that user's next request; small and short-lived on purpose.
+# A bare PostgREST client with a shared SSL context is much faster than
+# create_client(). Clients are cached per token (each only ever carries its
+# owner's token) for a short time to reuse connections.
 _SHARED_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 _USER_CLIENT_TTL_SECONDS = 600
 _USER_CLIENT_MAX = 256
@@ -76,9 +63,7 @@ def get_user_client(access_token: str) -> SyncPostgrestClient:
     session = httpx.Client(
         base_url=base_url,
         verify=_SHARED_SSL_CONTEXT,
-        # HTTP/1.1 on purpose: this client is shared by every request carrying the
-        # same token, and several arrive at once when a page loads. httpx's HTTP/1.1
-        # pool is thread-safe; a shared HTTP/2 connection dropped some of them.
+        # HTTP/1.1 on purpose; see _http1_options above.
         http2=False,
         timeout=DEFAULT_POSTGREST_CLIENT_TIMEOUT,
         follow_redirects=True,

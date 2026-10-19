@@ -1,26 +1,7 @@
-"""The one layout every Lasallia email uses, so they all read the same:
-
-    Hi Maria,
-
-    Good news! The book you reserved is now ready for pickup at the LRC.
-
-    **Title:** Essentials of Supply Chain Management (5th ed.)
-    **Pick up by:** Monday, October 20, 2026, 6:00 PM
-
-    Please claim it at the LRC counter before the deadline. ...
-
-    View your reservation: https://lasallia.com/user/reservations
-
-    Sincerely,
-    Lasallia, De La Salle Lipa Learning Resource Center
-
-    This is an automated message. Please do not reply to this email.
-
-Only the detail labels are bold, so each email goes out as HTML with a
-plain-text fallback. Callers describe *what* to say (an EmailContent);
-render_text()/render_html() own the layout.
-supabase/functions/loan-reminders/index.ts renders the same layout for the
-daily reminders, since that Deno job can't import this file.
+"""The shared layout for every Lasallia email: greeting, intro, bold detail
+lines, paragraphs, a link, and the signature. Sent as HTML with a plain-text
+copy. supabase/functions/loan-reminders/index.ts copies this layout, so keep
+them in sync.
 """
 
 from dataclasses import dataclass, field

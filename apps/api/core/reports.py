@@ -1,12 +1,5 @@
-# apps/api/core/reports.py
-# Reports plan, Phase 1 — each function here is a direct server-side
-# port of a `derive*` function that used to run client-side in
-# apps/web/app/librarian/reports/page.tsx against three full-table
-# fetches. Same shape, same output, now computed from filtered data
-# instead of everything. Aggregation happens in Python over admin-client
-# reads, not SQL GROUP BY through PostgREST — same approach as every
-# other aggregation in this codebase (core/recommendations.py,
-# core/similarities.py).
+# Data for the librarian Reports page. Totals are computed in Python,
+# since PostgREST has no GROUP BY.
 
 import calendar as cal
 from dataclasses import dataclass
@@ -34,14 +27,8 @@ CATALOGUE_COLORS = ["#006F3C", "#00874A", "#B8923D", "#4A6FA5", "#8B5CF6", "#DDD
 
 @dataclass
 class ReportFilters:
-    """Shared filter set (plan's own wording). date_from/date_to apply to
-    loans.borrowed_at (or reservations.requested_at for transaction
-    stats) — loan-centric reports only. category applies to books.category
-    everywhere, including book-centric reports (catalogue, shelf list),
-    since it's a book field. program/college/year_level apply via
-    loans.student_id -> profiles — loan-centric reports only; book-centric
-    reports have no program/college/year_level dimension of their own, and the
-    frontend is expected to say so rather than silently ignore the filter."""
+    """Report filters. Dates, program and year level only apply to
+    loan-based reports. Category applies everywhere."""
 
     date_from: str | None = None
     date_to: str | None = None
@@ -64,18 +51,11 @@ def _year_suffix(n: int) -> str:
 
 
 def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
-    """Loans with book and borrower embedded, date-ranged at the DB
-    level (plain columns) and category/program/year_level filtered in
-    Python afterward (those live on embedded relations — simpler than a
-    PostgREST dot-path filter, and this codebase's established
-    aggregate-in-Python approach). Status is recomputed the same way
-    routers/loans.py does: nothing writes 'overdue' back to the row on
-    its own."""
-    # profiles!loans_student_id_fkey — migration 0028 added loans.assisted_by
-    # as a second FK to profiles, so a bare profiles(...) embed is now
-    # ambiguous and PostgREST rejects the whole query (this is what was
-    # blanking every report on the page, not just the ones that use this
-    # helper directly — Promise.all on the frontend fails closed).
+    """Loans with their book and borrower. Dates are filtered in the query;
+    the other filters in Python. Overdue status is worked out here, since
+    the database doesn't set it."""
+    # loans has two links to profiles, so name the borrower one or the
+    # query fails.
     query = admin.table("loans").select(
         "*, book_copies(book_id, books(*)), profiles!loans_student_id_fkey(full_name, email, program, college, year_level)"
     )
@@ -110,10 +90,7 @@ def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
 
 
 def catalogue_report(admin: Client, filters: ReportFilters) -> list[CatalogueSlice]:
-    """Ports deriveCatalogue. Book-centric — the category and college
-    filters apply (college as the book's own college, books.subject); a
-    date/program/year_level filter has no meaning against the static
-    catalog."""
+    """Copies per category. Only the category and college filters apply."""
     query = admin.table("books").select("category, total_copies").is_("archived_at", "null")
     if filters.category:
         query = query.eq("category", filters.category)
@@ -134,8 +111,7 @@ def catalogue_report(admin: Client, filters: ReportFilters) -> list[CatalogueSli
 
 
 def circulation_summary(admin: Client, filters: ReportFilters, months: int = 6) -> list[Bucket]:
-    """Ports deriveMonthlyCirculation — one bucket per calendar month,
-    oldest to newest, ending at the current month."""
+    """Loans per month, oldest first, ending this month."""
     loans = _fetch_filtered_loans(admin, filters)
 
     bucket_months: list[tuple[int, int]] = []
@@ -159,8 +135,7 @@ def circulation_summary(admin: Client, filters: ReportFilters, months: int = 6) 
 
 
 def borrowing_trends(admin: Client, filters: ReportFilters, weeks: int = 8) -> list[Bucket]:
-    """Ports deriveWeeklyTrend — one bucket per week (Sunday-starting,
-    matching the original getDate()-getDay() math), oldest to newest."""
+    """Loans per week (weeks start on Sunday), oldest first."""
     loans = _fetch_filtered_loans(admin, filters)
 
     now = datetime.now(timezone.utc)
@@ -179,10 +154,7 @@ def borrowing_trends(admin: Client, filters: ReportFilters, weeks: int = 8) -> l
 
 
 def transaction_trend(admin: Client, filters: ReportFilters, weeks: int = 8) -> list[TransactionTrendPoint]:
-    """Same week-bucketing as borrowing_trends, but split into borrows
-    (borrowed_at falling in the bucket) and returns (returned_at falling
-    in the bucket) — two series for the Overview 'Transaction Statistics'
-    chart instead of one combined count."""
+    """Borrows and returns per week, as two series for the Overview chart."""
     loans = _fetch_filtered_loans(admin, filters)
 
     now = datetime.now(timezone.utc)
@@ -209,10 +181,7 @@ def transaction_trend(admin: Client, filters: ReportFilters, weeks: int = 8) -> 
 
 
 def top_patrons(admin: Client, filters: ReportFilters, limit: int = 5) -> list[TopPatron]:
-    """Ports deriveTopPatrons. Borrower info comes from the same embed
-    _fetch_filtered_loans already did — no separate patrons fetch needed
-    (the frontend version joined two arrays; here the join already
-    happened at the query level)."""
+    """Patrons with the most loans."""
     loans = _fetch_filtered_loans(admin, filters)
 
     counts: dict[str, int] = {}
@@ -235,9 +204,8 @@ def top_patrons(admin: Client, filters: ReportFilters, limit: int = 5) -> list[T
 
 
 def overdue_rows(admin: Client, filters: ReportFilters) -> list[OverdueRow]:
-    """Ports deriveOverdueRows. Same compute_fine every other overdue
-    preview in this codebase uses (routers/loans.py) — one implementation
-    of what's owed, not a second one that could quietly disagree."""
+    """Overdue loans with the fine owed so far (same calculation as the
+    return counter)."""
     loans = _fetch_filtered_loans(admin, filters)
 
     rows = []
@@ -266,16 +234,9 @@ def overdue_rows(admin: Client, filters: ReportFilters) -> list[OverdueRow]:
 
 
 def fines_report(admin: Client, filters: ReportFilters) -> list[FineRow]:
-    """New. One row per patron with any fine on record — library-wide,
-    not just currently-overdue loans. Mirrors the per-patron Fines tab
-    in PatronProfileModal (unsettled/accruing/paid), aggregated across
-    every patron instead of one at a time. unsettled/paid come from
-    fine_amount on returned loans (set once, at return_loan); accruing
-    previews what a still-open overdue loan would cost today, via the
-    same compute_fine every other overdue figure in this codebase uses.
-    `entries` keeps the per-loan breakdown behind each total — the report
-    view can total the numbers, but a librarian asked why one is owed
-    needs the "which book, and why" underneath it, not just the sum."""
+    """One row per patron with any fine: unpaid, still growing (open
+    overdue loans) and paid. `entries` lists each loan behind the totals,
+    so a librarian can see which book each fine is for."""
     loans = _fetch_filtered_loans(admin, filters)
 
     totals: dict[str, dict] = {}
@@ -352,10 +313,8 @@ def fines_report(admin: Client, filters: ReportFilters) -> list[FineRow]:
 
 
 def library_stats(admin: Client, filters: ReportFilters) -> LibraryStats:
-    """New. total_titles/total_copies/utilization_rate/most_active_category
-    are catalog snapshots — only the category filter applies.
-    active_borrowers/overdue_count are loan-centric — the full filter set
-    applies."""
+    """Headline numbers. Catalog numbers use only the category filter;
+    borrower and overdue numbers use all filters."""
     books_query = admin.table("books").select("id, category").is_("archived_at", "null")
     if filters.category:
         books_query = books_query.eq("category", filters.category)
@@ -405,8 +364,7 @@ def library_stats(admin: Client, filters: ReportFilters) -> LibraryStats:
 
 
 def transaction_stats(admin: Client, filters: ReportFilters) -> TransactionStats:
-    """New. Distinct from circulation_summary (volume over time) — this
-    is aggregate counts/rates for whatever period the filters describe."""
+    """Totals and rates for the filtered period (not broken down by time)."""
     loans = _fetch_filtered_loans(admin, filters)
 
     res_query = admin.table("reservations").select("status, requested_at, books(category), profiles(program, college, year_level)")
@@ -441,24 +399,16 @@ def transaction_stats(admin: Client, filters: ReportFilters) -> TransactionStats
 
 
 def _real_shelf_location(value: str | None) -> str | None:
-    """book_copies/books both seed unmapped rows with the literal sentinel
-    string "Unassigned" (see scripts/shelf_location.py, backfill_missing_
-    copies.py) rather than null, so a plain `or` fallback treats that
-    placeholder as if it were a real location and never falls through to
-    the book's actual shelf_location. Normalize it back to None here so
-    the caller's fallback chain only prefers a value that's actually
-    informative."""
+    """Treats the placeholder "Unassigned" as no location, so the caller can
+    fall back to a real one."""
     if not value or value.strip().lower() == "unassigned":
         return None
     return value
 
 
 def shelf_list(admin: Client, filters: ReportFilters, floor: str | None = None, aisle: str | None = None) -> list[ShelfListRow]:
-    """New. One row per physical copy, not per title — a shelf list has
-    to match physical labels (accession numbers), and a title with 3
-    copies has 3 separate labels on 3 separate shelves. Ordered by call
-    number, then accession number, matching how a librarian would
-    actually walk the stacks."""
+    """One row per physical copy, in shelf order (call number, then
+    accession number)."""
     books_query = admin.table("books").select("id, title, author, call_number, category, shelf_location, floor, aisle").is_("archived_at", "null")
     if filters.category:
         books_query = books_query.eq("category", filters.category)

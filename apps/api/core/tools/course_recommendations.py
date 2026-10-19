@@ -1,10 +1,6 @@
-"""Chatbot — the recommend_for_my_course tool.
+"""Chatbot tool: recommend books for the student's own program.
 
-Wraps core/recommendations.py's get_program_recommendations (the same
-logic behind the "For You" dashboard's program rung) instead of leaving
-the model to guess a search_catalog query from a bare program code. Book
-shaping (real availability, accession redaction) reuses
-core/tools/catalog.py's exact pattern via routers/books.py's helpers.
+Uses the same program recommendations as the dashboard's "For You".
 """
 
 from pydantic import BaseModel
@@ -24,10 +20,8 @@ class ProgramRecommendationResult(BaseModel):
 
 
 def recommend_for_my_course(user: UserProfile, limit: int = DEFAULT_LIMIT) -> list[ProgramRecommendationResult]:
-    """Tool handler for `recommend_for_my_course`. Only ever registered
-    (core/tools/registry.py) for a logged-in caller with a program on
-    file — no model-suppliable program argument, same "identity never
-    comes from the model" rule as core/tools/account.py."""
+    """Only offered to logged-in users with a program on file. The program
+    comes from the user's profile, never from the model."""
     if not user.program:
         return []
 

@@ -1,8 +1,4 @@
-# apps/api/core/embeddings.py
-# Chatbot Phase 1 — the embedding pipeline shared by the search endpoint,
-# the CLI re-embedding script, and the model-comparison script, so there's
-# exactly one implementation of "what text represents a book" and "how do
-# we embed it."
+# Turns books and search queries into embeddings for semantic search.
 
 from datetime import datetime, timezone
 
@@ -27,11 +23,8 @@ def get_openai_client() -> OpenAI:
 
 
 def build_embedded_text(book: dict) -> str:
-    """Plan 1.2's exact recipe: Title. Author. Subject headings.
-    Description. Collection type. Call number. Never the accession
-    number, shelf location, or availability — those change, and they add
-    noise to semantic similarity; availability is joined live at query
-    time instead."""
+    """The text embedded for a book. Leaves out accession number, location
+    and availability, which change and would add noise."""
     parts = [
         book.get("title"),
         book.get("author"),
@@ -59,12 +52,8 @@ _TRANSLATE_SYSTEM_PROMPT = (
 
 
 def translate_query_to_english(query: str) -> str:
-    """Chatbot Phase 6 — the query-translation improvement (plan 6.3).
-    One cheap chat completion, not a full embedding-model swap: search
-    stays in English (book_embeddings/policy_chunks are English text),
-    only the query gets translated before it's embedded. The chat
-    model's actual reply to the student is unaffected — this only
-    touches the retrieval query, not the conversation."""
+    """Translates a search query to English, since the catalog and handbook
+    are in English. Only affects the search, not the chatbot's reply."""
     client = get_openai_client()
     res = client.chat.completions.create(
         model=TRANSLATE_MODEL,
@@ -78,17 +67,10 @@ def translate_query_to_english(query: str) -> str:
 
 
 def semantic_search(admin: Client, query_embedding: list[float], query_text: str, limit: int = 10) -> list[dict]:
-    """Plan 1.4/1.5's hybrid search, minus availability-joining and
-    accession redaction — those differ by caller (routers/search.py's
-    public endpoint vs core/tools/catalog.py's chat tool), so each caller
-    applies them itself. Returns raw book rows in rank order.
+    """Hybrid (keyword + meaning) search. Returns raw book rows in rank
+    order; callers add availability and hide accession numbers themselves.
 
-    Takes an already-computed `query_embedding` rather than embedding
-    `query_text` itself — core/tools/catalog.py's search_catalog needs
-    that same embedding again afterward for its own relevance re-check,
-    and embedding the identical text twice was a real, measured source of
-    chatbot reply latency (one extra OpenAI network round trip on every
-    single catalog search). The caller embeds once and passes it in."""
+    Takes the embedding as an argument so the caller can reuse it."""
     ranked = admin.rpc("hybrid_search_books", {
         "query_embedding": query_embedding,
         "query_text": query_text,
@@ -99,10 +81,7 @@ def semantic_search(admin: Client, query_embedding: list[float], query_text: str
     if not book_ids:
         return []
 
-    # archived_at filter here (not in the RPC) means an archived book's
-    # id can still come back ranked from hybrid_search_books, it just
-    # won't be in by_id below — silently dropped from the results,
-    # same effect as never having matched at all.
+    # Archived books are dropped here.
     books_res = admin.table("books").select("*").in_("id", book_ids).is_("archived_at", "null").execute().data
     by_id = {b["id"]: b for b in books_res}
     # rpc() returns rank order, but a plain .in_() fetch doesn't preserve it.
@@ -110,14 +89,8 @@ def semantic_search(admin: Client, query_embedding: list[float], query_text: str
 
 
 def embed_single_book(admin: Client, book: dict) -> None:
-    """Keeps book_embeddings current the instant a book is created or
-    edited (routers/books.py's create_book/update_book), rather than
-    waiting for someone to manually trigger reembed_books() — otherwise a
-    brand-new or just-edited title is invisible to search_catalog's
-    relevance filter (core/tools/catalog.py's SIMILARITY_THRESHOLD) for
-    anything but an exact title/call-number match. Best-effort: embedding
-    failure (e.g. OpenAI briefly down) must never block the catalog write
-    that triggered this.
+    """Embeds a book right after it's created or edited, so search finds
+    it straight away. Never raises: a failure must not block saving the book.
     """
     text = build_embedded_text(book)
     if not text:
@@ -136,10 +109,8 @@ def embed_single_book(admin: Client, book: dict) -> None:
 
 
 def reembed_books(admin: Client, force_all: bool = False) -> int:
-    """Plan 1.6's re-embedding job. Skips books whose catalog row hasn't
-    changed since they were last embedded (unless force_all, or the
-    stored model differs from DEFAULT_MODEL). Returns the number
-    re-embedded."""
+    """Re-embeds books that changed since their last embedding (or all, with
+    force_all). Returns how many were re-embedded."""
     books = (
         admin.table("books")
         .select("id, title, author, subject, abstract, collection_type, call_number, updated_at")

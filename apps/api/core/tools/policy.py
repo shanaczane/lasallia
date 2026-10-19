@@ -1,10 +1,7 @@
-"""Chatbot Phase 4 — the search_policy tool.
+"""Chatbot tool: search the LRC handbook.
 
-Wraps core/policy.py's retrieval over ingested handbook chunks. Distinct
-from core/policy.py itself: that module owns ingestion/chunking, this
-module is the model-facing search tool built on top of it. Every result
-carries its section title so answers can cite it (plan 4.3: "Always
-cite the section").
+core/policy.py loads the handbook; this searches it. Each result includes
+its section title so answers can cite it.
 """
 
 from pydantic import BaseModel
@@ -14,10 +11,7 @@ from core.supabase import get_admin_client
 
 DEFAULT_LIMIT = 5
 
-# search_policy_chunks' score is a real cosine similarity (1 - distance),
-# not RRF's rank-based score (see core/tools/catalog.py's SIMILARITY_THRESHOLD
-# for why that distinction matters) — so this can threshold directly on
-# the RPC's own score, no separate re-embedding-and-comparing step needed.
+# The RPC's score is a real cosine similarity, so we can filter on it directly.
 SIMILARITY_THRESHOLD = 0.25
 
 
@@ -28,13 +22,8 @@ class PolicyChunkResult(BaseModel):
 
 
 def search_policy(query: str, limit: int = DEFAULT_LIMIT, translate: bool = False) -> list[PolicyChunkResult]:
-    """Tool handler for `search_policy`. Calls into policy_chunks via the
-    search_policy_chunks RPC (migration 0015) — core/policy.py owns
-    ingestion/chunking, not lookup, so that logic isn't duplicated here.
-
-    `translate` (Phase 6, plan 6.3) — same query-translation improvement
-    as core/tools/catalog.py's search_catalog; see its docstring for why
-    it's applied once, up front, rather than at each embedding call."""
+    """Searches handbook chunks with the search_policy_chunks RPC.
+    `translate` turns a non-English query into English first."""
     admin = get_admin_client()
     effective_query = translate_query_to_english(query) if translate else query
     query_embedding = embed_text(effective_query)

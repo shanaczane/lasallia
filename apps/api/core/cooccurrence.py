@@ -1,22 +1,17 @@
-# apps/api/core/cooccurrence.py
-# Recommendations plan, Phase 4 — collaborative re-ranking signal.
-# compute_lift_pairs is pure (no DB access) so it can be fed either every
-# loan (the live nightly job, via rebuild_cooccurrence below) or just a
-# train split's loans (evals/run_recsys_eval.py's Hybrid arm) without
-# duplicating the actual math in two places.
+# "Students who borrowed A also borrowed B" scores, used to boost
+# recommendations. compute_lift_pairs has no database access so the
+# evaluation script can reuse it.
 
 from collections import defaultdict
 from dataclasses import dataclass
 
 from supabase import Client
 
-# Plan's hard privacy rule: a pair below this is dropped entirely, never
-# stored with a flag — below 3 students, a "book_cooccurrence" row would
-# be reconstructable back to specific individuals' borrowing history.
+# Privacy rule: pairs borrowed by fewer than 3 students are never stored,
+# or they could reveal what one person borrowed.
 MIN_COOCCURRENCE_STUDENTS = 3
 
-# Caps lift so a rare pair with exactly 3 students (the minimum allowed)
-# can't dominate every other signal — plan's own example ceiling.
+# Cap so a rare pair can't outweigh everything else.
 LIFT_CEILING = 5.0
 
 
@@ -27,10 +22,9 @@ class RebuildResult:
 
 
 def compute_lift_pairs(student_books: dict[str, set[str]]) -> list[dict]:
-    """book_id -> neighbor_book_id -> lift, from a plain {student_id:
-    {book_ids ever borrowed}} mapping. lift = P(B|A) / P(B): how much
-    more likely a student who borrowed A is to have also borrowed B,
-    versus the base rate of B across everyone in `student_books`."""
+    """Lift for each book pair, from {student_id: {book_ids borrowed}}.
+    lift = P(B|A) / P(B): how much more likely someone who borrowed A is
+    to also borrow B than students in general."""
     total_students = len(student_books)
     if total_students == 0:
         return []
@@ -76,10 +70,8 @@ def _load_student_books(admin: Client) -> dict[str, set[str]]:
 
 
 def rebuild_cooccurrence(admin: Client) -> RebuildResult:
-    """Full rebuild from every loan in the DB — mirrors
-    core/similarities.py:rebuild_similarities's shape. Must run before
-    jobs/rebuild_recommendations.py so get_recommendations_for_student
-    sees this run's data, not stale/missing rows."""
+    """Recomputes all pairs from every loan. Run before
+    jobs/rebuild_recommendations.py so it uses fresh data."""
     student_books = _load_student_books(admin)
     rows = compute_lift_pairs(student_books)
     admin.rpc("replace_book_cooccurrence", {"rows": rows}).execute()

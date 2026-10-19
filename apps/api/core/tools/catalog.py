@@ -1,9 +1,6 @@
-"""Chatbot Phase 2 — the search_catalog tool.
+"""Chatbot tool: search the catalog.
 
-Wraps core/embeddings.py's retrieval pipeline; does not reimplement it.
-Retrieval must stay usable without this tool — routers/search.py's
-POST /search/semantic calls the same underlying pipeline directly, with
-no LLM involved, and that must keep working on its own.
+Uses the same search as POST /search/semantic, plus a relevance filter.
 """
 
 import re
@@ -17,11 +14,8 @@ from schemas.book import Book
 
 DEFAULT_LIMIT = 5
 
-# A handful of Unicode punctuation variants (smart quotes, en/em dashes)
-# that show up in titles extracted from Word/PDF sources (e.g. "Kozier &
-# ERB's" with a curly apostrophe) but that a student retyping the title
-# themselves almost never reproduces — normalized to their ASCII
-# equivalent before the exact-match check below.
+# Curly quotes and dashes in titles, mapped to plain ones so a typed title
+# still matches exactly.
 _PUNCT_NORMALIZE = str.maketrans({
     "‘": "'", "’": "'",
     "“": '"', "”": '"',
@@ -30,25 +24,13 @@ _PUNCT_NORMALIZE = str.maketrans({
 
 
 def _normalize_for_match(text: str) -> str:
-    """Collapses whitespace/punctuation-spacing differences for the exact
-    title/call-number comparison below — "Title : Subtitle" vs "Title:
-    Subtitle" (or any other spacing around punctuation) must still count
-    as the same title. Whitespace is removed entirely rather than just
-    collapsed, since even a single stray space changes the comparison
-    otherwise; only used for this equality check, never for display."""
+    """Removes spaces and plain-ifies punctuation so "Title : Subtitle" and
+    "Title: Subtitle" compare equal. Only for matching, never display."""
     return re.sub(r"\s+", "", text.translate(_PUNCT_NORMALIZE)).lower()
 
-# Reciprocal Rank Fusion's score is purely rank-based (1/(60+rank)) — it
-# always hands back *something* in top-N order, even when nothing is
-# actually related to the query, because rank has no absolute notion of
-# "no good match" (measured: an unrelated query like "Harry Potter" scores
-# its #1 hit identically to a genuinely relevant query's #1 hit). Plan
-# Principle 1 ("ground everything, invent nothing") means the chatbot
-# specifically cannot hand the model filler results it might describe as
-# real. So this tool re-checks with real cosine similarity on top of the
-# RPC's fused ranking. The plain /search/semantic endpoint is untouched —
-# a search page showing near-misses instead of a blank page is normal and
-# fine; a chatbot asserting "I found this" about an unrelated book is not.
+# The search always returns something, even for unrelated queries. The
+# chatbot must not present unrelated books as matches, so results are
+# re-checked with real similarity and weak ones dropped.
 SIMILARITY_THRESHOLD = 0.30
 
 
@@ -61,26 +43,11 @@ def _parse_vector(value) -> np.ndarray:
 
 
 def search_catalog(query: str, limit: int = DEFAULT_LIMIT, translate: bool = False) -> list[Book]:
-    """Tool handler for `search_catalog`. Same pipeline as
-    routers/search.py's POST /search/semantic, plus a relevance filter
-    (see SIMILARITY_THRESHOLD above) that endpoint doesn't need. Accession
-    numbers are always redacted here regardless of caller — plan 2.2
-    forbids the chatbot from disclosing them unconditionally, unlike the
-    catalog page's librarian carve-out.
+    """Searches the catalog and drops irrelevant results. Accession numbers
+    are always hidden, since the chatbot must never reveal them.
 
-    `translate` (Phase 6, plan 6.3) — when true, the query is translated
-    to English *once* here and that translated string is used for every
-    embedding/search call below (semantic_search's hybrid RPC, and this
-    function's own separate relevance-check embedding), so nothing ends
-    up comparing an English book embedding against a non-English query
-    vector inconsistently. Defaults to False — purely additive, decided
-    by evals/run_eval.py's A/B, not a behavior change on its own.
-
-    Embeds `effective_query` exactly once — semantic_search's hybrid RPC
-    and this function's own relevance re-check both need the same vector,
-    and embedding identical text twice was a real, measured chunk of
-    chatbot reply latency (one extra OpenAI round trip per catalog
-    search). The embedding is computed up front and reused for both.
+    `translate` turns the query into English first. The query is embedded
+    once and reused for both the search and the relevance check.
     """
     admin = get_admin_client()
     effective_query = translate_query_to_english(query) if translate else query
@@ -102,13 +69,8 @@ def search_catalog(query: str, limit: int = DEFAULT_LIMIT, translate: bool = Fal
         similarity_by_id[row["book_id"]] = float(query_vec @ book_vec / (query_vec_norm * np.linalg.norm(book_vec)))
 
     def is_relevant(book: dict) -> bool:
-        # Exact title/call-number matches are kept regardless of cosine
-        # similarity — that's the RPC's own boost (short exact strings can
-        # score low on raw embedding similarity despite being correct).
-        # Normalized on both sides first so "Title : Subtitle" vs "Title:
-        # Subtitle" (or a curly vs straight apostrophe) still counts as
-        # the same title, not a miss that falls through to the threshold
-        # check below.
+        # Always keep exact title or call-number matches: short exact
+        # strings can score low on similarity even when they're correct.
         if query_match == _normalize_for_match(book.get("title") or "") or query_match == _normalize_for_match(book.get("call_number") or ""):
             return True
         return similarity_by_id.get(book["id"], 0.0) >= SIMILARITY_THRESHOLD
