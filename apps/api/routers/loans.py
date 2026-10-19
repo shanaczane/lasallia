@@ -32,11 +32,8 @@ DAMAGE_PROCESSING_FEE = 50.0
 
 
 def _embed_book_and_borrower(db: Client, query):
-    # profiles!loans_student_id_fkey, not bare profiles(...) — migration
-    # 0028 added loans.assisted_by as a second FK to profiles, so an
-    # unqualified embed is ambiguous and PostgREST 400s the whole query.
-    # The borrower is always student_id; assisted_by is a separate,
-    # optional audit field nothing here reads back out.
+    # loans links to profiles twice, so name the borrower (student_id) link
+    # or the query fails.
     return query.select("*, book_copies(book_id, accession_number, books(*)), profiles!loans_student_id_fkey(full_name, avatar_url)")
 
 
@@ -56,9 +53,8 @@ def _loan_for_hold_token(db: Client, token: str) -> dict | None:
 @router.get("", response_model=list[Loan])
 def list_loans(
     student_id: str | None = None,
-    # Day-scoped views (Borrow & Return's "Borrowed/Returned Today" lists) —
-    # the caller computes the local-day boundary and passes it as an ISO
-    # timestamp, rather than this endpoint guessing a timezone server-side.
+    # For "Borrowed/Returned Today": the browser sends the day's start and
+    # end, so the server doesn't guess the timezone.
     borrowed_from: str | None = None,
     borrowed_to: str | None = None,
     returned_from: str | None = None,
@@ -66,12 +62,8 @@ def list_loans(
     user: UserProfile = Depends(get_current_user),
     db: Client = Depends(get_user_supabase),
 ):
-    # RLS scopes this automatically (0009): students see only their own
-    # loans, librarians see every loan. student_id narrows a librarian's
-    # already-full view to one patron (the Patrons profile modal) — RLS
-    # already stops a student from passing someone else's id here, since
-    # their own query is scoped to their own rows regardless.
-    # Student dashboard and the librarian desk both load this.
+    # RLS limits students to their own loans; librarians see all.
+    # student_id narrows a librarian's view to one patron.
     maybe_sweep_expired_reservations(get_admin_client())
     query = db.table("loans").select("*").order("borrowed_at", desc=True)
     if student_id:
@@ -87,12 +79,8 @@ def list_loans(
     res = query.execute()
     loans = res.data
 
-    # book_copies has no RLS policy for authenticated callers at all (see
-    # routers/books.py) — even the caller's own JWT can't embed through it,
-    # PostgREST just silently returns book_copies: null instead of erroring.
-    # loan.book_copy_id is a plain column already on the (correctly scoped)
-    # row above, so this second hop only needs the admin client, never the
-    # caller's own — the loan row itself already proved they can see it.
+    # Copies need the admin client (no RLS access). Safe, since the user
+    # could already see these loans.
     admin = get_admin_client()
     copy_ids = list({loan["book_copy_id"] for loan in loans})
     books_by_copy_id: dict[str, dict | None] = {}
@@ -106,15 +94,10 @@ def list_loans(
         accession_by_copy_id = {c["id"]: c["accession_number"] for c in copies}
     for loan in loans:
         loan["books"] = books_by_copy_id.get(loan["book_copy_id"])
-        # Return flow's "browse active borrowers" list needs this to
-        # pre-fill the accession-number confirmation step (build plan's
-        # existing scan/type-to-verify step, not bypassed by browsing).
+        # Used by the return flow's "active borrowers" list.
         loan["accession_number"] = accession_by_copy_id.get(loan["book_copy_id"])
 
-    # Borrower name/avatar — needed by the librarian dashboard's activity
-    # feed. profiles_select_librarian (0008) already lets a librarian's own
-    # JWT read this directly, but the admin client is simplest here since
-    # we're already using it above for the same batch-lookup shape.
+    # Borrower names for the librarian dashboard's activity feed.
     student_ids = list({loan["student_id"] for loan in loans})
     profiles_by_id: dict[str, dict] = {}
     if student_ids:
@@ -123,20 +106,13 @@ def list_loans(
     for loan in loans:
         loan["profiles"] = profiles_by_id.get(loan["student_id"])
 
-    # "overdue" is never written back by anything yet (no return flow, no
-    # cron) — a loan whose due_date has passed still says status: "active"
-    # in the row. Recompute it here for display rather than trust the
-    # stored value, same reasoning as catalog availability.
+    # The database doesn't set "overdue", so work it out from the due date.
     now = datetime.now(timezone.utc)
     for loan in loans:
         if loan["status"] == "active" and datetime.fromisoformat(loan["due_date"]) < now:
             loan["status"] = "overdue"
 
-    # Fine preview for the still-open overdue rows (build plan's Reports
-    # overdue table needs this) — reuses the same school-day-calendar-aware
-    # compute_fine everything else already trusts, rather than a naive
-    # days*rate reimplemented in the frontend that could silently disagree
-    # with it around weekends/holidays.
+    # Fine so far for open overdue loans (same calculation everywhere).
     for loan in loans:
         if loan["status"] == "overdue":
             collection_type = (loan["books"] or {}).get("collection_type") or "General"
@@ -146,17 +122,14 @@ def list_loans(
 
     return loans
 
-# Not behind auth, same reasoning as routers/holds.py — the token is the
-# credential. The accession number the student types is compared
-# server-side against the copy the hold already pinned; it is never sent
-# to the client for comparison there.
+# Confirms a kiosk borrow. No login: the hold token is the credential. The
+# typed accession number is checked here and never sent to the browser.
 @router.post("", response_model=Loan, status_code=status.HTTP_201_CREATED)
 def confirm_loan(body: ConfirmLoanRequest):
     db = get_admin_client()
 
-    # Safe to repeat: if this token already became a loan (the phone gave up
-    # waiting for the reply, then the student tapped Try again), hand back
-    # that loan rather than "hold is gone" — the borrow did go through.
+    # If this token already became a loan (e.g. "Try again" after a timeout),
+    # return that loan instead of an error.
     existing = _loan_for_hold_token(db, body.token)
     if existing:
         return existing
@@ -201,8 +174,7 @@ def confirm_loan(body: ConfirmLoanRequest):
             body.condition, body.purpose, body.notes, hold_token=body.token,
         )
     except APIError as e:
-        # Two confirms for the same token arrived together and the other one
-        # won the unique index (migration 0054) — return its loan.
+        # Two confirms arrived at once and the other one won; return its loan.
         if e.code == "23505":
             existing = _loan_for_hold_token(db, body.token)
             if existing:
@@ -213,14 +185,8 @@ def confirm_loan(body: ConfirmLoanRequest):
 
     return loan
 
-# Desk-side checkout (build plan Phase 1's `librarian_assisted` dual-auth,
-# finally wired into borrowing): the librarian already has the physical
-# book in hand, so there's no walk-to-the-shelf gap for a soft_hold to
-# cover. station_session_id must point at an 'rfid' session opened at the
-# librarian's own reader (routers/sessions.py already treats any rfid tap
-# identically regardless of who operates the reader), and accession_number
-# identifies the exact copy directly — no auto-pick, no separate "type it
-# again to confirm" step, since scanning it here already proves possession.
+# Checkout at the desk. The librarian has the book, so no hold is needed
+# and the scanned accession number picks the exact copy.
 @router.post("/librarian-assisted", response_model=Loan, status_code=status.HTTP_201_CREATED)
 def create_librarian_assisted_loan(
     body: LibrarianAssistedLoanRequest,
@@ -253,9 +219,7 @@ def create_librarian_assisted_loan(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No copy with that accession number")
     copy = copy_res.data[0]
 
-    # A 'reserved' copy is borrowable only when it's this exact student's own
-    # ready pickup (holds.py's claim_hold gives the digital kiosk flow the
-    # same allowance) — anyone else's hold on it still blocks the checkout.
+    # A reserved copy can only go to the student it's reserved for.
     if copy["status"] == "reserved":
         own_ready_reservation = (
             admin.table("reservations")
@@ -277,20 +241,13 @@ def create_librarian_assisted_loan(
         body.condition, body.purpose, body.notes, assisted_by=librarian.id,
     )
 
-# Phase 4 — the librarian's primary return-lookup path (build plan 4.1):
-# scan or type the exact accession number, find the open loan on that
-# specific copy. Two-step lookup (book_copies, then loans) rather than a
-# PostgREST embedded-filter — this codebase already got bitten once this
-# session by an embed/relationship mismatch, so keep it simple.
+# Finds the open loan for a scanned or typed accession number (returns).
 @router.get("/lookup", response_model=LoanLookupResult)
 def lookup_loan(
     accession_number: str,
     librarian: UserProfile = Depends(require_librarian),
 ):
-    # book_copies has no RLS policy for authenticated callers — not even a
-    # librarian's own JWT can read it (see routers/books.py) — so this,
-    # like the return/reshelve endpoints below, runs entirely on the admin
-    # client. require_librarian already gates the endpoint itself.
+    # Admin client: copies have no RLS access. require_librarian guards this.
     admin = get_admin_client()
     copy_res = admin.table("book_copies").select("id, book_id").eq("accession_number", normalize_accession_number(accession_number)).execute()
     if not copy_res.data:
@@ -313,10 +270,8 @@ def lookup_loan(
 
     return LoanLookupResult(**loan, days_overdue=days_overdue, preview_fine_amount=preview_fine)
 
-# Fallback for a damaged/unreadable label (build plan 4.1: "allow search by
-# title or borrower name"). Fetches open loans and filters in Python —
-# simple, and avoids the embedded-filter/!inner pitfalls that a
-# title/name search through two levels of embed would otherwise risk.
+# Search open loans by title or borrower name, for unreadable labels.
+# Filtered in Python.
 @router.get("/search", response_model=list[LoanLookupResult])
 def search_loans(
     q: str,
@@ -326,8 +281,7 @@ def search_loans(
     if not needle:
         return []
 
-    # Same book_copies RLS constraint as lookup_loan above — admin client
-    # throughout, require_librarian gates the endpoint.
+    # Admin client, as in lookup_loan.
     admin = get_admin_client()
     loans_res = (
         _embed_book_and_borrower(admin, admin.table("loans"))
@@ -352,10 +306,9 @@ def search_loans(
 
     return results
 
-# Confirm Return (build plan 4.2-4.6): inspect condition, settle any fine,
-# close the loan, and route the copy — to the hold shelf if someone's
-# waiting for this title, otherwise to For Reshelving. Never straight back
-# to Available; that's what the separate reshelving scan is for (4.7).
+# Returns a book: records condition and any fine, closes the loan, and
+# sends the copy to the hold shelf (if reserved) or to reshelving. Never
+# straight to available.
 @router.post("/{loan_id}/return", response_model=Loan)
 def return_loan(
     loan_id: str,
@@ -378,9 +331,7 @@ def return_loan(
 
     _, overdue_fine = compute_fine(admin, loan["due_date"], collection_type)
 
-    # Damage not present in the student's own declaration is what gets
-    # charged (build plan 4.3) — condition already declared at borrow
-    # isn't billed again.
+    # Only charge for damage that wasn't noted when it was borrowed.
     is_new_damage = loan["condition_at_borrow"] == "good" and body.condition_at_return in ("damaged", "incomplete")
     damage_fine = round((body.replacement_cost or 0) + DAMAGE_PROCESSING_FEE, 2) if is_new_damage else 0.0
 
@@ -399,10 +350,8 @@ def return_loan(
         "fine_status": body.fine_settlement if total_fine > 0 else "none",
         "receipt_number": body.receipt_number if body.fine_settlement == "paid" else None,
     }
-    # Each part recorded separately so the student's history can say what
-    # the fine was for (migrations/0052). A database without that migration
-    # yet rejects the unknown columns — fall back to the total alone rather
-    # than fail the return.
+    # Save each part of the fine separately. If those columns don't exist
+    # yet, save just the total rather than fail the return.
     try:
         update_res = admin.table("loans").update({
             **return_fields,
@@ -413,11 +362,7 @@ def return_loan(
         update_res = admin.table("loans").update(return_fields).eq("id", loan_id).execute()
     loan = update_res.data[0]
 
-    # Reservation-aware routing (4.6): first-in-queue for this title, if
-    # any, gets the hold shelf instead of the copy going back into general
-    # reshelving — goes straight to 'ready' (Phase 5 made this automatic,
-    # no librarian pre-approval step) with the specific copy linked so
-    # pickup can verify it.
+    # If someone reserved this book, the copy goes to them (hold shelf).
     book_full_res = admin.table("books").select("*").eq("id", copy["book_id"]).execute()
     book_title = book_full_res.data[0]["title"] if book_full_res.data else "A book"
 
@@ -427,8 +372,7 @@ def return_loan(
         {"status": "reserved" if promoted else "for_reshelving"}
     ).eq("id", copy["id"]).execute()
 
-    # A return with a fine gets the official fine record; a clean return
-    # gets a short confirmation.
+    # Email: the fine details if there's a fine, else a short confirmation.
     fine_email = EmailContent(
         subject=f"Return confirmed: {book_title}",
         intro="Thank you! Your borrowed book has been returned to the LRC.",
@@ -478,9 +422,7 @@ def return_loan(
     borrower_name = borrower_res.data[0]["full_name"] if borrower_res.data else "A student"
     fine_note = f" ₱{total_fine:.2f} fine recorded." if total_fine > 0 else ""
 
-    # Two different follow-up actions depending on where the copy went —
-    # each needs its own notification so whoever's on the desk knows which
-    # one applies, rather than one generic "returned" message either way.
+    # Tell librarians where the copy goes next (hold shelf or reshelving).
     return_details = [
         ("Borrower", borrower_name),
         ("Title", book_title),
@@ -522,12 +464,8 @@ def return_loan(
 
     return loan
 
-# Patrons > Fines tab: a fine left "unsettled" at return time can be paid
-# later, at the desk, with no book involved — the loan itself is already
-# closed, so this only ever touches fine_status/receipt_number, never the
-# copy or notifications tied to the return itself. Not a payment gateway:
-# this records that the librarian already collected payment in person,
-# same as return_loan's own fine_settlement field does at return time.
+# Records that an unpaid fine was paid at the desk later. Only updates the
+# fine status and receipt; it doesn't take payments.
 @router.patch("/{loan_id}/settle-fine", response_model=Loan)
 def settle_fine(
     loan_id: str,
@@ -584,11 +522,7 @@ def settle_fine(
 
     return loan
 
-# Reshelving tab's browse list (mirrors the Return tab's "Active
-# Borrowers") — every copy currently parked at for_reshelving, whether it
-# got there through a real return or a guest in-house return, so the
-# librarian can pick one instead of needing to already know its accession
-# number. Most recently returned first.
+# Copies waiting to be reshelved, most recently returned first.
 @router.get("/reshelving-queue", response_model=list[ReshelvingQueueItem])
 def reshelving_queue(librarian: UserProfile = Depends(require_librarian)):
     admin = get_admin_client()
@@ -610,8 +544,7 @@ def reshelving_queue(librarian: UserProfile = Depends(require_librarian)):
         .execute()
         .data
     )
-    # First row per copy is the most recent, since the query above is
-    # already ordered — later duplicates for the same copy are ignored.
+    # Rows are newest first, so keep the first one per copy.
     returned_at_by_copy: dict[str, str] = {}
     for row in returned_loans:
         returned_at_by_copy.setdefault(row["book_copy_id"], row["returned_at"])
@@ -628,10 +561,8 @@ def reshelving_queue(librarian: UserProfile = Depends(require_librarian)):
     items.sort(key=lambda i: i.returned_at or "", reverse=True)
     return items
 
-# Reshelving mode (build plan 4.7) — a separate scan, after the book has
-# actually been walked back to the shelf. Only reshelve_copy_now transitions
-# a copy to Available — this scan, or an inventory scan that finds the copy
-# on its own shelf (routers/inventory.py).
+# Reshelving scan, once the book is back on its shelf. Makes the copy
+# available (or holds it for a reservation).
 @router.post("/reshelve", response_model=dict)
 def reshelve_copy(
     body: ReshelveRequest,
@@ -648,9 +579,7 @@ def reshelve_copy(
     new_status = reshelve_copy_now(admin, copy, body.accession_number.strip())
     return {"id": copy["id"], "status": new_status}
 
-# Reshelving tab's "Reshelved Today" list — mirrors Borrow/Return's own
-# day-scoped views (GET /loans's borrowed_from/returned_from). Same
-# caller-computes-the-local-day-boundary convention as those.
+# "Reshelved Today" list. The browser sends the day's start and end.
 @router.get("/reshelved", response_model=list[ReshelvedItem])
 def reshelved_copies(
     reshelved_from: str | None = None,

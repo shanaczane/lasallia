@@ -26,9 +26,7 @@ from schemas.reservation import (
 router = APIRouter(prefix="/reservations", tags=["reservations"])
 
 def _redact_embedded_books(rows: list[dict], user: UserProfile) -> list[dict]:
-    # The books(*) embed carries the accession number and acquisition
-    # record; a student's own reservation list must not, same rule as the
-    # catalog (routers/books.py's _redact_for_patrons).
+    # Hide accession numbers and acquisition details from patrons.
     _redact_for_patrons([r["books"] for r in rows if r.get("books")], user)
     return rows
 
@@ -43,28 +41,20 @@ def list_reservations(
     db: Client = Depends(get_user_supabase),
 ):
     admin = get_admin_client()
-    # Runs regardless of who's asking — the only way to catch another
-    # student's expired reservation without a cron (none exists anywhere
-    # in this repo; see the loan-overdue-status precedent in loans.py).
+    # Expire overdue pickups first, so the list is up to date.
     sweep_expired_reservations(admin)
 
-    # RLS scopes this automatically: students see only their own rows,
-    # librarians see every reservation. No role branching needed here.
-    # user_id narrows a librarian's already-full view to one patron (the
-    # Patrons profile modal) — a student passing anyone else's id here
-    # still only ever sees their own rows, since RLS scopes the query
-    # itself, not just this filter.
+    # RLS limits students to their own rows; librarians see all. user_id
+    # narrows a librarian's view to one patron.
     query = db.table("reservations").select("*, books(*), profiles(*)").order("requested_at", desc=True)
     if user_id:
         query = query.eq("user_id", user_id)
     res = query.execute()
     reservations = res.data
 
-    # queue_position needs to count *other* students' pending reservations
-    # too, which the caller's own RLS-scoped client can't see — the admin
-    # client is required here, but only a computed integer ever leaves it.
-    # The ready-date estimate is only for a student's own list — a
-    # librarian's full list would pay for it on every pending row.
+    # Queue position counts other students' reservations, so it needs the
+    # admin client (only a number is returned). Ready dates are only
+    # worked out for a student's own list.
     cfg = get_library_settings(admin) if user.role != "librarian" else None
     for r in reservations:
         if r["status"] == "pending":
@@ -84,14 +74,9 @@ def list_reservations(
     return _redact_embedded_books(reservations, user)
 
 def _reservation_problem(admin: Client, user_id: str, book_id: str, cfg: dict) -> str | None:
-    """Why this student can't reserve this title right now, or None if they
-    can. Shared by create_reservation (which rejects with it) and the
-    estimate endpoint (which shows it in the confirmation popup before the
-    student taps Confirm, rather than after). Raises 404 for an unknown book.
-
-    Plan 5.2: "Same account checks as borrowing" — mirrors holds.py's
-    claim_hold, duplicated rather than imported (matches this codebase's
-    existing convention for small per-router constants)."""
+    """Why this student can't reserve this book, or None if they can. Also
+    shown in the confirmation popup. Uses the same checks as borrowing.
+    Raises 404 for an unknown book."""
     book_res = admin.table("books").select("collection_type").eq("id", book_id).execute()
     if not book_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
@@ -108,10 +93,7 @@ def _reservation_problem(admin: Client, user_id: str, book_id: str, cfg: dict) -
     ).data
     now = datetime.now(timezone.utc)
 
-    # Can't reserve a title you're currently the one holding — book_copy_id
-    # is all a loan row has, so this is a copy -> book_id hop, same pattern
-    # loans.py's own list_loans uses for the same reason (book_copies has no
-    # RLS policy at all, so this second lookup needs the admin client too).
+    # Can't reserve a book you already have out.
     copy_ids = [loan["book_copy_id"] for loan in current_loans]
     if copy_ids:
         borrowed_copies = admin.table("book_copies").select("id, book_id").in_("id", copy_ids).execute().data
@@ -144,9 +126,7 @@ def _reservation_problem(admin: Client, user_id: str, book_id: str, cfg: dict) -
     if existing.data:
         return "You already have a reservation for this title"
 
-    # Settings' "Maximum Active Reservations per User" — previously
-    # persisted nowhere and enforced nowhere; a student could queue up an
-    # unlimited number of titles at once.
+    # Settings' maximum active reservations per user.
     active_reservations = (
         admin.table("reservations")
         .select("id", count="exact")
@@ -157,11 +137,8 @@ def _reservation_problem(admin: Client, user_id: str, book_id: str, cfg: dict) -
     if (active_reservations.count or 0) >= cfg["max_active_reservations"]:
         return f"You've reached your limit of {cfg['max_active_reservations']} active reservations"
 
-    # A reservation is for a title with no copy on the shelf. With one free
-    # right now, reserving would put the student in a queue that walk-ins
-    # can skip by just borrowing it — tell them to borrow instead. A copy
-    # soft-held by someone mid-borrow doesn't count as free: if they back
-    # out, release_hold hands it to the queue.
+    # If a copy is on the shelf, borrow it instead of reserving. A copy
+    # someone is in the middle of borrowing doesn't count as free.
     available = (
         admin.table("book_copies").select("id").eq("book_id", book_id).eq("status", "available").execute()
     ).data
@@ -182,10 +159,8 @@ def _reservation_problem(admin: Client, user_id: str, book_id: str, cfg: dict) -
 
 @router.get("/estimate", response_model=ReservationEstimate)
 def estimate_reservation(book_id: str, user: UserProfile = Depends(get_current_user)):
-    """Where the caller would land in the queue for this title if they
-    reserved it now, and roughly when a copy would be ready for them —
-    shown before they confirm the reservation, along with anything that
-    would stop the reservation going through."""
+    """Queue position and rough ready date if they reserved now, plus
+    anything blocking it. Shown before they confirm."""
     admin = get_admin_client()
     cfg = get_library_settings(admin)
     problem = _reservation_problem(admin, user.id, book_id, cfg)
@@ -217,9 +192,7 @@ def create_reservation(
     if problem:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, problem)
 
-    # Counted before the insert below, so this is exactly how many pending
-    # reservations are already ahead of the one about to be created —
-    # i.e. this new reservation's own queue_position.
+    # Counted before the insert, so this is the new reservation's place in line.
     ahead_count = (
         admin.table("reservations")
         .select("id", count="exact")
@@ -291,10 +264,8 @@ def update_reservation(
     user: UserProfile = Depends(get_current_user),
     db: Client = Depends(get_user_supabase),
 ):
-    # Cancellation is the only manual action left — becoming 'ready' now
-    # happens automatically (Phase 4's return handler, or the expiry sweep
-    # above), never through this endpoint. RLS already restricts *whose*
-    # row can be touched (own reservation, or any if librarian).
+    # Only cancelling is done here; 'ready' is set automatically. RLS
+    # decides whose reservations can be changed.
     current = db.table("reservations").select("id, user_id, book_id, book_copy_id, status").eq("id", reservation_id).execute()
     if not current.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Reservation not found")
@@ -308,13 +279,11 @@ def update_reservation(
         "cancelled_at": now.isoformat(),
     }).eq("id", reservation_id).execute()
 
-    # Cancelling a 'ready' reservation frees a specific copy — same
-    # handoff as letting the pickup window expire.
+    # Cancelling a ready reservation frees its copy, like an expiry.
     if row["status"] == "ready" and row["book_copy_id"]:
         advance_or_release(get_admin_client(), row)
 
-    # A librarian cancelling on someone's behalf tells that student — they
-    # lost their place in line and didn't do it themselves.
+    # Tell the student if a librarian cancelled it for them.
     if user.role == "librarian" and row["user_id"] != user.id:
         admin = get_admin_client()
         book_res = admin.table("books").select("title").eq("id", row["book_id"]).execute()
@@ -339,9 +308,7 @@ def update_reservation(
             ),
         )
 
-    # Only notify on the student's own cancellation — a librarian cancelling
-    # a reservation on someone's behalf shouldn't notify librarians about
-    # their own action.
+    # Notify librarians only when a student cancels.
     if user.role != "librarian":
         admin = get_admin_client()
         book_title_res = admin.table("books").select("title").eq("id", row["book_id"]).execute()
@@ -366,9 +333,5 @@ def update_reservation(
     res = db.table("reservations").select("*, books(*), profiles(*)").eq("id", reservation_id).execute()
     return _redact_embedded_books(res.data, user)[0]
 
-# Fulfillment no longer happens through this router at all — a 'ready'
-# reservation is claimed and confirmed through the exact same flow as a
-# walk-in borrow (holds.py's claim_hold routes a student with a ready
-# reservation straight to their own held copy; loans.py's confirm_loan
-# closes the reservation out once that loan is confirmed). There's
-# deliberately only one borrowing path now, not a separate "pickup" one.
+# Picking up a ready reservation uses the normal borrow flow (holds.py and
+# loans.py), so there's no separate pickup endpoint.

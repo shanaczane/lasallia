@@ -1,8 +1,5 @@
-# apps/api/routers/book_requests.py
-# Faculty-only "request a book" flow — student/requests/page.tsx (shown
-# only to role='faculty') submits and checks their own; the librarian
-# Reports > Requests tab (RequestsPanel) lists and resolves every one.
-# See migrations/0039_book_requests.sql.
+# Book requests: faculty submit and track their own; librarians review them
+# in Reports > Requests.
 
 import traceback
 import uuid
@@ -24,12 +21,7 @@ from schemas.book_request import (
 
 router = APIRouter(prefix="/book-requests", tags=["book-requests"])
 
-# profiles!book_requests_requester_id_fkey: book_requests has two FKs into
-# profiles (requester_id and reviewed_by), so a bare "profiles(...)" embed
-# is ambiguous to PostgREST (PGRST201) — this pins it to the requester,
-# not whichever librarian reviewed it. attachments aliases the reverse-FK
-# embed of book_request_attachments (0042) to the plural name
-# schemas.book_request.BookRequest expects.
+# book_requests links to profiles twice, so name the requester link.
 _SELECT = (
     "*, profiles!book_requests_requester_id_fkey(full_name, email, college), "
     "attachments:book_request_attachments(id, url, name, created_at)"
@@ -39,9 +31,7 @@ ATTACHMENT_BUCKET = "book-request-attachments"
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 
-# Checked against the file's own first bytes, not the client-sent
-# content-type header — same reasoning as books.py's _sniff_image_type,
-# extended with PDF's magic bytes for reading lists / price quotes.
+# File type from the file's first bytes, not the browser's claim.
 def _sniff_attachment_type(data: bytes) -> tuple[str, str] | None:
     if data.startswith(b"\xff\xd8\xff"):
         return "image/jpeg", "jpg"
@@ -80,8 +70,7 @@ def create_book_request(
     if not res.data:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not submit this request")
 
-    # Re-read with the profile embed — the insert's own response doesn't
-    # include the join, and every other response here carries it.
+    # Re-read to include the requester's profile.
     created = admin.table("book_requests").select(_SELECT).eq("id", res.data[0]["id"]).execute()
 
     requester_name = user.full_name or user.email
@@ -110,11 +99,7 @@ def create_book_request(
     return created.data[0]
 
 
-# Faculty-only, own-request-only, and only while a librarian hasn't acted on
-# it yet — once approved/rejected/fulfilled the request is someone else's
-# decision of record, so editing the ask out from under it isn't allowed.
-# Separate from update_book_request below (that one is the librarian's
-# status-only PATCH and stamps reviewed_by/reviewed_at).
+# Faculty edit their own request, only while it's still pending.
 @router.patch("/{request_id}/edit", response_model=BookRequest)
 def edit_book_request(
     request_id: str,
@@ -152,12 +137,8 @@ def edit_book_request(
     return updated.data[0]
 
 
-# Faculty withdrawing their own request — only while still pending, same
-# cutoff as edit_book_request above. A distinct 'cancelled' status (0043)
-# rather than reusing 'rejected' keeps this visibly different on the
-# librarian's Reports > Requests list: 'rejected' is a librarian decision,
-# 'cancelled' is the requester's own. No reviewed_by/reviewed_at stamp —
-# a librarian never acted on this one.
+# Faculty withdraw their own pending request. 'cancelled' (not 'rejected')
+# shows it was the requester's choice, not a librarian's.
 @router.post("/{request_id}/cancel", response_model=BookRequest)
 def cancel_book_request(
     request_id: str,
@@ -197,22 +178,16 @@ def cancel_book_request(
     return updated.data[0]
 
 
-# Faculty-only, and only the request's own submitter — a librarian reviews
-# through the Reports tab but never uploads on a faculty member's behalf.
-# Accepts several files in one call (a reading list PDF *and* a listing
-# screenshot, say) — each becomes its own book_request_attachments row
-# rather than overwriting a single column, so none of them replace another.
-# Server-side type/size enforcement, same reasoning as books.py's cover
-# upload: the form's own limits are just UX, not what's actually enforced.
+# The requester uploads one or more files. Type and size are checked here;
+# the form's limits are only a convenience.
 @router.post("/{request_id}/attachments", response_model=BookRequest)
 def upload_request_attachments(
     request_id: str,
     files: list[UploadFile] = File(...),
     user: UserProfile = Depends(require_faculty),
 ):
-    # TEMP DEBUG (remove once the "attachments never save" bug is found) —
-    # logs every call to this endpoint to a plain file so it can be
-    # inspected without needing browser DevTools access.
+    # TEMP DEBUG: remove once the "attachments never save" bug is fixed.
+    # Logs every call to attachment_debug.log.
     with open("attachment_debug.log", "a", encoding="utf-8") as dbg:
         dbg.write(f"\n=== upload call === request_id={request_id} user={user.id} ({user.email}) role={user.role}\n")
         dbg.write(f"files received: {[(f.filename, f.content_type) for f in files]}\n")

@@ -1,7 +1,4 @@
-# apps/api/routers/search.py
-# Chatbot Phase 1 — semantic search over the catalog. No LLM, no chat UI
-# yet: this is the endpoint the plan wants proven in isolation before
-# anything is built on top of it.
+# Semantic (meaning-based) catalog search, without the chatbot.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 

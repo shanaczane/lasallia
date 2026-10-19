@@ -1,7 +1,4 @@
-# apps/api/routers/weeding.py
-# Reports plan, Phase 2. All endpoints require_librarian — a weeding
-# decision (archive/restore/dismiss) is a collection-management action,
-# same authorization boundary as routers/patrons.py.
+# Weeding endpoints (archive, restore, dismiss). Librarians only.
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -31,11 +28,7 @@ def get_candidates(librarian: UserProfile = Depends(require_librarian)):
     if not candidates:
         return []
 
-    # narrate() is a blocking OpenAI call (~4s each, measured) — called once
-    # per candidate. Run them concurrently instead of one after another, or
-    # a modest candidate list turns this endpoint into a multi-minute wait.
-    # max_workers caps how many requests fire at once so this doesn't
-    # hammer the OpenAI rate limit on a large candidate list.
+    # Each AI call takes a few seconds, so run up to 8 at once.
     with ThreadPoolExecutor(max_workers=8) as pool:
         reasons = list(pool.map(narrate, candidates))
 

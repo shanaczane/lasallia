@@ -12,15 +12,11 @@ from schemas.session import OpenSessionRequest, StationSession
 router = APIRouter(prefix="/station-sessions", tags=["station-sessions"])
 
 def _insert_session(student_id: str, auth_method: str, station_id: str) -> dict:
-    # service-role client: an rfid tap never produces a Supabase JWT, so
-    # every auth_method writes this row the same way for consistency (see
-    # the migration's note on why station_sessions has no RLS policies).
+    # Admin client: an ID tap has no login token.
     admin = get_admin_client()
 
-    # Plan 7: "No school ID to tap → cannot open a session or borrow at the
-    # laptops." Checked here, the single choke point all three auth paths
-    # (rfid, manual_login, from-token) funnel through — a guest's loan is
-    # always entered by a librarian instead (routers/inhouse.py).
+    # Guests can't open a kiosk session; a librarian records their loans.
+    # Every way of opening a session passes through here.
     role_res = admin.table("profiles").select("role").eq("id", student_id).execute()
     if role_res.data and role_res.data[0]["role"] == "guest":
         raise HTTPException(
@@ -37,10 +33,8 @@ def _insert_session(student_id: str, auth_method: str, station_id: str) -> dict:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not open session")
     session = res.data[0]
 
-    # The kiosk greets whoever just tapped/logged in by first name — same
-    # split-on-space pattern already used in holds.py's get_hold. program/
-    # college ride along too, for the kiosk "For you" tab's New Arrivals/
-    # Program/College sections (see schemas/session.py's comment on why).
+    # First name for the kiosk greeting; program and college for its
+    # "For you" tab.
     profile_res = admin.table("profiles").select("full_name, program, college").eq("id", student_id).execute()
     profile = profile_res.data[0] if profile_res.data else {}
     full_name = profile.get("full_name") or ""
@@ -50,14 +44,9 @@ def _insert_session(student_id: str, auth_method: str, station_id: str) -> dict:
     session["college"] = profile.get("college")
     return session
 
-# Not behind auth for manual_login/rfid: this is what the kiosk calls to
-# find out who's standing in front of it. manual_login's own password check
-# IS the credential; rfid's UID lookup is the credential. librarian_assisted
-# is the exception — there's no student-supplied credential at all (the
-# librarian already found them via GET /users?q=), so the caller's own
-# librarian JWT has to stand in for one instead. All three converge on the
-# same insert, so the resulting row is identical downstream except for
-# auth_method.
+# Opens a kiosk session. No login token needed: the password or ID tap is
+# the credential. librarian_assisted instead needs a librarian's login,
+# since the student gives no credential.
 @router.post("", response_model=StationSession, status_code=status.HTTP_201_CREATED)
 def open_session(body: OpenSessionRequest, caller: UserProfile | None = Depends(get_optional_user)):
     if body.auth_method == "manual_login":
@@ -89,21 +78,14 @@ def open_session(body: OpenSessionRequest, caller: UserProfile | None = Depends(
 
     return _insert_session(student_id, body.auth_method, body.station_id)
 
-# For the student web portal specifically — not a physical kiosk, so
-# there's no reason to make an already-logged-in student retype their
-# password. Their existing JWT is exactly as strong a credential as
-# manual_login's password check, so this counts as auth_method
-# "manual_login" too — same downstream shape either way.
+# For the student web portal: the student's login replaces retyping their
+# password. Recorded as "manual_login".
 @router.post("/from-token", response_model=StationSession, status_code=status.HTTP_201_CREATED)
 def open_session_from_token(user: UserProfile = Depends(get_current_user)):
     return _insert_session(user.id, "manual_login", "web-portal")
 
-# Phase 6 — closes a session (idle timeout, "Done/Log out", or a new tap
-# interrupting this one). Not behind auth, same reasoning as open_session:
-# an rfid-tapped session has no JWT to authenticate this call with, and
-# the session id itself is not a meaningfully guessable/reusable secret.
-# This is what makes claim_hold's existing `ended_at is not None` check
-# (Phase 3) actually mean something, rather than a column nothing writes.
+# Ends a session (timeout, "Done", or a new tap). No login token, since a
+# tapped session doesn't have one; the session id is hard to guess.
 @router.post("/{session_id}/end", status_code=status.HTTP_204_NO_CONTENT)
 def end_session(session_id: str):
     admin = get_admin_client()
@@ -118,8 +100,5 @@ def end_session(session_id: str):
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found or already ended")
 
-    # Chatbot Phase 7: a kiosk chat session's id is this same station
-    # session's id (see migrations/0016's note on why), so ending one
-    # wipes the other's history in the same moment — best-effort, since
-    # the student may never have opened the assistant this visit.
+    # Delete the kiosk chat too (it shares this session's id).
     chat_sessions.end_session(admin, session_id, surface="kiosk")

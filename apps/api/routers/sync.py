@@ -1,12 +1,6 @@
-# apps/api/routers/sync.py
-# Catalog import — librarian-only, same authorization boundary as
-# routers/weeding.py. Takes either a Follett Destiny MARC 21 export (.mrc)
-# or the LRC's own hand-encoded Excel sheet (.xlsx — what librarians can
-# actually produce today, since they have no export access in Destiny).
-# The librarian uploads the same file twice: first with dry_run=true to
-# see the preview, then dry_run=false to apply it. Nothing is kept between
-# the two calls; the apply re-plans against the catalog as it is at that
-# moment. Matching rules live in core/importers/marc.py.
+# Catalog import from a MARC file (.mrc) or an LRC Excel sheet (.xlsx).
+# Librarians only. The file is sent twice: dry_run=true for the preview,
+# then dry_run=false to apply. Matching rules are in core/importers/marc.py.
 
 from datetime import datetime, timezone
 
@@ -28,8 +22,7 @@ PAGE_SIZE = 1000  # PostgREST's default max rows per request
 
 
 def _fetch_all(admin, table: str, columns: str) -> list[dict]:
-    # The catalog can outgrow one PostgREST page — a partial read here would
-    # make already-imported books look new and duplicate them.
+    # Read every page, or existing books would look new and be duplicated.
     rows: list[dict] = []
     start = 0
     while True:
@@ -45,8 +38,7 @@ def _issue_dict(issue: ImportIssue) -> dict:
 
 
 def _reembed_in_background() -> None:
-    # Only books whose row changed since their last embedding are re-embedded
-    # (see reembed_books), so this is proportional to what the import touched.
+    # Only re-embeds books the import changed.
     try:
         count = reembed_books(get_admin_client())
         print(f"sync: re-embedded {count} book(s) after import")
@@ -59,8 +51,7 @@ def import_catalog(
     background: BackgroundTasks,
     file: UploadFile = File(...),
     dry_run: bool = True,
-    # Spreadsheet only — the sheets don't say which college they're for
-    # (seed_books.py took it from the file name); becomes books.subject.
+    # Spreadsheets only: the college isn't in the file, so it's passed in.
     college: str | None = None,
     librarian: UserProfile = Depends(require_librarian),
 ):
@@ -82,8 +73,7 @@ def import_catalog(
                 status.HTTP_400_BAD_REQUEST,
                 "No book rows found. Use the template's column headers, starting with Title and Book ID (Accession No.).",
             )
-        # One row per copy — rows read, not titles, is what the librarian
-        # will recognize against their sheet.
+        # Count rows (copies), which is what the librarian sees in their sheet.
         records_read = len(parse_issues) + sum(len(r.barcodes) for r in records)
     else:
         source = "destiny_marc"

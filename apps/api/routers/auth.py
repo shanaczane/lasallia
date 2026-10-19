@@ -9,18 +9,13 @@ from core.deps import get_current_user, invalidate_profile
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 MIN_PASSWORD_LENGTH = 8
-MAX_YEAR_LEVEL = 8  # same ceiling routers/patrons.py enforces for a librarian's edit
+MAX_YEAR_LEVEL = 8  # same as routers/patrons.py
 
-# Stamped on each privacy-notice acceptance. "placeholder" until the
-# official DPA text replaces the placeholder in PrivacyNoticeModal — bump it
-# then, so acceptances given during testing can be told apart from real ones.
+# Saved with each privacy-notice acceptance. Change it when the official
+# notice text replaces the draft, so test acceptances can be told apart.
 PRIVACY_NOTICE_VERSION = "placeholder"
 
-# Same shape as routers/books.py's _check_accession_conflict — pre-checked
-# with a SELECT rather than relying on the DB's unique index (0045) to
-# reject it, so a collision comes back as a readable 400 instead of a raw
-# integrity-error 500. routers/patrons.py has its own copy of this for a
-# librarian's edit, same duplication MAX_YEAR_LEVEL above already has.
+# Checked up front so a duplicate ID number gives a clear 400, not a 500.
 def _check_id_number_conflict(id_number: str, exclude_user_id: str) -> None:
     res = (
         get_admin_client().table("profiles")
@@ -36,9 +31,7 @@ def _fetch_profile(user_id: str) -> dict:
 def _build_token_response(session, sb_user) -> TokenResponse:
     profile = _fetch_profile(sb_user.id)
 
-    # A correct password shouldn't still hand a deactivated account a
-    # working session — same rule core/deps.get_current_user enforces on
-    # every later request, checked again here so it's refused up front.
+    # Deactivated accounts can't sign in, even with the right password.
     if profile.get("status") == "inactive":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This account has been deactivated. Please contact a librarian.")
 
@@ -87,10 +80,8 @@ def refresh(body: RefreshRequest):
 def me(user: UserProfile = Depends(get_current_user)):
     return user
 
-# First-login privacy notice (PrivacyNoticeModal). No request body — the
-# server stamps the time and notice version, not the client. Already
-# accepted → returned unchanged, so a retry or a second tab never overwrites
-# the date of the first acceptance.
+# Records acceptance of the privacy notice. The server sets the time and
+# version; an earlier acceptance is never overwritten.
 @router.post("/accept-privacy", response_model=UserProfile)
 def accept_privacy(user: UserProfile = Depends(get_current_user)):
     if user.privacy_accepted_at:
@@ -103,10 +94,8 @@ def accept_privacy(user: UserProfile = Depends(get_current_user)):
     invalidate_profile(user.id)
     return user.model_copy(update={"privacy_accepted_at": accepted_at, "privacy_notice_version": PRIVACY_NOTICE_VERSION})
 
-# Settings' Account tab. Self-service only — scoped to user.id from the
-# caller's own verified token, same as every other "me" endpoint; there's
-# no user_id in the request body for that reason, so there's nothing to
-# check against an id that isn't already the caller's own.
+# Edit your own profile. Always the logged-in user; there's no user_id
+# in the request.
 @router.patch("/me", response_model=UserProfile)
 def update_me(body: UpdateProfileRequest, user: UserProfile = Depends(get_current_user)):
     sent = body.model_dump(exclude_unset=True)
@@ -121,14 +110,8 @@ def update_me(body: UpdateProfileRequest, user: UserProfile = Depends(get_curren
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Full name can't be empty")
         changes["full_name"] = name
 
-    # Academic fields are for students and faculty only — a guest has no
-    # program, and a librarian's is set by another librarian through the
-    # Patrons screen. Faculty have no year level (and their "program" is a
-    # college, not a degree program — see routers/patrons.py's comment on
-    # the same distinction), so program/year_level are student-only;
-    # college and id_number (0045 — a faculty number is exactly as much
-    # "theirs" to set as a student number) are the fields both self-service
-    # roles can set.
+    # Students can set program, year level, college and ID number. Faculty
+    # can set college and ID number. Others can't set any of these.
     if {"program", "year_level", "college", "id_number"} & sent.keys():
         if user.role not in ("student", "faculty"):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only students and faculty can set these fields")
@@ -170,12 +153,8 @@ def update_me(body: UpdateProfileRequest, user: UserProfile = Depends(get_curren
         privacy_notice_version=user.privacy_notice_version,
     )
 
-# Settings' Account tab "Change Password". current_password is verified by
-# actually signing in with it (same call /login makes) — if that fails,
-# the caller's own access token alone was never treated as proof they
-# still know the current password. Only once that succeeds does the
-# admin client (service-role — the only way to set a password directly,
-# no email link/reset flow) apply the new one.
+# Change password. The current password is checked by signing in with it;
+# then the admin client sets the new one.
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
 def change_password(body: ChangePasswordRequest, user: UserProfile = Depends(get_current_user)):
     if len(body.new_password) < MIN_PASSWORD_LENGTH:
@@ -191,34 +170,11 @@ def change_password(body: ChangePasswordRequest, user: UserProfile = Depends(get
     except AuthApiError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
-# A Google sign-in never sets a password — app_metadata.providers stays
-# ['google'] forever, even after a password is added later (verified by
-# hand against a real Supabase project: it does NOT grow an 'email' entry).
-# The actual signal is the identities list, which does gain an 'email'
-# entry the moment a password is set (admin.update_user_by_id, same call
-# change_password/set_password use) — confirmed the same way. Checked
-# here rather than cached on the JWT/profile: it can change mid-session
-# (a student sets a password after already being logged in), and this is
-# only called from the Settings page, not every request.
-#
-# In practice the 'email' identity did NOT reliably appear after
-# set_password, so the dashboard banner / first-login modal kept asking
-# after a password was already set. Every password write now also stamps
-# app_metadata.has_password (service-role only — a user can't set
-# app_metadata on themselves), and that flag counts too.
-#
-# Neither covers a password set before that stamp existed, so the
-# first-login modal still came back on every refresh for those accounts.
-# user_has_password (migration 0046) reads auth.users.encrypted_password
-# directly and is checked first; the older signals stay as a fallback in
-# case the migration hasn't been applied yet.
-#
-# Only a missing function (PGRST202) falls back. Any other RPC failure is
-# retried and then raised: the admin client shares one HTTP/2 connection
-# (see core/supabase.py), which drops calls under the burst of requests a
-# dashboard load sends right after login. Swallowing that used to answer
-# "no password", so the banner showed until the next refresh. A 503 is
-# safe here: the banner fails silent and the first-login modal retries.
+# Whether this account has a password (Google-only accounts don't).
+# Checks the user_has_password database function first, then the older
+# signals (app_metadata.has_password, an 'email' identity). RPC errors other
+# than "function missing" are retried, then raised, never treated as "no
+# password", which would wrongly show the set-a-password prompt.
 def _has_password_identity(user_id: str) -> bool:
     for attempt in range(3):
         try:
@@ -235,28 +191,17 @@ def _has_password_identity(user_id: str) -> bool:
         return True
     return any(i.provider == "email" for i in (sb_user.identities or []))
 
-# Shared by change_password/set_password. app_metadata is merged by
-# Supabase, not replaced, so 'provider'/'providers' are left intact.
+# Used by change_password and set_password. Also marks has_password.
 def _password_update(new_password: str) -> dict:
     return {"password": new_password, "app_metadata": {"has_password": True}}
 
-# Settings' Account tab — tells the frontend whether to show "Set a
-# password" (Google-only account, no current password to verify) or the
-# existing "Change Password" form (current_password required).
+# Tells Settings whether to show "Set a password" or "Change password".
 @router.get("/password-status", response_model=PasswordStatusResponse)
 def password_status(user: UserProfile = Depends(get_current_user)):
     return PasswordStatusResponse(has_password=_has_password_identity(user.id))
 
-# Settings' Account tab "Set a password" — for a Google-only account that
-# has never had one. Unlike change_password above, there's no
-# current_password to verify (there's nothing to check it against); the
-# real-world equivalent of that re-verification is already satisfied by
-# the caller holding a valid, currently-signed-in JWT at all. Re-checks
-# has_password itself (not just trusting the frontend only showed this
-# form when appropriate) so this can never be used to bypass
-# change_password's current-password check on an account that already has
-# one — Google login keeps working unaffected either way, this only adds
-# a second way in.
+# Set a first password on a Google-only account. Refused if the account
+# already has one, so it can't skip change_password's check.
 @router.post("/set-password", status_code=status.HTTP_204_NO_CONTENT)
 def set_password(body: SetPasswordRequest, user: UserProfile = Depends(get_current_user)):
     if len(body.new_password) < MIN_PASSWORD_LENGTH:

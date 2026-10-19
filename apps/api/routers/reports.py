@@ -1,7 +1,4 @@
-# apps/api/routers/reports.py
-# Reports plan, Phase 1 — thin HTTP layer over core/reports.py. All
-# endpoints are require_librarian, reused as-is from routers/patrons.py
-# rather than inventing a new auth pattern.
+# Report endpoints (librarians only). Logic is in core/reports.py.
 
 from fastapi import APIRouter, Depends
 
@@ -163,11 +160,8 @@ def get_summaries(
     filters: ReportFilters = Depends(report_filters),
     librarian: UserProfile = Depends(require_librarian),
 ):
-    # Re-derives every payload server-side from the same filters, rather
-    # than trusting anything the frontend already has — the frontend did
-    # fetch these same 7 reports moments ago to render the page, but
-    # letting AI narrate client-supplied numbers would mean it could be
-    # asked to narrate fabricated ones just as convincingly as real ones.
+    # Recompute the numbers here rather than accept them from the browser,
+    # so the AI can't be fed made-up figures.
     admin = get_admin_client()
     payloads = {
         "catalogue": catalogue_report(admin, filters),

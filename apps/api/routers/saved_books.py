@@ -11,13 +11,9 @@ router = APIRouter(prefix="/saved-books", tags=["saved-books"])
 
 
 def _with_live_books(rows: list[dict], user: UserProfile) -> list[dict]:
-    """The embedded books carry the stored books.status, which nothing
-    keeps in sync — the catalog and book pages recompute it from the copies
-    on every read. Do the same here so a saved book shows the same pill in
-    My Library as everywhere else, and apply the same patron redaction (no
-    accession number before it's typed at /borrow). book_copies has no
-    public RLS policy, so the copies are read with the admin client, same as
-    the catalog."""
+    """Recomputes each book's availability from its copies (the stored
+    status is out of date) and hides accession numbers, like the catalog.
+    Copies are read with the admin client because they have no public RLS."""
     books = [r["books"] for r in rows if r.get("books")]
     if not books:
         return rows
@@ -29,9 +25,7 @@ def _with_live_books(rows: list[dict], user: UserProfile) -> list[dict]:
     _redact_for_patrons(books, user)
     return rows
 
-# RLS (0013) scopes every route to the caller's own rows — books has a
-# public select policy so the books(*) embed works through the same
-# RLS-scoped client, unlike book_copies elsewhere in this codebase.
+# RLS limits every route to the caller's own saved books.
 
 @router.get("", response_model=list[SavedBook])
 def list_saved_books(
@@ -47,9 +41,7 @@ def save_book(
     user: UserProfile = Depends(get_current_user),
     db: Client = Depends(get_user_supabase),
 ):
-    # Idempotent: re-saving an already-saved book returns the existing row
-    # instead of erroring on the unique(user_id, book_id) constraint — the
-    # frontend toggle shouldn't have to special-case a double-click/race.
+    # Saving an already-saved book returns the existing row, not an error.
     existing = db.table("saved_books").select("*, books(*)").eq("book_id", body.book_id).execute()
     if existing.data:
         return _with_live_books(existing.data, user)[0]

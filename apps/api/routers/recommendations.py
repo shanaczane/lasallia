@@ -1,10 +1,5 @@
-# apps/api/routers/recommendations.py
-# Recommendations plan, Phase 5 — serves precomputed recommendations
-# (jobs/rebuild_recommendations.py). Nothing here scores anything at
-# request time; this just reads last night's stored rows, drops whatever
-# the student has borrowed/reserved SINCE that job ran, and trims to
-# `limit`. The heavy lifting (TF-IDF, neighbor aggregation) already
-# happened offline — see core/recommendations.py.
+# Serves recommendations computed by the nightly job, minus anything the
+# student borrowed or reserved since it ran. No scoring happens here.
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -28,21 +23,15 @@ from schemas.recommendation import (
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
-# Plan 0's scope line: student dashboard only. A librarian or guest
-# token is a valid *login*, but "For You" is specifically a student
-# feature — same distinction the plan draws for account tools not
-# existing for guests, just for a different role this time.
+# "For You" is for students and faculty only.
 DEFAULT_LIMIT = 8
-STORED_LIMIT = 20  # matches jobs/rebuild_recommendations.py's STORED_PER_STUDENT
+STORED_LIMIT = 20  # must match STORED_PER_STUDENT in jobs/rebuild_recommendations.py
 
-# Phase 9 — a stored rung-1/2 row this old is "stale personalization"
-# per the plan's hardening checklist: better to fall through to the
-# rung-3/4 floor than serve picks this out of date.
+# Personal picks older than this are skipped in favor of the popular list.
 STALE_AFTER_DAYS = 7
 
-# Phase 9 rate limits — Phase 5's own spec for /popular ("kiosks share
-# an IP, set the limit generously"); /events gets a tighter one since
-# it's a write, not a cached read.
+# /popular is generous because kiosks share an IP; /events is a write,
+# so it's tighter.
 POPULAR_RATE_LIMIT = (120, 60)  # (max_requests, window_seconds)
 EVENTS_RATE_LIMIT = (60, 60)
 KIOSK_RATE_LIMIT = (60, 60)  # per station session
@@ -60,10 +49,7 @@ def get_my_recommendations(
     user: UserProfile = Depends(get_current_user),
     db: Client = Depends(get_user_supabase),
 ):
-    # get_current_user already 401s on missing/invalid auth (plan 5's
-    # "unauthenticated requests return 401, not an empty list"). A
-    # logged-in non-student additionally gets a plain 403 rather than a
-    # silently empty section — this endpoint has no meaning for them.
+    # Other roles get a 403, not an empty list.
     if user.role not in ("student", "faculty"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Recommendations are only available for students and faculty")
 
@@ -71,13 +57,8 @@ def get_my_recommendations(
 
 
 def _with_live_availability(rows: list[dict]) -> list[dict]:
-    """The book:books!book_id(*) embeds carry books.status /
-    available_copies as stored, which go stale as soon as a copy is
-    borrowed — so a dashboard card said Available while the book page
-    (GET /books/{id}) said Borrowed. Recompute them from book_copies the
-    same way routers/books.py does for every catalog response. Also nulls
-    accession_no like the catalog: no librarian ever gets recommendations
-    (students/faculty, kiosk sessions, and the public /popular only)."""
+    """Recomputes availability from the copies (the stored status is out
+    of date) and hides accession numbers, like the catalog."""
     books = [r["book"] for r in rows if r.get("book")]
     if not books:
         return rows
@@ -93,17 +74,10 @@ def _with_live_availability(rows: list[dict]) -> list[dict]:
 
 
 def _recommend_for(db: Client, user_id: str, limit: int) -> RecommendationsResponse:
-    """The whole ladder for one student. db is the caller's RLS-scoped client
-    for GET /me and the admin client for the kiosk (which has no JWT) — both
-    run the identical query, filtered to user_id."""
-    # book:books!book_id(*) embeds the recommended book in the same round
-    # trip — student_recommendations has two FKs into books (book_id and
-    # reason_book_id), so the !book_id hint disambiguates which one. The
-    # stored-recs fetch and the live-exclusion check are independent of
-    # each other, so they run concurrently rather than one after the
-    # other — that, plus the embed above, is what keeps this endpoint
-    # inside Phase 5's <200ms budget instead of the ~500ms an
-    # unoptimized, fully-sequential version measured at.
+    """Recommendations for one student, with fallbacks. db is the user's
+    client for GET /me, or the admin client for the kiosk."""
+    # Fetch the stored picks and the exclusions in parallel, for speed.
+    # !book_id picks which of the two links to books to embed.
     with ThreadPoolExecutor(max_workers=2) as pool:
         stored_future = pool.submit(
             lambda: db.table("student_recommendations")
@@ -113,20 +87,13 @@ def _recommend_for(db: Client, user_id: str, limit: int) -> RecommendationsRespo
             .limit(STORED_LIMIT)
             .execute()
         )
-        # Admin client on purpose: the exclusion check reads loans ->
-        # book_copies to find which books are borrowed, and book_copies
-        # has no RLS policy for students, so the caller's own client got
-        # every copy back empty and never excluded a borrowed book. Only
-        # a set of book ids leaves this call.
+        # Admin client: students can't read book_copies, so their own client
+        # would miss borrowed books. Only book ids come back.
         excluded_future = pool.submit(get_currently_excluded_book_ids, get_admin_client(), user_id)
         stored = stored_future.result().data
         excluded = excluded_future.result()
 
-    # Phase 7: no stored rung-1 recs at all, or live exclusions wiped out
-    # every one that was stored — either way, fall through the ladder
-    # rather than handing back an empty section. Phase 9: a job that
-    # hasn't run in a week is the same problem in slow motion — don't
-    # serve week-old "personalization" either.
+    # No personal picks left, or they're over a week old: use the fallbacks.
     live = _without_excluded(stored, excluded, limit) if stored else []
     if not live or _is_stale(stored[0]["generated_at"]):
         return _fallback_response(get_admin_client(), user_id, limit, excluded)
@@ -160,18 +127,9 @@ def _without_excluded(rows: list[dict], excluded: set[str], limit: int) -> list[
 
 
 def _fallback_response(admin: Client, user_id: str, limit: int, excluded: set[str]) -> RecommendationsResponse:
-    """Rung 2 then rung 3/4 (core/recommendations.py's docstrings) — a
-    student with no personal recommendations at all, or none left after
-    live exclusion, lands here. Public-read tables (migrations/0019), so
-    this could use the caller's own RLS-scoped client too, but the
-    program lookup just below already needs the admin client (no
-    self-select policy on `profiles` — same reason routers/sessions.py's
-    _insert_session looks up full_name via the admin client), so the
-    whole fallback path stays on one client for consistency.
-
-    The program and popular lists are shared, so the student's own
-    borrowed/reserved books are filtered out here — over-fetching by the
-    size of `excluded` so the section still fills up after filtering."""
+    """Program list, then popular list, for a student with no personal
+    picks. These lists are shared, so the student's own books are filtered
+    out (fetching extra so the section still fills up)."""
     fetch = limit + len(excluded)
     profile_res = admin.table("profiles").select("program").eq("id", user_id).execute()
     program = profile_res.data[0]["program"] if profile_res.data else None
@@ -205,15 +163,9 @@ def _fallback_response(admin: Client, user_id: str, limit: int, excluded: set[st
 
 @router.get("/popular", response_model=RecommendationsResponse)
 def get_popular_recommendations_endpoint(request: Request, response: Response, limit: int = DEFAULT_LIMIT):
-    """Rung 0 — fully public, no auth dependency of any kind. This is
-    what makes "a guest never reaches rung 1 or 2" true by construction:
-    there is no code path from this handler into student_recommendations
-    or program_recommendations at all. Byte-identical for every caller —
-    reads the same precomputed rows jobs/rebuild_recommendations.py
-    already wrote for GET /recommendations/me's own rung-3/4 fallback."""
-    # Keyed by IP, not session — this is the one endpoint in the plan
-    # explicitly public with no identity to key off. A kiosk's several
-    # students share an IP, hence the generous limit.
+    """Public popular list. It never reads anyone's personal data, so
+    guests can't reach it."""
+    # Limited by IP (there's no login). Kiosks share an IP, hence the high limit.
     if not check_and_record(f"popular:{request.client.host}", *POPULAR_RATE_LIMIT):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many requests — try again shortly")
 
@@ -234,12 +186,8 @@ def _popular_response(admin: Client, limit: int) -> RecommendationsResponse:
     return _rows_to_response(rows, rung="popular")
 
 
-# The kiosk's "For you" tab. A kiosk tap never produces a JWT, so the open
-# station session is the identity (see core/deps.py kiosk_session_user — same
-# trust level as holds, loans and the kiosk chat). A tapped-in student gets
-# their own ladder; anything else — a guest visit, an ended or unknown
-# session — gets the public popular rung, which has no path to anyone's
-# personal data. Rate limited per session, or per IP when there isn't one.
+# The kiosk's "For you" tab. A tapped-in student gets their own picks;
+# guests and ended sessions get the public popular list.
 @router.get("/kiosk", response_model=RecommendationsResponse)
 def get_kiosk_recommendations(request: Request, session_id: str | None = None, limit: int = DEFAULT_LIMIT):
     limit = max(1, min(limit, STORED_LIMIT))
@@ -261,11 +209,8 @@ def log_recommendation_events(
     body: LogEventsRequest,
     user: UserProfile | None = Depends(get_optional_user),
 ):
-    """Phase 9 — click-through logging. student_id/is_guest come from
-    the session, never the request body (same rule as every other tool/
-    endpoint in this app that could otherwise be pointed at someone
-    else's identity). A guest must supply their own opaque session_id —
-    there's no account to key a rate limit or funnel off otherwise."""
+    """Logs impressions and clicks. Who the user is comes from their login,
+    never the request body. Guests must send a session_id."""
     if len(body.events) > MAX_EVENTS_PER_BATCH:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Too many events in one batch (max {MAX_EVENTS_PER_BATCH})")
 

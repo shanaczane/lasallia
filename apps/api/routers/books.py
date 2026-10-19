@@ -16,21 +16,14 @@ from schemas.book import (
 
 router = APIRouter(prefix="/books", tags=["books"])
 
-# Only 185 rows today (Sprint 6.3 scale) — one full fetch, client-side
-# search/filter/sort. Revisit with real pagination once the catalog grows
-# past what's reasonable to ship in one response.
+# The whole catalog is sent at once and filtered in the browser. Add
+# pagination if it grows too big.
 DEFAULT_LIMIT = 1000
 
 def _redact_for_patrons(books: list[dict], user: UserProfile | None) -> list[dict]:
-    # Checked here, at the response layer, not trusted to the frontend not
-    # to render it: any caller without a librarian JWT — guest, student,
-    # faculty, kiosk, the Library Assistant, or someone poking the API
-    # directly — gets these nulled out.
-    #  - accession number: core rule of the borrow/return kiosk plan, never
-    #    shown before the student has typed it themselves.
-    #  - acquisition record (price, vendor, funding, date acquired,
-    #    circulation type, staff notes): the LRC's own inventory data. A
-    #    patron sees the same bibliographic record the public OPAC shows.
+    # Removed here on the server for everyone except librarians:
+    #  - accession number: never shown before the student types it.
+    #  - acquisition details (price, vendor, funding, notes): internal data.
     if user is not None and user.role == "librarian":
         return books
     for b in books:
@@ -44,29 +37,21 @@ def _derive_status(statuses: set[str], has_waiting: bool = False) -> str:
         return "available"
     if "reserved" in statuses:
         return "reserved"
-    # Returned and waiting to go back on the shelf. If someone's in the
-    # reservation queue, the reshelving scan hands this copy straight to
-    # them (core/loans.py's reshelve_copy_now), so for everyone else it's
-    # still effectively out — keep it "borrowed" in that case.
+    # Waiting to be reshelved. If someone has it reserved it goes to them, so
+    # it stays "borrowed" for everyone else.
     if "for_reshelving" in statuses and not has_waiting:
         return "for_reshelving"
     if statuses and statuses <= {"lost", "missing", "damaged"}:
         return "missing"
-    # In the building but on the wrong shelf (an inventory scan found it
-    # elsewhere) — nothing out on loan, so "borrowed" would be wrong.
+    # On the wrong shelf, not on loan, so not "borrowed".
     if "misplaced" in statuses and statuses <= {"misplaced", "lost", "missing", "damaged"}:
         return "misplaced"
     return "borrowed"
 
 def _apply_real_availability(books: list[dict], copy_rows: list[dict]) -> list[dict]:
-    # The Phase 2 kiosk plan tracks availability per physical copy in
-    # book_copies now, not as a stored integer on books — that integer
-    # (and books.status) went stale the moment the first real loan/hold
-    # started mutating book_copies instead. Recompute both from the real
-    # rows on every response so the catalog can't lie about what's on the
-    # shelf. Books with no book_copies rows yet (e.g. added through the
-    # not-yet-built librarian write endpoints) fall back to their own
-    # stored fields rather than showing zero copies of everything.
+    # Work out availability from the copies on every request; the stored
+    # numbers on books are out of date. Books with no copies keep their
+    # stored values.
     agg: dict[str, dict] = {}
     for row in copy_rows:
         entry = agg.setdefault(row["book_id"], {"total": 0, "available": 0, "reserved": 0, "statuses": set()})
@@ -103,33 +88,21 @@ def _apply_real_availability(books: list[dict], copy_rows: list[dict]) -> list[d
 @router.get("", response_model=BookSearchResponse)
 def list_books(
     limit: int = DEFAULT_LIMIT,
-    # The abstract is ~80% of this response by size and only the detail page
-    # (GET /books/{id}) and the librarian edit form use it. Off by default.
+    # Descriptions are most of the size and only some pages need them.
     include_abstract: bool = False,
     user: UserProfile | None = Depends(get_optional_user),
 ):
     db = get_client()
     maybe_sweep_expired_reservations(get_admin_client())
-    # Reports plan Phase 2: an archived book is meant to disappear from
-    # every catalog view (student, guest, kiosk, librarian alike) — this
-    # is the one query every one of those surfaces shares.
+    # Archived books are hidden from every catalog view.
     def fetch_books():
         return db.table("books").select("*").is_("archived_at", "null").order("title").limit(limit).execute()
 
     def fetch_copies():
         return get_admin_client().table("book_copies").select("book_id, status").execute()
 
-    # book_copies has no public RLS policy (its only legitimate public-ish
-    # access path is the token-authorized holds/loans flow) — the backend
-    # itself is trusted to read it, same as it already is for redacting
-    # accession_no below. Only the safe aggregate (counts/derived status)
-    # ever leaves this function, never individual copy rows.
-    #
-    # Small dataset (~185 rows) — one unfiltered fetch is simpler and just
-    # as cheap as filtering by the ids already on the page.
-    #
-    # The two reads don't depend on each other, so they run side by side
-    # instead of paying the database latency twice.
+    # Copies are read with the admin client (they have no public RLS); only
+    # counts and statuses are returned. Both reads run in parallel.
     with ThreadPoolExecutor(max_workers=2) as pool:
         books_future = pool.submit(fetch_books)
         copies_future = pool.submit(fetch_copies)
@@ -155,15 +128,9 @@ def _check_accession_conflict(admin, accession_no: str | None, exclude_book_id: 
             f'Accession number "{accession_no}" is already in use by another book',
         )
 
-# Librarian-only catalog write endpoints (BookFormModal's Add/Edit form).
-# A new title gets one book_copies row for the accession number typed into
-# the form — without it the book showed as available but had nothing a
-# student could actually borrow (see ensure_initial_copy). The form only
-# carries one accession number, so that's the only copy created here.
-# Editing total_copies on a book that DOES have book_copies rows won't move
-# the number shown anywhere, since those rows stay authoritative — copy
-# management for existing titles happens through the reshelving/mark-found
-# flows, not this form.
+# Add and edit books (librarians only). A new book gets one copy, from the
+# accession number on the form. Copy counts come from the copies, so
+# editing total_copies has no visible effect once copies exist.
 @router.post("", response_model=LibrarianBook, status_code=status.HTTP_201_CREATED)
 def create_book(body: BookWrite, librarian: UserProfile = Depends(require_librarian)):
     admin = get_admin_client()
@@ -194,18 +161,15 @@ def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends
     res = admin.table("books").update(payload).eq("id", book_id).execute()
     embed_single_book(admin, res.data[0])
 
-    # Fixing a typo'd accession number on the form has to reach the copy
-    # row ensure_initial_copy made from it, or the student types the real
-    # label at /borrow and it never matches.
+    # Fixing the accession number on the form also fixes the copy's, or
+    # the real label would never match at /borrow.
     if old_accession and body.accession_no and body.accession_no != old_accession:
         admin.table("book_copies").update(
             {"accession_number": normalize_accession_number(body.accession_no)}
         ).eq("book_id", book_id).eq("accession_number", normalize_accession_number(old_accession)).execute()
     ensure_initial_copy(admin, book_id)
 
-    # Same derivation list_books/get_book use, so an edit to a title that
-    # already has real book_copies rows doesn't briefly report the raw
-    # (now stale) total_copies/available_copies the PATCH just wrote.
+    # Return availability worked out from the copies, like list_books.
     copies_res = admin.table("book_copies").select("book_id, status").eq("book_id", book_id).execute()
     book = _apply_real_availability(res.data, copies_res.data)
     return book[0]
@@ -252,10 +216,9 @@ def delete_book(book_id: str, librarian: UserProfile = Depends(require_librarian
 def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)):
     db = get_client()
     admin = get_admin_client()
-    # Before reading copies, so a copy freed by an expired pickup shows its
-    # real status (or its new holder's) on this page.
+    # Expire overdue pickups first, so copy statuses are current.
     maybe_sweep_expired_reservations(admin)
-    # Book row and its copies don't depend on each other — fetch side by side.
+    # Fetch the book and its copies in parallel.
     with ThreadPoolExecutor(max_workers=2) as pool:
         res_future = pool.submit(lambda: db.table("books").select("*").eq("id", book_id).execute())
         copies_future = pool.submit(
@@ -266,18 +229,15 @@ def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
 
-    # A librarian can still open an archived book directly (e.g. from the
-    # Weeding log, to restore it) — everyone else gets the same 404 as a
-    # book that doesn't exist, not a "this book is archived" message that
-    # would leak its existence.
+    # Only librarians can open an archived book (e.g. to restore it). Others
+    # get a plain 404.
     if res.data[0].get("archived_at") and (user is None or user.role != "librarian"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
 
     book = _apply_real_availability(res.data, copies_res.data)
 
-    # Phase 5, plan 5.1: no button, no date, no waiting count once a copy
-    # is actually available — they should just go get it. Detail-page only
-    # (not list_books) — not worth an N+1 cost across the whole catalog.
+    # Expected-back date and waiting count, only when no copy is available.
+    # Detail page only, to keep the list fast.
     if not book[0].get("available_copies"):
         copy_ids = [c["id"] for c in copies_res.data]
         if copy_ids:
@@ -306,21 +266,12 @@ def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)
 
     return book[0]
 
-# "You may also like" on the book detail page — previously a plain
-# same-category client-side filter with no ranking (apps/web's
-# Recommendations component in app/user/catalog/[bookId]/page.tsx).
-# This reads the same TF-IDF/cosine-similarity data the "For You"
-# dashboard section already uses (book_similarities, computed nightly by
-# jobs/rebuild_similarities.py) instead of a same-category guess — a real
-# "books like this one" ranking, not a same-program coincidence.
+# "You may also like" on the book page: the most similar books by content.
 @router.get("/{book_id}/similar", response_model=list[Book])
 def get_similar_books(book_id: str, limit: int = 5, user: UserProfile | None = Depends(get_optional_user)):
     admin = get_admin_client()
 
-    # book_similarities has no public RLS policy (deny by default, same as
-    # every other precomputed recommendation table — see migrations/0017's
-    # own comment) — service-role client is what's actually allowed to
-    # read it, same as routers/recommendations.py does for its tables.
+    # Admin client: book_similarities has no public RLS.
     neighbor_rows = (
         admin.table("book_similarities")
         .select("neighbor_book_id, rank")
@@ -343,9 +294,7 @@ def get_similar_books(book_id: str, limit: int = 5, user: UserProfile | None = D
         books_by_id = {b["id"]: b for b in books_future.result().data}
         copies_data = copies_future.result().data
 
-    # Preserves book_similarities' own rank order — a plain .in_() fetch
-    # above doesn't — and silently drops a neighbor that's since been
-    # archived, same effect as never having matched at all.
+    # Keep the similarity order and drop archived books.
     ordered = [books_by_id[nid] for nid in neighbor_ids if nid in books_by_id]
     ordered = _apply_real_availability(ordered, copies_data)
     ordered = _redact_for_patrons(ordered, user)
@@ -364,14 +313,7 @@ def list_book_copies(book_id: str, librarian: UserProfile = Depends(require_libr
     )
     copies = res.data
 
-    # book_copies.shelf_location is never actually populated per copy — every
-    # row in the database reads the literal string "Unassigned" (a copy
-    # shelves wherever its title does; apps/web's Copy Management table uses
-    # the book's own shelf_location instead). Borrower/due date aren't
-    # columns on book_copies at all — joined in here from the matching
-    # active/overdue loan, same two-step profiles join routers/loans.py's
-    # list_loans already uses, so a librarian looking at a copy marked
-    # "On Loan" can see who actually has it instead of nothing.
+    # Add the borrower and due date for copies that are out on loan.
     on_loan_ids = [c["id"] for c in copies if c["status"] in ("on_loan", "overdue")]
     if on_loan_ids:
         loans = (
@@ -397,12 +339,8 @@ def list_book_copies(book_id: str, librarian: UserProfile = Depends(require_libr
 
     return copies
 
-# Reverse of holds.py's report_missing. Per the status machine enforced in
-# migration 0004, a side-state copy (lost/damaged/missing) can only exit
-# through for_reshelving — never straight back to available — same as a
-# real return. The librarian completes the transition through the existing
-# reshelving scan (POST /loans/reshelve) once the copy is actually back on
-# the shelf.
+# Marks a lost/missing/damaged/misplaced copy as found. It goes to the
+# reshelving queue; the reshelving scan makes it available.
 @router.post("/copies/{copy_id}/mark-found", status_code=status.HTTP_204_NO_CONTENT)
 def mark_copy_found(copy_id: str, librarian: UserProfile = Depends(require_librarian)):
     admin = get_admin_client()
@@ -422,8 +360,7 @@ COVER_BUCKET = "book-covers"
 MAX_COVER_BYTES = 5 * 1024 * 1024
 
 
-# Checked against the file's own first bytes, not the client-sent
-# content-type — that header is whatever the caller says it is.
+# File type from the file's first bytes, not the browser's claim.
 def _sniff_image_type(data: bytes) -> tuple[str, str] | None:
     if data.startswith(b"\xff\xd8\xff"):
         return "image/jpeg", "jpg"
@@ -434,10 +371,8 @@ def _sniff_image_type(data: bytes) -> tuple[str, str] | None:
     return None
 
 
-# Storage upload for the librarian book form. Server-side on purpose (the
-# bucket has no browser write policy), so this is also where the 5 MB / image
-# type limits the form only advertises actually get enforced. A fresh object
-# name per upload keeps browsers/CDN from serving a stale cached cover.
+# Uploads a book cover. Size and type limits are enforced here. Each upload
+# gets a new file name so browsers don't show an old cached cover.
 @router.post("/{book_id}/cover")
 def upload_book_cover(
     book_id: str,

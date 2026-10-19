@@ -9,18 +9,14 @@ from schemas.notification import Notification
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
-# RLS (0001) scopes both routes automatically: notifications_select_own /
-# notifications_update_own restrict every caller to user_id = auth.uid(),
-# librarian included — there's no "see everyone's notifications" case here,
-# unlike loans/reservations.
+# RLS limits everyone, librarians included, to their own notifications.
 
 @router.get("", response_model=list[Notification])
 def list_notifications(
     user: UserProfile = Depends(get_current_user),
     db: Client = Depends(get_user_supabase),
 ):
-    # So a "your reservation has expired" notice is already here when the
-    # student opens the bell, not only after someone loads the catalog.
+    # Expire overdue pickups first, so their notices are already here.
     maybe_sweep_expired_reservations(get_admin_client())
     res = db.table("notifications").select("*").order("created_at", desc=True).limit(50).execute()
     return res.data

@@ -1,25 +1,8 @@
-# apps/api/routers/chat.py
-# Chatbot Phase 2 — the orchestration endpoint. Resolves the caller's
-# ToolRegistry, runs the tool-calling loop against the model, and
-# returns a structured response the frontend renders as book cards /
-# policy citations / plain text.
+# The chatbot endpoint: runs the model with the user's tools and streams
+# status updates ("searching the catalog…") and the reply.
 #
-# Retrieval stays reachable without this file — see routers/search.py,
-# which core/tools/catalog.py wraps rather than this router reimplementing.
-#
-# Streams status events over SSE (plan 2.4) so the frontend's
-# TypingIndicator can show "searching the catalog" vs "writing a reply"
-# instead of a generic dot animation — a tool call adds real latency a
-# student could otherwise read as a freeze.
-#
-# Session history (Phase 7): a kiosk chat session's id IS its
-# station_sessions id (see migrations/0016 and core/chat_sessions.py's
-# own notes on why) — routers/sessions.py's end_session already wipes it
-# there. A web session gets its own id, persisted across visits. Either
-# way, prior turns are fetched here and replayed as plain messages so a
-# follow-up like "is it available?" resolves against what was already
-# said — this endpoint used to rebuild `messages` from scratch every
-# call, which is why multi-turn never actually worked before this phase.
+# Earlier messages in the session are sent along, so follow-ups like "is it
+# available?" make sense. Kiosk chats use the station session's id.
 
 import json
 import time
@@ -43,9 +26,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 CHAT_MODEL = "gpt-4o-mini"
 
-# Plan 2.2/3.2/3.3's exact requirements, written into the prompt in strong
-# terms rather than left implicit — Phase 8's adversarial testing is what
-# actually verifies these hold, this is only the ask.
+# The chatbot's rules. evals/ tests that the model actually follows them.
 SYSTEM_PROMPT = """You are Lasallia, the library assistant for De La Salle Lipa's Learning Resource Center (LRC).
 
 Rules — follow these exactly, they are not suggestions:
@@ -82,9 +63,7 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-# What the model sees in the tool result — trimmed, not the full Book
-# record the frontend gets back (no cover_url/cover_color noise in the
-# model's context, and accession_no is already None from the tool itself).
+# A trimmed book for the model, without fields it doesn't need.
 def _book_for_model(book: dict) -> dict:
     return {
         "id": book.get("id"),
@@ -99,11 +78,8 @@ def _book_for_model(book: dict) -> dict:
     }
 
 
-# get_book_details' result (core/tools/book_details.py's BookDetailsResult)
-# needs its own trimming: the description itself, collection_type (which
-# isn't on the frontend-facing Book type at all), and nearby_by_call_number
-# only when there's no description to summarize instead — rule 8 above
-# depends on that field's presence/absence to decide which branch to take.
+# Trimmed get_book_details result. Rules 8 and 9 depend on whether the
+# description is present, so keep it as is.
 def _book_details_for_model(result) -> dict:
     b = result.book
     data = {
@@ -128,11 +104,8 @@ def _book_details_for_model(result) -> dict:
     return data
 
 
-# get_my_loans/get_my_fines/get_my_history all return list[Loan] — trimmed
-# the same way as the book helpers above, both to keep the model's context
-# small and to avoid handing it the full row (station_session_id, internal
-# notes) it has no reason to see. Unlike the book helpers, accession_number
-# stays in: the loan itself proves possession (see core/tools/account.py).
+# A trimmed loan for the model. Accession numbers are fine here, since the
+# student already has the book.
 def _loan_for_model(loan) -> dict:
     book = loan.books
     return {
@@ -148,9 +121,7 @@ def _loan_for_model(loan) -> dict:
     }
 
 
-# The same tool can run more than once in a turn (two get_book_details
-# calls for the same book, get_my_loans across rounds) — one footer
-# entry each is enough.
+# A tool can run several times in one reply; list each source once.
 def _dedupe_sources(sources: list[ChatSource]) -> list[ChatSource]:
     seen: set[tuple] = set()
     out = []
@@ -162,12 +133,8 @@ def _dedupe_sources(sources: list[ChatSource]) -> list[ChatSource]:
     return out
 
 
-# A single completion call only ever returns the tool calls the model
-# wants *right now* — chaining search_catalog -> get_book_details (the
-# model doesn't have a book_id to call the latter with until it's seen
-# the former's results) needs the model to be asked again after seeing
-# each round's results. Capped so a model that never stops requesting
-# tools can't loop forever within one request.
+# The model may need several rounds of tool calls (search, then details).
+# Capped so it can't loop forever.
 MAX_TOOL_ROUNDS = 4
 
 
@@ -181,8 +148,8 @@ def send_message(
         user = kiosk_session_user(admin, body.session_id)
     registry = ToolRegistry(user)
 
-    # Kiosk always sends the station session's id; web sends whatever it
-    # got back from a prior turn, or nothing on the first message.
+    # The kiosk sends its session id; the web sends the previous one, or
+    # nothing on the first message.
     session_id = body.session_id or str(uuid.uuid4())
     chat_sessions.start_session(admin, session_id, user.id if user else None, body.surface)
     prior_history = chat_sessions.get_history(admin, session_id)
@@ -190,9 +157,8 @@ def send_message(
     def stream() -> Iterator[str]:
         started_at = time.perf_counter()
 
-        # Rule-based fast path (core/rules.py): a confident policy match is
-        # answered straight from policy_chunks with no OpenAI call. A miss
-        # falls through to the tool-calling path below, unchanged.
+        # Fast path: common policy questions are answered from the handbook
+        # without calling the AI (core/rules.py).
         matched = rules.match_and_answer(body.message)
         if matched:
             intent, rule_reply, rule_source = matched
@@ -214,17 +180,9 @@ def send_message(
             return
 
         messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-        # The caller's own profile (already resolved above — live, not
-        # cached) — lets "books for my program" or "my college" resolve
-        # without the student restating what the system already knows
-        # about them. Still sent (with different wording) when a
-        # logged-in student/faculty has set none of these yet — without
-        # this, the model's only signal that *someone* is logged in is
-        # tool presence, and it was observed telling an already-logged-in
-        # student with no program on file to "log in" instead of "set
-        # your program in Settings" (rule 15's actual intended branch).
-        # Guests and librarians (no program/college/year_level fields at
-        # all) still don't get this message.
+        # Tell the model the student's program and college, so "books for my
+        # program" works. If none are set, say so, so the model suggests
+        # Settings rather than logging in.
         if user is not None and user.role in ("student", "faculty"):
             profile_bits = [f"program: {user.program}" if user.program else None,
                              f"year level: {user.year_level}" if user.year_level else None,
@@ -251,9 +209,8 @@ def send_message(
         tools = [spec.schema for spec in registry.available_tools()]
         books_out: list[dict] = []
         reply = ""
-        # Where this reply could have come from, gathered per tool result —
-        # handbook chunks are only filtered down to the cited ones once the
-        # reply text exists (see core/chat_sources.py).
+        # Sources for the reply. Handbook sections are filtered to the cited
+        # ones after the reply is written.
         policy_chunks: list[tuple[str, int | None]] = []
         detail_sources: list[ChatSource] = []
         catalog_hits = 0
@@ -275,14 +232,7 @@ def send_message(
                 "tool_calls": [tc.model_dump() for tc in choice.message.tool_calls],
             })
 
-            # A round's tool calls are independent of each other (none can
-            # see another's result until the *next* completion call), so
-            # dispatching them concurrently rather than one-by-one cuts
-            # real latency whenever the model asks for more than one in
-            # the same round (e.g. search_catalog + search_policy for a
-            # mixed question) — matches the ThreadPoolExecutor pattern
-            # core/recommendations.py and routers/recommendations.py
-            # already use for the same reason.
+            # Tool calls in one round are independent, so run them in parallel.
             calls = choice.message.tool_calls
             parsed_args = [json.loads(c.function.arguments or "{}") for c in calls]
 
@@ -308,8 +258,7 @@ def send_message(
                         new_books = [b.model_dump() for b in result]
                         books_out.extend(new_books)
                         catalog_hits += len(new_books)
-                        # added_on so the model can say "added Oct 15"
-                        # without guessing — the plain book trim leaves it out.
+                        # Include the date added so the model doesn't guess it.
                         tool_content = [{**_book_for_model(b), "added_on": (b.get("created_at") or "")[:10]} for b in new_books]
                     elif call.function.name == "get_book_details":
                         books_out.append(result.book.model_dump())
@@ -343,15 +292,11 @@ def send_message(
 
             yield _sse("status", {"status": "writing"})
         else:
-            # Exhausted MAX_TOOL_ROUNDS and the model still wants tools —
-            # force a final answer with no tools offered, so it has to
-            # respond in text with whatever it's already learned.
+            # Out of rounds: ask for a final answer with no tools.
             final = client.chat.completions.create(model=CHAT_MODEL, messages=messages)
             reply = final.choices[0].message.content or ""
 
-        # Only a fully-completed turn gets saved — a mid-stream failure
-        # (network error, exhausted key) leaves history exactly as it was
-        # rather than persisting a half-turn with no reply to replay later.
+        # Only save complete turns, so a failure doesn't leave half a turn.
         sources = _dedupe_sources(
             chat_sources.cited_handbook_sources(policy_chunks, reply)
             + detail_sources
@@ -372,14 +317,11 @@ def send_message(
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
-# ─── Session history (Phase 7) ──────────────────────────────────────────
+# ─── Session history ────────────────────────────────────────────────────
 
 @router.get("/sessions", response_model=list[ChatSessionSummary])
 def list_sessions(user: UserProfile = Depends(get_current_user)):
-    """The web 'Recent Chats' list — a logged-in student's own past web
-    sessions. Not meaningful for a guest (no persistent identity to list
-    by) or for kiosk (sessions are gone the moment they end, and nothing
-    in the kiosk UI browses past visits anyway)."""
+    """The logged-in student's past web chats ("Recent Chats")."""
     admin = get_admin_client()
     rows = (
         admin.table("chat_sessions")
@@ -407,11 +349,8 @@ def list_sessions(user: UserProfile = Depends(get_current_user)):
 
 @router.get("/sessions/{session_id}", response_model=ChatHistoryResponse)
 def get_session_history(session_id: str, user: UserProfile | None = Depends(get_optional_user)):
-    """Hydrates a page on load/refresh. A guest-created session (no
-    student_id) is fetchable by anyone who has its exact id — the id
-    itself is the credential, same pattern soft_holds/station_sessions
-    already use — since a guest has no JWT to check ownership against.
-    A logged-in student's session requires the caller's JWT to match."""
+    """A chat's messages. A guest chat can be read by anyone with its id
+    (guests have no login); a student's chat only by that student."""
     admin = get_admin_client()
     session_res = admin.table("chat_sessions").select("student_id").eq("id", session_id).execute()
     if not session_res.data:
@@ -426,10 +365,7 @@ def get_session_history(session_id: str, user: UserProfile | None = Depends(get_
 
 @router.delete("/sessions/{session_id}", status_code=204)
 def delete_session(session_id: str, user: UserProfile | None = Depends(get_optional_user)):
-    """User-facing "delete this chat" — same ownership rule as
-    get_session_history: a guest session (no student_id) is deletable by
-    anyone with its exact id, a logged-in student's session requires
-    their JWT to match."""
+    """Deletes a chat, with the same ownership rule as get_session_history."""
     admin = get_admin_client()
     session_res = admin.table("chat_sessions").select("student_id").eq("id", session_id).execute()
     if not session_res.data:

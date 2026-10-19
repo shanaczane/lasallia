@@ -1,7 +1,5 @@
-# apps/api/routers/support_tickets.py
-# Login page's Contact Support form (submit + track — both public, no auth)
-# and the librarian Support Tickets inbox (list + update — require_librarian).
-# See migrations/0038_support_tickets.sql.
+# Support tickets: anyone can submit and track one (no login); librarians
+# list and update them.
 
 from datetime import datetime, timezone
 
@@ -50,11 +48,7 @@ def create_ticket(body: CreateSupportTicketRequest):
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not submit this ticket")
 
     ticket = res.data[0]
-    # Reuses the existing "student_activity" broadcast type (one row per
-    # librarian, core/notify.py) rather than adding a new NotificationType —
-    # the librarian Notifications page already buckets anything it doesn't
-    # recognize by title keyword into an "Other" catch-all, same as it does
-    # for every other librarian-facing event today.
+    # Notify librarians with the general "student_activity" type.
     preview = message if len(message) <= 120 else message[:117] + "…"
     notify_librarians(
         "New support ticket submitted",
@@ -78,9 +72,8 @@ def create_ticket(body: CreateSupportTicketRequest):
     return ticket
 
 
-# Public — no auth. Requires the submitting email as well as the ticket
-# number so the sequential LRC-000001-style number alone can't be guessed
-# to read someone else's ticket (see TrackTicketRequest's docstring).
+# No login needed, but the email must match too, so guessing a ticket
+# number isn't enough to read someone else's ticket.
 @router.post("/track", response_model=TicketStatusView)
 def track_ticket(body: TrackTicketRequest):
     admin = get_admin_client()

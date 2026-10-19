@@ -1,8 +1,5 @@
-# apps/api/routers/settings.py
-# Librarian Settings page — Library Info + Borrowing Rules tabs
-# (migrations/0024_library_settings.sql). Librarian-only, same
-# authorization boundary as routers/patrons.py: a collection-management
-# setting, not a per-user preference.
+# Library settings (info, borrowing rules, hours). Librarians only, except
+# the public endpoint.
 
 from datetime import datetime, timezone
 
@@ -22,10 +19,8 @@ def get_settings(librarian: UserProfile = Depends(require_librarian)):
     return get_library_settings(get_admin_client())
 
 
-# No auth — the login page's Contact Support / System Status links need
-# this before anyone has signed in. PublicLibrarySettings drops every
-# field that isn't meant for an anonymous visitor; pydantic ignores the
-# extra keys in get_library_settings()'s dict rather than erroring on them.
+# No login needed (the login page uses it). Only returns fields that are
+# safe to show the public.
 @router.get("/public", response_model=PublicLibrarySettings)
 def get_public_settings():
     return get_library_settings(get_admin_client())
@@ -44,20 +39,12 @@ def update_settings(
     changes["updated_at"] = datetime.now(timezone.utc).isoformat()
     changes["updated_by"] = librarian.id
 
-    # upsert, not update — a database that hasn't had a row inserted yet
-    # (migration ran, but the insert…on conflict seed didn't, or this is
-    # a fresh environment) still gets Save to actually work rather than
-    # silently touching zero rows.
+    # Upsert so saving works even if the settings row doesn't exist yet.
     try:
         res = admin.table("library_settings").upsert({"id": 1, **changes}).execute()
     except Exception as e:
-        # PGRST204/205 = PostgREST can't find a column/table it was asked
-        # to write — almost always means a migration (0024, or 0025 for
-        # the operating-hours columns) hasn't been applied to this
-        # database yet. Surfaced specifically instead of a bare 500, since
-        # get_library_settings() degrading gracefully on the GET side
-        # means this is the *only* place a librarian would otherwise see
-        # that anything's wrong.
+        # PGRST204/205: a column or table is missing, usually because a
+        # migration wasn't applied. Say so clearly instead of a bare 500.
         message = str(e)
         if "PGRST204" in message or "PGRST205" in message or "schema cache" in message:
             raise HTTPException(
@@ -70,7 +57,5 @@ def update_settings(
 
     if not res.data:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not save settings")
-    # Re-read through get_library_settings rather than trusting the
-    # upsert's own response shape directly — same numeric-string coercion
-    # every other reader gets, one code path for what a "row" means.
+    # Re-read so numbers are converted the same way as everywhere else.
     return get_library_settings(admin)

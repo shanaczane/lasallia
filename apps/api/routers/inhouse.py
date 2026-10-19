@@ -12,8 +12,7 @@ from schemas.inhouse import CreateInHouseLoanRequest, InHouseLoan
 
 router = APIRouter(prefix="/in-house-loans", tags=["in-house-loans"])
 
-# Plan 7: entirely librarian-driven — a guest has no session, no JWT, and
-# never calls any endpoint in this router themselves.
+# In-library use by guests. Librarians record it; guests never call these.
 
 @router.get("", response_model=list[InHouseLoan])
 def list_in_house_loans(
@@ -65,9 +64,7 @@ def create_in_house_loan(
     if not loan_res.data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Could not create the in-house loan")
 
-    # available -> on_loan: legal per Phase 1's status machine. Correctly
-    # takes the copy out of circulation while the guest has it, exactly
-    # like a real loan does — it's just not going home with them.
+    # Mark the copy on loan while the guest is using it.
     db.table("book_copies").update({"status": "on_loan"}).eq("id", copy["id"]).execute()
 
     loan = loan_res.data[0]
@@ -116,8 +113,7 @@ def return_in_house_loan(
     }).eq("id", loan_id).execute()
     loan = update_res.data[0]
 
-    # on_loan -> for_reshelving: never straight back to available, same
-    # rule Phase 4 follows for real returns (build plan 4.6/4.7).
+    # Back via reshelving, never straight to available.
     copy_res = db.table("book_copies").select("id, book_id, accession_number").eq("id", loan["book_copy_id"]).execute()
     copy = copy_res.data[0]
     db.table("book_copies").update({"status": "for_reshelving"}).eq("id", copy["id"]).execute()

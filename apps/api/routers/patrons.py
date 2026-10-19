@@ -10,24 +10,16 @@ from schemas.patron import Patron, UpdatePatronRequest
 
 router = APIRouter(prefix="/users", tags=["patrons"])
 
-MAX_YEAR_LEVEL = 8  # generous ceiling — covers every real program length (4-6 yrs) with room to spare
+MAX_YEAR_LEVEL = 8  # above any real program length
 
-# Same shape as routers/books.py's _check_accession_conflict / routers/
-# auth.py's own copy of this check for a self-service edit — pre-checked
-# with a SELECT rather than relying on the DB's unique index (0045) to
-# reject it, so a collision comes back as a readable 400 instead of a raw
-# integrity-error 500.
+# Checked up front so a duplicate ID number gives a clear 400, not a 500.
 def _check_id_number_conflict(admin, id_number: str, exclude_user_id: str) -> None:
     res = admin.table("profiles").select("id").eq("id_number", id_number).neq("id", exclude_user_id).execute()
     if res.data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f'ID number "{id_number}" is already in use by another patron')
 
-# Librarian-only management view over every registered account (build plan
-# 5.5). profiles_select_librarian (0008) is a role check, not a row check —
-# is_librarian() doesn't reference the row at all — so it grants a
-# librarian's own JWT a real bulk SELECT over every profile, not just their
-# own. RLS-scoped client is enough here; require_librarian is what actually
-# keeps a student from reaching this endpoint at all.
+# Librarian view of every account. RLS lets librarians read all profiles;
+# require_librarian keeps everyone else out.
 
 @router.get("", response_model=list[Patron])
 def list_patrons(
@@ -41,11 +33,8 @@ def list_patrons(
         query = query.eq("role", role)
     patrons = query.order("full_name").execute().data
 
-    # Filtered in Python rather than a PostgREST ilike filter — same
-    # reasoning as loans.py's search_loans: avoids building a filter string
-    # out of caller-supplied text, and the patron list is small enough that
-    # this costs nothing. Used by the librarian-assisted borrow flow's
-    # student picker (?q=&role=student) as well as the Patrons screen.
+    # Filtered in Python so user text never goes into a query filter. The
+    # list is small, so this is cheap.
     needle = (q or "").strip().lower()
     if needle:
         patrons = [
@@ -81,18 +70,12 @@ def update_patron(
         if changes["id_number"]:
             _check_id_number_conflict(admin, changes["id_number"], user_id)
 
-    # A librarian deactivating themselves would lock their own session out
-    # immediately (core/deps.py rejects inactive accounts on every request),
-    # and could leave the library with no librarian able to undo it. The
-    # Patrons screen disables the option too, but this is the real guard.
-    # Sprint 5.5.3
+    # A librarian can't deactivate themselves; they'd be locked out at once,
+    # possibly with no other librarian to undo it.
     if changes.get("status") == "inactive" and user_id == librarian.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You can't deactivate your own account.")
 
-    # A patron currently holding a book is still accountable for it — losing
-    # access (and showing up as "inactive" everywhere) shouldn't be a way to
-    # dodge that. Same active/overdue definition reservations.py's own
-    # same-account check uses.
+    # Can't deactivate a patron who still has a book out.
     if changes.get("status") == "inactive":
         outstanding = (
             admin.table("loans")
@@ -118,8 +101,8 @@ def update_patron(
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Patron not found")
 
-    # Tell the patron when their access changes. Email only — a deactivated
-    # account can't sign in to see an in-app notice anyway.
+    # Email the patron about the change (a deactivated account can't sign in
+    # to see an in-app notice).
     new_status = changes.get("status")
     if new_status and previous_status and new_status != previous_status:
         email_user(user_id, _account_status_email(new_status))

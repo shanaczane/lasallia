@@ -1,7 +1,5 @@
-# apps/api/routers/shelf_reports.py
-# "Can't find this book on the shelf" — thin HTTP layer over
-# core/shelf_reports.py. Any signed-in user can report; only librarians
-# can list and resolve.
+# "Can't find this book on the shelf" reports. Anyone signed in can report;
+# only librarians can list and resolve them.
 
 from fastapi import APIRouter, Depends, status
 

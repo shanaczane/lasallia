@@ -18,8 +18,7 @@ def list_borrows(
     user: UserProfile = Depends(get_current_user),
     db: Client = Depends(get_user_supabase),
 ):
-    # RLS scopes this automatically: patrons see only their own loans,
-    # librarians see every transaction. No role branching needed here.
+    # RLS limits patrons to their own rows; librarians see all.
     query = db.table("borrow_transactions").select("*, books(*), profiles(*)")
     if status:
         query = query.eq("status", status)

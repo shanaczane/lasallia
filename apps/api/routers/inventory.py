@@ -1,5 +1,4 @@
-# apps/api/routers/inventory.py
-# Inventory module — thin HTTP layer over core/inventory.py. Librarian only.
+# Inventory check endpoints (librarians only). Logic is in core/inventory.py.
 
 from fastapi import APIRouter, Depends
 

@@ -22,11 +22,8 @@ from schemas.hold import BorrowEligibility, ClaimHoldRequest, ClaimHoldResponse,
 
 router = APIRouter(prefix="/holds", tags=["holds"])
 
-# A hold lasts 3 minutes. Once 45 seconds or less remain, /borrow offers
-# "Add time", which tops it back up to a fresh 3 minutes — but never past
-# MAX_HOLD_SECONDS from when it was claimed, so one student can't park on a
-# copy indefinitely. The wrong-accession-number attempt limit
-# (routers/loans.py) is separate and unchanged.
+# A hold lasts 3 minutes. With 45 seconds or less left, "Add time" resets
+# it to 3 minutes, but never past MAX_HOLD_SECONDS from the start.
 HOLD_SECONDS = 180
 EXTEND_WINDOW_SECONDS = 45
 MAX_HOLD_SECONDS = 540
@@ -52,10 +49,8 @@ def _open_session_student(db, station_session_id: str) -> str:
 
 
 def _availability_problem(db, book_id: str, station_session_id: str) -> str | None:
-    """Why a general-circulation copy can't be claimed right now, or None if
-    one can. The catalog counts a copy as available while it's merely soft-held
-    (the copy row stays 'available'), but claim_copy_for_book skips any copy
-    with a live hold — so 'available' on screen can still mean 'not claimable'."""
+    """Why no copy can be claimed right now, or None if one can. A copy
+    someone else is holding still shows 'available' but can't be claimed."""
     copies = db.table("book_copies").select("id").eq("book_id", book_id).eq("status", "available").execute().data
     if not copies:
         return NO_COPIES
@@ -67,23 +62,17 @@ def _availability_problem(db, book_id: str, station_session_id: str) -> str | No
     return None
 
 
-# Not behind auth: claiming happens the instant a student (already
-# identified via their open station_session) taps "Borrow this book" —
-# there's no separate login step here. get_hold/release below are reached
-# from a second, unauthenticated device (the phone that scanned the QR),
-# so the token itself is the only credential that can exist for them.
+# No login: the open kiosk session identifies the student. The phone that
+# scans the QR code uses the hold token as its credential.
 
 @router.post("", response_model=ClaimHoldResponse, status_code=status.HTTP_201_CREATED)
 def claim_hold(body: ClaimHoldRequest):
     db = get_admin_client()
-    # A copy still held for an expired pickup would otherwise look
-    # unavailable to this walk-in.
+    # Free copies held for expired pickups first.
     maybe_sweep_expired_reservations(db)
 
-    # claim_copy_for_book only knows book_id + station_session_id — it has
-    # no concept of a student, so eligibility has to be decided here,
-    # before it ever runs. Rejecting late would lock a copy away from
-    # other students for a request that was always going to fail.
+    # Check eligibility before holding a copy, so a doomed request doesn't
+    # lock one away from others.
     student_id = _open_session_student(db, body.station_session_id)
 
     check_borrow_eligibility(db, student_id, body.book_id)
@@ -91,14 +80,8 @@ def claim_hold(body: ClaimHoldRequest):
 
     token = secrets.token_urlsafe(24)
 
-    # A student with a 'ready' reservation on this title already has a
-    # specific copy pulled and held for them — that copy's status is
-    # 'reserved', not 'available', so claim_copy_for_book below would
-    # never find it (by design, it only searches general circulation).
-    # Route them straight to their own held copy instead of running that
-    # search, so "Borrow this book" on the catalog page works the same way
-    # for a queued pickup as it does for a walk-in — no separate pickup
-    # flow needed.
+    # A student with a ready reservation gets the copy set aside for them
+    # (it's 'reserved', so the normal search wouldn't find it).
     ready_reservation = (
         db.table("reservations")
         .select("book_copy_id")
@@ -120,11 +103,8 @@ def claim_hold(body: ClaimHoldRequest):
             "created_at": now.isoformat(),
         }, on_conflict="book_copy_id").execute()
     else:
-        # A hold this same student left behind on this title (closed the
-        # popup, went back) would otherwise block their own new claim for
-        # up to 3 minutes — release it first. Matched by student, not just
-        # session: the student portal opens a fresh station session for
-        # every claim, so a session match alone never finds it.
+        # Release any hold this student left on this book, or it would block
+        # their new claim. Matched by student, since each claim gets a new session.
         own_copy_ids = [
             c["id"] for c in
             db.table("book_copies").select("id").eq("book_id", body.book_id).execute().data
@@ -151,21 +131,14 @@ def claim_hold(body: ClaimHoldRequest):
         if not res.data:
             raise HTTPException(status.HTTP_409_CONFLICT, _availability_problem(db, body.book_id, body.station_session_id) or NO_COPIES)
 
-        # claim_copy_for_book stamps expires_at with the database's clock,
-        # but every later check (get_hold, extend_hold, confirm_loan) runs on
-        # this API's clock — if the two disagree by more than the hold's
-        # length, every hold reads as expired the instant it's made. Restamp
-        # both columns here so one clock owns them. created_at also has to
-        # restart because the function can reuse an old expired row, and
-        # extend_hold's cap is measured from it.
+        # Reset the times with this server's clock, which every later check
+        # uses; the database clock may differ.
         now = datetime.now(timezone.utc)
         expires_at = (now + timedelta(seconds=HOLD_SECONDS)).isoformat()
         try:
             db.table("soft_holds").update({"created_at": now.isoformat(), "expires_at": expires_at}).eq("token", token).execute()
         except Exception:
-            # The copy is already held but the student will only see an
-            # error, never this token — free the copy rather than leave it
-            # blocking their retry as "someone else is borrowing".
+            # The student only sees an error, so free the copy for their retry.
             db.table("soft_holds").delete().eq("token", token).execute()
             raise
 
@@ -176,10 +149,8 @@ def claim_hold(body: ClaimHoldRequest):
         qr_url=f"{FRONTEND_URL}/borrow/{token}",
     )
 
-# Pre-flight for the kiosk's Borrow button: the same checks claim_hold would run,
-# answered up front so a student who can't borrow sees why instead of a button
-# that fails. Session id is the credential, same as claim_hold. Must be declared
-# before /{token}, which would otherwise swallow the path.
+# Runs claim_hold's checks in advance, so the kiosk can explain why a student
+# can't borrow. Must come before /{token}, which would match this path.
 @router.get("/eligibility", response_model=BorrowEligibility)
 def borrow_eligibility(book_id: str, station_session_id: str):
     db = get_admin_client()
@@ -192,8 +163,7 @@ def borrow_eligibility(book_id: str, station_session_id: str):
         return BorrowEligibility(can_borrow=False, reason=str(e.detail))
     ensure_initial_copy(db, book_id)
 
-    # A ready reservation has its own pulled copy (see claim_hold), so the
-    # general-circulation availability check doesn't apply to it.
+    # A ready reservation already has its copy set aside.
     ready = (
         db.table("reservations").select("id")
         .eq("user_id", student_id).eq("book_id", book_id).eq("status", "ready")
@@ -222,7 +192,7 @@ def get_hold(token: str):
     if not book_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
     book = book_res.data[0]
-    book["accession_no"] = None  # never shown before it's typed — see routers/books.py
+    book["accession_no"] = None  # never shown before the student types it
 
     session_res = db.table("station_sessions").select("student_id").eq("id", hold["station_session_id"]).execute()
     student_id = session_res.data[0]["student_id"]
@@ -264,14 +234,8 @@ def release_hold(token: str):
 
 
 def _hand_on_released_copy(db, copy_id: str) -> None:
-    """Same handoff a return or reshelve does: a general-circulation copy
-    goes to the first student waiting in the reservation queue (who's
-    notified and emailed by promote_next_reservation), or simply stays
-    available if nobody is waiting.
-
-    A 'reserved' copy was held for this student's own ready reservation —
-    backing out of the borrow form doesn't give that up; it stays theirs
-    until they borrow it, cancel it, or the pickup window lapses."""
+    """Gives a released copy to the reservation queue, or leaves it
+    available. A copy reserved for this student stays theirs."""
     copy_res = db.table("book_copies").select("id, book_id, status").eq("id", copy_id).execute()
     if not copy_res.data or copy_res.data[0]["status"] != "available":
         return
@@ -309,11 +273,8 @@ def extend_hold(token: str):
         can_extend=new_expiry < deadline,
     )
 
-# 2.3: "'I can't find it' button flags the copy for librarian attention and
-# releases the hold." Flagging means the copy transitions available ->
-# missing (legal per the Phase 1 status machine) rather than just
-# releasing the hold, which would silently hand the same empty shelf slot
-# to the next student who claims this copy.
+# "I can't find it": marks the copy missing (not just released), so the
+# next student isn't sent to the same empty shelf.
 @router.post("/{token}/report-missing", status_code=status.HTTP_204_NO_CONTENT)
 def report_missing(token: str):
     db = get_admin_client()
