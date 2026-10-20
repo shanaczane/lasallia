@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from "react"
+import { useState, useRef, useEffect, useLayoutEffect } from "react"
 import { usePathname } from "next/navigation"
 import ChatHeader from "./ChatHeader"
 import ChatInput from "./ChatInput"
@@ -15,7 +15,6 @@ import { pillStatusFor } from "@/components/ui/pills/availability-pill"
 
 interface ChatWindowProps {
   onMenuClick: () => void
-  quickRepliesSlot?: (onSelect: (text: string) => void) => ReactNode
   // Kiosk: sessionId is the station session's id. Web: the page picks the
   // open chat (undefined = not loaded yet, null = new chat).
   surface?: ChatSurface
@@ -76,7 +75,7 @@ function greeting(): ChatMessageData {
 }
 
 export default function ChatWindow({
-  onMenuClick, quickRepliesSlot, surface = "web", sessionId, onSessionChange, onSessionsChanged,
+  onMenuClick, surface = "web", sessionId, onSessionChange, onSessionsChanged,
 }: ChatWindowProps) {
   // Starts empty; the greeting (with its timestamp) is added after mount to
   // avoid a hydration mismatch.
@@ -327,9 +326,6 @@ export default function ChatWindow({
           {typingStatus && <TypingIndicator status={typingStatus} />}
         </div>
       </div>
-
-      {/* Quick replies slot (optional) */}
-      {quickRepliesSlot && quickRepliesSlot(handleSend)}
 
       <ChatInput onSend={handleSend} disabled={typingStatus !== null || loadingHistory} />
     </div>

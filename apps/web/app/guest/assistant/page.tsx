@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react"
 import ChatSidebar from "@/components/chat/shared/ChatSidebar"
 import ChatWindow from "@/components/chat/shared/ChatWindow"
-import GuestQuickReplies from "@/components/chat/guest/GuestQuickReplies"
 import { WEB_CHAT_SESSION_STORAGE_KEY } from "@/lib/chat"
 
 export default function GuestAssistantPage() {
@@ -50,7 +49,6 @@ export default function GuestAssistantPage() {
         sessionId={activeSessionId}
         onSessionChange={setActiveSessionId}
         onSessionsChanged={() => setSessionsVersion((v) => v + 1)}
-        quickRepliesSlot={(onSelect) => <GuestQuickReplies onSelect={onSelect} />}
       />
     </div>
   )
