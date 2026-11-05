@@ -36,6 +36,7 @@ def update_settings(
         return get_library_settings(get_admin_client())
 
     admin = get_admin_client()
+    _check_timers({**get_library_settings(admin), **changes})
     changes["updated_at"] = datetime.now(timezone.utc).isoformat()
     changes["updated_by"] = librarian.id
 
@@ -50,7 +51,8 @@ def update_settings(
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 "Settings can't be saved yet — a database migration hasn't been applied "
-                "(migrations/0024_library_settings.sql and 0025_library_operating_hours.sql). "
+                "(migrations/0024_library_settings.sql, 0025_library_operating_hours.sql and "
+                "0057_kiosk_borrow_security.sql). "
                 "Ask whoever manages the database to run it, then try again.",
             )
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not save settings")
@@ -59,3 +61,13 @@ def update_settings(
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not save settings")
     # Re-read so numbers are converted the same way as everywhere else.
     return get_library_settings(admin)
+
+
+def _check_timers(cfg: dict) -> None:
+    """The kiosk and hold timers have to fit inside each other."""
+    if cfg["kiosk_idle_warning_seconds"] >= cfg["kiosk_idle_timeout_seconds"]:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The session warning must start before the session ends")
+    if cfg["hold_extend_window_seconds"] >= cfg["hold_duration_seconds"]:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The \"Add time\" window must be shorter than the hold")
+    if cfg["hold_max_seconds"] < cfg["hold_duration_seconds"]:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The longest hold can't be shorter than the hold itself")

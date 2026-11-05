@@ -11,13 +11,6 @@ Condition = Literal["good", "minor_wear", "already_damaged"]
 ReturnCondition = Literal["good", "fair", "damaged", "incomplete"]
 FineStatus = Literal["none", "paid", "unsettled"]
 
-class ConfirmLoanRequest(BaseModel):
-    token: str
-    accession_number: str
-    condition: Condition
-    purpose: str | None = None
-    notes: str | None = None
-
 # Checkout at the desk: the scanned accession number picks the exact copy.
 class LibrarianAssistedLoanRequest(BaseModel):
     station_session_id: str

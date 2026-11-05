@@ -2,14 +2,13 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+# manual_login is what web-portal sessions are recorded as (and what older
+# kiosk sessions were). It can't be used to open a kiosk session.
 AuthMethod = Literal["manual_login", "rfid", "librarian_assisted"]
 
 class OpenSessionRequest(BaseModel):
     station_id: str
-    auth_method: AuthMethod
-    # manual_login
-    email: str | None = None
-    password: str | None = None
+    auth_method: Literal["rfid", "librarian_assisted"]
     # rfid
     rfid_uid: str | None = None
     # librarian_assisted: the librarian's login is the credential.

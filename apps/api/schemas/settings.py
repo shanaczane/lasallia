@@ -1,7 +1,7 @@
 # Library settings: info, borrowing rules and opening hours. Read through
 # core/settings.py.
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LibrarySettings(BaseModel):
@@ -18,6 +18,14 @@ class LibrarySettings(BaseModel):
     max_fine_per_book: float
     reservation_hold_period_days: int
     max_active_reservations: int
+
+    # Kiosk and borrowing timers, in seconds.
+    kiosk_idle_timeout_seconds: int = 90
+    kiosk_idle_warning_seconds: int = 15
+    hold_duration_seconds: int = 180
+    hold_extend_window_seconds: int = 45
+    hold_max_seconds: int = 540
+    kiosk_tap_confirm_seconds: int = 60
 
     # "HH:MM" or "HH:MM:SS". Both empty means closed (no fines that day).
     weekday_open_time: str | None = None
@@ -50,6 +58,10 @@ class PublicLibrarySettings(BaseModel):
     sunday_open_time: str | None = None
     sunday_close_time: str | None = None
 
+    # The kiosk reads its idle timer before anyone taps in.
+    kiosk_idle_timeout_seconds: int = 90
+    kiosk_idle_warning_seconds: int = 15
+
 
 # Only the fields sent are saved.
 class UpdateLibrarySettingsRequest(BaseModel):
@@ -66,6 +78,13 @@ class UpdateLibrarySettingsRequest(BaseModel):
     max_fine_per_book: float | None = None
     reservation_hold_period_days: int | None = None
     max_active_reservations: int | None = None
+
+    kiosk_idle_timeout_seconds: int | None = Field(None, ge=30)
+    kiosk_idle_warning_seconds: int | None = Field(None, ge=5)
+    hold_duration_seconds: int | None = Field(None, ge=60)
+    hold_extend_window_seconds: int | None = Field(None, ge=10)
+    hold_max_seconds: int | None = Field(None, ge=60)
+    kiosk_tap_confirm_seconds: int | None = Field(None, ge=15)
 
     weekday_open_time: str | None = None
     weekday_close_time: str | None = None

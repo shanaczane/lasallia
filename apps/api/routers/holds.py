@@ -1,42 +1,59 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from postgrest.exceptions import APIError
 
+from core.accession import normalize_accession_number
 from core.config import FRONTEND_URL
+from core.deps import get_current_user, get_optional_user
+from core.email_template import staff_alert
+from core.holds import (
+    WRONG_ACCESSION,
+    WRONG_ID_TAP,
+    get_live_hold,
+    hand_on_released_copy,
+    hold_timers,
+    loan_for_hold_token,
+    record_failed_attempt,
+    require_borrower,
+    seconds_left as _seconds_left,
+)
 from core.loans import (
     COPY_BEING_BORROWED,
-    HOLD_GONE,
     NO_COPIES,
     SESSION_ENDED,
     SESSION_INVALID,
     check_borrow_eligibility,
+    create_loan_and_notify,
     ensure_initial_copy,
 )
 from core.notify import notify_librarians
-from core.email_template import staff_alert
-from core.reservations import maybe_sweep_expired_reservations, promote_next_reservation
+from core.reservations import maybe_sweep_expired_reservations
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
-from schemas.hold import BorrowEligibility, ClaimHoldRequest, ClaimHoldResponse, HoldDetail, HoldExtendResponse
+from schemas.auth import UserProfile
+from schemas.hold import (
+    BorrowEligibility,
+    ClaimHoldRequest,
+    ClaimHoldResponse,
+    ConfirmTapRequest,
+    HoldDetail,
+    HoldExtendResponse,
+    HoldStatus,
+    ReleaseHoldRequest,
+    VerifyHoldRequest,
+)
 
 router = APIRouter(prefix="/holds", tags=["holds"])
 
-# A hold lasts 3 minutes. With 45 seconds or less left, "Add time" resets
-# it to 3 minutes, but never past MAX_HOLD_SECONDS from the start.
-HOLD_SECONDS = 180
-EXTEND_WINDOW_SECONDS = 45
-MAX_HOLD_SECONDS = 540
+# The hold timers (length, "Add time" window, longest hold) and the time
+# allowed for the second kiosk tap are set in Library Settings.
 
 
-def _hold_deadline(hold: dict) -> datetime:
-    return datetime.fromisoformat(hold["created_at"]) + timedelta(seconds=MAX_HOLD_SECONDS)
+def _hold_deadline(hold: dict, max_seconds: int) -> datetime:
+    return datetime.fromisoformat(hold["created_at"]) + timedelta(seconds=max_seconds)
 
-
-def _seconds_left(expires_at: datetime | str) -> int:
-    if isinstance(expires_at, str):
-        expires_at = datetime.fromisoformat(expires_at)
-    return max(0, int((expires_at - datetime.now(timezone.utc)).total_seconds()))
 
 def _open_session_student(db, station_session_id: str) -> str:
     session_res = db.table("station_sessions").select("student_id, ended_at").eq("id", station_session_id).execute()
@@ -63,7 +80,7 @@ def _availability_problem(db, book_id: str, station_session_id: str) -> str | No
 
 
 # No login: the open kiosk session identifies the student. The phone that
-# scans the QR code uses the hold token as its credential.
+# scans the QR code must then sign in as that same student.
 
 @router.post("", response_model=ClaimHoldResponse, status_code=status.HTTP_201_CREATED)
 def claim_hold(body: ClaimHoldRequest):
@@ -79,6 +96,7 @@ def claim_hold(body: ClaimHoldRequest):
     ensure_initial_copy(db, body.book_id)
 
     token = secrets.token_urlsafe(24)
+    hold_seconds, _, _ = hold_timers(get_library_settings(db))
 
     # A student with a ready reservation gets the copy set aside for them
     # (it's 'reserved', so the normal search wouldn't find it).
@@ -93,7 +111,7 @@ def claim_hold(body: ClaimHoldRequest):
 
     if ready_reservation and ready_reservation[0]["book_copy_id"]:
         now = datetime.now(timezone.utc)
-        expires_at = (now + timedelta(seconds=HOLD_SECONDS)).isoformat()
+        expires_at = (now + timedelta(seconds=hold_seconds)).isoformat()
         db.table("soft_holds").upsert({
             "book_copy_id": ready_reservation[0]["book_copy_id"],
             "station_session_id": body.station_session_id,
@@ -101,6 +119,10 @@ def claim_hold(body: ClaimHoldRequest):
             "attempt_count": 0,
             "expires_at": expires_at,
             "created_at": now.isoformat(),
+            "verified_at": None,
+            "pending_condition": None,
+            "pending_purpose": None,
+            "pending_notes": None,
         }, on_conflict="book_copy_id").execute()
     else:
         # Release any hold this student left on this book, or it would block
@@ -125,18 +147,27 @@ def claim_hold(body: ClaimHoldRequest):
             "p_book_id": body.book_id,
             "p_station_session_id": body.station_session_id,
             "p_token": token,
-            "p_ttl_seconds": HOLD_SECONDS,
+            "p_ttl_seconds": hold_seconds,
         }).execute()
 
         if not res.data:
             raise HTTPException(status.HTTP_409_CONFLICT, _availability_problem(db, body.book_id, body.station_session_id) or NO_COPIES)
 
         # Reset the times with this server's clock, which every later check
-        # uses; the database clock may differ.
+        # uses; the database clock may differ. The claim function can reuse
+        # an expired hold's row, so clear what its phone had sent too.
         now = datetime.now(timezone.utc)
-        expires_at = (now + timedelta(seconds=HOLD_SECONDS)).isoformat()
+        expires_at = (now + timedelta(seconds=hold_seconds)).isoformat()
         try:
-            db.table("soft_holds").update({"created_at": now.isoformat(), "expires_at": expires_at}).eq("token", token).execute()
+            db.table("soft_holds").update({
+                "created_at": now.isoformat(),
+                "expires_at": expires_at,
+                "attempt_count": 0,
+                "verified_at": None,
+                "pending_condition": None,
+                "pending_purpose": None,
+                "pending_notes": None,
+            }).eq("token", token).execute()
         except Exception:
             # The student only sees an error, so free the copy for their retry.
             db.table("soft_holds").delete().eq("token", token).execute()
@@ -175,94 +206,228 @@ def borrow_eligibility(book_id: str, station_session_id: str):
     problem = _availability_problem(db, book_id, station_session_id)
     return BorrowEligibility(can_borrow=problem is None, reason=problem)
 
+
+# The borrow form on the phone. Only the borrower, signed in, can open it.
 @router.get("/{token}", response_model=HoldDetail)
-def get_hold(token: str):
+def get_hold(token: str, user: UserProfile = Depends(get_current_user)):
     db = get_admin_client()
+    hold = get_live_hold(db, token)
+    require_borrower(db, hold, user.id)
 
-    hold_res = db.table("soft_holds").select("*, book_copies(book_id)").eq("token", token).execute()
-    if not hold_res.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, HOLD_GONE)
-    hold = hold_res.data[0]
-
-    if datetime.fromisoformat(hold["expires_at"]) < datetime.now(timezone.utc):
-        raise HTTPException(status.HTTP_410_GONE, HOLD_GONE)
-
-    book_id = hold["book_copies"]["book_id"]
-    book_res = db.table("books").select("*").eq("id", book_id).execute()
-    if not book_res.data:
+    copy_res = db.table("book_copies").select("book_id").eq("id", hold["book_copy_id"]).execute()
+    book_res = db.table("books").select("*").eq("id", copy_res.data[0]["book_id"]).execute() if copy_res.data else None
+    if not book_res or not book_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
     book = book_res.data[0]
     book["accession_no"] = None  # never shown before the student types it
 
-    session_res = db.table("station_sessions").select("student_id").eq("id", hold["station_session_id"]).execute()
-    student_id = session_res.data[0]["student_id"]
-    profile_res = db.table("profiles").select("full_name").eq("id", student_id).execute()
+    profile_res = db.table("profiles").select("full_name").eq("id", hold["student_id"]).execute()
     full_name = (profile_res.data[0]["full_name"] if profile_res.data else None) or ""
     first_name = full_name.split(" ")[0] or "there"
 
     active_loans = (
         db.table("loans")
         .select("id", count="exact")
-        .eq("student_id", student_id)
+        .eq("student_id", hold["student_id"])
         .eq("status", "active")
         .execute()
     )
 
     cfg = get_library_settings(db)
+    hold_seconds, window, max_seconds = hold_timers(cfg)
     due_preview = (datetime.now(timezone.utc) + timedelta(days=cfg["standard_loan_period_days"])).isoformat()
 
     return HoldDetail(
         token=token,
         expires_at=hold["expires_at"],
         seconds_left=_seconds_left(hold["expires_at"]),
-        can_extend=datetime.fromisoformat(hold["expires_at"]) < _hold_deadline(hold),
+        can_extend=datetime.fromisoformat(hold["expires_at"]) < _hold_deadline(hold, max_seconds),
         book=book,
         student_first_name=first_name,
         active_loan_count=active_loans.count or 0,
         due_date_preview=due_preview,
+        borrow_limit=cfg["max_books_per_borrower"],
+        loan_period_days=cfg["standard_loan_period_days"],
+        hold_duration_seconds=hold_seconds,
+        extend_window_seconds=window,
+        needs_kiosk_tap=hold["needs_kiosk_tap"],
+        awaiting_tap=hold.get("verified_at") is not None,
     )
 
-@router.post("/{token}/release", status_code=status.HTTP_204_NO_CONTENT)
-def release_hold(token: str):
-    """The student backed out of borrowing — free the copy right away
-    instead of leaving it blocked until the hold times out."""
+
+# Where a borrow is up to. The kiosk asks with its session id (it has no
+# login); the phone asks signed in as the borrower.
+@router.get("/{token}/status", response_model=HoldStatus)
+def hold_status(
+    token: str,
+    station_session_id: str | None = None,
+    caller: UserProfile | None = Depends(get_optional_user),
+):
     db = get_admin_client()
-    res = db.table("soft_holds").delete().eq("token", token).execute()
+
+    def allowed(session_id: str | None, student_id: str | None) -> bool:
+        return (station_session_id is not None and station_session_id == session_id) or (
+            caller is not None and caller.id == student_id
+        )
+
+    loan = loan_for_hold_token(db, token)
+    if loan:
+        if not allowed(loan["station_session_id"], loan["student_id"]):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your borrow")
+        return HoldStatus(status="borrowed", due_date=loan["due_date"])
+
+    try:
+        hold = get_live_hold(db, token)
+    except HTTPException as e:
+        if e.status_code in (status.HTTP_404_NOT_FOUND, status.HTTP_410_GONE):
+            return HoldStatus(status="gone")
+        raise
+    if not allowed(hold["station_session_id"], hold["student_id"]):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your borrow")
+    return HoldStatus(
+        status="awaiting_tap" if hold.get("verified_at") else "waiting",
+        seconds_left=_seconds_left(hold["expires_at"]),
+    )
+
+
+# The phone checks the number on the book's label. A web-portal borrow
+# becomes a loan right away; a kiosk borrow waits for the second ID tap.
+@router.post("/{token}/verify", response_model=HoldStatus)
+def verify_hold(token: str, body: VerifyHoldRequest, user: UserProfile = Depends(get_current_user)):
+    db = get_admin_client()
+
+    # Already borrowed (e.g. "Try again" after a dropped reply): say so.
+    existing = loan_for_hold_token(db, token)
+    if existing and existing["student_id"] == user.id:
+        return HoldStatus(status="borrowed", due_date=existing["due_date"])
+
+    hold = get_live_hold(db, token)
+    require_borrower(db, hold, user.id)
+
+    copy_res = db.table("book_copies").select("*").eq("id", hold["book_copy_id"]).execute()
+    if not copy_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Copy not found")
+    copy = copy_res.data[0]
+
+    submitted = normalize_accession_number(body.accession_number).lower()
+    actual = normalize_accession_number(copy["accession_number"] or "").lower()
+    if submitted != actual:
+        record_failed_attempt(
+            db, hold, WRONG_ACCESSION, status.HTTP_400_BAD_REQUEST,
+            "That number belongs to a different book. Please check the label.",
+        )
+
+    if hold["needs_kiosk_tap"]:
+        cfg = get_library_settings(db)
+        now = datetime.now(timezone.utc)
+        # Always leave enough time to walk back and tap.
+        expires_at = max(
+            datetime.fromisoformat(hold["expires_at"]),
+            now + timedelta(seconds=cfg["kiosk_tap_confirm_seconds"]),
+        )
+        db.table("soft_holds").update({
+            "verified_at": now.isoformat(),
+            "expires_at": expires_at.isoformat(),
+            "pending_condition": body.condition,
+            "pending_purpose": body.purpose,
+            "pending_notes": body.notes,
+        }).eq("id", hold["id"]).execute()
+        return HoldStatus(status="awaiting_tap", seconds_left=_seconds_left(expires_at))
+
+    loan = _create_loan(db, hold, copy, body.condition, body.purpose, body.notes, token)
+    return HoldStatus(status="borrowed", due_date=loan["due_date"])
+
+
+# The second ID tap at the kiosk, which creates the loan. No login: the
+# kiosk session id and the tapped ID are the proof.
+@router.post("/{token}/confirm-tap", response_model=HoldStatus)
+def confirm_tap(token: str, body: ConfirmTapRequest):
+    db = get_admin_client()
+
+    existing = loan_for_hold_token(db, token)
+    if existing and existing["station_session_id"] == body.station_session_id:
+        return HoldStatus(status="borrowed", due_date=existing["due_date"])
+
+    hold = get_live_hold(db, token)
+    if hold["station_session_id"] != body.station_session_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This borrow was started on another kiosk session")
+    if not hold.get("verified_at"):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Finish on your phone first, then tap your ID")
+
+    tapped = db.table("profiles").select("id").eq("rfid_uid", body.rfid_uid).execute().data
+    if not tapped or tapped[0]["id"] != hold["student_id"]:
+        record_failed_attempt(
+            db, hold, WRONG_ID_TAP, status.HTTP_403_FORBIDDEN,
+            "That ID doesn't match the borrower. Tap the same ID you started with.",
+        )
+
+    copy_res = db.table("book_copies").select("*").eq("id", hold["book_copy_id"]).execute()
+    if not copy_res.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Copy not found")
+    loan = _create_loan(
+        db, hold, copy_res.data[0],
+        hold.get("pending_condition") or "good", hold.get("pending_purpose"), hold.get("pending_notes"), token,
+    )
+    return HoldStatus(status="borrowed", due_date=loan["due_date"])
+
+
+def _create_loan(db, hold: dict, copy: dict, condition: str, purpose: str | None, notes: str | None, token: str) -> dict:
+    try:
+        loan = create_loan_and_notify(
+            db, hold["student_id"], copy["id"], copy["book_id"], hold["station_session_id"],
+            condition, purpose, notes, hold_token=token,
+        )
+    except APIError as e:
+        # Two confirms arrived at once and the other one won; use its loan.
+        if e.code == "23505":
+            existing = loan_for_hold_token(db, token)
+            if existing:
+                return existing
+        raise
+    db.table("soft_holds").delete().eq("id", hold["id"]).execute()
+    return loan
+
+
+# The student backed out: free the copy now instead of at the timeout. The
+# kiosk sends its session id; the phone is signed in as the borrower.
+@router.post("/{token}/release", status_code=status.HTTP_204_NO_CONTENT)
+def release_hold(
+    token: str,
+    body: ReleaseHoldRequest | None = None,
+    caller: UserProfile | None = Depends(get_optional_user),
+):
+    db = get_admin_client()
+    res = db.table("soft_holds").select("id, book_copy_id, station_session_id").eq("token", token).execute()
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Hold not found")
-    _hand_on_released_copy(db, res.data[0]["book_copy_id"])
+    hold = res.data[0]
 
+    from_kiosk = body is not None and body.station_session_id == hold["station_session_id"]
+    if not from_kiosk:
+        session = db.table("station_sessions").select("student_id").eq("id", hold["station_session_id"]).execute().data
+        if caller is None or not session or session[0]["student_id"] != caller.id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your borrow")
 
-def _hand_on_released_copy(db, copy_id: str) -> None:
-    """Gives a released copy to the reservation queue, or leaves it
-    available. A copy reserved for this student stays theirs."""
-    copy_res = db.table("book_copies").select("id, book_id, status").eq("id", copy_id).execute()
-    if not copy_res.data or copy_res.data[0]["status"] != "available":
-        return
-    copy = copy_res.data[0]
-    if promote_next_reservation(db, copy["book_id"], copy["id"]):
-        db.table("book_copies").update({"status": "reserved"}).eq("id", copy["id"]).execute()
+    db.table("soft_holds").delete().eq("id", hold["id"]).execute()
+    hand_on_released_copy(db, hold["book_copy_id"])
+
 
 @router.post("/{token}/extend", response_model=HoldExtendResponse)
-def extend_hold(token: str):
+def extend_hold(token: str, user: UserProfile = Depends(get_current_user)):
     db = get_admin_client()
-    hold_res = db.table("soft_holds").select("id, expires_at, created_at").eq("token", token).execute()
-    if not hold_res.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, HOLD_GONE)
-    hold = hold_res.data[0]
+    hold = get_live_hold(db, token)
+    require_borrower(db, hold, user.id)
 
+    hold_seconds, window, max_seconds = hold_timers(get_library_settings(db))
     now = datetime.now(timezone.utc)
     expires_at = datetime.fromisoformat(hold["expires_at"])
-    if expires_at < now:
-        db.table("soft_holds").delete().eq("id", hold["id"]).execute()
-        raise HTTPException(status.HTTP_410_GONE, HOLD_GONE)
 
     # Enforced here, not just by when /borrow shows the button.
-    if (expires_at - now).total_seconds() > EXTEND_WINDOW_SECONDS:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You can add time once 45 seconds or less are left")
+    if (expires_at - now).total_seconds() > window:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"You can add time once {window} seconds or less are left")
 
-    deadline = _hold_deadline(hold)
-    new_expiry = min(now + timedelta(seconds=HOLD_SECONDS), deadline)
+    deadline = _hold_deadline(hold, max_seconds)
+    new_expiry = min(now + timedelta(seconds=hold_seconds), deadline)
     if new_expiry <= expires_at:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No more time can be added — please start over at the kiosk")
 
@@ -276,12 +441,10 @@ def extend_hold(token: str):
 # "I can't find it": marks the copy missing (not just released), so the
 # next student isn't sent to the same empty shelf.
 @router.post("/{token}/report-missing", status_code=status.HTTP_204_NO_CONTENT)
-def report_missing(token: str):
+def report_missing(token: str, user: UserProfile = Depends(get_current_user)):
     db = get_admin_client()
-    hold_res = db.table("soft_holds").select("id, book_copy_id").eq("token", token).execute()
-    if not hold_res.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Hold not found")
-    hold = hold_res.data[0]
+    hold = get_live_hold(db, token)
+    require_borrower(db, hold, user.id)
 
     db.table("book_copies").update({"status": "missing"}).eq("id", hold["book_copy_id"]).execute()
     db.table("soft_holds").delete().eq("id", hold["id"]).execute()

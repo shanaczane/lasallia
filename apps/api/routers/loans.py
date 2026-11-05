@@ -1,20 +1,18 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from postgrest.exceptions import APIError
 from supabase import Client
 
 from core.accession import normalize_accession_number
 from core.calendar import compute_fine
 from core.deps import get_current_user, get_user_supabase, require_librarian
-from core.loans import HOLD_GONE, check_borrow_eligibility, create_loan_and_notify, reshelve_copy_now
+from core.loans import check_borrow_eligibility, create_loan_and_notify, reshelve_copy_now
 from core.notify import notify, notify_librarians
 from core.email_template import EmailContent, long_date, peso, staff_alert
 from core.reservations import maybe_sweep_expired_reservations, promote_next_reservation
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.loan import (
-    ConfirmLoanRequest,
     LibrarianAssistedLoanRequest,
     Loan,
     LoanLookupResult,
@@ -27,7 +25,6 @@ from schemas.loan import (
 
 router = APIRouter(prefix="/loans", tags=["loans"])
 
-MAX_ATTEMPTS = 3
 DAMAGE_PROCESSING_FEE = 50.0
 
 
@@ -42,12 +39,6 @@ def _flatten_loan(loan: dict) -> dict:
     loan["books"] = copy["books"] if copy else None
     loan["accession_number"] = copy["accession_number"] if copy else None
     return loan
-
-
-def _loan_for_hold_token(db: Client, token: str) -> dict | None:
-    """The loan a kiosk hold token was already confirmed into, if any."""
-    res = _embed_book_and_borrower(db, db.table("loans")).eq("hold_token", token).execute()
-    return _flatten_loan(res.data[0]) if res.data else None
 
 
 @router.get("", response_model=list[Loan])
@@ -121,69 +112,6 @@ def list_loans(
             loan["preview_fine_amount"] = preview_fine
 
     return loans
-
-# Confirms a kiosk borrow. No login: the hold token is the credential. The
-# typed accession number is checked here and never sent to the browser.
-@router.post("", response_model=Loan, status_code=status.HTTP_201_CREATED)
-def confirm_loan(body: ConfirmLoanRequest):
-    db = get_admin_client()
-
-    # If this token already became a loan (e.g. "Try again" after a timeout),
-    # return that loan instead of an error.
-    existing = _loan_for_hold_token(db, body.token)
-    if existing:
-        return existing
-
-    hold_res = db.table("soft_holds").select("*").eq("token", body.token).execute()
-    if not hold_res.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, HOLD_GONE)
-    hold = hold_res.data[0]
-
-    if datetime.fromisoformat(hold["expires_at"]) < datetime.now(timezone.utc):
-        db.table("soft_holds").delete().eq("id", hold["id"]).execute()
-        raise HTTPException(status.HTTP_410_GONE, HOLD_GONE)
-
-    copy_res = db.table("book_copies").select("*").eq("id", hold["book_copy_id"]).execute()
-    if not copy_res.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Copy not found")
-    copy = copy_res.data[0]
-
-    submitted = normalize_accession_number(body.accession_number).lower()
-    actual = normalize_accession_number(copy["accession_number"] or "").lower()
-
-    if submitted != actual:
-        attempts = hold["attempt_count"] + 1
-        if attempts >= MAX_ATTEMPTS:
-            db.table("soft_holds").delete().eq("id", hold["id"]).execute()
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Too many incorrect attempts — please see the librarian")
-        db.table("soft_holds").update({"attempt_count": attempts}).eq("id", hold["id"]).execute()
-        remaining = MAX_ATTEMPTS - attempts
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            f"That number belongs to a different book. Please check the label. ({remaining} attempt{'s' if remaining != 1 else ''} left)",
-        )
-
-    session_res = db.table("station_sessions").select("student_id").eq("id", hold["station_session_id"]).execute()
-    if not session_res.data:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Station session not found")
-    student_id = session_res.data[0]["student_id"]
-
-    try:
-        loan = create_loan_and_notify(
-            db, student_id, copy["id"], copy["book_id"], hold["station_session_id"],
-            body.condition, body.purpose, body.notes, hold_token=body.token,
-        )
-    except APIError as e:
-        # Two confirms arrived at once and the other one won; return its loan.
-        if e.code == "23505":
-            existing = _loan_for_hold_token(db, body.token)
-            if existing:
-                return existing
-        raise
-
-    db.table("soft_holds").delete().eq("id", hold["id"]).execute()
-
-    return loan
 
 # Checkout at the desk. The librarian has the book, so no hold is needed
 # and the scanned accession number picks the exact copy.

@@ -282,3 +282,29 @@ export function roleRedirect(role: string): string {
       return "/user/dashboard"
   }
 }
+
+// A page that needs a login first (the borrow form opened from a kiosk QR
+// code) saves itself here, so sign-in comes back to it. Kept in
+// sessionStorage, so it survives the Google sign-in redirect in this tab.
+const RETURN_TO_KEY = "lasallia-return-to"
+
+export function setReturnTo(path: string): void {
+  try {
+    sessionStorage.setItem(RETURN_TO_KEY, path)
+  } catch {
+    /* storage blocked — sign-in just goes to the dashboard */
+  }
+}
+
+// Where to go after signing in: the saved borrow page (once), or the
+// role's dashboard.
+export function afterLoginPath(role: string): string {
+  try {
+    const saved = sessionStorage.getItem(RETURN_TO_KEY)
+    sessionStorage.removeItem(RETURN_TO_KEY)
+    if (saved && saved.startsWith("/borrow/")) return saved
+  } catch {
+    /* fall through */
+  }
+  return roleRedirect(role)
+}

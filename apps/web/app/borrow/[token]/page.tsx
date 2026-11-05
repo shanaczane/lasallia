@@ -1,8 +1,10 @@
-// The borrow form, opened from the QR code (or on the same device). No
-// login needed: the hold token in the URL is the credential.
+// The borrow form, opened from the QR code (or on the same device). The
+// phone must be signed in as the borrower — the same account as the ID
+// tapped at the kiosk. Signing in comes back here afterwards.
 //
 // The accession number is never shown; the student types it from the book's
-// label, which proves they have it.
+// label, which proves they have it. A kiosk borrow then finishes with a
+// second ID tap at the kiosk.
 
 'use client'
 
@@ -11,14 +13,18 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   MapPin, Hash, Clock, CheckCircle2, AlertCircle,
-  User, ArrowLeft, XCircle, RotateCcw, WifiOff,
+  User, ArrowLeft, XCircle, RotateCcw, WifiOff, IdCard, ShieldAlert,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BookCover } from '@/components/ui/catalog/BookCover'
-import { fetchHold, confirmLoan, extendHold, reportMissing, releaseHold, NetworkError, type HoldDetail, type Condition } from '@/lib/kiosk'
+import {
+  fetchHold, verifyHold, fetchHoldStatus, extendHold, reportMissing, releaseHold,
+  NetworkError, NotYourBorrowError, SignInRequiredError, type HoldDetail, type Condition,
+} from '@/lib/kiosk'
+import { clearSession, getToken, setReturnTo } from '@/lib/auth'
 
-// Display only (the server enforces the real limit from Settings).
-const BORROW_LIMIT_PLACEHOLDER = 3
+// How often the phone checks whether the kiosk tap has happened.
+const STATUS_POLL_MS = 2000
 
 const CONDITION_OPTIONS: Array<{ value: Condition; label: string }> = [
   { value: 'good', label: 'Good' },
@@ -67,14 +73,20 @@ function BibRow({ icon, label, value }: { icon: React.ReactNode; label: string; 
 export default function BorrowFormPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params)
 
-  // ?from=kiosk: send them back to the kiosk afterwards (they aren't logged
-  // into the web).
-  const [fromKiosk, setFromKiosk] = useState(false)
-  useEffect(() => {
-    setFromKiosk(new URLSearchParams(window.location.search).get('from') === 'kiosk')
-  }, [])
-  const catalogHref = fromKiosk ? '/kiosk' : '/user/catalog'
-  const catalogLabel = fromKiosk ? 'Back to the kiosk' : 'Back to catalog'
+  const catalogHref = '/user/catalog'
+  const catalogLabel = 'Back to catalog'
+
+  // Sign in first, then come back to this page.
+  function goToSignIn(signOutFirst = false) {
+    if (signOutFirst) clearSession()
+    setReturnTo(`/borrow/${token}`)
+    router.replace('/login')
+  }
+
+  // Signed in, but not as the borrower.
+  const [wrongAccount, setWrongAccount] = useState('')
+  // The phone part is done; waiting for the second ID tap at the kiosk.
+  const [awaitingTap, setAwaitingTap] = useState<{ deadline: number } | null>(null)
 
   const [hold, setHold] = useState<HoldDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -144,20 +156,59 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
 
   useEffect(() => {
     let cancelled = false
+    if (!getToken()) {
+      goToSignIn()
+      return
+    }
     fetchHold(token)
       .then((d) => {
         if (cancelled) return
         setHold(d)
         setDeadline(deadlineFrom(d.seconds_left))
+        // Opened again after the phone part was done.
+        if (d.awaiting_tap) setAwaitingTap({ deadline: deadlineFrom(d.seconds_left) })
       })
       .catch((err) => {
         if (cancelled) return
+        if (err instanceof SignInRequiredError) {
+          goToSignIn(true)
+          return
+        }
+        if (err instanceof NotYourBorrowError) {
+          setWrongAccount(err.message)
+          return
+        }
         setLoadFailedOffline(err instanceof NetworkError)
         setLoadError(err instanceof Error ? err.message : 'This hold could not be found')
       })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
+    // goToSignIn only uses the token and router.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, loadAttempt])
+
+  // Waiting for the kiosk tap: check until the loan exists.
+  useEffect(() => {
+    if (!awaitingTap) return
+    let stopped = false
+    async function check() {
+      try {
+        const s = await fetchHoldStatus(token)
+        if (stopped) return
+        if (s.status === 'borrowed') {
+          setAwaitingTap(null)
+          setConfirmed({ dueDate: s.due_date ?? '' })
+        } else if (s.status === 'gone') {
+          setAwaitingTap(null)
+          setLoadError('Time ran out before your ID was tapped at the kiosk. Please start again at the kiosk.')
+        }
+      } catch {
+        // A missed check is fine; the next one will catch up.
+      }
+    }
+    const id = setInterval(check, STATUS_POLL_MS)
+    return () => { stopped = true; clearInterval(id) }
+  }, [awaitingTap, token])
 
   function retryLoad() {
     setLoadError('')
@@ -189,10 +240,26 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
     setSubmitError('')
     setSubmitFailedOffline(false)
     try {
-      const loan = await confirmLoan({ token, accessionNumber, condition, purpose, notes })
-      setConfirmed({ dueDate: loan.due_date })
+      const result = await verifyHold({ token, accessionNumber, condition, purpose, notes })
+      if (result.status === 'awaiting_tap') {
+        // The server allows extra time to walk back to the kiosk.
+        setDeadline(deadlineFrom(result.seconds_left ?? 0))
+        setAwaitingTap({ deadline: deadlineFrom(result.seconds_left ?? 0) })
+      } else {
+        setConfirmed({ dueDate: result.due_date ?? '' })
+      }
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Could not confirm this loan')
+      if (err instanceof SignInRequiredError) {
+        goToSignIn(true)
+        return
+      }
+      const message = err instanceof Error ? err.message : 'Could not confirm this loan'
+      // The borrow was cancelled, so the form can't be used again.
+      if (message.startsWith('Too many wrong attempts')) {
+        setLoadError(message)
+        return
+      }
+      setSubmitError(message)
       // A wrong number gets cleared for retyping; after a dropped connection
       // the number was fine, so keep it and let them just tap Try again.
       if (!(err instanceof NetworkError)) setAccessionNumber('')
@@ -207,6 +274,33 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
     return (
       <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: 'var(--color-paper)' }}>
         <div className="w-8 h-8 rounded-full border-2 border-green-700 border-t-transparent animate-spin motion-reduce:animate-none" />
+      </div>
+    )
+  }
+
+  // ── Signed in as someone other than the borrower ─────────────────────────
+  if (wrongAccount) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-4" style={{ backgroundColor: 'var(--color-paper)' }}>
+        <div className="w-14 h-14 rounded-full bg-danger-bg flex items-center justify-center">
+          <ShieldAlert size={26} className="text-danger" />
+        </div>
+        <div>
+          <p className="text-ink-900 font-semibold mb-1" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-xl)' }}>
+            This isn&apos;t your borrow
+          </p>
+          <p className="text-ink-500 max-w-xs" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+            {wrongAccount}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => goToSignIn(true)}
+          className="flex items-center justify-center gap-2 px-6 h-11 rounded-xl bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+        >
+          Sign in with a different account
+        </button>
       </div>
     )
   }
@@ -323,15 +417,13 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
           </p>
         </div>
         <div className="flex flex-col items-center gap-3 mt-2">
-          {!fromKiosk && (
-            <Link
-              href="/user/library"
-              className="h-11 px-6 flex items-center justify-center rounded-xl bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors"
-              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
-            >
-              View in My Library
-            </Link>
-          )}
+          <Link
+            href="/user/library"
+            className="h-11 px-6 flex items-center justify-center rounded-xl bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+          >
+            View in My Library
+          </Link>
           <Link
             href={catalogHref}
             className="flex items-center gap-1.5 text-ink-400 hover:text-green-700 transition-colors"
@@ -345,9 +437,50 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
     )
   }
 
+  // ── Phone part done: tap the ID at the kiosk ─────────────────────────────
+  if (awaitingTap) {
+    const left = secondsLeft ?? 0
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-4" style={{ backgroundColor: 'var(--color-paper)' }} aria-live="polite">
+        <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+          <IdCard size={30} className="text-green-700" />
+        </div>
+        <div>
+          <p className="text-ink-900 font-semibold mb-1" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-2xl)' }}>
+            Almost done — tap your ID at the kiosk
+          </p>
+          <p className="text-ink-500 max-w-xs" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+            Go back to the kiosk and tap the same ID you started with. {hold.book.title} is borrowed once you tap.
+          </p>
+        </div>
+        <div
+          className={cn(
+            'flex items-center justify-center gap-1.5 rounded-full py-1.5 px-3',
+            left === 0 ? 'bg-danger-bg text-danger' : 'bg-ink-100 text-ink-500'
+          )}
+          style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}
+        >
+          <Clock size={12} />
+          {left === 0 ? 'Time is up' : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} to tap`}
+        </div>
+        <button
+          type="button"
+          onClick={handleCancel}
+          disabled={releasing}
+          className="flex items-center justify-center gap-1.5 text-ink-400 hover:text-danger transition-colors disabled:opacity-50"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+        >
+          <XCircle size={14} />
+          {releasing ? 'Releasing…' : 'Cancel borrowing'}
+        </button>
+      </div>
+    )
+  }
+
   const isExpired = secondsLeft === 0
-  // Matches the API's 45-second "Add time" window.
-  const showAddTime = !isExpired && hold.can_extend && secondsLeft !== null && secondsLeft <= 45
+  // Matches the API's "Add time" window (Library Settings).
+  const showAddTime = !isExpired && hold.can_extend && secondsLeft !== null && secondsLeft <= hold.extend_window_seconds
+  const addMinutes = Math.max(1, Math.round(hold.hold_duration_seconds / 60))
   const minutes = secondsLeft !== null ? Math.floor(secondsLeft / 60) : 0
   const seconds = secondsLeft !== null ? secondsLeft % 60 : 0
 
@@ -367,7 +500,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
           {isExpired ? 'Expired — please rescan at the kiosk' : `${minutes}:${String(seconds).padStart(2, '0')} remaining`}
         </div>
 
-        {/* Running out of time — offer to add more (3-minute hold, 45s warning) */}
+        {/* Running out of time — offer to add more (times from Library Settings) */}
         {showAddTime && (
           <div className="flex items-center gap-3 rounded-(--radius) border border-gold-500 bg-gold-100 p-3">
             <Clock size={16} className="text-gold-600 shrink-0" />
@@ -381,7 +514,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
               className="shrink-0 h-9 px-3 rounded-lg bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors disabled:opacity-50 disabled:pointer-events-none"
               style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}
             >
-              {extending ? 'Adding…' : 'Add 3 minutes'}
+              {extending ? 'Adding…' : `Add ${addMinutes} minute${addMinutes === 1 ? '' : 's'}`}
             </button>
           </div>
         )}
@@ -411,7 +544,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
               Borrowing as {hold.student_first_name}
             </p>
             <p className="text-ink-400" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}>
-              {hold.active_loan_count} of {BORROW_LIMIT_PLACEHOLDER} books out
+              {hold.active_loan_count} of {hold.borrow_limit} books out
             </p>
           </div>
         </div>
@@ -476,7 +609,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
               Loan details
             </p>
             <p className="text-ink-700" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-              Due back <span className="font-semibold">{formatDate(hold.due_date_preview)}</span> (7-day loan, starting the moment you confirm)
+              Due back <span className="font-semibold">{formatDate(hold.due_date_preview)}</span> ({hold.loan_period_days}-day loan, starting {hold.needs_kiosk_tap ? 'when you tap your ID at the kiosk' : 'the moment you confirm'})
             </p>
           </div>
 
@@ -546,7 +679,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
             className="h-12 rounded-xl bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors disabled:opacity-50 disabled:pointer-events-none"
             style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
           >
-            {submitting ? 'Confirming…' : submitFailedOffline ? 'Try again' : 'Confirm Borrow'}
+            {submitting ? 'Confirming…' : submitFailedOffline ? 'Try again' : hold.needs_kiosk_tap ? 'Continue' : 'Confirm Borrow'}
           </button>
         </form>
 

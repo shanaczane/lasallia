@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
-import { roleRedirect, signInWithGoogleIdToken } from '@/lib/auth'
+import { afterLoginPath, signInWithGoogleIdToken } from '@/lib/auth'
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client'
 
@@ -71,7 +71,7 @@ export function GoogleIdentityButton({ clientId, onError }: { clientId: string; 
             setSigningIn(true)
             try {
               const user = await signInWithGoogleIdToken(credential, nonce.raw)
-              router.replace(roleRedirect(user.role))
+              router.replace(afterLoginPath(user.role))
             } catch (err: unknown) {
               onErrorRef.current(err instanceof Error ? err.message : 'Google sign-in failed.')
               setSigningIn(false)

@@ -1,6 +1,6 @@
-// API calls for borrowing: kiosk sessions, holds and loans. Hold calls use
-// the hold token instead of a login, since the phone that scans the QR
-// code isn't signed in.
+// API calls for borrowing: kiosk sessions, holds and loans. The phone that
+// opens a hold's QR link must be signed in as the borrower; the kiosk itself
+// has no login and identifies itself with its session id.
 
 import { getToken } from '@/lib/auth'
 import type { Book } from '@lasallia/types'
@@ -31,10 +31,24 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   }
 }
 
+// 401: the phone isn't signed in (or the login ran out), so sign in first.
+export class SignInRequiredError extends Error {}
+// 403: signed in, but not as the borrower.
+export class NotYourBorrowError extends Error {}
+
 async function parseErrorOrThrow(res: Response, fallback: string): Promise<never> {
   const body = await res.json().catch(() => ({}))
   // Validation errors (422) send detail as a list, not text.
-  throw new Error(typeof body.detail === 'string' ? body.detail : fallback)
+  const message = typeof body.detail === 'string' ? body.detail : fallback
+  if (res.status === 401) throw new SignInRequiredError('Please sign in to continue')
+  if (res.status === 403) throw new NotYourBorrowError(message)
+  throw new Error(message)
+}
+
+// The signed-in user's login, if any (the kiosk has none).
+function optionalAuth(): Record<string, string> {
+  const token = getToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
 export type StationSession = {
@@ -64,21 +78,18 @@ export async function openSessionFromToken(): Promise<StationSession> {
   return res.json()
 }
 
-// Opens a kiosk session from an ID tap or a typed login (no token needed).
-// librarian_assisted sends the librarian's login instead.
+// Opens a kiosk session from an ID tap (no token needed). librarian_assisted
+// sends the librarian's login instead.
 export async function openSession(
   stationId: string,
   auth:
     | { authMethod: 'rfid'; rfidUid: string }
-    | { authMethod: 'manual_login'; email: string; password: string }
     | { authMethod: 'librarian_assisted'; studentId: string }
 ): Promise<StationSession> {
   const body =
     auth.authMethod === 'rfid'
       ? { station_id: stationId, auth_method: 'rfid', rfid_uid: auth.rfidUid }
-      : auth.authMethod === 'manual_login'
-        ? { station_id: stationId, auth_method: 'manual_login', email: auth.email, password: auth.password }
-        : { station_id: stationId, auth_method: 'librarian_assisted', student_id: auth.studentId }
+      : { station_id: stationId, auth_method: 'librarian_assisted', student_id: auth.studentId }
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (auth.authMethod === 'librarian_assisted') {
@@ -130,22 +141,78 @@ export async function fetchBorrowEligibility(bookId: string, stationSessionId: s
   return res.json()
 }
 
-export async function releaseHold(token: string): Promise<void> {
-  const res = await apiFetch(`${API_URL}/holds/${token}/release`, { method: 'POST' })
+// The kiosk passes its session id; the phone sends the borrower's login.
+export async function releaseHold(token: string, stationSessionId?: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/holds/${token}/release`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...optionalAuth() },
+    body: JSON.stringify({ station_session_id: stationSessionId ?? null }),
+  })
   if (!res.ok && res.status !== 404) return parseErrorOrThrow(res, 'Could not release the hold')
 }
 
-// "Add time": resets the hold to 3 minutes (only in the last 45 seconds).
+// "Add time": restarts the hold (only near the end; the times are in
+// Library Settings).
 export async function extendHold(token: string): Promise<{ expires_at: string; seconds_left: number; can_extend: boolean }> {
-  const res = await apiFetch(`${API_URL}/holds/${token}/extend`, { method: 'POST' })
+  const res = await apiFetch(`${API_URL}/holds/${token}/extend`, { method: 'POST', headers: optionalAuth() })
   if (!res.ok) return parseErrorOrThrow(res, 'Could not extend this hold')
   return res.json()
 }
 
 // "I can't find it": releases the hold and marks the copy missing.
 export async function reportMissing(token: string): Promise<void> {
-  const res = await apiFetch(`${API_URL}/holds/${token}/report-missing`, { method: 'POST' })
+  const res = await apiFetch(`${API_URL}/holds/${token}/report-missing`, { method: 'POST', headers: optionalAuth() })
   if (!res.ok && res.status !== 404) return parseErrorOrThrow(res, 'Could not report this copy as missing')
+}
+
+// Where a borrow is up to: waiting for the phone, waiting for the kiosk
+// tap, borrowed, or gone (expired, cancelled or released).
+export type HoldStatus = {
+  status: 'waiting' | 'awaiting_tap' | 'borrowed' | 'gone'
+  seconds_left: number | null
+  due_date: string | null
+}
+
+// The kiosk asks with its session id; the phone with its login.
+export async function fetchHoldStatus(token: string, stationSessionId?: string): Promise<HoldStatus> {
+  const qs = stationSessionId ? `?${new URLSearchParams({ station_session_id: stationSessionId })}` : ''
+  const res = await apiFetch(`${API_URL}/holds/${token}/status${qs}`, { headers: optionalAuth() })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not check this borrow')
+  return res.json()
+}
+
+// The phone sends the number on the book's label. A kiosk borrow then waits
+// for the second ID tap (status 'awaiting_tap'); a web borrow is done.
+export async function verifyHold(params: {
+  token: string
+  accessionNumber: string
+  condition: Condition
+  purpose?: string
+  notes?: string
+}): Promise<HoldStatus> {
+  const res = await apiFetch(`${API_URL}/holds/${params.token}/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...optionalAuth() },
+    body: JSON.stringify({
+      accession_number: params.accessionNumber,
+      condition: params.condition,
+      purpose: params.purpose || undefined,
+      notes: params.notes || undefined,
+    }),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not confirm this loan')
+  return res.json()
+}
+
+// The second ID tap at the kiosk, which creates the loan.
+export async function confirmTap(token: string, stationSessionId: string, rfidUid: string): Promise<HoldStatus> {
+  const res = await apiFetch(`${API_URL}/holds/${token}/confirm-tap`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ station_session_id: stationSessionId, rfid_uid: rfidUid }),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not confirm this loan')
+  return res.json()
 }
 
 export type HoldDetail = {
@@ -168,10 +235,19 @@ export type HoldDetail = {
   student_first_name: string
   active_loan_count: number
   due_date_preview: string
+  borrow_limit: number
+  loan_period_days: number
+  // How long "Add time" adds, and how close to the end it's offered.
+  hold_duration_seconds: number
+  extend_window_seconds: number
+  // A kiosk borrow finishes with a second ID tap at the kiosk.
+  needs_kiosk_tap: boolean
+  awaiting_tap: boolean
 }
 
+// Needs the borrower's login (SignInRequiredError / NotYourBorrowError).
 export async function fetchHold(token: string): Promise<HoldDetail> {
-  const res = await apiFetch(`${API_URL}/holds/${token}`)
+  const res = await apiFetch(`${API_URL}/holds/${token}`, { headers: optionalAuth() })
   if (!res.ok) return parseErrorOrThrow(res, 'This hold could not be found')
   return res.json()
 }
@@ -232,28 +308,6 @@ export async function fetchLoans(
   const qs = params.toString()
   const res = await apiFetch(`${API_URL}/loans${qs ? `?${qs}` : ''}`, { headers: { Authorization: `Bearer ${token}` } })
   if (!res.ok) return parseErrorOrThrow(res, 'Failed to load your loans')
-  return res.json()
-}
-
-export async function confirmLoan(params: {
-  token: string
-  accessionNumber: string
-  condition: Condition
-  purpose?: string
-  notes?: string
-}): Promise<Loan> {
-  const res = await apiFetch(`${API_URL}/loans`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      token: params.token,
-      accession_number: params.accessionNumber,
-      condition: params.condition,
-      purpose: params.purpose || undefined,
-      notes: params.notes || undefined,
-    }),
-  })
-  if (!res.ok) return parseErrorOrThrow(res, 'Could not confirm this loan')
   return res.json()
 }
 

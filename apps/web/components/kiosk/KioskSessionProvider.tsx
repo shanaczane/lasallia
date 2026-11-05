@@ -1,10 +1,10 @@
 // Keeps the kiosk session in sessionStorage (not localStorage), so a refresh
-// doesn't end the visit but closing the browser does. The 90-second idle
-// timeout still ends sessions.
+// doesn't end the visit but closing the browser does. The idle timeout (set
+// in Library Settings) still ends sessions.
 
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { openSession, endSession, type StationSession } from '@/lib/kiosk'
 
 const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect
@@ -48,6 +48,14 @@ type KioskSessionContextValue = {
   guestSessionId: string | null
   startGuest: () => void
   endGuest: () => void
+  // While a borrow waits for its second ID tap, the borrow window takes
+  // the next tap instead of it starting a new session. Returns a function
+  // that stops catching taps.
+  catchNextTaps: (handler: (uid: string) => void) => () => void
+  tapCatcher: React.RefObject<((uid: string) => void) | null>
+  // A borrow is in progress (QR code up), so the idle timer waits.
+  borrowing: boolean
+  setBorrowing: (value: boolean) => void
 }
 
 const KioskSessionContext = createContext<KioskSessionContextValue | null>(null)
@@ -63,6 +71,15 @@ export function KioskSessionProvider({ children }: { children: ReactNode }) {
   const [guestSessionId, setGuestSessionId] = useState<string | null>(null)
   // Don't save until the saved session has been restored, or it'd be erased.
   const [restored, setRestored] = useState(false)
+  const tapCatcher = useRef<((uid: string) => void) | null>(null)
+  const [borrowing, setBorrowing] = useState(false)
+
+  const catchNextTaps = useCallback((handler: (uid: string) => void) => {
+    tapCatcher.current = handler
+    return () => {
+      if (tapCatcher.current === handler) tapCatcher.current = null
+    }
+  }, [])
 
   // Before paint, so a refresh doesn't flash the idle screen.
   useLayoutEffectSafe(() => {
@@ -108,6 +125,8 @@ export function KioskSessionProvider({ children }: { children: ReactNode }) {
   const end = useCallback(async () => {
     const current = session
     setSession(null)
+    setBorrowing(false)
+    tapCatcher.current = null
     setOpenError('')
     if (current) await endSession(current.id).catch(() => {})
   }, [session])
@@ -124,11 +143,19 @@ export function KioskSessionProvider({ children }: { children: ReactNode }) {
 
   return (
     <KioskSessionContext.Provider
-      value={{ session, opening, openError, open, end, guestBrowsing, guestSessionId, startGuest, endGuest }}
+      value={{
+        session, opening, openError, open, end, guestBrowsing, guestSessionId, startGuest, endGuest,
+        catchNextTaps, tapCatcher, borrowing, setBorrowing,
+      }}
     >
       {children}
     </KioskSessionContext.Provider>
   )
+}
+
+// For components also used outside the kiosk (the borrow window on the web).
+export function useOptionalKioskSession(): KioskSessionContextValue | null {
+  return useContext(KioskSessionContext)
 }
 
 export function useKioskSession(): KioskSessionContextValue {

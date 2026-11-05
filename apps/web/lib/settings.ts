@@ -30,6 +30,14 @@ export type LibrarySettings = {
   reservation_hold_period_days: number
   max_active_reservations: number
 
+  // Kiosk and borrowing timers, in seconds.
+  kiosk_idle_timeout_seconds: number
+  kiosk_idle_warning_seconds: number
+  hold_duration_seconds: number
+  hold_extend_window_seconds: number
+  hold_max_seconds: number
+  kiosk_tap_confirm_seconds: number
+
   // "HH:MM" or "HH:MM:SS". Both null means closed (no fines those days).
   weekday_open_time: string | null
   weekday_close_time: string | null
@@ -61,6 +69,8 @@ export type PublicLibrarySettings = Pick<
   | "weekday_open_time" | "weekday_close_time"
   | "saturday_open_time" | "saturday_close_time"
   | "sunday_open_time" | "sunday_close_time"
+  // The kiosk reads its idle timer before anyone taps in.
+  | "kiosk_idle_timeout_seconds" | "kiosk_idle_warning_seconds"
 >
 
 // No login needed (used by the login page).

@@ -18,6 +18,13 @@ _DEFAULTS: dict[str, object] = {
     "max_fine_per_book": 100.00,
     "reservation_hold_period_days": 3,
     "max_active_reservations": 3,
+    # Kiosk and borrowing timers, in seconds.
+    "kiosk_idle_timeout_seconds": 90,
+    "kiosk_idle_warning_seconds": 15,
+    "hold_duration_seconds": 180,
+    "hold_extend_window_seconds": 45,
+    "hold_max_seconds": 540,
+    "kiosk_tap_confirm_seconds": 60,
     "weekday_open_time": "07:30",
     "weekday_close_time": "18:00",
     "saturday_open_time": "08:00",
@@ -32,6 +39,8 @@ _DEFAULTS: dict[str, object] = {
 _INT_FIELDS = (
     "max_books_per_borrower", "standard_loan_period_days", "max_renewals",
     "renewal_period_days", "reservation_hold_period_days", "max_active_reservations",
+    "kiosk_idle_timeout_seconds", "kiosk_idle_warning_seconds", "hold_duration_seconds",
+    "hold_extend_window_seconds", "hold_max_seconds", "kiosk_tap_confirm_seconds",
 )
 _FLOAT_FIELDS = ("fine_per_day", "max_fine_per_book")
 

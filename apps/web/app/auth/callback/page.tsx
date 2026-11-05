@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
-import { adoptSupabaseSession, roleRedirect } from "@/lib/auth"
+import { adoptSupabaseSession, afterLoginPath } from "@/lib/auth"
 import { getSupabaseAuth } from "@/lib/supabaseBrowser"
 
 export default function AuthCallbackPage() {
@@ -25,7 +25,7 @@ export default function AuthCallbackPage() {
         if (sessionError || !session) throw new Error(sessionError?.message ?? "Google sign-in didn't complete")
 
         const user = await adoptSupabaseSession(session)
-        router.replace(roleRedirect(user.role))
+        router.replace(afterLoginPath(user.role))
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : "Google sign-in failed")
       }

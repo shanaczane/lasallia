@@ -1,24 +1,27 @@
-// The kiosk shell: session, ID card listener, 90-second idle timeout with a
-// "Still here?" warning, and the same nav as the web. Nothing personal is
-// shown once a session ends.
+// The kiosk shell: session, ID card listener, idle timeout with a countdown
+// warning before it ends, and the same nav as the web. Nothing personal is
+// shown once a session ends. The timeout and warning come from Library
+// Settings.
 
 'use client'
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Clock, Search, Sparkles, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, Sparkles, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { TopNav } from '@/components/layout/TopNav'
 import { KioskSessionProvider, useKioskSession, readInitialActiveKey } from '@/components/kiosk/KioskSessionProvider'
 import { RfidListener } from '@/components/kiosk/RfidListener'
 import { useIdleTimeout } from '@/components/kiosk/useIdleTimeout'
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
+import { fetchPublicLibrarySettings } from '@/lib/settings'
 
 const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
-const IDLE_TIMEOUT_SECONDS = 90
-const WARNING_AT_SECONDS = 15
+// Used until Library Settings load (and if they can't).
+const DEFAULT_IDLE_TIMEOUT_SECONDS = 90
+const DEFAULT_WARNING_SECONDS = 15
 
 function getInitials(name: string): string {
   return name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
@@ -34,22 +37,36 @@ const kioskNav = [
 function KioskShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { session, open, end, guestBrowsing, endGuest } = useKioskSession()
+  const { session, open, end, guestBrowsing, endGuest, tapCatcher, borrowing } = useKioskSession()
   // Read right away, so a refresh isn't mistaken for a new tap.
   const previousActiveKey = useRef<string | null>(readInitialActiveKey())
   const [collapsed, setCollapsed] = useState(false)
 
   const active = !!session || guestBrowsing
 
+  const [timers, setTimers] = useState({ timeout: DEFAULT_IDLE_TIMEOUT_SECONDS, warning: DEFAULT_WARNING_SECONDS })
+  useEffect(() => {
+    fetchPublicLibrarySettings()
+      .then((s) => {
+        if (s.kiosk_idle_timeout_seconds && s.kiosk_idle_warning_seconds) {
+          setTimers({ timeout: s.kiosk_idle_timeout_seconds, warning: s.kiosk_idle_warning_seconds })
+        }
+      })
+      .catch(() => { /* keep the defaults */ })
+  }, [])
+
+  // Paused while a borrow is in progress: the student is at the shelf or
+  // on their phone, and still has to come back to tap their ID.
   const { secondsLeft, reset } = useIdleTimeout({
-    enabled: active,
-    timeoutSeconds: IDLE_TIMEOUT_SECONDS,
+    enabled: active && !borrowing,
+    timeoutSeconds: timers.timeout,
     onExpire: () => { session ? end() : endGuest() },
   })
-  // "Still here?" — focus lands on "Yes, I'm here" so Enter answers it, and
-  // Esc counts as still being here too.
+  const warningOpen = active && !borrowing && secondsLeft <= timers.warning
+  // Focus lands on "Yes, I'm here" so Enter answers it, and Esc counts as
+  // still being here too.
   const idleDialogRef = useRef<HTMLDivElement>(null)
-  useDialogKeyboard(idleDialogRef, { open: secondsLeft <= WARNING_AT_SECONDS, onClose: reset })
+  useDialogKeyboard(idleDialogRef, { open: warningOpen, onClose: reset })
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem('kiosk-sidebar-collapsed') === 'true') setCollapsed(true)
@@ -78,6 +95,11 @@ function KioskShell({ children }: { children: React.ReactNode }) {
   }, [session?.id, guestBrowsing, pathname, router])
 
   async function handleTap(uid: string) {
+    // A borrow waiting for its confirming tap takes it.
+    if (tapCatcher.current) {
+      tapCatcher.current(uid)
+      return
+    }
     await open({ authMethod: 'rfid', rfidUid: uid })
   }
 
@@ -137,29 +159,14 @@ function KioskShell({ children }: { children: React.ReactNode }) {
             </nav>
           </aside>
 
-          {secondsLeft <= WARNING_AT_SECONDS && (
-            <div
-              className="fixed inset-0 z-[300] flex items-center justify-center p-4"
-              style={{ background: 'rgba(20,21,15,0.55)' }}
-            >
-              <div ref={idleDialogRef} role="alertdialog" aria-modal="true" aria-label="Still here?" className="bg-white rounded-2xl shadow-xl p-6 max-w-xs w-full flex flex-col items-center gap-3 text-center">
-                <Clock size={28} className="text-warn" />
-                <p className="text-ink-900 font-semibold" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}>
-                  Still here?
-                </p>
-                <p className="text-ink-500" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-                  This session ends in {secondsLeft}s.
-                </p>
-                <button
-                  type="button"
-                  onClick={reset}
-                  className="w-full py-2.5 rounded-xl bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors"
-                  style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
-                >
-                  Yes, I&apos;m here
-                </button>
-              </div>
-            </div>
+          {warningOpen && (
+            <SessionEndingWarning
+              dialogRef={idleDialogRef}
+              secondsLeft={secondsLeft}
+              warningSeconds={timers.warning}
+              onStay={reset}
+              onEnd={() => (session ? end() : endGuest())}
+            />
           )}
         </>
       )}
@@ -182,5 +189,82 @@ export default function KioskLayout({ children }: { children: React.ReactNode })
     <KioskSessionProvider>
       <KioskShell>{children}</KioskShell>
     </KioskSessionProvider>
+  )
+}
+
+// The countdown before the session ends: a ring that empties and the
+// seconds left, so it's clear at a glance from a few steps away.
+function SessionEndingWarning({
+  dialogRef,
+  secondsLeft,
+  warningSeconds,
+  onStay,
+  onEnd,
+}: {
+  dialogRef: React.RefObject<HTMLDivElement | null>
+  secondsLeft: number
+  warningSeconds: number
+  onStay: () => void
+  onEnd: () => void
+}) {
+  const RADIUS = 34
+  const circumference = 2 * Math.PI * RADIUS
+  const fraction = Math.max(0, Math.min(1, secondsLeft / warningSeconds))
+  return (
+    <div
+      className="fixed inset-0 z-[300] flex items-center justify-center p-4"
+      style={{ background: 'rgba(20,21,15,0.55)' }}
+    >
+      <div
+        ref={dialogRef}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="session-ending-title"
+        aria-describedby="session-ending-text"
+        className="bg-white rounded-2xl shadow-xl p-6 max-w-xs w-full flex flex-col items-center gap-3 text-center"
+      >
+        <div className="relative w-20 h-20">
+          <svg viewBox="0 0 80 80" className="w-20 h-20 -rotate-90" aria-hidden="true">
+            <circle cx="40" cy="40" r={RADIUS} fill="none" stroke="var(--color-ink-100)" strokeWidth="6" />
+            <circle
+              cx="40" cy="40" r={RADIUS} fill="none"
+              stroke="var(--color-warn)" strokeWidth="6" strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={circumference * (1 - fraction)}
+              className="transition-[stroke-dashoffset] duration-1000 ease-linear motion-reduce:transition-none"
+            />
+          </svg>
+          <span
+            className="absolute inset-0 flex items-center justify-center text-ink-900 font-bold"
+            style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xl)' }}
+            aria-hidden="true"
+          >
+            {secondsLeft}
+          </span>
+        </div>
+        <p id="session-ending-title" className="text-ink-900 font-semibold" style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}>
+          Still here?
+        </p>
+        <p id="session-ending-text" className="text-ink-500" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+          For your privacy, this session ends in {secondsLeft} second{secondsLeft === 1 ? '' : 's'}.
+        </p>
+        <button
+          type="button"
+          onClick={onStay}
+          className="w-full py-2.5 rounded-xl bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+        >
+          Yes, I&apos;m here
+        </button>
+        <button
+          type="button"
+          onClick={onEnd}
+          className="w-full py-2.5 rounded-xl border border-ink-200 text-ink-600 font-semibold hover:bg-ink-50 transition-colors"
+          style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+        >
+          End session now
+        </button>
+      </div>
+    </div>
   )
 }

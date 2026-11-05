@@ -1,11 +1,10 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from supabase_auth.errors import AuthApiError
 
 from core import chat_sessions
 from core.deps import get_current_user, get_optional_user
-from core.supabase import get_admin_client, get_client
+from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.session import OpenSessionRequest, StationSession
 
@@ -44,21 +43,13 @@ def _insert_session(student_id: str, auth_method: str, station_id: str) -> dict:
     session["college"] = profile.get("college")
     return session
 
-# Opens a kiosk session. No login token needed: the password or ID tap is
-# the credential. librarian_assisted instead needs a librarian's login,
-# since the student gives no credential.
+# Opens a kiosk session. No login token needed: the ID tap is the
+# credential. Typing an email and password at the kiosk isn't allowed, since
+# it's a shared screen. librarian_assisted instead needs a librarian's
+# login, since the student gives no credential.
 @router.post("", response_model=StationSession, status_code=status.HTTP_201_CREATED)
 def open_session(body: OpenSessionRequest, caller: UserProfile | None = Depends(get_optional_user)):
-    if body.auth_method == "manual_login":
-        if not body.email or not body.password:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "email and password are required for manual_login")
-        try:
-            res = get_client().auth.sign_in_with_password({"email": body.email, "password": body.password})
-        except AuthApiError as e:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(e))
-        student_id = res.user.id
-
-    elif body.auth_method == "rfid":
+    if body.auth_method == "rfid":
         if not body.rfid_uid:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "rfid_uid is required for rfid")
         profile_res = get_admin_client().table("profiles").select("id").eq("rfid_uid", body.rfid_uid).execute()

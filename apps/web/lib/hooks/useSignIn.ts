@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { loginRequest, saveSession, roleRedirect } from '@/lib/auth'
+import { loginRequest, saveSession, afterLoginPath } from '@/lib/auth'
 
 export function useSignIn() {
   const router = useRouter()
@@ -18,7 +18,7 @@ export function useSignIn() {
       const data = await loginRequest(email, password)
       saveSession(data, remember)
       // replace, not push, so Back doesn't return to the login screen.
-      router.replace(roleRedirect(data.user.role))
+      router.replace(afterLoginPath(data.user.role))
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Invalid email or password.')
     } finally {

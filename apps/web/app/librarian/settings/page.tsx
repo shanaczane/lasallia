@@ -25,6 +25,21 @@ const TABS: { key: TabKey; label: string }[] = [
 
 type Draft = Omit<LibrarySettings, "updated_at" | "updated_by" | "is_default">
 
+type TimerKey =
+  | "kiosk_idle_timeout_seconds" | "kiosk_idle_warning_seconds"
+  | "hold_duration_seconds" | "hold_extend_window_seconds" | "hold_max_seconds"
+  | "kiosk_tap_confirm_seconds"
+
+// Kiosk and borrowing timers, all in seconds.
+const TIMER_FIELDS: { key: TimerKey; label: string; hint: string; min: number }[] = [
+  { key: "kiosk_idle_timeout_seconds", label: "Kiosk Idle Timeout (seconds)", hint: "With no touch or tap for this long, the kiosk ends the session.", min: 30 },
+  { key: "kiosk_idle_warning_seconds", label: "Session Ending Warning (seconds)", hint: "How long the countdown shows before the session ends.", min: 5 },
+  { key: "hold_duration_seconds", label: "Borrow Hold Time (seconds)", hint: "How long a copy is set aside while the student gets it from the shelf.", min: 60 },
+  { key: "hold_extend_window_seconds", label: "\"Add Time\" Offered In Last (seconds)", hint: "The phone offers more time once this little is left.", min: 10 },
+  { key: "hold_max_seconds", label: "Longest Hold (seconds)", hint: "Adding time never goes past this, counted from the start.", min: 60 },
+  { key: "kiosk_tap_confirm_seconds", label: "Time to Tap ID at the Kiosk (seconds)", hint: "After the phone step, the student has at least this long to tap their ID again.", min: 15 },
+]
+
 // What's wrong with the form, if anything (numbers must be above zero,
 // required fields filled). Save is disabled until it's fixed.
 function draftError(d: Draft): string | null {
@@ -43,6 +58,13 @@ function draftError(d: Draft): string | null {
   for (const [key, label] of positiveIntFields) {
     if (!Number.isInteger(d[key]) || (d[key] as number) <= 0) return `${label} must be a whole number greater than 0.`
   }
+  // The same minimums as the database.
+  for (const { key, label, min } of TIMER_FIELDS) {
+    if (!Number.isInteger(d[key]) || d[key] < min) return `${label} must be at least ${min} seconds.`
+  }
+  if (d.kiosk_idle_warning_seconds >= d.kiosk_idle_timeout_seconds) return "The session warning must start before the session ends."
+  if (d.hold_extend_window_seconds >= d.hold_duration_seconds) return "The \"Add time\" window must be shorter than the hold."
+  if (d.hold_max_seconds < d.hold_duration_seconds) return "The longest hold can't be shorter than the hold itself."
   if (typeof d.fine_per_day !== "number" || d.fine_per_day < 0) return "Fine per Day can't be negative."
   if (typeof d.max_fine_per_book !== "number" || d.max_fine_per_book <= 0) return "Maximum Fine per Book must be greater than 0."
 
@@ -86,6 +108,12 @@ function toDraft(s: LibrarySettings): Draft {
     max_fine_per_book: s.max_fine_per_book,
     reservation_hold_period_days: s.reservation_hold_period_days,
     max_active_reservations: s.max_active_reservations,
+    kiosk_idle_timeout_seconds: s.kiosk_idle_timeout_seconds,
+    kiosk_idle_warning_seconds: s.kiosk_idle_warning_seconds,
+    hold_duration_seconds: s.hold_duration_seconds,
+    hold_extend_window_seconds: s.hold_extend_window_seconds,
+    hold_max_seconds: s.hold_max_seconds,
+    kiosk_tap_confirm_seconds: s.kiosk_tap_confirm_seconds,
     weekday_open_time: s.weekday_open_time,
     weekday_close_time: s.weekday_close_time,
     saturday_open_time: s.saturday_open_time,
@@ -420,6 +448,17 @@ function LibrarianSettingsPageContent() {
                 <SettingsSection title="Reservation Settings">
                   <Field label="Reservation Hold Period (days)" value={String(draft.reservation_hold_period_days)} onChange={(v) => setField("reservation_hold_period_days", toInt(v))} type="number" />
                   <Field label="Maximum Active Reservations per User" value={String(draft.max_active_reservations)} onChange={(v) => setField("max_active_reservations", toInt(v))} type="number" />
+                </SettingsSection>
+
+                <SettingsSection title="Kiosk & Borrowing Times">
+                  {TIMER_FIELDS.map((f) => (
+                    <div key={f.key} className="flex flex-col gap-1">
+                      <Field label={f.label} value={String(draft[f.key])} onChange={(v) => setField(f.key, toInt(v))} type="number" />
+                      <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+                        {f.hint}
+                      </p>
+                    </div>
+                  ))}
                 </SettingsSection>
               </>
             )}
