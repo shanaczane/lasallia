@@ -205,3 +205,5 @@ def test_apply_plan_attaches_copies_by_the_planned_id_and_skips_legacy_columns()
     copies = admin.tables["book_copies"]
     assert [c["accession_number"] for c in copies] == ["T100", "T101"]
     assert {c["book_id"] for c in copies} == {book["id"]} == {plan.items[0].book_id}
+    # Imported copies come from the library's records, so they're never exported.
+    assert {c["origin"] for c in copies} == {"imported"}

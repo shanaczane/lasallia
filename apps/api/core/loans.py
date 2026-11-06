@@ -66,7 +66,9 @@ def check_borrow_eligibility(db, student_id: str, book_id: str) -> None:
 
 def ensure_initial_copy(admin, book_id: str) -> None:
     """Creates a book's first copy (using its accession number) if it has
-    none, so it can be borrowed. Safe to call more than once."""
+    none, so it can be borrowed. Safe to call more than once. The copy is
+    one the library already had, so it gets no origin and is never in
+    "Export new books"."""
     if admin.table("book_copies").select("id").eq("book_id", book_id).limit(1).execute().data:
         return
     book_res = admin.table("books").select("accession_no, shelf_location").eq("id", book_id).execute()

@@ -225,6 +225,7 @@ def test_register_existing_copy(client, db):
     assert res.status_code == 201, res.text
     assert res.json()["accession_number"] == "T44869"
     assert db.tables["book_copies"][-1]["book_id"] == "book-1"
+    assert db.tables["book_copies"][-1]["origin"] == "registered"
 
 
 def test_register_rejects_bad_format_and_numbers_in_use(client, db):

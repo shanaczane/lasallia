@@ -351,6 +351,9 @@ def register_existing_copy(book_id: str, body: RegisterCopyRequest, librarian: U
             "accession_number": accession,
             "status": "available",
             "shelf_location": book.get("shelf_location"),
+            # Already had a printed number, so "Export new books" leaves it
+            # out unless asked.
+            "origin": "registered",
         }).execute().data[0]
     except APIError as e:
         _raise_db_error(e)

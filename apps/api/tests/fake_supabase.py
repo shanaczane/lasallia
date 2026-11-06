@@ -4,7 +4,19 @@
 
 import copy
 import uuid
+from datetime import datetime
 from types import SimpleNamespace
+
+
+def _comparable(value):
+    # Timestamps compare as moments, like Postgres, whatever their offset
+    # is written as ("Z" or "+00:00").
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    return value
 
 
 class _Query:
@@ -48,6 +60,12 @@ class _Query:
 
     def neq(self, col, value):
         return self._add(lambda r: r.get(col) != value)
+
+    def gte(self, col, value):
+        return self._add(lambda r: r.get(col) is not None and _comparable(r.get(col)) >= _comparable(value))
+
+    def lt(self, col, value):
+        return self._add(lambda r: r.get(col) is not None and _comparable(r.get(col)) < _comparable(value))
 
     def in_(self, col, values):
         return self._add(lambda r: r.get(col) in values)

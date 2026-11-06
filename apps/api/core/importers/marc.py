@@ -397,9 +397,12 @@ def apply_plan(admin, plan: ImportPlan, synced_at: str) -> list[ImportIssue]:
     whatever already landed comes back as unchanged."""
     failures: list[ImportIssue] = []
 
+    # origin "imported": these copies come from the library's own records,
+    # so "Export new books" never sends them back.
     def copy_rows(book_id: str, item: PlannedBook) -> list[dict]:
         return [
-            {"book_id": book_id, "accession_number": code, "status": "available", "shelf_location": item.shelf_location}
+            {"book_id": book_id, "accession_number": code, "status": "available",
+             "shelf_location": item.shelf_location, "origin": "imported"}
             for code in item.new_copies
         ]
 

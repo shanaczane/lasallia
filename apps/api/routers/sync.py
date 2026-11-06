@@ -1,8 +1,9 @@
-# Catalog import from a MARC file (.mrc) or an LRC Excel sheet (.xlsx).
-# Librarians only. The file is sent twice: dry_run=true for the preview,
-# then dry_run=false to apply. Matching rules are in core/importers/marc.py.
+# Catalog import from a MARC file (.mrc) or an LRC Excel sheet (.xlsx), and
+# "Export new books" (core/exports.py). Librarians only. An import file is
+# sent twice: dry_run=true for the preview, then dry_run=false to apply.
+# Matching rules are in core/importers/marc.py.
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import Response
@@ -10,6 +11,7 @@ from fastapi.responses import Response
 from core.accession import accession_counters
 from core.deps import require_librarian
 from core.embeddings import reembed_books
+from core.exports import build_new_copies_workbook, fetch_new_copies
 from core.importers.marc import LARGE_JUMP, ImportIssue, apply_plan, parse_marc, plan_import
 from core.importers.spreadsheet import build_template, parse_spreadsheet
 from core.supabase import get_admin_client
@@ -173,6 +175,30 @@ def list_runs(limit: int = 20, librarian: UserProfile = Depends(require_libraria
             for p in admin.table("profiles").select("id, full_name").in_("id", user_ids).execute().data
         }
     return [{**r, "started_by_name": names.get(r.get("started_by"))} for r in runs]
+
+
+@router.get("/export-new-copies")
+def export_new_copies(
+    date_from: date,
+    date_to: date,
+    # Copies entered with "Register existing copy" already had a number, so
+    # they may already be in the library's system.
+    include_registered: bool = False,
+    librarian: UserProfile = Depends(require_librarian),
+):
+    """Excel file of copies Lasallia added between two dates (Manila time,
+    both included). Read-only."""
+    if date_from > date_to:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The start date is after the end date.")
+    rows = fetch_new_copies(get_admin_client(), date_from, date_to, include_registered)
+    if not rows:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No copies were added in this date range.")
+    filename = f"lasallia-new-copies-{date_from.isoformat()}-to-{date_to.isoformat()}.xlsx"
+    return Response(
+        content=build_new_copies_workbook(rows),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/template")
