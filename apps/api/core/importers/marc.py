@@ -19,11 +19,13 @@
 
 import io
 import re
+import uuid
 from dataclasses import dataclass, field
 
 from pymarc import MARCReader, Record
 
 from core.accession import normalize_accession_number
+from core.isbn import normalize_isbn
 from scripts.shelf_location import classify_call_number
 
 # Fields compared on an existing book. Anything not listed here is never
@@ -69,16 +71,6 @@ def _clean(value: str | None, trailing: str = " /:;,.") -> str | None:
         return None
     cleaned = re.sub(r"\s+", " ", value).strip().rstrip(trailing).strip()
     return cleaned or None
-
-
-def normalize_isbn(value: str | None) -> str | None:
-    """'978-0-13-235088-4 (pbk.)' -> '9780132350884'. Used on both sides of
-    a comparison, so differently formatted copies of one ISBN still match."""
-    if not value:
-        return None
-    token = value.strip().split(" ")[0]
-    digits = re.sub(r"[^0-9Xx]", "", token).upper()
-    return digits or None
 
 
 def _first(record: Record, tags: tuple[str, ...], *codes: str) -> str | None:
@@ -169,10 +161,39 @@ class PlannedBook:
 
 
 @dataclass
+class LargeJump:
+    """A new copy whose number is far above its prefix's counter. Applying
+    it moves the counter there for good, so it needs confirming."""
+    accession: str
+    title: str | None
+    next_value: str  # the counter's next number before the import, e.g. "T46646"
+    location: str | None = None
+
+
+# How far above the counter an incoming number can be before it's flagged.
+LARGE_JUMP = 1000
+
+_STANDARD = re.compile(r"^([A-Z]+)(\d{1,15})$")
+
+
+def large_jump(accession: str, counters: dict[str, int]) -> str | None:
+    """The counter's next number ("T46646") when `accession` is more than
+    LARGE_JUMP above it; None otherwise, or for unknown prefixes and
+    nonstandard values."""
+    match = _STANDARD.match(normalize_accession_number(accession).upper())
+    if not match or match.group(1) not in counters:
+        return None
+    prefix, value = match.group(1), int(match.group(2))
+    next_value = counters[prefix]
+    return f"{prefix}{next_value}" if value - next_value > LARGE_JUMP else None
+
+
+@dataclass
 class ImportPlan:
     records_read: int
     items: list[PlannedBook]
     errors: list[ImportIssue]
+    large_jumps: list[LargeJump] = field(default_factory=list)
 
     def count(self, action: str) -> int:
         return sum(1 for i in self.items if i.action == action)
@@ -206,11 +227,15 @@ def plan_import(
     existing_books: list[dict],
     existing_copies: list[dict],
     parse_issues: list[ImportIssue] | None = None,
+    counters: dict[str, int] | None = None,
 ) -> ImportPlan:
     """existing_books: rows with id, title, author, isbn, call_number,
     publisher, published_year, abstract, accession_no, archived_at.
-    existing_copies: rows with book_id, accession_number."""
+    existing_copies: rows with book_id, accession_number.
+    counters: next number per accession prefix ({"T": 46646}), used to flag
+    new copies far above it."""
     errors = list(parse_issues or [])
+    jumps: list[LargeJump] = []
     books_by_id = {b["id"]: b for b in existing_books}
 
     # How an export record finds the book it belongs to, strongest first:
@@ -280,6 +305,10 @@ def plan_import(
         # A barcode is new unless it's already a book_copies row. Matching it
         # through books.accession_no alone still needs the copy row created.
         new_copies = [c for c in barcodes if c not in book_by_barcode or (book_id and c not in copies_by_book.get(book_id, []))]
+        for code in new_copies:
+            next_value = large_jump(code, counters or {})
+            if next_value:
+                jumps.append(LargeJump(code, rec.title, next_value, rec.location))
         shelf = classify_call_number(rec.call_number)
 
         if book_id is None:
@@ -291,11 +320,14 @@ def plan_import(
                 location=rec.location,
                 new_copies=barcodes,
                 shelf_location=shelf["shelf_location"],
+                # The id is set here so apply_plan can attach the copies
+                # without reading anything back. Copy counts and the
+                # accession number live only on book_copies.
                 payload={
-                    "accession_no": barcodes[0],
+                    "id": str(uuid.uuid4()),
                     "title": rec.title,
                     "author": rec.author or "Unknown",
-                    "isbn": rec.isbn,
+                    "isbn": normalize_isbn(rec.isbn),
                     "call_number": rec.call_number or "",
                     # Destiny has no notion of Lasallia's program/college
                     # split; the export's 852 $c / $b carry it when the
@@ -312,8 +344,6 @@ def plan_import(
                     # Same default seed_books.py gives every seeded title.
                     "floor": "Floor 2",
                     "cover_url": rec.cover_url,
-                    "total_copies": len(barcodes),
-                    "available_copies": len(barcodes),
                 },
             ))
             continue
@@ -323,7 +353,7 @@ def plan_import(
         incoming = {
             "title": rec.title,
             "author": rec.author,
-            "isbn": rec.isbn,
+            "isbn": normalize_isbn(rec.isbn),
             "call_number": rec.call_number,
             "publisher": rec.publisher,
             "published_year": rec.published_year,
@@ -355,7 +385,7 @@ def plan_import(
             shelf_location=current.get("shelf_location") if "call_number" not in payload else shelf["shelf_location"],
         ))
 
-    return ImportPlan(records_read=len(records) + len(parse_issues or []), items=items, errors=errors)
+    return ImportPlan(records_read=len(records) + len(parse_issues or []), items=items, errors=errors, large_jumps=jumps)
 
 
 # ─── Applying ─────────────────────────────────────────────────────────────
@@ -377,12 +407,11 @@ def apply_plan(admin, plan: ImportPlan, synced_at: str) -> list[ImportIssue]:
     for start in range(0, len(adds), BATCH_SIZE):
         batch = adds[start:start + BATCH_SIZE]
         try:
-            inserted = admin.table("books").insert([{**i.payload, "last_synced_at": synced_at} for i in batch]).execute().data
-            id_by_accession = {row["accession_no"]: row["id"] for row in inserted}
-            copies = [row for i in batch for row in copy_rows(id_by_accession[i.payload["accession_no"]], i)]
+            admin.table("books").insert([{**i.payload, "last_synced_at": synced_at} for i in batch]).execute()
+            copies = [row for i in batch for row in copy_rows(i.payload["id"], i)]
             admin.table("book_copies").insert(copies).execute()
             for i in batch:
-                i.book_id = id_by_accession[i.payload["accession_no"]]
+                i.book_id = i.payload["id"]
         except Exception as e:
             failures.extend(ImportIssue(i.record, i.title, f"Could not add: {e}", i.location) for i in batch)
 

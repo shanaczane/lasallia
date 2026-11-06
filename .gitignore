@@ -21,6 +21,9 @@ apps/api/.pytest_cache/
 **/.env
 **/.env.local
 
+# Database backups (pg_dump output)
+*.dump
+
 # Claude Code
 .claude/settings.local.json
 

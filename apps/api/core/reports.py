@@ -89,19 +89,34 @@ def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
     return result
 
 
+def _fetch_all_rows(make_query, page_size: int = 1000) -> list[dict]:
+    """Every row of a select, page by page (PostgREST returns at most 1000).
+    make_query builds a fresh query for each page."""
+    rows: list[dict] = []
+    start = 0
+    while True:
+        page = make_query().range(start, start + page_size - 1).execute().data
+        rows.extend(page)
+        if len(page) < page_size:
+            return rows
+        start += page_size
+
+
 def catalogue_report(admin: Client, filters: ReportFilters) -> list[CatalogueSlice]:
-    """Copies per category. Only the category and college filters apply."""
-    query = admin.table("books").select("category, total_copies").is_("archived_at", "null")
+    """Copies per category, counted from book_copies. Only the category and
+    college filters apply."""
+    query = admin.table("books").select("id, category").is_("archived_at", "null")
     if filters.category:
         query = query.eq("category", filters.category)
     if filters.college:
         query = query.eq("subject", filters.college)
-    books = query.execute().data
+    category_by_book = {b["id"]: b.get("category") or "Uncategorized" for b in query.execute().data}
 
     by_category: dict[str, int] = {}
-    for b in books:
-        key = b.get("category") or "Uncategorized"
-        by_category[key] = by_category.get(key, 0) + (b.get("total_copies") or 1)
+    for c in _fetch_all_rows(lambda: admin.table("book_copies").select("book_id")):
+        key = category_by_book.get(c["book_id"])
+        if key is not None:
+            by_category[key] = by_category.get(key, 0) + 1
 
     ranked = sorted(by_category.items(), key=lambda kv: kv[1], reverse=True)
     return [

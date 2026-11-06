@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from core.config import FRONTEND_URL, FRONTEND_ORIGIN_REGEX
 from core.reservations import run_expiry_loop
-from routers import auth, book_requests, books, borrow, chat, holds, inhouse, inventory, loans, notifications, patrons, recommendations, reports, reservations, saved_books, search, sessions, settings, shelf_reports, support_tickets, sync, weeding
+from routers import auth, book_requests, books, chat, holds, inhouse, inventory, loans, notifications, patrons, recommendations, reports, reservations, saved_books, search, sessions, settings, shelf_reports, support_tickets, sync, weeding
 
 # Expires lapsed reservation pickups on a timer, so the student is
 # notified and the copy handed on without waiting for someone to load a
@@ -81,7 +81,8 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(books.router)
-app.include_router(borrow.router)
+# routers/borrow.py (the old borrow_transactions flow) is no longer
+# registered: nothing calls it, and it wrote books.available_copies.
 app.include_router(reservations.router)
 app.include_router(sessions.router)
 app.include_router(holds.router)

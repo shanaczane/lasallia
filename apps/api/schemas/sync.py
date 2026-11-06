@@ -28,6 +28,13 @@ class SyncItem(BaseModel):
     location: str | None = None
 
 
+class SyncLargeJump(BaseModel):
+    accession: str
+    title: str | None = None
+    next_value: str  # the counter's next number before this import
+    location: str | None = None
+
+
 class SyncPreview(BaseModel):
     dry_run: bool
     source: str  # "destiny_marc" | "lrc_spreadsheet"
@@ -42,6 +49,9 @@ class SyncPreview(BaseModel):
     errors: list[SyncIssue]
     # Spreadsheet only: rows that import fine but look like typos.
     warnings: list[SyncIssue] = []
+    # New copies more than 1,000 above their prefix's next accession number.
+    # Applying needs confirm_large_jumps=true.
+    large_jumps: list[SyncLargeJump] = []
     run_id: str | None = None
 
 

@@ -72,7 +72,11 @@ def test_new_title_is_added_with_one_copy_per_barcode():
     assert plan.count("add") == 1
     item = plan.items[0]
     assert item.new_copies == ["T100", "T101"]
-    assert item.payload["accession_no"] == "T100"
+    # Copies carry the numbers and the counts; the books row gets neither.
+    for legacy in ("accession_no", "total_copies", "available_copies"):
+        assert legacy not in item.payload
+    assert item.payload["id"]
+    assert item.payload["isbn"] == "9780132350884"
     assert item.payload["category"] == "Computer Science"
     assert item.payload["subject"] == "CITE"
 
@@ -169,3 +173,35 @@ def test_spacing_before_punctuation_is_not_a_change():
         [{"book_id": "book-1", "accession_number": "T100"}],
     )
     assert plan.items[0].action == "unchanged"
+
+
+# ─── Accession counter and legacy columns ───────────────────────────────
+
+def test_copies_far_above_the_counter_are_flagged_in_the_preview():
+    records, issues = parse_marc(_mrc(
+        _record("Clean code", barcodes=("T47000", "T99999")),
+        _record("Odd one", isbn=None, barcodes=("T45312-C2", "X99999")),
+    ))
+    plan = plan_import(records, [], [], issues, counters={"T": 46646})
+    assert [(j.accession, j.next_value) for j in plan.large_jumps] == [("T99999", "T46646")]
+
+
+def test_no_counters_means_nothing_is_flagged():
+    plan = _plan(_mrc(_record("Clean code", barcodes=("T99999",))), [], [])
+    assert plan.large_jumps == []
+
+
+def test_apply_plan_attaches_copies_by_the_planned_id_and_skips_legacy_columns():
+    from core.importers.marc import apply_plan
+    from tests.fake_supabase import FakeSupabase
+
+    plan = _plan(_mrc(_record("Clean code", barcodes=("T100", "T101"))), [], [])
+    admin = FakeSupabase(books=[], book_copies=[])
+    assert apply_plan(admin, plan, "2026-11-05T00:00:00+00:00") == []
+
+    [book] = admin.tables["books"]
+    for legacy in ("accession_no", "total_copies", "available_copies"):
+        assert legacy not in book
+    copies = admin.tables["book_copies"]
+    assert [c["accession_number"] for c in copies] == ["T100", "T101"]
+    assert {c["book_id"] for c in copies} == {book["id"]} == {plan.items[0].book_id}

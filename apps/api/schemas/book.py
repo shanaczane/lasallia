@@ -80,9 +80,15 @@ class BookCopy(BaseModel):
     due_date: str | None = None
 
 # ── Librarian write endpoints ───────────────────────────────────────────
-# Matches the book form in BookFormModal.tsx.
+# Matches the book form in BookFormModal.tsx. Accession numbers and copy
+# counts aren't book fields any more: copies are rows in book_copies, and
+# their numbers come from the database counter (POST /books) or from the
+# label already on the book (register). total_copies/available_copies sent
+# by an older client are ignored.
 
 class BookWrite(BaseModel):
+    # Only accepted so an older form gets a clear error instead of the
+    # value being silently dropped; see create_book/update_book.
     accession_no: str | None = None
     title: str
     subtitle: str | None = None
@@ -111,8 +117,6 @@ class BookWrite(BaseModel):
     published_year: int | None = None
     publisher: str | None = None
     format: BookFormat | None = None
-    total_copies: int | None = None
-    available_copies: int | None = None
     purchase_price: float | None = None
     date_acquired: str | None = None
     circulation_type: str | None = None
@@ -121,10 +125,42 @@ class BookWrite(BaseModel):
     notes: str | None = None
     collection_type: str | None = None
 
+class BookCreate(BookWrite):
+    copy_count: int = Field(default=1, ge=1, le=50)
+    prefix: str = Field(default="T", pattern=r"^[A-Za-z]{1,5}$")
+    # Set after the librarian sees the "same title and author" warning for a
+    # book with no ISBN and chooses to catalog it anyway.
+    confirm_possible_duplicate: bool = False
+
 class BookUpdate(BookWrite):
     pass
 
-# POST /books/{book_id}/add-copies. Only raises the counters on books; it
-# doesn't create real copies, so books that have copies show no change.
+# A save that created copies also returns the numbers it assigned, so the
+# librarian can write or print them on the books.
+class BookWithNewCopies(LibrarianBook):
+    assigned_accession_numbers: list[str] = []
+
 class AddCopiesRequest(BaseModel):
-    count: int = Field(ge=1)
+    count: int = Field(ge=1, le=50)
+    prefix: str = Field(default="T", pattern=r"^[A-Za-z]{1,5}$")
+
+# A copy that already has a number printed on it.
+class RegisterCopyRequest(BaseModel):
+    accession_number: str = Field(min_length=1, max_length=40)
+    # Needed when the number is more than 1,000 above its prefix's counter.
+    confirm_large_jump: bool = False
+
+class CorrectAccessionRequest(BaseModel):
+    new_accession: str = Field(min_length=1, max_length=40)
+    reason: str = Field(min_length=1, max_length=500)
+    confirm_large_jump: bool = False
+
+class AccessionCorrection(BaseModel):
+    id: str
+    book_copy_id: str | None = None
+    old_value: str
+    new_value: str
+    reason: str
+    corrected_by: str | None = None
+    corrected_by_name: str | None = None
+    corrected_at: str

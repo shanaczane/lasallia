@@ -7,9 +7,10 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import Response
 
+from core.accession import accession_counters
 from core.deps import require_librarian
 from core.embeddings import reembed_books
-from core.importers.marc import ImportIssue, apply_plan, parse_marc, plan_import
+from core.importers.marc import LARGE_JUMP, ImportIssue, apply_plan, parse_marc, plan_import
 from core.importers.spreadsheet import build_template, parse_spreadsheet
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
@@ -53,6 +54,9 @@ def import_catalog(
     dry_run: bool = True,
     # Spreadsheets only: the college isn't in the file, so it's passed in.
     college: str | None = None,
+    # Required to apply a file with copies far above the accession counter
+    # (see large_jumps in the preview).
+    confirm_large_jumps: bool = False,
     librarian: UserProfile = Depends(require_librarian),
 ):
     data = file.file.read(MAX_FILE_BYTES + 1)
@@ -90,9 +94,16 @@ def import_catalog(
         admin, "books", "id, title, author, isbn, call_number, publisher, published_year, abstract, accession_no, archived_at, shelf_location"
     )
     copies = _fetch_all(admin, "book_copies", "book_id, accession_number")
-    plan = plan_import(records, books, copies, parse_issues)
+    plan = plan_import(records, books, copies, parse_issues, counters=accession_counters(admin))
     if records_read is not None:
         plan.records_read = records_read
+
+    if not dry_run and plan.large_jumps and not confirm_large_jumps:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{len(plan.large_jumps)} copy number(s) are more than {LARGE_JUMP:,} above the next accession "
+            "number. Check them in the preview and confirm before importing.",
+        )
 
     errors = list(plan.errors)
     run_id = None
@@ -142,6 +153,10 @@ def import_catalog(
         ],
         errors=[_issue_dict(e) for e in errors],
         warnings=[_issue_dict(w) for w in warnings],
+        large_jumps=[
+            {"accession": j.accession, "title": j.title, "next_value": j.next_value, "location": j.location}
+            for j in plan.large_jumps
+        ],
         run_id=run_id,
     )
 

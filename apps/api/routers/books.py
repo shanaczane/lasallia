@@ -1,18 +1,28 @@
+import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from typing import Callable, NoReturn, TypeVar
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from postgrest.exceptions import APIError
 
+from core.accession import (
+    accession_counters, accession_in_use, accession_sort_key, clean_accession_input, normalize_accession_number,
+)
 from core.deps import get_optional_user, require_librarian
 from core.embeddings import embed_single_book
-from core.accession import normalize_accession_number
-from core.loans import ensure_initial_copy, find_removal_blocker
+from core.importers.marc import LARGE_JUMP, large_jump
+from core.isbn import clean_isbn_input, normalize_isbn
+from core.loans import find_removal_blocker
 from core.reservations import maybe_sweep_expired_reservations
 from core.supabase import get_admin_client, get_client
 from schemas.auth import UserProfile
 from schemas.book import (
-    LIBRARIAN_ONLY_FIELDS, AddCopiesRequest, Book, BookCopy, BookSearchResponse, BookUpdate, BookWrite, LibrarianBook,
+    LIBRARIAN_ONLY_FIELDS, AccessionCorrection, AddCopiesRequest, Book, BookCopy, BookCreate, BookSearchResponse,
+    BookUpdate, BookWithNewCopies, CorrectAccessionRequest, LibrarianBook, RegisterCopyRequest,
 )
+
+T = TypeVar("T")
 
 router = APIRouter(prefix="/books", tags=["books"])
 
@@ -49,9 +59,10 @@ def _derive_status(statuses: set[str], has_waiting: bool = False) -> str:
     return "borrowed"
 
 def _apply_real_availability(books: list[dict], copy_rows: list[dict]) -> list[dict]:
-    # Work out availability from the copies on every request; the stored
-    # numbers on books are out of date. Books with no copies keep their
-    # stored values.
+    # Copy counts and availability always come from book_copies; the
+    # total_copies/available_copies columns on books are no longer kept up
+    # to date. A book with no copies has zero of everything and keeps its
+    # stored status.
     agg: dict[str, dict] = {}
     for row in copy_rows:
         entry = agg.setdefault(row["book_id"], {"total": 0, "available": 0, "reserved": 0, "statuses": set()})
@@ -83,6 +94,10 @@ def _apply_real_availability(books: list[dict], copy_rows: list[dict]) -> list[d
             b["available_copies"] = entry["available"]
             b["reserved_copies"] = entry["reserved"]
             b["status"] = _derive_status(entry["statuses"], has_waiting=b["id"] in waiting_ids)
+        else:
+            b["total_copies"] = 0
+            b["available_copies"] = 0
+            b["reserved_copies"] = 0
     return books
 
 @router.get("", response_model=BookSearchResponse)
@@ -116,80 +131,276 @@ def list_books(
 
     return BookSearchResponse(books=books, total=len(books), page=1, per_page=limit)
 
-def _check_accession_conflict(admin, accession_no: str | None, exclude_book_id: str | None = None) -> None:
-    if not accession_no:
+# ─── Adding and editing books (librarians only) ──────────────────────────
+
+# Postgres error codes the accession functions in migrations/0057 raise.
+_DB_ERROR_STATUS = {
+    "22023": status.HTTP_400_BAD_REQUEST,   # bad input: count, prefix, format, reason
+    "P0002": status.HTTP_404_NOT_FOUND,     # book or copy not found
+    "23505": status.HTTP_409_CONFLICT,      # number already in use
+    "23514": status.HTTP_409_CONFLICT,      # direct accession edit blocked
+}
+
+
+def _raise_db_error(e: APIError) -> NoReturn:
+    code = getattr(e, "code", None)
+    if code == "23505":
+        raise HTTPException(status.HTTP_409_CONFLICT, "That accession number is already in use by another copy.")
+    if code in _DB_ERROR_STATUS:
+        raise HTTPException(_DB_ERROR_STATUS[code], e.message)
+    raise e
+
+
+def _assign_numbers(call: Callable[[], T]) -> T:
+    """Runs a call that assigns accession numbers. The counter skips every
+    number in use, so a unique violation only happens when a copy with the
+    next number was registered at the same moment; one retry gets past it.
+    The database function rolls back fully on failure, so retrying is safe."""
+    try:
+        try:
+            return call()
+        except APIError as e:
+            if getattr(e, "code", None) != "23505":
+                raise
+        return call()
+    except APIError as e:
+        _raise_db_error(e)
+
+
+def _title_author_key(title: str | None, author: str | None) -> str:
+    return re.sub(r"[^a-z0-9]", "", f"{title or ''}|{author or ''}".lower())
+
+
+def _duplicate(code: str, message: str, book: dict) -> HTTPException:
+    # Librarian-only endpoints, but the matched book is still described by
+    # title and author only, never its accession numbers.
+    return HTTPException(status.HTTP_409_CONFLICT, {
+        "code": code,
+        "message": message,
+        "book": {
+            "id": book["id"],
+            "title": book["title"],
+            "author": book.get("author"),
+            "archived": bool(book.get("archived_at")),
+        },
+    })
+
+
+def _check_isbn_duplicate(admin, isbn: str, exclude_book_id: str | None = None) -> None:
+    rows = admin.table("books").select("id, title, author, isbn, archived_at").not_.is_("isbn", "null").execute().data
+    for b in rows:
+        if b["id"] != exclude_book_id and normalize_isbn(b["isbn"]) == isbn:
+            where = " (archived)" if b.get("archived_at") else ""
+            raise _duplicate(
+                "duplicate_isbn",
+                f'ISBN {isbn} is already cataloged as "{b["title"]}"{where}. Add copies to that book instead.',
+                b,
+            )
+
+
+def _check_title_duplicate(admin, title: str, author: str) -> None:
+    key = _title_author_key(title, author)
+    rows = admin.table("books").select("id, title, author, archived_at").execute().data
+    for b in rows:
+        if _title_author_key(b["title"], b.get("author")) == key:
+            raise _duplicate(
+                "possible_duplicate",
+                f'"{b["title"]}" by {b.get("author") or "the same author"} is already cataloged, and this book '
+                "has no ISBN to tell them apart. Add copies to it, or save this as a separate book.",
+                b,
+            )
+
+
+def _check_large_jump(admin, accession: str, confirmed: bool) -> None:
+    if confirmed:
         return
-    query = admin.table("books").select("id").eq("accession_no", accession_no)
-    if exclude_book_id:
-        query = query.neq("id", exclude_book_id)
-    if query.execute().data:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f'Accession number "{accession_no}" is already in use by another book',
-        )
+    next_value = large_jump(accession, accession_counters(admin))
+    if next_value:
+        raise HTTPException(status.HTTP_409_CONFLICT, {
+            "code": "large_jump",
+            "message": (
+                f"{accession} is more than {LARGE_JUMP:,} above the next accession number ({next_value}). "
+                "Saving it moves the counter past it for good, so check the label before confirming."
+            ),
+            "next_value": next_value,
+        })
 
-# Add and edit books (librarians only). A new book gets one copy, from the
-# accession number on the form. Copy counts come from the copies, so
-# editing total_copies has no visible effect once copies exist.
-@router.post("", response_model=LibrarianBook, status_code=status.HTTP_201_CREATED)
-def create_book(body: BookWrite, librarian: UserProfile = Depends(require_librarian)):
+
+def _book_with_counts(admin, book: dict) -> dict:
+    copies = admin.table("book_copies").select("book_id, status").eq("book_id", book["id"]).execute().data
+    return _apply_real_availability([book], copies)[0]
+
+
+def _reject_accession_field(sent: str | None, current: str | None) -> None:
+    # An older form still sends accession_no; an unchanged value is ignored.
+    if not sent or not sent.strip():
+        return
+    if current and normalize_accession_number(sent).upper() == normalize_accession_number(current).upper():
+        return
+    raise HTTPException(
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        "Accession numbers aren't set on the book form. New copies get one automatically; use Register "
+        "existing copy for a number already printed on a book, or Correct number to fix a copy's number.",
+    )
+
+
+# A new book and its copies are saved in one transaction, and the copies get
+# the next numbers from the accession counter.
+@router.post("", response_model=BookWithNewCopies, status_code=status.HTTP_201_CREATED)
+def create_book(body: BookCreate, librarian: UserProfile = Depends(require_librarian)):
+    _reject_accession_field(body.accession_no, None)
+    try:
+        isbn = clean_isbn_input(body.isbn)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e))
+
     admin = get_admin_client()
-    _check_accession_conflict(admin, body.accession_no)
+    if isbn:
+        _check_isbn_duplicate(admin, isbn)
+    elif not body.confirm_possible_duplicate:
+        _check_title_duplicate(admin, body.title, body.author)
 
-    payload = body.model_dump()
-    if payload.get("available_copies") is None:
-        payload["available_copies"] = payload.get("total_copies")
+    # Columns left out keep their database defaults (e.g. collection_type).
+    fields = body.model_dump(
+        exclude={"accession_no", "copy_count", "prefix", "confirm_possible_duplicate", "isbn"},
+        exclude_none=True,
+    )
+    if isbn:
+        fields["isbn"] = isbn
 
-    res = admin.table("books").insert(payload).execute()
-    if not res.data:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not create the book")
-    embed_single_book(admin, res.data[0])
-    ensure_initial_copy(admin, res.data[0]["id"])
-    return res.data[0]
+    result = _assign_numbers(lambda: admin.rpc("create_book_with_copies", {
+        "p_book": fields,
+        "p_prefix": body.prefix.upper(),
+        "p_count": body.copy_count,
+    }).execute().data)
+
+    book = result["book"]
+    # After the transaction, like every other save: a failure here never
+    # undoes the book, and reembed_books catches anything it missed.
+    embed_single_book(admin, book)
+    return {**_book_with_counts(admin, book), "assigned_accession_numbers": result["accession_numbers"]}
+
 
 @router.patch("/{book_id}", response_model=LibrarianBook)
 def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends(require_librarian)):
     admin = get_admin_client()
-    existing = admin.table("books").select("id, accession_no").eq("id", book_id).execute()
+    existing = admin.table("books").select("id, accession_no, isbn").eq("id", book_id).execute()
     if not existing.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
-    old_accession = existing.data[0].get("accession_no")
+    current = existing.data[0]
+    _reject_accession_field(body.accession_no, current.get("accession_no"))
 
-    _check_accession_conflict(admin, body.accession_no, exclude_book_id=book_id)
+    payload = body.model_dump(exclude={"accession_no"})
 
-    payload = body.model_dump()
+    # An unchanged ISBN keeps the value as it was stored (existing values
+    # aren't rewritten), so a book that already shares an ISBN or has an
+    # invalid one can still be edited.
+    if normalize_isbn(body.isbn) == normalize_isbn(current.get("isbn")):
+        payload["isbn"] = current.get("isbn")
+    else:
+        try:
+            payload["isbn"] = clean_isbn_input(body.isbn)
+        except ValueError as e:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e))
+        if payload["isbn"]:
+            _check_isbn_duplicate(admin, payload["isbn"], exclude_book_id=book_id)
+
     res = admin.table("books").update(payload).eq("id", book_id).execute()
     embed_single_book(admin, res.data[0])
+    return _book_with_counts(admin, res.data[0])
 
-    # Fixing the accession number on the form also fixes the copy's, or
-    # the real label would never match at /borrow.
-    if old_accession and body.accession_no and body.accession_no != old_accession:
-        admin.table("book_copies").update(
-            {"accession_number": normalize_accession_number(body.accession_no)}
-        ).eq("book_id", book_id).eq("accession_number", normalize_accession_number(old_accession)).execute()
-    ensure_initial_copy(admin, book_id)
 
-    # Return availability worked out from the copies, like list_books.
-    copies_res = admin.table("book_copies").select("book_id, status").eq("book_id", book_id).execute()
-    book = _apply_real_availability(res.data, copies_res.data)
-    return book[0]
-
-@router.post("/{book_id}/add-copies", response_model=LibrarianBook)
+# New copies of a book already in the catalog, numbered from the counter.
+@router.post("/{book_id}/add-copies", response_model=BookWithNewCopies)
 def add_copies(book_id: str, body: AddCopiesRequest, librarian: UserProfile = Depends(require_librarian)):
     admin = get_admin_client()
-    existing = admin.table("books").select("total_copies, available_copies").eq("id", book_id).execute()
-    if not existing.data:
+    numbers = _assign_numbers(lambda: admin.rpc("add_book_copies", {
+        "p_book_id": book_id,
+        "p_prefix": body.prefix.upper(),
+        "p_count": body.count,
+    }).execute().data)
+
+    book = admin.table("books").select("*").eq("id", book_id).execute().data[0]
+    return {**_book_with_counts(admin, book), "assigned_accession_numbers": numbers}
+
+
+# A copy whose number is already printed on it (cataloged before Lasallia
+# assigned numbers). Moves the counter past it if needed.
+@router.post("/{book_id}/copies/register", response_model=BookCopy, status_code=status.HTTP_201_CREATED)
+def register_existing_copy(book_id: str, body: RegisterCopyRequest, librarian: UserProfile = Depends(require_librarian)):
+    try:
+        accession = clean_accession_input(body.accession_number)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e))
+
+    admin = get_admin_client()
+    book_res = admin.table("books").select("id, shelf_location, archived_at").eq("id", book_id).execute()
+    if not book_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
-    book = existing.data[0]
+    book = book_res.data[0]
+    if book.get("archived_at"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This book is archived. Restore it before adding copies.")
 
-    payload = {
-        "total_copies": (book.get("total_copies") or 0) + body.count,
-        "available_copies": (book.get("available_copies") or 0) + body.count,
-    }
-    res = admin.table("books").update(payload).eq("id", book_id).execute()
+    if accession_in_use(admin, accession):
+        raise HTTPException(status.HTTP_409_CONFLICT, f"{accession} is already in use by another copy.")
+    _check_large_jump(admin, accession, body.confirm_large_jump)
 
-    copies_res = admin.table("book_copies").select("book_id, status").eq("book_id", book_id).execute()
-    return _apply_real_availability(res.data, copies_res.data)[0]
+    try:
+        row = admin.table("book_copies").insert({
+            "book_id": book_id,
+            "accession_number": accession,
+            "status": "available",
+            "shelf_location": book.get("shelf_location"),
+        }).execute().data[0]
+    except APIError as e:
+        _raise_db_error(e)
+    return {k: row.get(k) for k in ("id", "accession_number", "status", "shelf_location")}
+
+
+# The only way to change a copy's number once saved. Needs a reason; the old
+# and new values, reason, who and when are kept in accession_corrections.
+@router.post("/copies/{copy_id}/correct-accession", response_model=AccessionCorrection)
+def correct_accession(copy_id: str, body: CorrectAccessionRequest, librarian: UserProfile = Depends(require_librarian)):
+    reason = body.reason.strip()
+    if not reason:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Give a reason for the correction.")
+    try:
+        accession = clean_accession_input(body.new_accession)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e))
+
+    admin = get_admin_client()
+    _check_large_jump(admin, accession, body.confirm_large_jump)
+    try:
+        row = admin.rpc("correct_accession_number", {
+            "p_copy_id": copy_id,
+            "p_new": accession,
+            "p_reason": reason,
+            "p_staff": librarian.id,
+        }).execute().data
+    except APIError as e:
+        _raise_db_error(e)
+    return {**row, "corrected_by_name": librarian.full_name}
+
+
+@router.get("/{book_id}/accession-corrections", response_model=list[AccessionCorrection])
+def list_accession_corrections(book_id: str, librarian: UserProfile = Depends(require_librarian)):
+    admin = get_admin_client()
+    rows = (
+        admin.table("accession_corrections")
+        .select("id, book_copy_id, old_value, new_value, reason, corrected_by, corrected_at")
+        .eq("book_id", book_id)
+        .order("corrected_at", desc=True)
+        .execute()
+    ).data
+    staff_ids = list({r["corrected_by"] for r in rows if r.get("corrected_by")})
+    names = {}
+    if staff_ids:
+        names = {
+            p["id"]: p.get("full_name")
+            for p in admin.table("profiles").select("id, full_name").in_("id", staff_ids).execute().data
+        }
+    return [{**r, "corrected_by_name": names.get(r.get("corrected_by"))} for r in rows]
 
 @router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_book(book_id: str, librarian: UserProfile = Depends(require_librarian)):
@@ -308,10 +519,10 @@ def list_book_copies(book_id: str, librarian: UserProfile = Depends(require_libr
         admin.table("book_copies")
         .select("id, accession_number, status, shelf_location")
         .eq("book_id", book_id)
-        .order("accession_number")
         .execute()
     )
-    copies = res.data
+    # Numeric order within a prefix: T9 before T10.
+    copies = sorted(res.data, key=lambda c: accession_sort_key(c["accession_number"]))
 
     # Add the borrower and due date for copies that are out on loan.
     on_loan_ids = [c["id"] for c in copies if c["status"] in ("on_loan", "overdue")]
