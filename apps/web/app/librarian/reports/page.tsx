@@ -210,6 +210,16 @@ function ReportTableCard({
 }
 
 // ─── Overview card: title on the left, a link or a note on the right. ─────
+// In place of a card's contents before its data has loaded, so an empty
+// list never reads as "nothing here".
+function CardPlaceholder({ failed }: { failed: boolean }) {
+  return (
+    <p className={failed ? "text-danger" : "text-ink-400"} style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+      {failed ? "Couldn't load this. Reload the page to try again." : "Loading…"}
+    </p>
+  )
+}
+
 function OverviewCard({
   title,
   subtitle,
@@ -2196,15 +2206,21 @@ function ReportsPageContent() {
   const [books, setBooks] = useState<Book[]>([])
   const [patrons, setPatrons] = useState<UserProfile[]>([])
   // Loaded once (filters don't apply), so Overview and the tab agree.
-  const [weedingCandidates, setWeedingCandidates] = useState<WeedingCandidate[]>([])
+  // null until loaded, so the Overview never shows a false 0.
+  const [weedingCandidates, setWeedingCandidates] = useState<WeedingCandidate[] | null>(null)
+  const [weedingFailed, setWeedingFailed] = useState(false)
 
   // Order of the Overview cards (draggable).
   const [cardOrder, setCardOrder] = useState<string[]>(["catalogue", "circulation", "patrons", "trends", "library-stats", "weeding"])
 
   useEffect(() => {
-    Promise.all([fetchBooks(), fetchPatrons(), fetchWeedingCandidates()])
-      .then(([b, p, w]) => { setBooks(b); setPatrons(p); setWeedingCandidates(w) })
+    Promise.all([fetchBooks(), fetchPatrons()])
+      .then(([b, p]) => { setBooks(b); setPatrons(p) })
       .catch(() => {})
+    // Separate from the full catalog and patron list, so it doesn't wait on them.
+    fetchWeedingCandidates()
+      .then(setWeedingCandidates)
+      .catch(() => setWeedingFailed(true))
   }, [])
 
   // Activity Log: clicking a user opens their profile.
@@ -2273,6 +2289,7 @@ function ReportsPageContent() {
 
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [catalogueData, setCatalogueData] = useState<CatalogueSlice[]>([])
   const [circulationData, setCirculationData] = useState<Bucket[]>([])
   const [trendData, setTrendData] = useState<TransactionTrendPoint[]>([])
@@ -2326,8 +2343,9 @@ function ReportsPageContent() {
         setLibraryStats(libStats)
         setShelfListData(shelf)
         setLastUpdated(new Date())
+        setLoadFailed(false)
       })
-      .catch(() => {})
+      .catch(() => setLoadFailed(true))
       .finally(() => setLoading(false))
   }, [currentFilters])
 
@@ -2442,11 +2460,18 @@ function ReportsPageContent() {
     }
   })()
 
+  // Until the first load finishes, numbers show "…" (or "—" if it failed)
+  // instead of 0, and cards show a loading or error note instead of
+  // "nothing yet".
+  const reportsReady = lastUpdated !== null
+  const pending = (failed: boolean) => (failed ? "—" : "…")
+  const cardBody = (node: React.ReactNode) => (reportsReady ? node : <CardPlaceholder failed={loadFailed} />)
+
   const quickStats = [
-    { label: "Total Titles",     value: (libraryStats?.total_titles ?? 0).toLocaleString(), icon: <BookMarked size={18} />, color: "text-green-700", bg: "bg-green-50" },
-    { label: "Active Borrowers", value: (libraryStats?.active_borrowers ?? 0).toLocaleString(), icon: <Users size={18} />,     color: "text-amber-700", bg: "bg-amber-50" },
-    { label: "Overdue",          value: overdueRowsData.length.toLocaleString(), icon: <AlertTriangle size={18} />, color: "text-red-700", bg: "bg-red-50" },
-    { label: "Weeding Candidates", value: weedingCandidates.length.toLocaleString(), icon: <BarChart2 size={18} />, color: "text-gold-600", bg: "bg-gold-100" },
+    { label: "Total Titles",     value: reportsReady && libraryStats ? libraryStats.total_titles.toLocaleString() : pending(loadFailed), icon: <BookMarked size={18} />, color: "text-green-700", bg: "bg-green-50" },
+    { label: "Active Borrowers", value: reportsReady && libraryStats ? libraryStats.active_borrowers.toLocaleString() : pending(loadFailed), icon: <Users size={18} />,     color: "text-amber-700", bg: "bg-amber-50" },
+    { label: "Overdue",          value: reportsReady ? overdueRowsData.length.toLocaleString() : pending(loadFailed), icon: <AlertTriangle size={18} />, color: "text-red-700", bg: "bg-red-50" },
+    { label: "Weeding Candidates", value: weedingCandidates ? weedingCandidates.length.toLocaleString() : pending(weedingFailed), icon: <BarChart2 size={18} />, color: "text-gold-600", bg: "bg-gold-100" },
   ]
 
   // Overview card contents (their order is in cardOrder).
@@ -2454,19 +2479,21 @@ function ReportsPageContent() {
     catalogue: (
       <OverviewCard
         title="Catalogue report"
-        subtitle={`${catalogueData.reduce((s, d) => s + d.titles, 0)} titles and ${catalogueData.reduce((s, d) => s + d.copies, 0)} copies across ${catalogueData.length} categories. Bars show copies.`}
+        subtitle={reportsReady
+          ? `${catalogueData.reduce((s, d) => s + d.titles, 0)} titles and ${catalogueData.reduce((s, d) => s + d.copies, 0)} copies across ${catalogueData.length} categories. Bars show copies.`
+          : "Titles and copies by category"}
         action={{ label: "Open full report", onClick: () => setTab("catalogue") }}
       >
-        <CatalogueBarList data={catalogueData} />
+        {cardBody(<CatalogueBarList data={catalogueData} />)}
       </OverviewCard>
     ),
     circulation: (
       <OverviewCard
         title="Circulation report"
         subtitle="Monthly borrows, last 6 months"
-        corner={`${circulationData.reduce((s, d) => s + d.value, 0)} total`}
+        corner={reportsReady ? `${circulationData.reduce((s, d) => s + d.value, 0)} total` : undefined}
       >
-        <BarChartViz data={circulationData} />
+        {cardBody(<BarChartViz data={circulationData} />)}
       </OverviewCard>
     ),
     patrons: (
@@ -2475,26 +2502,28 @@ function ReportsPageContent() {
         subtitle="Highest borrowers in range"
         action={{ label: "Manage patrons", onClick: () => router.push("/librarian/patrons") }}
       >
-        <TopPatronsList patrons={topPatronsData} />
+        {cardBody(<TopPatronsList patrons={topPatronsData} />)}
       </OverviewCard>
     ),
     trends: (
       <OverviewCard title="Transaction statistics" subtitle="Weekly activity, last 8 weeks">
-        <TransactionTrendChart data={trendData} />
+        {cardBody(<TransactionTrendChart data={trendData} />)}
       </OverviewCard>
     ),
     "library-stats": (
       <OverviewCard title="Library statistics" subtitle="Usage by program and year level">
-        <ProgramUsageList data={libraryStats?.by_program ?? []} />
+        {cardBody(<ProgramUsageList data={libraryStats?.by_program ?? []} />)}
       </OverviewCard>
     ),
     weeding: (
       <OverviewCard
         title="Weeding log"
         subtitle="Flagged by the ten-year policy"
-        action={{ label: `Review ${weedingCandidates.length}`, onClick: () => setTab("weeding") }}
+        action={{ label: weedingCandidates ? `Review ${weedingCandidates.length}` : "Review", onClick: () => setTab("weeding") }}
       >
-        {weedingCandidates.length === 0 ? (
+        {!weedingCandidates ? (
+          <CardPlaceholder failed={weedingFailed} />
+        ) : weedingCandidates.length === 0 ? (
           <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
             Nothing flagged right now.
           </p>
@@ -2604,6 +2633,9 @@ function ReportsPageContent() {
           style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
         >
           {dateSubtitle} · {collegeSubtitle}{loading ? " · Loading…" : ""}
+          {!loading && loadFailed && (
+            <span className="text-danger"> · Couldn&apos;t load the latest numbers{lastUpdated ? ", showing the last update" : ""}</span>
+          )}
           {lastUpdated && (
             <span className="text-ink-300"> · Updated {lastUpdated.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}</span>
           )}
