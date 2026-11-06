@@ -185,7 +185,7 @@ def _legacy_book(conn, accession="T45000"):
 
 
 def test_resending_the_same_number_still_saves(conn):
-    # What every edit from the pre-0057 API does: the whole books row,
+    # What every edit from the pre-0058 API does: the whole books row,
     # accession_no included, written back unchanged.
     book_id = _legacy_book(conn)
     conn.execute("update books set title = 'Edited', accession_no = 'T45000' where id = %s", (book_id,))
@@ -194,7 +194,7 @@ def test_resending_the_same_number_still_saves(conn):
 
 
 def test_old_api_number_change_is_rejected_before_anything_is_saved(conn):
-    # The pre-0057 API wrote books first, then the copy. The books lock makes
+    # The pre-0058 API wrote books first, then the copy. The books lock makes
     # that first statement fail, so the edit leaves no stale number behind.
     book_id = _legacy_book(conn)
     with pytest.raises(errors.CheckViolation):

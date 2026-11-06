@@ -8,7 +8,7 @@
 # run the input through this first.
 #
 # New numbers are handed out by the database (next_accession_numbers in
-# migrations/0057), never worked out here.
+# migrations/0058), never worked out here.
 
 import re
 

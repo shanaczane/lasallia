@@ -133,7 +133,7 @@ def list_books(
 
 # ─── Adding and editing books (librarians only) ──────────────────────────
 
-# Postgres error codes the accession functions in migrations/0057 raise.
+# Postgres error codes the accession functions in migrations/0058 raise.
 _DB_ERROR_STATUS = {
     "22023": status.HTTP_400_BAD_REQUEST,   # bad input: count, prefix, format, reason
     "P0002": status.HTTP_404_NOT_FOUND,     # book or copy not found

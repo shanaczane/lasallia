@@ -1,4 +1,4 @@
-# Database tests for migrations/0057_accession_numbers.sql. They run the
+# Database tests for migrations/0058_accession_numbers.sql. They run the
 # real SQL against a throwaway Postgres and are skipped unless
 # TEST_DATABASE_URL is set. Never point it at the Supabase project: every
 # test drops and recreates the public schema.
@@ -16,7 +16,7 @@ import pytest
 psycopg = pytest.importorskip("psycopg")
 
 DB_URL = os.environ.get("TEST_DATABASE_URL")
-MIGRATION = Path(__file__).resolve().parents[2] / "migrations" / "0057_accession_numbers.sql"
+MIGRATION = Path(__file__).resolve().parents[2] / "migrations" / "0058_accession_numbers.sql"
 
 # The parts of books / book_copies / profiles the migration relies on, as
 # they are in the live schema (see migrations 0001, 0002, 0004, 0022).

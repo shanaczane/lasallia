@@ -1,4 +1,4 @@
--- 0057_accession_numbers.sql
+-- 0058_accession_numbers.sql
 -- Lasallia assigns accession numbers to new copies from a counter per
 -- prefix, and book_copies becomes the only record of copies.
 --
