@@ -12,7 +12,7 @@ from core.report_export.excel import build_excel
 from core.report_export.layout import (
     SIGNATURE_ROLES,
     ExportOptions,
-    header_lines,
+    report_header,
     signatories,
     signature_titles,
     summary_label,
@@ -266,7 +266,7 @@ def export_report(body: ReportExportRequest, librarian: UserProfile = Depends(re
     text = reviewed or data.computed_summary
     source = body.summary_source if reviewed else "computed"
     options = ExportOptions(
-        header_lines=header_lines(settings),
+        header=report_header(settings),
         summary_text=text,
         summary_label=summary_label(source, text, data.computed_summary),
         signatories=signatories(settings, {

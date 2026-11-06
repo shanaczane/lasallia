@@ -90,10 +90,12 @@ def build_excel(data: ReportData, options: layout.ExportOptions) -> bytes:
         return row + 1
 
     row = 1
-    for i, text in enumerate(options.header_lines):
-        font = Font(bold=True, size=14, color=_GREEN) if i == 0 else Font(bold=i == 1, size=11 if i == 1 else 9,
-                                                                            color=None if i == 1 else _MUTED)
-        row = line(row, text, font)
+    header = options.header
+    row = line(row, header.school, Font(bold=True, size=14, color=_GREEN))
+    if header.unit:
+        row = line(row, header.unit, Font(bold=True, size=11))
+    if header.address:
+        row = line(row, header.address, Font(size=9, color=_MUTED))
     row += 1
     row = line(row, data.title, Font(bold=True, size=14))
     row = line(row, f"Period covered: {data.period}", Font(size=9, color=_MUTED))

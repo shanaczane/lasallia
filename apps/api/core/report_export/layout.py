@@ -2,6 +2,7 @@
 # the summary label and the signature lines. Used by the PDF and Excel
 # exporters.
 
+import re
 from dataclasses import dataclass
 
 # Paper for PDF and Excel printing. Change it here only.
@@ -40,8 +41,15 @@ class Signatory:
 
 
 @dataclass
+class ReportHeader:
+    school: str                     # first line, e.g. "De La Salle Lipa"
+    unit: str | None = None         # second line, e.g. "Learning Resource Center"
+    address: str | None = None      # always in the small address style
+
+
+@dataclass
 class ExportOptions:
-    header_lines: list[str]
+    header: ReportHeader
     summary_text: str
     summary_label: str
     signatories: list[Signatory]
@@ -61,13 +69,20 @@ def placeholder_roles(settings: dict) -> list[str]:
     return [label for key, label, placeholder in SIGNATURE_ROLES if titles[key] == placeholder]
 
 
-def header_lines(settings: dict) -> list[str]:
-    """['De La Salle Lipa', 'Learning Resource Center', '<address>'] from
-    the library name ("De La Salle Lipa — Learning Resource Center")."""
-    name = (settings.get("library_name") or "").strip()
-    parts = [p.strip() for p in name.replace(" – ", " — ").split(" — ") if p.strip()] or ["Learning Resource Center"]
-    address = (settings.get("address") or "").strip()
-    return parts + ([address] if address else [])
+# " - ", " – " or " — " between the school and the LRC name. Only a dash
+# with spaces around it, so a hyphenated name stays whole.
+_NAME_SEPARATOR = re.compile(r"\s+[-–—]\s+")
+
+
+def report_header(settings: dict) -> ReportHeader:
+    """The report header from Settings. "De La Salle Lipa - Learning
+    Resource Center" becomes two lines; a name without a separator stays on
+    one line. The address is kept apart so it's always styled as an
+    address."""
+    name = re.sub(r"\s+", " ", (settings.get("library_name") or "").strip())
+    school, unit = (_NAME_SEPARATOR.split(name, maxsplit=1) + [None])[:2] if name else ("Learning Resource Center", None)
+    address = (settings.get("address") or "").strip() or None
+    return ReportHeader(school=school.strip(), unit=unit.strip() if unit and unit.strip() else None, address=address)
 
 
 def summary_label(source: str, text: str, computed: str) -> str:

@@ -220,9 +220,12 @@ def build_pdf(data: ReportData, options: layout.ExportOptions) -> bytes:
     width = size[0] - 2 * MARGIN
 
     story = []
-    header_styles = ["school", "lrc"]
-    for i, line in enumerate(options.header_lines):
-        story.append(Paragraph(_text(line), styles[header_styles[i]] if i < len(header_styles) else styles["address"]))
+    header = options.header
+    story.append(Paragraph(_text(header.school), styles["school"]))
+    if header.unit:
+        story.append(Paragraph(_text(header.unit), styles["lrc"]))
+    if header.address:
+        story.append(Paragraph(_text(header.address), styles["address"]))
     story.append(Spacer(1, 3 * mm))
     story.append(Paragraph(_text(data.title), styles["title"]))
     story.append(Paragraph(_text(f"Period covered: {data.period}"), styles["meta"]))
@@ -256,7 +259,7 @@ def build_pdf(data: ReportData, options: layout.ExportOptions) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=size, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=11 * mm, bottomMargin=15 * mm,
-        title=data.title, author=options.header_lines[0] if options.header_lines else "Lasallia",
+        title=data.title, author=options.header.school or "Lasallia",
     )
     footer = f"{data.title} · {data.period}"
     doc.build(story, canvasmaker=_numbered_canvas(footer[:150]))

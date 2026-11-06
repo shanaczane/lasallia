@@ -218,7 +218,7 @@ def build_overdue(admin, filters: ExportFilters) -> ReportData:
         KeyFigure("Overdue loans", f"{count:,}", count, "#,##0"),
         KeyFigure("Borrowers with overdue loans", f"{borrowers:,}", borrowers, "#,##0"),
         KeyFigure("Fines so far", _peso(total_fine), total_fine, '"₱"#,##0.00'),
-        KeyFigure("Average days overdue", f"{average_days:g}", average_days, "0.0"),
+        KeyFigure("Average days overdue", f"{average_days:.1f}", average_days, "0.0"),
         KeyFigure("Longest overdue", _count_text(longest, "day", "days"), longest,
                   '0 "day"' if longest == 1 else '#,##0 "days"'),
         KeyFigure("Program with the most overdue loans", _top_programs_text(top_programs, top_count)),
@@ -228,7 +228,7 @@ def build_overdue(admin, filters: ExportFilters) -> ReportData:
         summary = (
             f"{_count_text(count, 'loan', 'loans')} by {_count_text(borrowers, 'borrower', 'borrowers')} "
             f"{'is' if count == 1 else 'are'} overdue, with {_peso(total_fine)} in fines so far. "
-            f"On average they are {average_days:g} days overdue; the longest is "
+            f"On average they are {average_days:.1f} days overdue; the longest is "
             f"{_count_text(longest, 'day', 'days')}. "
             f"Most overdue loans: {_top_programs_text(top_programs, top_count)}."
         )

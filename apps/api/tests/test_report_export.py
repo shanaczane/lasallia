@@ -33,7 +33,7 @@ FORBIDDEN = ("juan.delacruz@dlsl.edu.ph", "2021-00001", "T45000", "student-")
 def _options(data, summary=None, names=None, settings=SETTINGS):
     text = summary or data.computed_summary
     return layout.ExportOptions(
-        header_lines=layout.header_lines(settings),
+        header=layout.report_header(settings),
         summary_text=text,
         summary_label=layout.summary_label("computed", text, data.computed_summary),
         signatories=layout.signatories(settings, names or {"prepared_by": "Ana Reyes"}),
@@ -458,3 +458,99 @@ def test_wrapped_lines_counts_words_and_line_breaks():
     assert wrapped_lines("Placeholder Introduction to Psychology", 38) == 2
     assert wrapped_lines("one\ntwo", 40) == 2
     assert wrapped_lines("x" * 100, 12) >= 9  # one long word still wraps
+
+
+# ─── Header: school and LRC on two lines, address in its own style ──────
+
+ADDRESS = "Sen. Jose Diokno Building, Lipa City, Batangas 4217"
+
+
+@pytest.mark.parametrize("name", [
+    "De La Salle Lipa - Learning Resource Center",       # hyphen, as stored on the live site
+    "De La Salle Lipa – Learning Resource Center",       # en dash
+    "De La Salle Lipa — Learning Resource Center",       # em dash
+    "  De La Salle Lipa   -   Learning Resource Center ",
+])
+def test_header_splits_on_any_spaced_dash(name):
+    header = layout.report_header({"library_name": name, "address": ADDRESS})
+    assert (header.school, header.unit, header.address) == ("De La Salle Lipa", "Learning Resource Center", ADDRESS)
+
+
+@pytest.mark.parametrize("name", ["Learning Resource Center", "Lipa-City Library", "De La Salle Lipa-LRC"])
+def test_header_without_a_spaced_dash_stays_on_one_line(name):
+    header = layout.report_header({"library_name": name, "address": ADDRESS})
+    assert (header.school, header.unit, header.address) == (name, None, ADDRESS)
+
+
+def test_header_without_an_address():
+    header = layout.report_header({"library_name": "De La Salle Lipa - Learning Resource Center", "address": "  "})
+    assert header.address is None
+
+
+def _pdf_fonts(content: bytes) -> dict[str, str]:
+    """Text on the first page -> the font it's drawn in."""
+    fonts: dict[str, str] = {}
+
+    def visit(text, cm, tm, font_dict, font_size):
+        if text.strip() and font_dict:
+            fonts.setdefault(text.strip(), f"{font_dict.get('/BaseFont')}@{round(float(font_size))}")
+
+    PdfReader(io.BytesIO(content)).pages[0].extract_text(visitor_text=visit)
+    return fonts
+
+
+@pytest.mark.parametrize("name, unit", [
+    ("De La Salle Lipa - Learning Resource Center", "Learning Resource Center"),
+    ("De La Salle Lipa — Learning Resource Center", "Learning Resource Center"),
+])
+def test_pdf_header_styles_with_a_separator(name, unit):
+    data = _data([])
+    fonts = _pdf_fonts(build_pdf(data, _options(data, settings={"library_name": name, "address": ADDRESS})))
+    school, lrc, address = fonts["De La Salle Lipa"], fonts[unit], fonts[ADDRESS]
+    assert "Bold" in school and school.endswith("@14")
+    assert "Bold" in lrc and lrc.endswith("@11")
+    assert "Bold" not in address and address.endswith("@8")
+
+
+def test_pdf_header_without_a_separator_keeps_the_address_style():
+    data = _data([])
+    fonts = _pdf_fonts(build_pdf(data, _options(data, settings={"library_name": "Learning Resource Center", "address": ADDRESS})))
+    assert "Bold" in fonts["Learning Resource Center"] and fonts["Learning Resource Center"].endswith("@14")
+    assert "Bold" not in fonts[ADDRESS] and fonts[ADDRESS].endswith("@8")
+
+
+def _excel_header(settings) -> list[tuple]:
+    data = _data([])
+    ws = _sheet(build_excel(data, _options(data, settings=settings)))["Overdue Loans"]
+    rows = []
+    for r in range(1, 5):
+        cell = ws.cell(r, 1)
+        if cell.value is None:
+            break
+        rows.append((cell.value, bool(cell.font.b), cell.font.sz))
+    return rows
+
+
+@pytest.mark.parametrize("name", ["De La Salle Lipa - Learning Resource Center", "De La Salle Lipa – Learning Resource Center"])
+def test_excel_header_styles_with_a_separator(name):
+    assert _excel_header({"library_name": name, "address": ADDRESS}) == [
+        ("De La Salle Lipa", True, 14), ("Learning Resource Center", True, 11), (ADDRESS, False, 9)]
+
+
+def test_excel_header_without_a_separator_keeps_the_address_style():
+    assert _excel_header({"library_name": "Learning Resource Center", "address": ADDRESS}) == [
+        ("Learning Resource Center", True, 14), (ADDRESS, False, 9)]
+
+
+# ─── Average days overdue always shows one decimal ──────────────────────
+
+def test_average_days_overdue_shows_one_decimal_in_pdf_and_excel():
+    data = _data([loan(1, days_late=12)])  # a whole-number average
+    figures = {f.label: f for f in data.key_figures}
+    assert figures["Average days overdue"].value == "12.0"
+    assert "On average they are 12.0 days overdue" in data.computed_summary
+    assert "12.0" in "\n".join(_pdf_text(build_pdf(data, _options(data))))
+    ws = _sheet(build_excel(data, _options(data)))["Overdue Loans"]
+    [cell] = [ws.cell(r, 3) for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value == "Average days overdue"]
+    assert cell.value == 12 and cell.number_format == "0.0"  # Excel shows 12.0
+    assert {f.label: f.value for f in _data([]).key_figures}["Average days overdue"] == "0.0"
