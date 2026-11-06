@@ -6,7 +6,9 @@ from pydantic import BaseModel
 
 class CatalogueSlice(BaseModel):
     label: str
-    value: int
+    titles: int  # books (titles) in the category
+    copies: int  # their copies in book_copies
+    value: int   # same as copies; what the bar length uses
     color: str
 
 

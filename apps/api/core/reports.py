@@ -103,25 +103,37 @@ def _fetch_all_rows(make_query, page_size: int = 1000) -> list[dict]:
 
 
 def catalogue_report(admin: Client, filters: ReportFilters) -> list[CatalogueSlice]:
-    """Copies per category, counted from book_copies. Only the category and
-    college filters apply."""
-    query = admin.table("books").select("id, category").is_("archived_at", "null")
-    if filters.category:
-        query = query.eq("category", filters.category)
-    if filters.college:
-        query = query.eq("subject", filters.college)
-    category_by_book = {b["id"]: b.get("category") or "Uncategorized" for b in query.execute().data}
+    """Titles and copies per category. Titles are non-archived books; copies
+    are their rows in book_copies. A category whose books have no copies
+    still appears, with 0 copies. Only the category and college filters
+    apply."""
+    def books_query():
+        query = admin.table("books").select("id, category").is_("archived_at", "null").order("id")
+        if filters.category:
+            query = query.eq("category", filters.category)
+        if filters.college:
+            query = query.eq("subject", filters.college)
+        return query
 
-    by_category: dict[str, int] = {}
-    for c in _fetch_all_rows(lambda: admin.table("book_copies").select("book_id")):
+    category_by_book = {b["id"]: b.get("category") or "Uncategorized" for b in _fetch_all_rows(books_query)}
+
+    titles: dict[str, int] = {}
+    for key in category_by_book.values():
+        titles[key] = titles.get(key, 0) + 1
+
+    copies: dict[str, int] = dict.fromkeys(titles, 0)
+    for c in _fetch_all_rows(lambda: admin.table("book_copies").select("book_id").order("id")):
         key = category_by_book.get(c["book_id"])
         if key is not None:
-            by_category[key] = by_category.get(key, 0) + 1
+            copies[key] += 1
 
-    ranked = sorted(by_category.items(), key=lambda kv: kv[1], reverse=True)
+    ranked = sorted(titles, key=lambda k: (-copies[k], -titles[k], k))
     return [
-        CatalogueSlice(label=label, value=value, color=CATALOGUE_COLORS[i % len(CATALOGUE_COLORS)])
-        for i, (label, value) in enumerate(ranked)
+        CatalogueSlice(
+            label=label, titles=titles[label], copies=copies[label], value=copies[label],
+            color=CATALOGUE_COLORS[i % len(CATALOGUE_COLORS)],
+        )
+        for i, label in enumerate(ranked)
     ]
 
 
