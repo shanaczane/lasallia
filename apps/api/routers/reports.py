@@ -1,10 +1,24 @@
 # Report endpoints (librarians only). Logic is in core/reports.py.
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
 
+from core.dates import report_bound
 from core.deps import require_librarian
 from core.inventory import list_sessions, report_items
-from core.report_summaries import summarize_many
+from core.report_export.csv_file import build_csv
+from core.report_export.definitions import REPORTS, ExportFilters, ReportData
+from core.report_export.excel import build_excel
+from core.report_export.layout import (
+    SIGNATURE_ROLES,
+    ExportOptions,
+    header_lines,
+    signatories,
+    signature_titles,
+    summary_label,
+)
+from core.report_export.pdf import build_pdf
+from core.report_summaries import aggregate_overdue, aggregate_top_patrons, summarize_aggregate, summarize_many
 from core.reports import (
     ReportFilters,
     borrowing_trends,
@@ -18,6 +32,7 @@ from core.reports import (
     transaction_stats,
     transaction_trend,
 )
+from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.inventory import InventoryReportItem, InventorySession
@@ -27,6 +42,12 @@ from schemas.reports import (
     FineRow,
     LibraryStats,
     OverdueRow,
+    ReportAiSummary,
+    ReportExportFilters,
+    ReportExportPreview,
+    ReportExportRequest,
+    ReportKeyFigure,
+    ReportSignatureTitle,
     ReportSummaries,
     ShelfListRow,
     TopPatron,
@@ -45,8 +66,10 @@ def report_filters(
     college: str | None = None,
     year_level: int | None = None,
 ) -> ReportFilters:
+    # A plain date ("2026-11-30") means the whole Manila day: from its first
+    # instant, to its last.
     return ReportFilters(
-        date_from=date_from, date_to=date_to, category=category,
+        date_from=report_bound(date_from, end=False), date_to=report_bound(date_to, end=True), category=category,
         program=program, college=college, year_level=year_level,
     )
 
@@ -161,15 +184,96 @@ def get_summaries(
     librarian: UserProfile = Depends(require_librarian),
 ):
     # Recompute the numbers here rather than accept them from the browser,
-    # so the AI can't be fed made-up figures.
+    # so the AI can't be fed made-up figures. Reports about people are sent
+    # as counts only, never names or emails.
     admin = get_admin_client()
     payloads = {
         "catalogue": catalogue_report(admin, filters),
         "circulation": circulation_summary(admin, filters),
-        "top_patrons": top_patrons(admin, filters),
+        "top_patrons": aggregate_top_patrons(top_patrons(admin, filters)),
         "borrowing_trends": borrowing_trends(admin, filters),
         "library_stats": library_stats(admin, filters),
         "transactions": transaction_stats(admin, filters),
-        "overdue": overdue_rows(admin, filters),
+        "overdue": aggregate_overdue(overdue_rows(admin, filters)),
     }
     return ReportSummaries(**summarize_many(payloads))
+
+
+# ─── Report export: PDF, Excel and CSV built on the server ──────────────
+# One definition per report (core/report_export/definitions.py); the
+# exporters only render it. Only Overdue Loans is converted so far.
+
+_EXPORT_TYPES = {
+    "pdf": ("application/pdf", "pdf"),
+    "xlsx": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"),
+    "csv": ("text/csv; charset=utf-8", "csv"),
+}
+
+
+def _export_data(body: ReportExportFilters) -> ReportData:
+    if body.date_from and body.date_to and body.date_from > body.date_to:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The start date is after the end date.")
+    filters = ExportFilters(
+        date_from=body.date_from, date_to=body.date_to, category=body.category,
+        program=body.program, college=body.college, year_level=body.year_level,
+    )
+    return REPORTS[body.report].build(get_admin_client(), filters)
+
+
+@router.post("/export/preview", response_model=ReportExportPreview)
+def preview_export(body: ReportExportFilters, librarian: UserProfile = Depends(require_librarian)):
+    """What the export dialog shows: period, key figures, the computed
+    summary and the signature titles."""
+    data = _export_data(body)
+    titles = signature_titles(get_library_settings(get_admin_client()))
+    return ReportExportPreview(
+        title=data.title,
+        period=data.period,
+        filters=data.filters,
+        key_figures=[ReportKeyFigure(label=f.label, value=f.value) for f in data.key_figures],
+        computed_summary=data.computed_summary,
+        row_count=len(data.rows),
+        signature_titles=[
+            ReportSignatureTitle(key=key, label=label, title=titles[key], placeholder=titles[key] == placeholder)
+            for key, label, placeholder in SIGNATURE_ROLES
+        ],
+    )
+
+
+@router.post("/export/ai-summary", response_model=ReportAiSummary)
+def ai_summary_for_export(body: ReportExportFilters, librarian: UserProfile = Depends(require_librarian)):
+    """An AI draft for the librarian to review. Only the report's totals
+    and breakdowns are sent to OpenAI. None when AI isn't available."""
+    data = _export_data(body)
+    return ReportAiSummary(summary=summarize_aggregate(data.title, data.ai_payload))
+
+
+@router.post("/export")
+def export_report(body: ReportExportRequest, librarian: UserProfile = Depends(require_librarian)):
+    """The report as a file. Rows, key figures and chart are recomputed here;
+    only the reviewed summary text and the signatory names come from the
+    browser."""
+    data = _export_data(body)
+    media_type, extension = _EXPORT_TYPES[body.format]
+    filename = f"{data.filename_stem}.{extension}"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+
+    if body.format == "csv":
+        return Response(content=build_csv(data), media_type=media_type, headers=headers)
+
+    settings = get_library_settings(get_admin_client())
+    reviewed = (body.summary_text or "").strip()
+    text = reviewed or data.computed_summary
+    source = body.summary_source if reviewed else "computed"
+    options = ExportOptions(
+        header_lines=header_lines(settings),
+        summary_text=text,
+        summary_label=summary_label(source, text, data.computed_summary),
+        signatories=signatories(settings, {
+            "prepared_by": body.prepared_by_name,
+            "noted_by": body.noted_by_name,
+            "approved_by": body.approved_by_name,
+        }),
+    )
+    content = build_pdf(data, options) if body.format == "pdf" else build_excel(data, options)
+    return Response(content=content, media_type=media_type, headers=headers)

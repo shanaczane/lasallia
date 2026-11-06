@@ -28,6 +28,7 @@ class _Query:
         self.filters = []
         self._negate = False
         self._limit = None
+        self._range = None
 
     # ── building ──
     def select(self, *_args, **_kwargs):
@@ -39,6 +40,11 @@ class _Query:
 
     def update(self, payload):
         self.op, self.payload = "update", payload
+        return self
+
+    def upsert(self, payload, **_kwargs):
+        # Insert, or update the row with the same id.
+        self.op, self.payload = "upsert", payload
         return self
 
     def delete(self):
@@ -64,6 +70,9 @@ class _Query:
     def gte(self, col, value):
         return self._add(lambda r: r.get(col) is not None and _comparable(r.get(col)) >= _comparable(value))
 
+    def lte(self, col, value):
+        return self._add(lambda r: r.get(col) is not None and _comparable(r.get(col)) <= _comparable(value))
+
     def lt(self, col, value):
         return self._add(lambda r: r.get(col) is not None and _comparable(r.get(col)) < _comparable(value))
 
@@ -86,6 +95,8 @@ class _Query:
         return self
 
     def range(self, start, end):
+        # Pages like PostgREST: rows start..end, both included.
+        self._range = (start, end)
         return self
 
     # ── running ──
@@ -101,6 +112,19 @@ class _Query:
             self.db.writes.append((self.table, "insert", new))
             return SimpleNamespace(data=inserted, count=None)
 
+        if self.op == "upsert":
+            done = []
+            for row in self.payload if isinstance(self.payload, list) else [self.payload]:
+                existing = next((r for r in rows if r.get("id") == row.get("id")), None)
+                if existing is None:
+                    existing = {"id": str(uuid.uuid4()), **copy.deepcopy(row)}
+                    rows.append(existing)
+                else:
+                    existing.update(copy.deepcopy(row))
+                done.append(copy.deepcopy(existing))
+            self.db.writes.append((self.table, "upsert", self.payload))
+            return SimpleNamespace(data=done, count=None)
+
         matched = [r for r in rows if all(f(r) for f in self.filters)]
         if self.op == "update":
             for r in matched:
@@ -111,6 +135,8 @@ class _Query:
             for r in matched:
                 rows.remove(r)
             return SimpleNamespace(data=matched, count=None)
+        if self._range is not None:
+            matched = matched[self._range[0]: self._range[1] + 1]
         if self._limit is not None:
             matched = matched[: self._limit]
         return SimpleNamespace(data=copy.deepcopy(matched), count=len(matched))

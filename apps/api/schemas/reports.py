@@ -1,7 +1,10 @@
 # Report response models. Some field names are camelCase on purpose, to
 # match the Reports page's own types.
 
-from pydantic import BaseModel
+from datetime import date
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 
 class CatalogueSlice(BaseModel):
@@ -111,3 +114,55 @@ class ReportSummaries(BaseModel):
     library_stats: str | None = None
     transactions: str | None = None
     overdue: str | None = None
+
+
+# ─── Report export (PDF / Excel / CSV), core/report_export ─────────────
+
+class ReportExportFilters(BaseModel):
+    report: Literal["overdue"]
+    # Whole Manila days, both included. Leave out for all dates.
+    date_from: date | None = None
+    date_to: date | None = None
+    category: str | None = Field(None, max_length=200)
+    program: str | None = Field(None, max_length=200)
+    college: str | None = Field(None, max_length=200)
+    year_level: int | None = Field(None, ge=1, le=10)
+
+
+class ReportExportRequest(ReportExportFilters):
+    format: Literal["pdf", "xlsx", "csv"]
+    # The summary the librarian reviewed. Left out: the computed summary.
+    summary_text: str | None = Field(None, max_length=2000)
+    # Where the reviewed text started: the AI draft or the computed summary.
+    summary_source: Literal["ai", "computed"] = "computed"
+    # Typed at export time; never saved.
+    prepared_by_name: str | None = Field(None, max_length=120)
+    noted_by_name: str | None = Field(None, max_length=120)
+    approved_by_name: str | None = Field(None, max_length=120)
+
+
+class ReportKeyFigure(BaseModel):
+    label: str
+    value: str
+
+
+class ReportSignatureTitle(BaseModel):
+    key: str     # prepared_by | noted_by | approved_by
+    label: str   # "Prepared by"
+    title: str   # job title from Settings
+    placeholder: bool  # still the placeholder, not confirmed by the library
+
+
+class ReportExportPreview(BaseModel):
+    title: str
+    period: str
+    filters: list[str]
+    key_figures: list[ReportKeyFigure]
+    computed_summary: str
+    row_count: int
+    signature_titles: list[ReportSignatureTitle]
+
+
+class ReportAiSummary(BaseModel):
+    # None when AI isn't available or failed; use the computed summary.
+    summary: str | None

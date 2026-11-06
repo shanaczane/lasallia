@@ -56,14 +56,17 @@ def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
     the database doesn't set it."""
     # loans has two links to profiles, so name the borrower one or the
     # query fails.
-    query = admin.table("loans").select(
-        "*, book_copies(book_id, books(*)), profiles!loans_student_id_fkey(full_name, email, program, college, year_level)"
-    )
-    if filters.date_from:
-        query = query.gte("borrowed_at", filters.date_from)
-    if filters.date_to:
-        query = query.lte("borrowed_at", filters.date_to)
-    loans = query.execute().data
+    def query():
+        q = admin.table("loans").select(
+            "*, book_copies(book_id, books(*)), profiles!loans_student_id_fkey(full_name, email, program, college, year_level)"
+        )
+        if filters.date_from:
+            q = q.gte("borrowed_at", filters.date_from)
+        if filters.date_to:
+            q = q.lte("borrowed_at", filters.date_to)
+        return q.order("id")
+
+    loans = _fetch_all_rows(query)
 
     now = datetime.now(timezone.utc)
     result = []
@@ -233,6 +236,12 @@ def top_patrons(admin: Client, filters: ReportFilters, limit: int = 5) -> list[T
 def overdue_rows(admin: Client, filters: ReportFilters) -> list[OverdueRow]:
     """Overdue loans with the fine owed so far (same calculation as the
     return counter)."""
+    return [row for _, row in overdue_loans(admin, filters)]
+
+
+def overdue_loans(admin: Client, filters: ReportFilters) -> list[tuple[str, OverdueRow]]:
+    """overdue_rows, each with its borrower's id, for counting borrowers
+    (core/report_export). Loans borrowed in the period that are overdue now."""
     loans = _fetch_filtered_loans(admin, filters)
 
     rows = []
@@ -245,7 +254,7 @@ def overdue_rows(admin: Client, filters: ReportFilters) -> list[OverdueRow]:
         days_overdue, fine = compute_fine(admin, loan["due_date"], collection_type)
         year_level = profile.get("year_level")
 
-        rows.append(OverdueRow(
+        rows.append((loan["student_id"], OverdueRow(
             id=loan["id"],
             patron=profile.get("full_name") or "Unknown patron",
             patronEmail=profile.get("email") or "—",
@@ -256,7 +265,7 @@ def overdue_rows(admin: Client, filters: ReportFilters) -> list[OverdueRow]:
             dueDate=loan["due_date"],
             daysOverdue=days_overdue,
             fine=fine,
-        ))
+        )))
     return rows
 
 
