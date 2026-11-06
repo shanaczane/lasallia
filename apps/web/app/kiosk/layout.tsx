@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { TopNav } from '@/components/layout/TopNav'
 import { KioskSessionProvider, useKioskSession, readInitialActiveKey } from '@/components/kiosk/KioskSessionProvider'
 import { RfidListener } from '@/components/kiosk/RfidListener'
+import { KioskAccountNotices } from '@/components/kiosk/KioskAccountNotices'
 import { useIdleTimeout } from '@/components/kiosk/useIdleTimeout'
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 import { fetchPublicLibrarySettings } from '@/lib/settings'
@@ -177,6 +178,7 @@ function KioskShell({ children }: { children: React.ReactNode }) {
         className={cn('min-h-screen transition-all duration-200', active && (collapsed ? 'md:pl-14' : 'md:pl-(--width-side)'))}
         style={active ? { paddingTop: 'var(--height-nav)' } : undefined}
       >
+        {session && <KioskAccountNotices session={session} />}
         {/* Without a session, show nothing until the redirect to /kiosk. */}
         {(active || pathname === '/kiosk') && children}
       </main>

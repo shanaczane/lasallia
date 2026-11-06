@@ -6,10 +6,12 @@ from supabase import Client
 from core.accession import normalize_accession_number
 from core.calendar import compute_fine
 from core.deps import get_current_user, get_user_supabase, require_librarian
+from core.desk import how_identified, tap_required
 from core.loans import check_borrow_eligibility, create_loan_and_notify, reshelve_copy_now
 from core.notify import notify, notify_librarians
 from core.email_template import EmailContent, long_date, peso, staff_alert
 from core.reservations import maybe_sweep_expired_reservations, promote_next_reservation
+from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.loan import (
@@ -159,6 +161,8 @@ def create_librarian_assisted_loan(
         )
         if not own_ready_reservation.data:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "This copy is on hold for another patron's reservation")
+        if session["auth_method"] != "rfid" and tap_required(get_library_settings(admin)):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Library Settings require the borrower's ID tap to pick up a reservation")
     elif copy["status"] != "available":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"This copy isn't available to borrow (status: {copy['status']})")
 
@@ -251,6 +255,9 @@ def return_loan(
     loan = loan_res.data[0]
     if loan["status"] == "returned":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This loan has already been returned")
+    # A tap from someone other than the borrower is allowed (a friend
+    # returning it) but recorded.
+    returned_by = how_identified(admin, body.rfid_uid, loan["student_id"])
 
     copy_res = admin.table("book_copies").select("id, book_id, accession_number").eq("id", loan["book_copy_id"]).execute()
     copy = copy_res.data[0]
@@ -268,6 +275,12 @@ def return_loan(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"This loan has a ₱{total_fine:.2f} fine — mark it Paid or Unsettled before confirming")
     if body.fine_settlement == "paid" and not body.receipt_number:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A receipt number is required to mark a fine as paid")
+    paid_now = total_fine > 0 and body.fine_settlement == "paid"
+    if paid_now and returned_by != "id_tap" and tap_required(get_library_settings(admin)):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Library Settings require the borrower's ID tap to record a payment — tap their ID, or mark the fine Unsettled",
+        )
 
     return_fields = {
         "returned_at": datetime.now(timezone.utc).isoformat(),
@@ -285,6 +298,8 @@ def return_loan(
             **return_fields,
             "overdue_fine_amount": round(overdue_fine, 2),
             "damage_fine_amount": damage_fine,
+            "returned_verified_by": returned_by,
+            "fine_paid_verified_by": ("id_tap" if returned_by == "id_tap" else "manual") if paid_now else None,
         }).eq("id", loan_id).execute()
     except Exception:
         update_res = admin.table("loans").update(return_fields).eq("id", loan_id).execute()
@@ -416,10 +431,22 @@ def settle_fine(
     if not receipt_number:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A receipt number is required")
 
-    update_res = admin.table("loans").update({
-        "fine_status": "paid",
-        "receipt_number": receipt_number,
-    }).eq("id", loan_id).execute()
+    # A tapped ID must be the borrower's own.
+    paid_by = how_identified(admin, body.rfid_uid, loan["student_id"])
+    if paid_by == "id_tap_other":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "That ID isn't the borrower's — tap the ID of the person who owes this fine")
+    if paid_by == "manual" and tap_required(get_library_settings(admin)):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Library Settings require the borrower's ID tap to record a payment — use Tap ID on Borrow & Return",
+        )
+
+    fields = {"fine_status": "paid", "receipt_number": receipt_number}
+    try:
+        update_res = admin.table("loans").update({**fields, "fine_paid_verified_by": paid_by}).eq("id", loan_id).execute()
+    except Exception:
+        # Migration 0058 not applied yet: save the payment anyway.
+        update_res = admin.table("loans").update(fields).eq("id", loan_id).execute()
     loan = update_res.data[0]
 
     copy_res = admin.table("book_copies").select("book_id").eq("id", loan["book_copy_id"]).execute()

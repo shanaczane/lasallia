@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from schemas.desk import ReadyPickup
+
 # manual_login is what web-portal sessions are recorded as (and what older
 # kiosk sessions were). It can't be used to open a kiosk session.
 AuthMethod = Literal["manual_login", "rfid", "librarian_assisted"]
@@ -27,3 +29,9 @@ class StationSession(BaseModel):
     # For the kiosk's "For you" tab, which has no login to read them from.
     program: str | None = None
     college: str | None = None
+    # Shown on the kiosk after a tap: books ready to pick up, and what stops
+    # new borrowing until it's settled at the desk.
+    ready_pickups: list[ReadyPickup] = []
+    unpaid_fines_total: float = 0
+    unpaid_fines_count: int = 0
+    overdue_count: int = 0

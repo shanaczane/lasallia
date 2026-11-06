@@ -64,6 +64,20 @@ export type StationSession = {
   // For the kiosk's "For you" tab.
   program: string | null
   college: string | null
+  // Shown on the kiosk after the tap. Missing on sessions saved before
+  // this was added.
+  ready_pickups?: ReadyPickup[]
+  unpaid_fines_total?: number
+  unpaid_fines_count?: number
+  overdue_count?: number
+}
+
+export type ReadyPickup = {
+  reservation_id: string
+  book_id: string
+  title: string
+  author: string | null
+  pickup_by: string | null
 }
 
 // Opens a session for a student already logged into the web portal.
@@ -282,6 +296,9 @@ export type Loan = {
   fine_status: FineStatus | null
   profiles: Borrower | null
   receipt_number: string | null
+  // How the borrower was identified at the desk (null on older loans).
+  returned_verified_by?: 'id_tap' | 'id_tap_other' | 'manual' | null
+  fine_paid_verified_by?: 'id_tap' | 'manual' | null
   // The librarian, for desk checkouts.
   assisted_by: string | null
   books: Book | null
@@ -312,13 +329,15 @@ export async function fetchLoans(
 }
 
 // Records that an unpaid fine was paid at the desk.
-export async function settleFine(loanId: string, receiptNumber: string): Promise<Loan> {
+// rfidUid: the borrower's ID tapped at the desk (required when Library
+// Settings say so).
+export async function settleFine(loanId: string, receiptNumber: string, rfidUid?: string): Promise<Loan> {
   const token = getToken()
   if (!token) throw new Error('Not signed in')
   const res = await apiFetch(`${API_URL}/loans/${loanId}/settle-fine`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ receipt_number: receiptNumber }),
+    body: JSON.stringify({ receipt_number: receiptNumber, rfid_uid: rfidUid || undefined }),
   })
   if (!res.ok) return parseErrorOrThrow(res, 'Could not record this payment')
   return res.json()

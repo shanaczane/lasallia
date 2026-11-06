@@ -44,6 +44,10 @@ class Loan(BaseModel):
     damage_fine_amount: float | None = None
     fine_status: FineStatus | None = None
     receipt_number: str | None = None
+    # How the borrower was identified at the desk: 'id_tap', 'id_tap_other'
+    # (someone else's ID) or 'manual'. None on older loans.
+    returned_verified_by: str | None = None
+    fine_paid_verified_by: str | None = None
     # The librarian, for desk checkouts. Empty for self-service loans.
     assisted_by: str | None = None
     books: Book | None = None
@@ -68,6 +72,8 @@ class ReturnLoanRequest(BaseModel):
     replacement_cost: float | None = None
     fine_settlement: Literal["paid", "unsettled"] | None = None
     receipt_number: str | None = None
+    # The ID tapped at the desk, if any (records who returned it).
+    rfid_uid: str | None = None
 
 class ReshelveRequest(BaseModel):
     accession_number: str
@@ -75,6 +81,9 @@ class ReshelveRequest(BaseModel):
 # PATCH /loans/{id}/settle-fine: an unpaid fine was paid later at the desk.
 class SettleFineRequest(BaseModel):
     receipt_number: str
+    # The borrower's ID tapped at the desk. Needed when Library Settings
+    # require a tap for payments.
+    rfid_uid: str | None = None
 
 # A copy waiting to be reshelved (from a loan or in-house return).
 class ReshelvingQueueItem(BaseModel):

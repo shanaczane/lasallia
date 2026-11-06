@@ -114,6 +114,7 @@ function toDraft(s: LibrarySettings): Draft {
     hold_extend_window_seconds: s.hold_extend_window_seconds,
     hold_max_seconds: s.hold_max_seconds,
     kiosk_tap_confirm_seconds: s.kiosk_tap_confirm_seconds,
+    require_id_tap_at_desk: s.require_id_tap_at_desk,
     weekday_open_time: s.weekday_open_time,
     weekday_close_time: s.weekday_close_time,
     saturday_open_time: s.saturday_open_time,
@@ -448,6 +449,26 @@ function LibrarianSettingsPageContent() {
                 <SettingsSection title="Reservation Settings">
                   <Field label="Reservation Hold Period (days)" value={String(draft.reservation_hold_period_days)} onChange={(v) => setField("reservation_hold_period_days", toInt(v))} type="number" />
                   <Field label="Maximum Active Reservations per User" value={String(draft.max_active_reservations)} onChange={(v) => setField("max_active_reservations", toInt(v))} type="number" />
+                </SettingsSection>
+
+                <SettingsSection title="ID Tap at the Desk">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={draft.require_id_tap_at_desk}
+                      onChange={(e) => setField("require_id_tap_at_desk", e.target.checked)}
+                      className="mt-1 h-4 w-4 accent-green-700"
+                    />
+                    <span className="flex flex-col gap-0.5">
+                      <span className="text-ink-700 font-medium" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+                        Require the borrower&apos;s ID tap for fine payments and reservation pickups
+                      </span>
+                      <span className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+                        Off: a tap is preferred, and a librarian can still find the student by name (recorded as entered by hand).
+                        Returns never need a tap, since the book itself is in hand.
+                      </span>
+                    </span>
+                  </label>
                 </SettingsSection>
 
                 <SettingsSection title="Kiosk & Borrowing Times">
