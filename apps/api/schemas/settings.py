@@ -26,6 +26,8 @@ class LibrarySettings(BaseModel):
     hold_extend_window_seconds: int = 45
     hold_max_seconds: int = 540
     kiosk_tap_confirm_seconds: int = 60
+    # Fine payments and desk pickups need the borrower's own ID tap.
+    require_id_tap_at_desk: bool = False
 
     # "HH:MM" or "HH:MM:SS". Both empty means closed (no fines that day).
     weekday_open_time: str | None = None
@@ -85,6 +87,7 @@ class UpdateLibrarySettingsRequest(BaseModel):
     hold_extend_window_seconds: int | None = Field(None, ge=10)
     hold_max_seconds: int | None = Field(None, ge=60)
     kiosk_tap_confirm_seconds: int | None = Field(None, ge=15)
+    require_id_tap_at_desk: bool | None = None
 
     weekday_open_time: str | None = None
     weekday_close_time: str | None = None

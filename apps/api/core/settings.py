@@ -25,6 +25,7 @@ _DEFAULTS: dict[str, object] = {
     "hold_extend_window_seconds": 45,
     "hold_max_seconds": 540,
     "kiosk_tap_confirm_seconds": 60,
+    "require_id_tap_at_desk": False,
     "weekday_open_time": "07:30",
     "weekday_close_time": "18:00",
     "saturday_open_time": "08:00",

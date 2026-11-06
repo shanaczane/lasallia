@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from core import chat_sessions
+from core.desk import kiosk_notices
 from core.deps import get_current_user, get_optional_user
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
@@ -41,6 +42,8 @@ def _insert_session(student_id: str, auth_method: str, station_id: str) -> dict:
     session["student_full_name"] = full_name or session["student_first_name"]
     session["program"] = profile.get("program")
     session["college"] = profile.get("college")
+    # Pickups, fines and overdue books, shown on the kiosk after the tap.
+    session.update(kiosk_notices(admin, student_id))
     return session
 
 # Opens a kiosk session. No login token needed: the ID tap is the

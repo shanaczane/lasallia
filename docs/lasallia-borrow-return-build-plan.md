@@ -71,6 +71,8 @@ These types use hourly fines (see Phase 4): `Reserve`, `Story book`, `Bible`
 
 > **Changed (migration 0057):** the kiosk no longer has an email and password form, so borrowers are identified by an ID tap only. A student without their ID goes to the desk (`librarian_assisted`). The claim QR also no longer works as a login: the phone must sign in with the borrower's own account. After 3 wrong attempts (another account, the wrong accession number, or a different ID tapped), the hold is cancelled and the librarians are notified. A kiosk loan is created only by a second ID tap at the kiosk, after the phone step. The kiosk and hold timers are in Library Settings → Borrowing Rules → Kiosk & Borrowing Times. `manual_login` is still the `auth_method` recorded for web-portal sessions.
 
+> **Changed (migration 0058):** the ID tap is also used at the desk. On Borrow & Return → Return, tapping an ID shows the person's books out, unpaid fines (with Record payment) and books ready to pick up. A book returned with someone else's ID is allowed but recorded as `id_tap_other`. Process Pickup on Reservations asks for the reserver's ID, and a different person's ID is refused. Each return and payment records `id_tap`, `id_tap_other` or `manual` (`loans.returned_verified_by`, `loans.fine_paid_verified_by`), and paid fines in Reports say which. Library Settings → "ID Tap at the Desk" can require a tap for fine payments and pickups; it's off by default, so a name search still works. At the kiosk, a tap shows books ready for pickup and any unpaid fines or overdue books. Fines are shown there, never paid.
+
 Both paths open **the same** `station_session` object. Auth method is a field, not a separate flow.
 
 | Method | `auth_method` value | Notes |

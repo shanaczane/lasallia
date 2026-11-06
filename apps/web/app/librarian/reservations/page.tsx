@@ -19,6 +19,8 @@ import { cancelReservation } from "@/lib/reservations"
 import { openSession, createAssistedLoan, endSession, type Condition } from "@/lib/kiosk"
 import type { Reservation, ReservationStatus } from "@lasallia/types"
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
+import { TapIdField } from "@/components/desk/TapIdField"
+import { fetchLibrarySettings } from "@/lib/settings"
 
 const BORROW_CONDITIONS: { value: Condition; label: string }[] = [
   { value: "good", label: "Good" },
@@ -177,6 +179,11 @@ function ProcessBorrowModal({ reservation, onDone, onClose }: ProcessBorrowModal
   useDialogKeyboard(dialogRef, { onClose })
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [sessionError, setSessionError] = useState("")
+  // How the borrower was identified: their own ID tap, or by hand (no ID
+  // card), which Library Settings can turn off.
+  const [identifiedBy, setIdentifiedBy] = useState<"id_tap" | "manual" | null>(null)
+  const [opening, setOpening] = useState(false)
+  const [tapRequired, setTapRequired] = useState(false)
 
   const [accessionInput, setAccessionInput] = useState("")
   const [condition, setCondition] = useState<Condition | null>(null)
@@ -189,17 +196,48 @@ function ProcessBorrowModal({ reservation, onDone, onClose }: ProcessBorrowModal
   const confirmedRef = useRef(false)
 
   useEffect(() => {
-    let cancelled = false
-    openSession("librarian-desk", { authMethod: "librarian_assisted", studentId: reservation.user_id })
-      .then((s) => { if (!cancelled) { setSessionId(s.id); sessionIdRef.current = s.id } })
-      .catch((err) => { if (!cancelled) setSessionError(err instanceof Error ? err.message : "Could not start this checkout") })
+    fetchLibrarySettings().then((s) => setTapRequired(s.require_id_tap_at_desk)).catch(() => {})
     return () => {
-      cancelled = true
       // End the session if the borrow was never confirmed.
       if (sessionIdRef.current && !confirmedRef.current) endSession(sessionIdRef.current).catch(() => {})
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // The tapped ID must belong to whoever reserved the book.
+  async function handleTap(uid: string) {
+    setOpening(true)
+    setSessionError("")
+    try {
+      const s = await openSession("librarian-desk", { authMethod: "rfid", rfidUid: uid })
+      if (s.student_id !== reservation.user_id) {
+        endSession(s.id).catch(() => {})
+        setSessionError(`That ID belongs to ${s.student_full_name || "someone else"}, not ${patronName(reservation)}. The book can only go to the person who reserved it.`)
+        return
+      }
+      setSessionId(s.id)
+      sessionIdRef.current = s.id
+      setIdentifiedBy("id_tap")
+    } catch (err) {
+      setSessionError(err instanceof Error ? err.message : "Could not identify that ID")
+    } finally {
+      setOpening(false)
+    }
+  }
+
+  async function handleNoCard() {
+    setOpening(true)
+    setSessionError("")
+    try {
+      const s = await openSession("librarian-desk", { authMethod: "librarian_assisted", studentId: reservation.user_id })
+      setSessionId(s.id)
+      sessionIdRef.current = s.id
+      setIdentifiedBy("manual")
+    } catch (err) {
+      setSessionError(err instanceof Error ? err.message : "Could not start this checkout")
+    } finally {
+      setOpening(false)
+    }
+  }
 
   async function handleConfirm() {
     if (!sessionId || !condition || !accessionInput.trim()) return
@@ -263,7 +301,7 @@ function ProcessBorrowModal({ reservation, onDone, onClose }: ProcessBorrowModal
                 Process Pickup
               </h3>
               <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                Scan or type the accession number of the physical copy you&apos;re handing over.
+                Tap the borrower&apos;s ID, then scan or type the accession number of the copy you&apos;re handing over.
               </p>
             </div>
 
@@ -276,12 +314,35 @@ function ProcessBorrowModal({ reservation, onDone, onClose }: ProcessBorrowModal
               </p>
             </div>
 
-            {sessionError ? (
-              <p className="text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-                {sessionError}
-              </p>
+            {!sessionId ? (
+              <div className="flex flex-col gap-2">
+                <TapIdField
+                  label={`Tap ${patronName(reservation)}'s ID`}
+                  onTap={handleTap}
+                  busy={opening}
+                  error={sessionError}
+                />
+                {tapRequired ? (
+                  <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+                    Library Settings require the borrower&apos;s ID for pickups.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleNoCard}
+                    disabled={opening}
+                    className="self-start text-ink-500 hover:text-ink-700 transition-colors disabled:opacity-50"
+                    style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
+                  >
+                    No ID card? Continue without it →
+                  </button>
+                )}
+              </div>
             ) : (
               <>
+                <p className={identifiedBy === "id_tap" ? "text-green-800" : "text-ink-500"} style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+                  {identifiedBy === "id_tap" ? "✓ Borrower's ID tapped" : "No ID card — recorded as entered by hand"}
+                </p>
                 <div className="flex flex-col gap-1">
                   <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
                     Accession Number <span className="text-danger">*</span>

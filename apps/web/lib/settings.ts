@@ -37,6 +37,8 @@ export type LibrarySettings = {
   hold_extend_window_seconds: number
   hold_max_seconds: number
   kiosk_tap_confirm_seconds: number
+  // Fine payments and desk pickups need the borrower's own ID tap.
+  require_id_tap_at_desk: boolean
 
   // "HH:MM" or "HH:MM:SS". Both null means closed (no fines those days).
   weekday_open_time: string | null

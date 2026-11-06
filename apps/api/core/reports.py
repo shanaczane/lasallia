@@ -261,11 +261,14 @@ def fines_report(admin: Client, filters: ReportFilters) -> list[FineRow]:
             if loan.get("fine_status") == "paid":
                 entry["paid"] += amount
                 receipt = loan.get("receipt_number")
+                detail = f"Paid — receipt {receipt}" if receipt else "Paid at the circulation desk"
+                # How the payer was identified (migration 0058; None before it).
+                how = {"id_tap": "ID tapped", "manual": "entered by hand"}.get(loan.get("fine_paid_verified_by") or "")
                 entry["entries"].append({
                     "title": title,
                     "kind": "paid",
                     "amount": round(amount, 2),
-                    "detail": f"Paid — receipt {receipt}" if receipt else "Paid at the circulation desk",
+                    "detail": f"{detail} · {how}" if how else detail,
                     "loan_id": loan["id"],
                 })
             else:

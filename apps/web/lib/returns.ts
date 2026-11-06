@@ -98,6 +98,8 @@ export async function confirmReturn(
     replacementCost?: number
     fineSettlement?: "paid" | "unsettled"
     receiptNumber?: string
+    // The ID tapped at the desk, if any.
+    rfidUid?: string
   }
 ): Promise<ReturnedLoan> {
   const res = await fetch(`${API_URL}/loans/${loanId}/return`, {
@@ -109,6 +111,7 @@ export async function confirmReturn(
       replacement_cost: params.replacementCost ?? undefined,
       fine_settlement: params.fineSettlement ?? undefined,
       receipt_number: params.receiptNumber || undefined,
+      rfid_uid: params.rfidUid || undefined,
     }),
   })
   if (!res.ok) return parseErrorOrThrow(res, "Could not confirm this return")

@@ -21,6 +21,9 @@ import { cn } from "@/lib/utils"
 import type { UserProfile } from "@lasallia/types"
 import { Pagination } from "@/components/ui/catalog"
 import { ScannerListener } from "@/components/ui/ScannerListener"
+import { TapIdField } from "@/components/desk/TapIdField"
+import { TappedBorrowerCard } from "@/components/desk/TappedBorrowerCard"
+import { identifyPatron, type DeskPatron } from "@/lib/desk"
 import { searchPatrons } from "@/lib/users"
 import {
   openSession,
@@ -605,6 +608,32 @@ function ReturnPanel({
   const [submitError, setSubmitError] = useState("")
   const [confirmed, setConfirmed] = useState<{ title: string; patron: string; fine: number; needsReshelving: boolean } | null>(null)
 
+  // The borrower whose ID was tapped (optional: a scan or a name search
+  // still works, and is recorded as entered by hand). Kept across returns,
+  // so one student can hand back several books.
+  const [tapped, setTapped] = useState<{ uid: string; patron: DeskPatron } | null>(null)
+  const [tapBusy, setTapBusy] = useState(false)
+  const [tapError, setTapError] = useState("")
+
+  async function handleTap(uid: string) {
+    setTapBusy(true)
+    setTapError("")
+    try {
+      setTapped({ uid, patron: await identifyPatron(uid) })
+    } catch (err) {
+      setTapError(err instanceof Error ? err.message : "Could not identify that ID")
+    } finally {
+      setTapBusy(false)
+    }
+  }
+
+  // After a return or payment, so the lists are current.
+  function refreshTapped() {
+    if (!tapped) return
+    const uid = tapped.uid
+    identifyPatron(uid).then((patron) => setTapped({ uid, patron })).catch(() => {})
+  }
+
   const isNewDamage = !!loan && loan.condition_at_borrow === "good" && (condition === "damaged" || condition === "incomplete")
   const previewTotal = loan
     ? loan.preview_fine_amount + (isNewDamage ? (parseFloat(replacementCost) || 0) + 50 : 0)
@@ -671,7 +700,9 @@ function ReturnPanel({
         replacementCost: isNewDamage && replacementCost ? parseFloat(replacementCost) : undefined,
         fineSettlement: previewTotal > 0 ? settlement ?? undefined : undefined,
         receiptNumber: settlement === "paid" ? receiptNumber : undefined,
+        rfidUid: tapped?.uid,
       })
+      refreshTapped()
       const patron = loan.profiles?.full_name ?? "Unknown"
       const fine = result.fine_amount ?? 0
       setConfirmed({ title: loan.books?.title ?? "Unknown title", patron, fine, needsReshelving: result.needs_reshelving })
@@ -810,6 +841,24 @@ function ReturnPanel({
           )}
         </div>
 
+        {/* Who's handing it back */}
+        {tapped ? (
+          loan.student_id === tapped.patron.id ? (
+            <p className="text-green-800" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+              ✓ Borrower&apos;s ID tapped
+            </p>
+          ) : (
+            <p className="rounded bg-amber-50 border border-amber-200 px-3 py-2 text-amber-800" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+              This book is borrowed by {loan.profiles?.full_name ?? "someone else"}, not {tapped.patron.full_name ?? "the tapped ID"}.
+              It will be recorded as returned on their behalf.
+            </p>
+          )
+        ) : (
+          <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            No ID tapped — this return is recorded as entered by hand.
+          </p>
+        )}
+
         {/* Declared condition baseline */}
         <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
           Declared at borrow: <span className="font-medium text-ink-700">{loan.condition_at_borrow.replace("_", " ")}</span>
@@ -926,6 +975,23 @@ function ReturnPanel({
 
   return (
     <div className="flex flex-col gap-4">
+      {tapped ? (
+        <TappedBorrowerCard
+          patron={tapped.patron}
+          rfidUid={tapped.uid}
+          onSelectLoan={(accession) => handleFind(accession)}
+          onChanged={refreshTapped}
+          onClear={() => setTapped(null)}
+        />
+      ) : (
+        <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-2" style={{ boxShadow: "var(--shadow)" }}>
+          <TapIdField onTap={handleTap} busy={tapBusy} error={tapError} />
+          <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+            Shows their books out, unpaid fines and pickups. No ID? Just scan the book or search below.
+          </p>
+        </div>
+      )}
+
       <div className="rounded border border-ink-200 bg-white p-4 flex flex-col gap-3" style={{ boxShadow: "var(--shadow)" }}>
       <div className="flex items-center gap-2">
         <ScanLine size={15} className="text-green-700" />
@@ -942,7 +1008,7 @@ function ReturnPanel({
             value={accessionInput}
             onChange={(e) => setAccessionInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleFind()}
-            autoFocus
+            autoFocus={!!tapped}
             className="w-full pl-8 pr-3 py-2 rounded border border-ink-300 focus:outline-none focus:ring-2 focus:ring-green-500"
             style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
           />
