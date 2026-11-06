@@ -93,9 +93,45 @@ def test_matches_existing_seeded_books_by_accession():
     assert item.location == "Sheet BSIT, row 2"
 
 
-def test_template_round_trips_through_the_parser():
-    records, errors, warnings = parse_spreadsheet(build_template(), "CITE")
+def _renamed_template(name: str) -> bytes:
+    wb = openpyxl.load_workbook(io.BytesIO(build_template()))
+    wb.worksheets[0].title = name
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_template_round_trips_through_the_parser_once_its_sheet_is_renamed():
+    records, errors, warnings = parse_spreadsheet(_renamed_template("BSIT"), "CITE")
     assert len(records) == 1 and errors == [] and warnings == []  # the example row; notes sheet ignored
+    assert records[0].program == "BSIT"
+
+
+@pytest.mark.parametrize("name", ["Program name", "PROGRAM NAME", " program Name "])
+def test_a_sheet_still_named_program_name_stops_the_import(name):
+    data = build_template() if name == "Program name" else _xlsx({name: [_row()]})
+    with pytest.raises(ValueError, match=r"still has the template's name.*Rename the sheet"):
+        parse_spreadsheet(data, "CITE")
+
+
+def test_program_name_stops_the_import_even_next_to_good_sheets():
+    data = _xlsx({"BSIT": [_row(accession="T100")], "Program name": [_row(title="Refactoring", accession="T101")]})
+    with pytest.raises(ValueError, match="Program name"):
+        parse_spreadsheet(data, "CITE")
+
+
+@pytest.mark.parametrize("name", ["Sheet1", "sheet 2", "Sheet", "Hoja1", "Feuil1", "Tabelle1"])
+def test_a_generic_sheet_name_is_a_warning_and_still_imports(name):
+    records, errors, warnings = parse_spreadsheet(_xlsx({name: [_row()]}), "CITE")
+    assert len(records) == 1 and errors == []
+    assert records[0].program == name
+    assert any(f"\"{name}\" will be saved as these books' program" in w.message for w in warnings)
+
+
+@pytest.mark.parametrize("name", ["BSIT", "Sheet music", "BS Accountancy 2"])
+def test_a_real_program_name_has_no_sheet_warning(name):
+    _, _, warnings = parse_spreadsheet(_xlsx({name: [_row()]}), "CITE")
+    assert warnings == []
 
 
 def test_non_excel_file_is_a_clear_error():

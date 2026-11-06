@@ -15,6 +15,12 @@ from scripts.excel_source import COLUMN_ALIASES
 
 TEMPLATE_COLUMNS = list(COLUMN_ALIASES.keys())
 NOTES_SHEET = "How to fill this in"  # build_template's instructions sheet
+TEMPLATE_SHEET = "Program name"      # build_template's book sheet, to be renamed
+
+# Excel's default sheet names (English, Spanish, French, German), with or
+# without a number. A sheet's name becomes its books' program, so these are
+# almost always a sheet nobody renamed.
+_GENERIC_SHEET_NAME = re.compile(r"^\s*(sheet|hoja|feuil|tabelle|worksheet)\s*\d*\s*$", re.IGNORECASE)
 
 
 def _text(value) -> str | None:
@@ -72,6 +78,22 @@ def parse_spreadsheet(data: bytes, college: str | None) -> tuple[list[ParsedReco
                 continue
             warnings.append(ImportIssue(0, None, "Sheet skipped — no \"Title\" and \"Book ID (Accession No.)\" header row", f"Sheet {sheet.title}"))
             continue
+
+        # The sheet name is saved as the program, so the template's
+        # placeholder would file every book under "Program name".
+        if sheet.title.strip().lower() == TEMPLATE_SHEET.lower():
+            wb.close()
+            raise ValueError(
+                f"The sheet \"{sheet.title}\" still has the template's name, and a sheet's name becomes its books' "
+                "program. Rename the sheet to the program its books belong to (for example \"BSIT\") and upload again."
+            )
+        if _GENERIC_SHEET_NAME.match(sheet.title):
+            warnings.append(ImportIssue(
+                0, None,
+                f"The sheet name \"{sheet.title}\" will be saved as these books' program. "
+                "If that's not the program, rename the sheet and upload again.",
+                f"Sheet {sheet.title}",
+            ))
 
         previous: ParsedRecord | None = None  # last title row on this sheet
         for row_no, row in enumerate(rows, start=2):
@@ -144,7 +166,7 @@ def build_template() -> bytes:
     """Blank workbook in the layout parse_spreadsheet reads."""
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Program name"
+    ws.title = TEMPLATE_SHEET
     ws.append(TEMPLATE_COLUMNS)
     ws.append([
         "Martin, R.", "Robert C. Martin", 2008, "Clean code : a handbook of agile software craftsmanship",
