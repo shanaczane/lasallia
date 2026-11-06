@@ -26,6 +26,11 @@ _DEFAULTS: dict[str, object] = {
     "hold_max_seconds": 540,
     "kiosk_tap_confirm_seconds": 60,
     "require_id_tap_at_desk": False,
+    # Report signature job titles: placeholders until the library confirms
+    # them (core/report_export/layout.py, migration 0060).
+    "report_prepared_by_title": "Librarian",
+    "report_noted_by_title": "Head Librarian",
+    "report_approved_by_title": "Director, Learning Resource Center",
     "weekday_open_time": "07:30",
     "weekday_close_time": "18:00",
     "saturday_open_time": "08:00",

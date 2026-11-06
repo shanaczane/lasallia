@@ -29,6 +29,12 @@ class LibrarySettings(BaseModel):
     # Fine payments and desk pickups need the borrower's own ID tap.
     require_id_tap_at_desk: bool = False
 
+    # Job titles under the signature lines on exported reports. Placeholders
+    # until the library confirms them.
+    report_prepared_by_title: str = "Librarian"
+    report_noted_by_title: str = "Head Librarian"
+    report_approved_by_title: str = "Director, Learning Resource Center"
+
     # "HH:MM" or "HH:MM:SS". Both empty means closed (no fines that day).
     weekday_open_time: str | None = None
     weekday_close_time: str | None = None
@@ -88,6 +94,10 @@ class UpdateLibrarySettingsRequest(BaseModel):
     hold_max_seconds: int | None = Field(None, ge=60)
     kiosk_tap_confirm_seconds: int | None = Field(None, ge=15)
     require_id_tap_at_desk: bool | None = None
+
+    report_prepared_by_title: str | None = Field(None, min_length=1, max_length=120)
+    report_noted_by_title: str | None = Field(None, min_length=1, max_length=120)
+    report_approved_by_title: str | None = Field(None, min_length=1, max_length=120)
 
     weekday_open_time: str | None = None
     weekday_close_time: str | None = None

@@ -32,6 +32,11 @@ def update_settings(
     librarian: UserProfile = Depends(require_librarian),
 ):
     changes = body.model_dump(exclude_unset=True)
+    for key in ("report_prepared_by_title", "report_noted_by_title", "report_approved_by_title"):
+        if key in changes:
+            if changes[key] is None or not changes[key].strip():
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Signature job titles can't be blank")
+            changes[key] = changes[key].strip()
     if not changes:
         return get_library_settings(get_admin_client())
 
@@ -51,8 +56,8 @@ def update_settings(
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 "Settings can't be saved yet — a database migration hasn't been applied "
-                "(migrations/0024_library_settings.sql, 0025_library_operating_hours.sql and "
-                "0057_kiosk_borrow_security.sql). "
+                "(migrations/0024_library_settings.sql, 0025_library_operating_hours.sql, "
+                "0057_kiosk_borrow_security.sql, 0058_desk_id_tap.sql and 0060_report_signatures.sql). "
                 "Ask whoever manages the database to run it, then try again.",
             )
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not save settings")
