@@ -17,7 +17,9 @@ async function parseErrorOrThrow(res: Response, fallback: string): Promise<never
 }
 
 export type Bucket = { label: string; value: number }
-export type CatalogueSlice = { label: string; value: number; color: string }
+// titles: books in the category; copies: their book_copies rows. value equals
+// copies and sets the bar length.
+export type CatalogueSlice = { label: string; titles: number; copies: number; value: number; color: string }
 export type TopPatron = { id: string; name: string; program: string; count: number }
 export type OverdueRow = {
   id: string

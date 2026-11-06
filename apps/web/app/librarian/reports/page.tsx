@@ -291,7 +291,11 @@ function CatalogueBarList({ data }: { data: CatalogueSlice[] }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-2.5">
       {data.map((d) => (
-        <div key={d.label} className="flex items-center gap-2 min-w-0">
+        <div
+          key={d.label}
+          className="flex items-center gap-2 min-w-0"
+          title={`${d.label}: ${d.titles} ${d.titles === 1 ? "title" : "titles"}, ${d.copies} ${d.copies === 1 ? "copy" : "copies"}`}
+        >
           <span className="w-2 h-2 rounded-full shrink-0" style={{ background: d.color }} />
           <span className="text-ink-700 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
             {d.label}
@@ -644,7 +648,7 @@ function CatalogueTable({ books, onExport }: { books: Book[]; onExport: () => vo
   return (
     <ReportTableCard
       title="Catalogue report"
-      subtitle={`All titles in the collection, ${books.length} records`}
+      subtitle={`One row per title: ${books.length} titles, ${books.reduce((s, b) => s + (b.total_copies ?? 0), 0)} copies`}
       query={query}
       onQueryChange={setQuery}
       onExport={onExport}
@@ -674,7 +678,7 @@ function CatalogueTable({ books, onExport }: { books: Book[]; onExport: () => vo
                   <td className="py-2.5 px-4 text-ink-900 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{b.title}</td>
                   <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{b.author}</td>
                   <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{b.category}</td>
-                  <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}>{b.total_copies ?? 1}</td>
+                  <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}>{b.total_copies ?? 0}</td>
                   <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}>{b.published_year ?? "—"}</td>
                 </tr>
               ))}
@@ -2361,7 +2365,7 @@ function ReportsPageContent() {
     title: b.title,
     author: b.author,
     category: b.category,
-    copies: b.total_copies ?? 1,
+    copies: b.total_copies ?? 0,
     year: b.published_year ?? "",
   })))
 
@@ -2450,7 +2454,7 @@ function ReportsPageContent() {
     catalogue: (
       <OverviewCard
         title="Catalogue report"
-        subtitle={`${catalogueData.reduce((s, d) => s + d.value, 0)} titles across ${catalogueData.length} categories`}
+        subtitle={`${catalogueData.reduce((s, d) => s + d.titles, 0)} titles and ${catalogueData.reduce((s, d) => s + d.copies, 0)} copies across ${catalogueData.length} categories. Bars show copies.`}
         action={{ label: "Open full report", onClick: () => setTab("catalogue") }}
       >
         <CatalogueBarList data={catalogueData} />

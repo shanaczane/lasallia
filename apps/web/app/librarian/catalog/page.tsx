@@ -208,7 +208,9 @@ function LibrarianCatalogContent() {
     setAddFieldError(null)
     try {
       const newBook = await createBook(bookFormDataToCreatePayload(data, options))
-      setBooks((prev) => [newBook, ...prev])
+      // The live refetch can land before this response (the API embeds the
+      // book before replying), so the list may already have it.
+      setBooks((prev) => [newBook, ...prev.filter((b) => b.id !== newBook.id)])
       setAddOpen(false)
       setAssigned({ title: newBook.title, numbers: newBook.assigned_accession_numbers })
 
