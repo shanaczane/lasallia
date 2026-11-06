@@ -17,7 +17,7 @@ import {
 } from "@/lib/bookRequests"
 import { MyBookRequestModal } from "@/components/ui/requests/MyBookRequestModal"
 import { Pagination } from "@/components/ui/catalog"
-import { resolveDateRange, type DateRangePreset } from "@/lib/reports"
+import { inManilaDateRange, resolveDateRange, type DateRangePreset } from "@/lib/reports"
 import { pressable } from "@/lib/a11y"
 
 // Dropdown arrow, same as other selects.
@@ -415,12 +415,7 @@ export default function RequestABookPage() {
           </div>
           {(() => {
             const { dateFrom, dateTo } = resolveDateRange(dateFilter, "", "")
-            const inRange = requests.filter((r) => {
-              const t = new Date(r.created_at).getTime()
-              if (dateFrom && t < new Date(dateFrom).getTime()) return false
-              if (dateTo && t > new Date(dateTo).getTime()) return false
-              return true
-            })
+            const inRange = requests.filter((r) => inManilaDateRange(r.created_at, dateFrom, dateTo))
             const visible = filter === "all" ? inRange : inRange.filter((r) => r.status === filter)
             if (loading) {
               return <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>Loading…</p>

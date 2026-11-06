@@ -87,8 +87,6 @@ export type ReportSummaries = {
   overdue: string | null
 }
 
-export type DateRangePreset = "all" | "week" | "month" | "semester" | "custom"
-
 export type ReportFilters = {
   dateFrom?: string
   dateTo?: string
@@ -98,22 +96,11 @@ export type ReportFilters = {
   yearLevel?: number
 }
 
-// Turns a date range choice into from/to dates. "all" means no limits.
-export function resolveDateRange(preset: DateRangePreset, customFrom: string, customTo: string): { dateFrom?: string; dateTo?: string } {
-  if (preset === "all") return {}
-  if (preset === "custom") {
-    return {
-      dateFrom: customFrom ? new Date(customFrom).toISOString() : undefined,
-      dateTo: customTo ? new Date(customTo).toISOString() : undefined,
-    }
-  }
-  const now = new Date()
-  const from = new Date(now)
-  if (preset === "week") from.setDate(now.getDate() - 7)
-  else if (preset === "month") from.setMonth(now.getMonth() - 1)
-  else from.setMonth(now.getMonth() - 6) // semester ≈ 6 months
-  return { dateFrom: from.toISOString(), dateTo: now.toISOString() }
-}
+// Report dates ("YYYY-MM-DD") are whole Manila days; the helpers are in
+// lib/manilaDates.ts and re-exported here for the pages that already use them.
+export {
+  formatManilaDate, inManilaDateRange, manilaDayRangeMs, manilaToday, resolveDateRange, type DateRangePreset,
+} from "@/lib/manilaDates"
 
 function filterParams(filters: ReportFilters): URLSearchParams {
   const params = new URLSearchParams()
@@ -231,4 +218,103 @@ export async function fetchInventoryReport(filters: ReportFilters): Promise<Inve
 
 export async function fetchInventoryReportItems(filters: ReportFilters): Promise<InventoryReportItem[]> {
   return getReport("inventory/items", filterParams(filters))
+}
+
+// ─── Report export (PDF, Excel, CSV built by the API) ─────────────────────
+// Only Overdue Loans so far; the other tabs keep downloadCsv and Print.
+
+export type ExportableReport = "overdue"
+export type ReportExportFormat = "pdf" | "xlsx" | "csv"
+
+// Filters for an export. Dates are Manila days ("YYYY-MM-DD"), both included.
+export type ReportExportRequest = {
+  report: ExportableReport
+  date_from?: string
+  date_to?: string
+  category?: string
+  program?: string
+  college?: string
+  year_level?: number
+}
+
+export type ReportSignatureTitle = {
+  key: "prepared_by" | "noted_by" | "approved_by"
+  label: string
+  title: string
+  placeholder: boolean // not yet confirmed by the library
+}
+
+export type ReportExportPreview = {
+  title: string
+  period: string
+  filters: string[]
+  key_figures: { label: string; value: string }[]
+  computed_summary: string
+  row_count: number
+  signature_titles: ReportSignatureTitle[]
+}
+
+export type ReportExportOptions = {
+  format: ReportExportFormat
+  summary_text?: string
+  summary_source: "ai" | "computed"
+  prepared_by_name?: string
+  noted_by_name?: string
+  approved_by_name?: string
+}
+
+export function exportRequest(report: ExportableReport, filters: ReportFilters): ReportExportRequest {
+  return {
+    report,
+    date_from: filters.dateFrom,
+    date_to: filters.dateTo,
+    category: filters.category,
+    program: filters.program,
+    college: filters.college,
+    year_level: filters.yearLevel,
+  }
+}
+
+async function postReport(path: string, body: object, fallback: string): Promise<Response> {
+  const res = await fetch(`${API_URL}/reports/${path}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, fallback)
+  return res
+}
+
+export async function fetchExportPreview(req: ReportExportRequest): Promise<ReportExportPreview> {
+  return (await postReport("export/preview", req, "Could not prepare the export")).json()
+}
+
+// An AI draft of the summary for the librarian to review; null when AI
+// isn't available. Only the report's totals are sent to the AI.
+export async function fetchExportAiSummary(req: ReportExportRequest): Promise<string | null> {
+  const body = await (await postReport("export/ai-summary", req, "Could not draft a summary")).json()
+  return body.summary ?? null
+}
+
+const EXPORT_SLUGS: Record<ExportableReport, string> = { overdue: "overdue-loans" }
+
+// Same name the API gives the file (core/report_export/definitions.py).
+export function exportFileName(req: ReportExportRequest, format: ReportExportFormat): string {
+  const slug = EXPORT_SLUGS[req.report]
+  const range =
+    req.date_from && req.date_to ? `${req.date_from}_to_${req.date_to}`
+    : req.date_from ? `from_${req.date_from}`
+    : req.date_to ? `to_${req.date_to}`
+    : "all_dates"
+  return `${slug}_${range}.${format}`
+}
+
+export async function downloadReportExport(req: ReportExportRequest, options: ReportExportOptions): Promise<void> {
+  const res = await postReport("export", { ...req, ...options }, "Could not export the report")
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement("a")
+  a.href = url
+  a.download = exportFileName(req, options.format)
+  a.click()
+  URL.revokeObjectURL(url)
 }

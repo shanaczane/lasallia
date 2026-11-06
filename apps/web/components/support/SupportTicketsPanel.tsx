@@ -17,7 +17,7 @@ import {
 import { useSupportTickets } from "@/lib/hooks/useSupportTickets"
 import { useBodyScrollLock } from "@/lib/hooks/useBodyScrollLock"
 import { updateSupportTicket, type SupportTicket, type TicketCategory, type TicketStatus } from "@/lib/supportTickets"
-import { resolveDateRange, type DateRangePreset } from "@/lib/reports"
+import { inManilaDateRange, resolveDateRange, type DateRangePreset } from "@/lib/reports"
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 function formatDateTime(iso: string): string {
@@ -226,12 +226,7 @@ export function SupportTicketsPanel() {
 
   const inRange = useMemo(() => {
     const { dateFrom, dateTo } = resolveDateRange(dateFilter, "", "")
-    return tickets.filter((t) => {
-      const created = new Date(t.created_at).getTime()
-      if (dateFrom && created < new Date(dateFrom).getTime()) return false
-      if (dateTo && created > new Date(dateTo).getTime()) return false
-      return true
-    })
+    return tickets.filter((t) => inManilaDateRange(t.created_at, dateFrom, dateTo))
   }, [tickets, dateFilter])
 
   const tabCounts: Record<TabKey, number> = useMemo(() => ({

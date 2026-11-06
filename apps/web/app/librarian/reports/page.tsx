@@ -63,6 +63,8 @@ import {
   fetchInventoryReport,
   fetchInventoryReportItems,
   resolveDateRange,
+  inManilaDateRange,
+  formatManilaDate,
   downloadCsv,
   type Bucket,
   type CatalogueSlice,
@@ -77,7 +79,11 @@ import {
   type ReportSummaries,
   type DateRangePreset,
   type ReportFilters,
+  exportRequest,
+  type ReportExportFormat,
+  type ReportExportRequest,
 } from "@/lib/reports"
+import { ReportExportDialog } from "@/components/ui/reports/ReportExportDialog"
 import {
   fetchWeedingCandidates,
   fetchWeedingEvents,
@@ -704,11 +710,9 @@ function CatalogueTable({ books, onExport }: { books: Book[]; onExport: () => vo
 type CirculationRow = { id: string; date: string; title: string; patron: string; type: "Borrow" | "Return"; due: string }
 
 function buildCirculationRows(feed: FeedItem[], dateFrom?: string, dateTo?: string): CirculationRow[] {
-  const fromTs = dateFrom ? new Date(dateFrom).getTime() : null
-  const toTs = dateTo ? new Date(dateTo).getTime() : null
   return feed
     .filter((f) => f.type !== "reserve")
-    .filter((f) => (fromTs === null || f.timestamp >= fromTs) && (toTs === null || f.timestamp <= toTs))
+    .filter((f) => inManilaDateRange(f.timestamp, dateFrom, dateTo))
     .map((f) => ({
       id: f.id,
       date: new Date(f.timestamp).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
@@ -855,13 +859,8 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
     }
   }
 
-  // Uses the page's date range filter.
-  const inRange = requests.filter((r) => {
-    const t = new Date(r.created_at).getTime()
-    if (dateFrom && t < new Date(dateFrom).getTime()) return false
-    if (dateTo && t > new Date(dateTo).getTime()) return false
-    return true
-  })
+  // Uses the page's date range filter (whole Manila days).
+  const inRange = requests.filter((r) => inManilaDateRange(r.created_at, dateFrom, dateTo))
 
   const tabCounts: Record<RequestTabKey, number> = {
     all: inRange.length,
@@ -1531,12 +1530,8 @@ function ActivityLogTable({
     return counts
   }, [feed])
 
-  const fromTs = dateFrom ? new Date(dateFrom).getTime() : null
-  const toTs = dateTo ? new Date(dateTo).getTime() : null
-
   const filtered = feed.filter((tx) => {
-    if (fromTs !== null && tx.timestamp < fromTs) return false
-    if (toTs !== null && tx.timestamp > toTs) return false
+    if (!inManilaDateRange(tx.timestamp, dateFrom, dateTo)) return false
     if (!matchesStatus(tx, statusFilter)) return false
     if (!query.trim()) return true
     const q = query.toLowerCase()
@@ -2395,17 +2390,11 @@ function ReportsPageContent() {
     due: r.due,
   })))
 
-  const exportOverdueCsv = () => downloadCsv("overdue.csv", overdueRowsData.map((r) => ({
-    patron: r.patron,
-    email: r.patronEmail,
-    program: r.program,
-    year: r.year,
-    book: r.book,
-    author: r.author,
-    due_date: r.dueDate,
-    days_overdue: r.daysOverdue,
-    fine: r.fine,
-  })))
+  // Overdue Loans exports through the API (PDF, Excel or CSV in the shared
+  // report layout), with the current filters as whole Manila days.
+  const [exportDialog, setExportDialog] = useState<{ request: ReportExportRequest; format: ReportExportFormat } | null>(null)
+  const openOverdueExport = (format: ReportExportFormat) =>
+    setExportDialog({ request: exportRequest("overdue", currentFilters()), format })
 
   const exportFinesCsv = () => downloadCsv("fines.csv", finesData.map((r) => ({
     patron: r.patron,
@@ -2454,7 +2443,7 @@ function ReportsPageContent() {
       case "catalogue":   return { fn: exportCatalogueCsv, disabled: catalogueBooks.length === 0 }
       case "shelf-list":  return { fn: exportShelfListCsv, disabled: shelfListData.length === 0 }
       case "circulation": return { fn: exportCirculationCsv, disabled: circulationRows.length === 0 }
-      case "overdue":     return { fn: exportOverdueCsv, disabled: overdueRowsData.length === 0 }
+      case "overdue":     return { fn: () => openOverdueExport("csv"), disabled: false }
       case "activity":    return { fn: exportActivityCsv, disabled: activityFeed.length === 0 }
       default:            return null
     }
@@ -2579,12 +2568,11 @@ function ReportsPageContent() {
     const label = dateRangePresetLabel(dateRange)
     const { dateFrom, dateTo } = activeDateBounds
     if (!dateFrom || !dateTo) return label
-    const from = new Date(dateFrom)
-    const to = new Date(dateTo)
-    const sameMonth = from.getMonth() === to.getMonth() && from.getFullYear() === to.getFullYear()
+    // Manila dates ("YYYY-MM-DD"), both days included.
+    const sameMonth = dateFrom.slice(0, 7) === dateTo.slice(0, 7)
     const range = sameMonth
-      ? `${from.toLocaleDateString("en-PH", { month: "short", day: "numeric" })} – ${to.getDate()}, ${to.getFullYear()}`
-      : `${from.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })} – ${to.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}`
+      ? `${formatManilaDate(dateFrom, { month: "short", day: "numeric" })} – ${Number(dateTo.slice(8, 10))}, ${dateTo.slice(0, 4)}`
+      : `${formatManilaDate(dateFrom)} – ${formatManilaDate(dateTo)}`
     return `${label} · ${range}`
   })()
   const collegeSubtitle = college !== "All Colleges" ? college : "all colleges"
@@ -2602,21 +2590,35 @@ function ReportsPageContent() {
           </h1>
 
           <div className="flex items-center gap-2 print:hidden shrink-0">
-            <button
-              onClick={() => headerExport?.fn()}
-              disabled={!headerExport || headerExport.disabled}
-              className="flex items-center gap-1.5 px-3 py-2 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-            >
-              <Download size={14} /> Export CSV
-            </button>
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-1.5 px-3 py-2 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 transition-colors"
-              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-            >
-              <Printer size={14} /> Print PDF
-            </button>
+            {tab === "overdue" ? (
+              // Built by the API: PDF, Excel or CSV with the shared header,
+              // summary, chart, table and signature lines.
+              <button
+                onClick={() => openOverdueExport("pdf")}
+                className="flex items-center gap-1.5 px-3 py-2 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 transition-colors"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+              >
+                <Download size={14} /> Export
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => headerExport?.fn()}
+                  disabled={!headerExport || headerExport.disabled}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                >
+                  <Download size={14} /> Export CSV
+                </button>
+                <button
+                  onClick={handlePrint}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 transition-colors"
+                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+                >
+                  <Printer size={14} /> Print PDF
+                </button>
+              </>
+            )}
             <button
               onClick={handleGenerateInsights}
               disabled={summarizing || loading}
@@ -2854,7 +2856,7 @@ function ReportsPageContent() {
               <span>{summaries.overdue}</span>
             </p>
           )}
-          <OverdueTable rows={overdueRowsData} onExport={exportOverdueCsv} />
+          <OverdueTable rows={overdueRowsData} onExport={() => openOverdueExport("csv")} />
           <FinesTable rows={finesData} onExport={exportFinesCsv} onSettled={handleFineSettled} />
         </div>
       )}
@@ -2891,6 +2893,14 @@ function ReportsPageContent() {
         reservations={reservations}
         onClose={() => setSelectedActivity(null)}
       />
+
+      {exportDialog && (
+        <ReportExportDialog
+          request={exportDialog.request}
+          initialFormat={exportDialog.format}
+          onClose={() => setExportDialog(null)}
+        />
+      )}
 
       {viewingPatron && (
         <PatronProfileModal

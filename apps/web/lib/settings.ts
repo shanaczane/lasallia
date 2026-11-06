@@ -40,6 +40,11 @@ export type LibrarySettings = {
   // Fine payments and desk pickups need the borrower's own ID tap.
   require_id_tap_at_desk: boolean
 
+  // Job titles under the signature lines on exported reports (migration 0060).
+  report_prepared_by_title: string
+  report_noted_by_title: string
+  report_approved_by_title: string
+
   // "HH:MM" or "HH:MM:SS". Both null means closed (no fines those days).
   weekday_open_time: string | null
   weekday_close_time: string | null
@@ -58,6 +63,14 @@ export type LibrarySettings = {
 export type UpdateLibrarySettings = Partial<
   Omit<LibrarySettings, "updated_at" | "updated_by" | "is_default">
 >
+
+// The signature job titles used until the library confirms them. Must match
+// apps/api/core/report_export/layout.py (PLACEHOLDER_TITLES).
+export const REPORT_TITLE_FIELDS: { key: "report_prepared_by_title" | "report_noted_by_title" | "report_approved_by_title"; label: string; placeholder: string }[] = [
+  { key: "report_prepared_by_title", label: "Prepared by", placeholder: "Librarian" },
+  { key: "report_noted_by_title", label: "Noted by", placeholder: "Head Librarian" },
+  { key: "report_approved_by_title", label: "Approved by", placeholder: "Director, Learning Resource Center" },
+]
 
 export async function fetchLibrarySettings(): Promise<LibrarySettings> {
   const res = await fetch(`${API_URL}/settings`, { headers: authHeaders() })

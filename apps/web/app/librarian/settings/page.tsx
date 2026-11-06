@@ -8,7 +8,7 @@ import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { fetchLibrarySettings, updateLibrarySettings, type LibrarySettings, type UpdateLibrarySettings } from "@/lib/settings"
+import { REPORT_TITLE_FIELDS, fetchLibrarySettings, updateLibrarySettings, type LibrarySettings, type UpdateLibrarySettings } from "@/lib/settings"
 import { changePassword, getUser, updateProfile, type UserProfile as AuthUser } from "@/lib/auth"
 import { SupportTicketsPanel } from "@/components/support/SupportTicketsPanel"
 
@@ -47,6 +47,10 @@ function draftError(d: Draft): string | null {
   if (!d.address.trim()) return "Address can't be empty."
   if (!d.contact_email.trim()) return "Contact Email can't be empty."
   if (!d.contact_number.trim()) return "Contact Number can't be empty."
+  for (const { key, label } of REPORT_TITLE_FIELDS) {
+    if (!d[key].trim()) return `The ${label} job title can't be empty.`
+    if (d[key].trim().length > 120) return `The ${label} job title must be 120 characters or fewer.`
+  }
   const positiveIntFields: [keyof Draft, string][] = [
     ["max_books_per_borrower", "Maximum Books per Borrower"],
     ["standard_loan_period_days", "Standard Loan Period"],
@@ -115,6 +119,9 @@ function toDraft(s: LibrarySettings): Draft {
     hold_max_seconds: s.hold_max_seconds,
     kiosk_tap_confirm_seconds: s.kiosk_tap_confirm_seconds,
     require_id_tap_at_desk: s.require_id_tap_at_desk,
+    // An API without migration 0060's fields sends none; use the placeholders.
+    ...Object.fromEntries(REPORT_TITLE_FIELDS.map((f) => [f.key, s[f.key] ?? f.placeholder])) as
+      Pick<Draft, (typeof REPORT_TITLE_FIELDS)[number]["key"]>,
     weekday_open_time: s.weekday_open_time,
     weekday_close_time: s.weekday_close_time,
     saturday_open_time: s.saturday_open_time,
@@ -213,6 +220,12 @@ function LibrarianSettingsPageContent() {
     setSaveError("")
     try {
       const changes: UpdateLibrarySettings = { ...draft }
+      // Job titles are sent only when changed, so saving other settings
+      // still works before migration 0060 adds their columns.
+      for (const { key } of REPORT_TITLE_FIELDS) {
+        if (settings && draft[key].trim() === (settings[key] ?? REPORT_TITLE_FIELDS.find((f) => f.key === key)?.placeholder)) delete changes[key]
+        else changes[key] = draft[key].trim()
+      }
       const updated = await updateLibrarySettings(changes)
       setSettings(updated)
       setDraft(toDraft(updated))
@@ -425,6 +438,23 @@ function LibrarianSettingsPageContent() {
                     Overdue fines only accrue for hours the library is actually open, per this schedule — mark a
                     day Closed (or shorten its hours) and no fine builds up during that time.
                   </p>
+                </SettingsSection>
+
+                <SettingsSection title="Report Signatures">
+                  <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+                    Job titles printed under the signature lines on exported reports. The names are typed when
+                    exporting. These are placeholder titles until the library confirms them.
+                  </p>
+                  {REPORT_TITLE_FIELDS.map((f) => (
+                    <div key={f.key} className="flex flex-col gap-1">
+                      <Field label={`${f.label} — job title`} value={draft[f.key]} onChange={(v) => setField(f.key, v)} />
+                      {draft[f.key].trim() === f.placeholder && (
+                        <p className="text-gold-600" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+                          Placeholder — confirm with the library.
+                        </p>
+                      )}
+                    </div>
+                  ))}
                 </SettingsSection>
               </>
             )}
