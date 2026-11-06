@@ -117,10 +117,26 @@ export async function fetchSyncRuns(limit = 20): Promise<SyncRun[]> {
 export async function downloadTemplate(): Promise<void> {
   const res = await fetch(`${API_URL}/sync/template`, { headers: authHeaders() })
   if (!res.ok) return parseErrorOrThrow(res, "Could not download the template")
-  const url = URL.createObjectURL(await res.blob())
+  saveFile(await res.blob(), "lasallia-catalog-template.xlsx")
+}
+
+// "Export new books": copies Lasallia added between two dates (YYYY-MM-DD,
+// Manila time, both included) as an Excel file. Copies entered with
+// "Register existing copy" are left out unless includeRegistered is set.
+// Throws with the API's message, e.g. when no copies were added.
+export async function exportNewCopies(dateFrom: string, dateTo: string, includeRegistered: boolean): Promise<void> {
+  const qs = new URLSearchParams({ date_from: dateFrom, date_to: dateTo })
+  if (includeRegistered) qs.set("include_registered", "true")
+  const res = await fetch(`${API_URL}/sync/export-new-copies?${qs}`, { headers: authHeaders() })
+  if (!res.ok) return parseErrorOrThrow(res, "Could not export new books")
+  saveFile(await res.blob(), `lasallia-new-copies-${dateFrom}-to-${dateTo}.xlsx`)
+}
+
+function saveFile(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
-  a.download = "lasallia-catalog-template.xlsx"
+  a.download = fileName
   a.click()
   URL.revokeObjectURL(url)
 }

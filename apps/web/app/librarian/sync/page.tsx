@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 import { COLLEGES } from "@/lib/colleges"
 import {
   downloadTemplate,
+  exportNewCopies,
   fetchSyncRuns,
   importCatalog,
   isSpreadsheet,
@@ -175,6 +176,111 @@ function IssueList({ issues, variant }: { issues: SyncIssue[]; variant: "error" 
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+// Today in Manila as YYYY-MM-DD, which is what the export's dates mean.
+function manilaToday(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date())
+}
+
+const DATE_INPUT =
+  "h-10 px-3 rounded-sm border border-ink-200 bg-white text-ink-800 hover:border-ink-300 focus:outline-none focus:border-green-700 transition-colors disabled:opacity-50"
+
+// "Export new books": copies Lasallia added in a date range, as an Excel
+// file in the LRC sheet layout. Read-only; defaults to this month so far.
+function ExportNewBooksPanel() {
+  const [dateTo, setDateTo] = useState(manilaToday)
+  const [dateFrom, setDateFrom] = useState(() => `${manilaToday().slice(0, 8)}01`)
+  const [includeRegistered, setIncludeRegistered] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  const invalid = !dateFrom || !dateTo || dateFrom > dateTo
+
+  async function download() {
+    setBusy(true)
+    setMessage(null)
+    try {
+      await exportNewCopies(dateFrom, dateTo, includeRegistered)
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not export new books")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const label = "text-ink-400 font-semibold uppercase"
+  const labelStyle = { ...body("var(--text-2xs)"), letterSpacing: "var(--tracking-caps)" }
+
+  return (
+    <div className="bg-white rounded-(--radius) border border-ink-200 p-4 flex flex-col gap-3">
+      <div>
+        <p className="text-ink-900 font-semibold flex items-center gap-2" style={body()}>
+          <Download size={15} className="text-ink-400" /> Export new books
+        </p>
+        <p className="text-ink-500 mt-0.5" style={body("var(--text-xs)")}>
+          Copies numbered in Lasallia (Add Book or Add copies), one row per copy, for loading into the library&apos;s system.
+          Imported copies are never included.
+        </p>
+      </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-end gap-3 flex-wrap">
+        <label className="flex flex-col gap-1">
+          <span className={label} style={labelStyle}>From</span>
+          <input
+            type="date"
+            value={dateFrom}
+            max={dateTo || undefined}
+            onChange={(e) => { setDateFrom(e.target.value); setMessage(null) }}
+            disabled={busy}
+            className={DATE_INPUT}
+            style={body()}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={label} style={labelStyle}>To</span>
+          <input
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={(e) => { setDateTo(e.target.value); setMessage(null) }}
+            disabled={busy}
+            className={DATE_INPUT}
+            style={body()}
+          />
+        </label>
+        <label className="flex items-center gap-2 h-10 text-ink-700 cursor-pointer" style={body()}>
+          <input
+            type="checkbox"
+            checked={includeRegistered}
+            onChange={(e) => { setIncludeRegistered(e.target.checked); setMessage(null) }}
+            disabled={busy}
+            className="accent-green-700"
+          />
+          Include registered existing copies
+        </label>
+        <button
+          onClick={download}
+          disabled={invalid || busy}
+          title={invalid ? "Choose a start date on or before the end date" : undefined}
+          className="h-10 px-4 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 sm:ml-auto"
+          style={body()}
+        >
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+          Download Excel
+        </button>
+      </div>
+
+      {message && (
+        <p className="text-ink-600" style={body()}>{message}</p>
+      )}
+
+      <p className="flex items-start gap-2 text-ink-500" style={body("var(--text-xs)")}>
+        <AlertTriangle size={14} className="text-gold-600 shrink-0 mt-0.5" />
+        Check that this format and these accession numbers are accepted by the library&apos;s system before importing.
+      </p>
+    </div>
+  )
+}
 
 export default function CatalogImportPage() {
   const fileInput = useRef<HTMLInputElement>(null)
@@ -458,6 +564,8 @@ export default function CatalogImportPage() {
           )}
         </div>
       )}
+
+      <ExportNewBooksPanel />
 
       {/* History */}
       <div className="bg-white rounded-(--radius) border border-ink-200 overflow-hidden">
