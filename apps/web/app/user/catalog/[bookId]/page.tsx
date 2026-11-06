@@ -631,6 +631,15 @@ export default function StudentBookDetailPage({
               </button>
             </div>
 
+            {book.subtitle && (
+              <p
+                className="text-ink-700 mb-2"
+                style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}
+              >
+                {book.subtitle}
+              </p>
+            )}
+
             {/* Author / publisher / year */}
             <p
               className="text-ink-500 mb-4"

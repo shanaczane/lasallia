@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { COLLEGES } from '@/lib/colleges'
-import type { Book, BookFormat, BookStatus, FundingSource } from '@lasallia/types'
+import type { Book, BookFormat, FundingSource } from '@lasallia/types'
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 import { BookApiError, type AccessionPrefix, type MatchedBook } from '@/lib/books'
 
@@ -45,7 +45,6 @@ export type BookFormData = {
   keywords: string           // comma-separated; caller splits into Book.keywords
   abstract: string
   notes: string
-  status: BookStatus | ''
   purchase_price: string
   date_acquired: string
   circulation_type: string
@@ -111,7 +110,6 @@ const EMPTY_FORM: BookFormData = {
   keywords: '',
   abstract: '',
   notes: '',
-  status: '',
   purchase_price: '',
   date_acquired: '',
   circulation_type: '',
@@ -126,14 +124,6 @@ const FORMAT_OPTIONS: Array<{ value: BookFormat; label: string }> = [
   { value: 'print',     label: 'Print' },
   { value: 'digital',   label: 'Digital' },
   { value: 'reference', label: 'Reference' },
-]
-
-const STATUS_OPTIONS: Array<{ value: BookStatus; label: string }> = [
-  { value: 'available', label: 'Available' },
-  { value: 'borrowed',  label: 'Borrowed' },
-  { value: 'reserved',  label: 'Reserved' },
-  { value: 'missing',   label: 'Missing' },
-  { value: 'misplaced', label: 'Misplaced' },
 ]
 
 const FUNDING_SOURCE_OPTIONS: Array<{ value: FundingSource; label: string }> = [
@@ -546,7 +536,6 @@ export function BookFormModal({
         keywords:               book.keywords?.join(', ') ?? '',
         abstract:               book.abstract ?? '',
         notes:                  book.notes ?? '',
-        status:                 book.status ?? '',
         purchase_price:         book.purchase_price?.toString() ?? '',
         date_acquired:          book.date_acquired ? book.date_acquired.slice(0, 10) : '',
         circulation_type:       book.circulation_type ?? '',
@@ -1076,19 +1065,6 @@ export function BookFormModal({
               icon={<Wallet size={14} />}
             >
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                <Field label="Status">
-                  <select
-                    value={form.status}
-                    onChange={(e) => set('status', e.target.value as BookStatus)}
-                    className={cn(inputClass, 'appearance-none cursor-pointer')}
-                    style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)', ...selectArrowStyle }}
-                  >
-                    <option value="">Select status…</option>
-                    {STATUS_OPTIONS.map((s) => (
-                      <option key={s.value} value={s.value}>{s.label}</option>
-                    ))}
-                  </select>
-                </Field>
                 <Field label="Purchase Price" error={errors.purchase_price} hint="PHP">
                   <input
                     type="number"

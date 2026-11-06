@@ -271,6 +271,15 @@ export default function GuestBookDetailPage({
             {book.title}
           </h1>
 
+          {book.subtitle && (
+            <p
+              className="text-ink-700 mb-2"
+              style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)' }}
+            >
+              {book.subtitle}
+            </p>
+          )}
+
           {/* Abstract as subtitle if short, else shown below */}
           {book.abstract && book.abstract.length <= 80 && (
             <p

@@ -46,7 +46,10 @@ export function bookFormDataToPayload(
     circulation_type:       data.circulation_type.trim() || undefined,
     vendor:                 data.vendor.trim() || undefined,
     funding_source:         data.funding_source || undefined,
-    status:                 data.status || fallback.status || 'available',
+    // Not on the form: a book's status comes from its copies. A new book
+    // gets the API's default; an edit resends the stored value, because
+    // the API saves every field it's sent.
+    status:                 fallback.status || 'available',
     cover_url:              data.cover_url || undefined,
     collection_type:        data.collection_type || 'General',
   }
