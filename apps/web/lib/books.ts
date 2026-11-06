@@ -33,13 +33,50 @@ export async function fetchSimilarBooks(id: string, limit = 5): Promise<Book[]> 
   return res.json()
 }
 
-// What the book form sends to the API.
+// What the book form sends to the API. Accession numbers and copy counts
+// aren't book fields: copies get their numbers when they're created.
 export type BookWritePayload = Omit<
   Book,
-  'id' | 'created_at' | 'updated_at' | 'expected_back' | 'waiting_count' | 'cover_color' | 'call_number_start'
+  | 'id' | 'created_at' | 'updated_at' | 'expected_back' | 'waiting_count' | 'cover_color' | 'call_number_start'
+  | 'accession_no' | 'total_copies' | 'available_copies' | 'reserved_copies'
 >
 
-export async function createBook(data: BookWritePayload): Promise<Book> {
+// Prefixes the accession counter knows. T is the general collection.
+export type AccessionPrefix = 'T' | 'GS'
+
+export type BookCreatePayload = BookWritePayload & {
+  copy_count: number
+  prefix: AccessionPrefix
+  // Set after the "same title and author, no ISBN" warning.
+  confirm_possible_duplicate?: boolean
+}
+
+// A save that created copies, with the numbers they were given.
+export type BookWithNewCopies = Book & { assigned_accession_numbers: string[] }
+
+// The book an ISBN or title check matched. Never includes accession numbers.
+export type MatchedBook = { id: string; title: string; author?: string | null; archived?: boolean }
+
+// An API error with the structured details some 409s carry.
+export class BookApiError extends Error {
+  code?: string  // 'duplicate_isbn' | 'possible_duplicate' | 'large_jump'
+  book?: MatchedBook
+  nextValue?: string
+  status: number
+
+  constructor(message: string, status: number, detail?: Record<string, unknown>) {
+    super(message)
+    this.name = 'BookApiError'
+    this.status = status
+    if (detail) {
+      this.code = detail.code as string | undefined
+      this.book = detail.book as MatchedBook | undefined
+      this.nextValue = detail.next_value as string | undefined
+    }
+  }
+}
+
+export async function createBook(data: BookCreatePayload): Promise<BookWithNewCopies> {
   const res = await fetch(`${API_URL}/books`, {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
@@ -50,6 +87,7 @@ export async function createBook(data: BookWritePayload): Promise<Book> {
 }
 
 export async function updateBook(id: string, data: BookWritePayload): Promise<Book> {
+  // Edits never send accession numbers or copy counts.
   const res = await fetch(`${API_URL}/books/${id}`, {
     method: 'PATCH',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
@@ -68,13 +106,13 @@ export async function deleteBook(id: string): Promise<void> {
   if (!res.ok) return parseErrorOrThrow(res, 'Could not delete this book')
 }
 
-// Raises the copy count of an existing book. Only changes counters, not
-// real copies (see schemas/book.py's AddCopiesRequest).
-export async function addCopiesToBook(id: string, count: number): Promise<Book> {
+// New copies of a book already in the catalog. Each gets the next accession
+// number; the response lists them.
+export async function addCopiesToBook(id: string, count: number, prefix: AccessionPrefix = 'T'): Promise<BookWithNewCopies> {
   const res = await fetch(`${API_URL}/books/${id}/add-copies`, {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ count }),
+    body: JSON.stringify({ count, prefix }),
   })
   if (!res.ok) return parseErrorOrThrow(res, 'Could not add copies to this book')
   return res.json()
@@ -99,9 +137,20 @@ function authHeaders(): HeadersInit {
   return { Authorization: `Bearer ${token}` }
 }
 
+// FastAPI sends detail as a string, an object (the structured 409s), or a
+// list (request validation errors).
 async function parseErrorOrThrow(res: Response, fallback: string): Promise<never> {
   const body = await res.json().catch(() => ({}))
-  throw new Error(body.detail ?? fallback)
+  const detail = body.detail
+  if (typeof detail === 'string') throw new BookApiError(detail, res.status)
+  if (Array.isArray(detail)) {
+    const message = detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join('. ')
+    throw new BookApiError(message || fallback, res.status)
+  }
+  if (detail && typeof detail === 'object') {
+    throw new BookApiError((detail.message as string) ?? fallback, res.status, detail)
+  }
+  throw new BookApiError(fallback, res.status)
 }
 
 export async function fetchBookCopies(bookId: string): Promise<BookCopy[]> {
@@ -132,4 +181,47 @@ export async function markCopyFound(copyId: string): Promise<void> {
     headers: authHeaders(),
   })
   if (!res.ok) return parseErrorOrThrow(res, 'Could not mark this copy as found')
+}
+
+// A copy that already has a number printed on it. A number far above the
+// counter needs confirmLargeJump (the API answers 409 large_jump first).
+export async function registerExistingCopy(bookId: string, accessionNumber: string, confirmLargeJump = false): Promise<BookCopy> {
+  const res = await fetch(`${API_URL}/books/${bookId}/copies/register`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accession_number: accessionNumber, confirm_large_jump: confirmLargeJump }),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not register this copy')
+  return res.json()
+}
+
+export type AccessionCorrection = {
+  id: string
+  book_copy_id: string | null
+  old_value: string
+  new_value: string
+  reason: string
+  corrected_by: string | null
+  corrected_by_name: string | null
+  corrected_at: string
+}
+
+// The only way to change a copy's accession number. The reason, old and new
+// values, who and when are kept.
+export async function correctAccessionNumber(
+  copyId: string, newAccession: string, reason: string, confirmLargeJump = false,
+): Promise<AccessionCorrection> {
+  const res = await fetch(`${API_URL}/books/copies/${copyId}/correct-accession`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_accession: newAccession, reason, confirm_large_jump: confirmLargeJump }),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not correct this accession number')
+  return res.json()
+}
+
+export async function fetchAccessionCorrections(bookId: string): Promise<AccessionCorrection[]> {
+  const res = await fetch(`${API_URL}/books/${bookId}/accession-corrections`, { headers: authHeaders() })
+  if (!res.ok) return parseErrorOrThrow(res, 'Failed to load accession number corrections')
+  return res.json()
 }

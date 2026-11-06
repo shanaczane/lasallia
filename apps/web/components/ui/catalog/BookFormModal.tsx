@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { COLLEGES } from '@/lib/colleges'
 import type { Book, BookFormat, BookStatus, FundingSource } from '@lasallia/types'
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
+import { BookApiError, type AccessionPrefix, type MatchedBook } from '@/lib/books'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,11 +32,13 @@ export type BookFormData = {
   physicalExtent: string
   physicalIllustrations: string
   physicalDimensions: string
-  accession_no: string
   call_number: string
   floor: string
   aisle: string
-  total_copies: string
+  // Add only: how many copies to create, and the accession prefix their
+  // numbers come from. Numbers are assigned on save.
+  copy_count: string
+  prefix: AccessionPrefix
   category: string
   subject: string
   format: BookFormat | ''
@@ -58,16 +61,27 @@ type BookFormModalProps = {
   book?: Book            // pre-populated when editing
   isOpen: boolean
   onClose: () => void
-  // Buttons are disabled until this finishes, so a double click can't save twice.
-  onSubmit: (data: BookFormData) => void | Promise<void>
-  // Used to catch a duplicate accession number while typing, and (when
-  // adding) to offer "add copies" if the book already exists.
+  // Buttons are disabled until this finishes, so a double click can't save
+  // twice. Rejecting with a BookApiError of code duplicate_isbn or
+  // possible_duplicate shows the "add copies instead?" footer.
+  onSubmit: (data: BookFormData, options?: { confirmPossibleDuplicate?: boolean }) => void | Promise<void>
+  // Used (when adding) to offer "add copies" straight away if the book
+  // already exists; the server checks again on save.
   existingBooks?: Book[]
   // An error from the server, shown on its field.
   externalError?: { field: keyof BookFormData; message: string } | null
   // Add mode: add copies to an existing book instead of creating a new one.
-  onAddCopies?: (existingBook: Book, count: number) => void | Promise<void>
+  onAddCopies?: (existingBook: MatchedBook, count: number, prefix: AccessionPrefix) => void | Promise<void>
 }
+
+// A book the new one seems to duplicate. An ISBN match is blocked outright;
+// a title + author match (no ISBN) can still be saved as a separate book.
+type DuplicateMatch = { kind: 'isbn' | 'title'; book: MatchedBook & { total_copies?: number } }
+
+const PREFIX_OPTIONS: Array<{ value: AccessionPrefix; label: string }> = [
+  { value: 'T',  label: 'T: general collection' },
+  { value: 'GS', label: 'GS: Graduate School' },
+]
 
 const EMPTY_FORM: BookFormData = {
   title: '',
@@ -86,11 +100,11 @@ const EMPTY_FORM: BookFormData = {
   physicalExtent: '',
   physicalIllustrations: '',
   physicalDimensions: '',
-  accession_no: '',
   call_number: '',
   floor: '',
   aisle: '',
-  total_copies: '1',
+  copy_count: '1',
+  prefix: 'T',
   category: '',
   subject: '',
   format: '',
@@ -157,11 +171,10 @@ const TAB_FOR_FIELD: Partial<Record<keyof BookFormData, TabKey>> = {
   format: 'titleAuthors',
   published_year: 'publication',
   isbn: 'identifiers',
-  accession_no: 'identifiers',
   call_number: 'physicalLocation',
   floor: 'physicalLocation',
   aisle: 'physicalLocation',
-  total_copies: 'physicalLocation',
+  copy_count: 'physicalLocation',
   purchase_price: 'acquisition',
 }
 
@@ -404,27 +417,11 @@ function CoverUpload({
 
 type FormErrors = Partial<Record<keyof BookFormData, string>>
 
-function validate(
-  data: BookFormData,
-  existingBooks: Book[],
-  currentBookId?: string,
-): FormErrors {
+function validate(data: BookFormData, mode: 'add' | 'edit'): FormErrors {
   const errors: FormErrors = {}
   if (!data.title.trim())       errors.title       = 'Title is required'
   if (data.authors.length === 0) errors.authors    = 'At least one author is required'
   if (!data.call_number.trim()) errors.call_number = 'Call number is required'
-
-  const trimmedAccession = data.accession_no.trim()
-  if (!trimmedAccession) {
-    errors.accession_no = 'Accession number is required'
-  } else if (
-    existingBooks.some(
-      (b) => b.id !== currentBookId && (b.accession_no ?? '').trim().toLowerCase() === trimmedAccession.toLowerCase()
-    )
-  ) {
-    errors.accession_no = 'This accession number is already in use by another book'
-  }
-
   if (!data.floor.trim())       errors.floor       = 'Floor is required'
   if (!data.aisle.trim())       errors.aisle       = 'Aisle is required'
   if (!data.format)             errors.format      = 'Format is required'
@@ -434,12 +431,15 @@ function validate(
     errors.published_year = 'Enter a valid 4-digit year'
   }
 
-  const copies = parseInt(data.total_copies, 10)
-  if (!data.total_copies || isNaN(copies) || copies < 1) {
-    errors.total_copies = 'Enter at least 1 copy'
+  if (mode === 'add') {
+    const copies = Number(data.copy_count)
+    if (!Number.isInteger(copies) || copies < 1 || copies > 50) {
+      errors.copy_count = 'Enter 1 to 50 copies'
+    }
   }
 
-  if (data.isbn && !/^[\d\-X]{10,17}$/.test(data.isbn.replace(/\s/g, ''))) {
+  // Shape only; the server checks the check digit.
+  if (data.isbn && !/^[\dXx\- ]{10,17}$/.test(data.isbn.trim())) {
     errors.isbn = 'Enter a valid ISBN (10 or 13 digits)'
   }
 
@@ -472,16 +472,22 @@ function sameAuthors(formAuthors: string[], bookAuthorField: string): boolean {
   return a.length > 0 && a.length === b.length && a.every((v, i) => v === b[i])
 }
 
-function findDuplicateBook(data: BookFormData, existingBooks: Book[], currentBookId?: string): Book | null {
+// Same idea as core/isbn.py's normalize_isbn: drop "(pbk.)", hyphens, spaces.
+function normalizeIsbn(value: string | null | undefined): string {
+  return (value ?? '').split('(')[0].replace(/[\s-]/g, '').toUpperCase()
+}
+
+function findDuplicateBook(data: BookFormData, existingBooks: Book[]): DuplicateMatch | null {
   const title = normalize(data.title)
-  const isbn = data.isbn.replace(/[\s-]/g, '').toLowerCase()
+  const isbn = normalizeIsbn(data.isbn)
   if (!title) return null
 
-  return existingBooks.find((b) => {
-    if (b.id === currentBookId) return false
-    if (isbn && b.isbn && b.isbn.replace(/[\s-]/g, '').toLowerCase() === isbn) return true
-    return normalize(b.title) === title && sameAuthors(data.authors, b.author)
-  }) ?? null
+  if (isbn) {
+    const byIsbn = existingBooks.find((b) => normalizeIsbn(b.isbn) === isbn)
+    return byIsbn ? { kind: 'isbn', book: byIsbn } : null
+  }
+  const byTitle = existingBooks.find((b) => normalize(b.title) === title && sameAuthors(data.authors, b.author))
+  return byTitle ? { kind: 'title', book: byTitle } : null
 }
 
 // ─── Main modal ───────────────────────────────────────────────────────────────
@@ -495,7 +501,7 @@ export function BookFormModal({
   const [tab, setTab] = useState<TabKey>('titleAuthors')
   const [authorDraft, setAuthorDraft] = useState('')
   // A matching existing book; the footer asks "add copies instead?".
-  const [duplicate, setDuplicate] = useState<Book | null>(null)
+  const [duplicate, setDuplicate] = useState<DuplicateMatch | null>(null)
   const [saving, setSaving] = useState(false)
 
   // One save at a time.
@@ -529,11 +535,11 @@ export function BookFormModal({
         physicalExtent:         book.physical_extent ?? '',
         physicalIllustrations:  book.physical_illustrations ?? '',
         physicalDimensions:     book.physical_dimensions ?? '',
-        accession_no:           book.accession_no ?? '',
         call_number:            book.call_number,
         floor:                  book.floor ?? '',
         aisle:                  book.aisle ?? '',
-        total_copies:           book.total_copies?.toString() ?? '1',
+        copy_count:             '1',
+        prefix:                 'T',
         category:               book.category,
         subject:                book.subject ?? '',
         format:                 book.format ?? '',
@@ -594,10 +600,23 @@ export function BookFormModal({
     set('authors', form.authors.filter((_, i) => i !== index))
   }
 
+  // Saves, and turns the server's duplicate answers into the footer prompt.
+  async function submit(options?: { confirmPossibleDuplicate?: boolean }) {
+    try {
+      await onSubmit(form, options)
+    } catch (err) {
+      if (err instanceof BookApiError && err.book && (err.code === 'duplicate_isbn' || err.code === 'possible_duplicate')) {
+        setDuplicate({ kind: err.code === 'duplicate_isbn' ? 'isbn' : 'title', book: err.book })
+        return
+      }
+      throw err
+    }
+  }
+
   function handleSubmit() {
     if (saving) return
     setSubmitted(true)
-    const errs = validate(form, existingBooks, book?.id)
+    const errs = validate(form, mode)
     if (Object.keys(errs).length > 0) {
       setErrors(errs)
       const badTab = firstErrorTab(errs)
@@ -613,20 +632,21 @@ export function BookFormModal({
       }
     }
 
-    runSave(() => onSubmit(form))
+    runSave(() => submit())
   }
 
   // "Add as copies" to the matching book.
   function confirmAddCopies() {
     if (!duplicate) return
-    const count = parseInt(form.total_copies, 10) || 1
-    if (onAddCopies) runSave(() => onAddCopies(duplicate, count))
+    const count = parseInt(form.copy_count, 10) || 1
+    if (onAddCopies) runSave(() => onAddCopies(duplicate.book, count, form.prefix))
   }
 
-  // "No, this is a different book": create it anyway.
+  // "No, this is a different book": only offered for a title match (a book
+  // with no ISBN); an ISBN match can't be saved twice.
   function confirmCreateAnyway() {
     setDuplicate(null)
-    runSave(() => onSubmit(form))
+    runSave(() => submit({ confirmPossibleDuplicate: true }))
   }
 
   if (!isOpen) return null
@@ -894,16 +914,15 @@ export function BookFormModal({
                   />
                 </Field>
               </div>
-              <Field label="Accession No." required error={errors.accession_no} hint="LRC barcode / copy ID" className="sm:max-w-50">
-                <input
-                  type="text"
-                  value={form.accession_no}
-                  onChange={(e) => set('accession_no', e.target.value)}
-                  placeholder="e.g. T44882"
-                  className={cn(inputClass, errors.accession_no && 'border-danger focus:border-danger')}
-                  style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-mono)' }}
-                />
-              </Field>
+              <p
+                className="flex items-start gap-2 rounded-sm bg-ink-50 border border-ink-100 px-3 py-2.5 text-ink-600 leading-snug"
+                style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+              >
+                <Hash size={14} className="mt-0.5 shrink-0 text-ink-400" />
+                {isEdit
+                  ? 'Accession numbers belong to each copy and can\'t be edited here. Use the copies list on the book\'s page to add, register or correct them.'
+                  : 'Accession numbers are assigned automatically when you save, one per copy, and shown so you can write them on the books.'}
+              </p>
             </FormSection>
           )}
 
@@ -1018,17 +1037,34 @@ export function BookFormModal({
                       style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
                     />
                   </Field>
-                  <Field label="Total Copies" required error={errors.total_copies}>
-                    <input
-                      type="number"
-                      value={form.total_copies}
-                      onChange={(e) => set('total_copies', e.target.value)}
-                      min={1}
-                      className={cn(inputClass, errors.total_copies && 'border-danger focus:border-danger')}
-                      style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-                    />
-                  </Field>
+                  {!isEdit && (
+                    <Field label="Number of copies" required error={errors.copy_count} hint="Each copy gets its own accession number">
+                      <input
+                        type="number"
+                        value={form.copy_count}
+                        onChange={(e) => set('copy_count', e.target.value)}
+                        min={1}
+                        max={50}
+                        className={cn(inputClass, errors.copy_count && 'border-danger focus:border-danger')}
+                        style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+                      />
+                    </Field>
+                  )}
                 </div>
+                {!isEdit && (
+                  <Field label="Accession prefix" className="sm:max-w-64">
+                    <select
+                      value={form.prefix}
+                      onChange={(e) => set('prefix', e.target.value as AccessionPrefix)}
+                      className={cn(inputClass, 'appearance-none cursor-pointer')}
+                      style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)', ...selectArrowStyle }}
+                    >
+                      {PREFIX_OPTIONS.map((p) => (
+                        <option key={p.value} value={p.value}>{p.label}</option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
               </FormSection>
             </>
           )}
@@ -1172,9 +1208,15 @@ export function BookFormModal({
         {duplicate ? (
           <div className="flex flex-col gap-3 px-8 py-5 border-t border-ink-100 shrink-0 bg-gold-100/40">
             <p className="text-ink-700 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-              This looks like a title already in the catalog — <span className="font-semibold">{duplicate.title}</span> by {duplicate.author}{' '}
-              ({duplicate.total_copies ?? 0} {duplicate.total_copies === 1 ? 'copy' : 'copies'} already catalogued). Add{' '}
-              {parseInt(form.total_copies, 10) || 1} more {(parseInt(form.total_copies, 10) || 1) === 1 ? 'copy' : 'copies'} to it instead of creating a new book?
+              {duplicate.kind === 'isbn' ? 'This ISBN is already cataloged as ' : 'This looks like a title already in the catalog: '}
+              <span className="font-semibold">{duplicate.book.title}</span>
+              {duplicate.book.author ? ` by ${duplicate.book.author}` : ''}
+              {duplicate.book.total_copies !== undefined
+                ? ` (${duplicate.book.total_copies} ${duplicate.book.total_copies === 1 ? 'copy' : 'copies'})`
+                : ''}
+              {duplicate.book.archived ? ', which is archived' : ''}. Add{' '}
+              {parseInt(form.copy_count, 10) || 1} more {(parseInt(form.copy_count, 10) || 1) === 1 ? 'copy' : 'copies'} to it
+              {duplicate.kind === 'isbn' ? ' instead?' : ' instead of creating a new book?'}
             </p>
             <div className="flex items-center justify-end gap-3">
               <button
@@ -1185,19 +1227,22 @@ export function BookFormModal({
               >
                 Go back
               </button>
-              <button
-                type="button"
-                onClick={confirmCreateAnyway}
-                disabled={saving}
-                className="px-4 py-2 rounded-sm border border-ink-200 text-ink-700 hover:bg-ink-50 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-              >
-                No, this is a different book
-              </button>
+              {duplicate.kind === 'title' && (
+                <button
+                  type="button"
+                  onClick={confirmCreateAnyway}
+                  disabled={saving}
+                  className="px-4 py-2 rounded-sm border border-ink-200 text-ink-700 hover:bg-ink-50 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+                >
+                  No, this is a different book
+                </button>
+              )}
               <button
                 type="button"
                 onClick={confirmAddCopies}
-                disabled={saving}
+                disabled={saving || duplicate.book.archived}
+                title={duplicate.book.archived ? 'Restore the archived book before adding copies' : undefined}
                 className="px-5 py-2 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 active:bg-green-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
               >

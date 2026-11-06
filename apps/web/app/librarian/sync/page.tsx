@@ -182,6 +182,8 @@ export default function CatalogImportPage() {
   const [college, setCollege] = useState("")
   const [preview, setPreview] = useState<SyncPreview | null>(null)
   const [busy, setBusy] = useState<"preview" | "apply" | null>(null)
+  // Ticked by the librarian after checking numbers far above the counter.
+  const [jumpsConfirmed, setJumpsConfirmed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [runs, setRuns] = useState<SyncRun[]>([])
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null)
@@ -201,6 +203,7 @@ export default function CatalogImportPage() {
     setFile(next)
     setCollege(next ? guessCollege(next.name) : "")
     setPreview(null)
+    setJumpsConfirmed(false)
     setError(null)
   }
 
@@ -211,6 +214,7 @@ export default function CatalogImportPage() {
     if (!file) return
     setBusy("preview")
     setError(null)
+    setJumpsConfirmed(false)
     try {
       setPreview(await importCatalog(file, true, collegeForUpload))
     } catch (err) {
@@ -224,7 +228,7 @@ export default function CatalogImportPage() {
     if (!file) return
     setBusy("apply")
     try {
-      const result = await importCatalog(file, false, collegeForUpload)
+      const result = await importCatalog(file, false, collegeForUpload, jumpsConfirmed)
       setPreview(result)
       loadRuns()
       showToast(
@@ -245,6 +249,8 @@ export default function CatalogImportPage() {
 
   const pendingChanges = preview ? preview.books_added + preview.books_updated : 0
   const applied = preview && !preview.dry_run
+  const largeJumps = preview?.large_jumps ?? []
+  const needsJumpConfirm = !applied && largeJumps.length > 0 && !jumpsConfirmed
 
   return (
     <div className="p-4 sm:p-6 max-w-(--max-w-content) mx-auto flex flex-col gap-5">
@@ -380,7 +386,8 @@ export default function CatalogImportPage() {
             {!applied && (
               <button
                 onClick={applyImport}
-                disabled={pendingChanges === 0 || busy !== null}
+                disabled={pendingChanges === 0 || busy !== null || needsJumpConfirm}
+                title={needsJumpConfirm ? "Check the accession numbers flagged below and confirm them first" : undefined}
                 className="px-3 py-1.5 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 style={body()}
               >
@@ -401,6 +408,35 @@ export default function CatalogImportPage() {
             <Stat label="Skipped" value={preview.errors.length} tone={preview.errors.length ? "danger" : "muted"} />
           </div>
 
+          {largeJumps.length > 0 && (
+            <div className="flex flex-col gap-3 rounded-(--radius) border border-gold-500 bg-gold-100 p-4">
+              <p className="text-ink-900 font-semibold" style={body()}>
+                {largeJumps.length} accession {largeJumps.length === 1 ? "number is" : "numbers are"} more than 1,000 above
+                the next number. Importing moves the counter past {largeJumps.length === 1 ? "it" : "them"} for good.
+              </p>
+              <ul className="flex flex-col gap-1">
+                {largeJumps.map((j) => (
+                  <li key={j.accession} className="text-ink-700" style={body()}>
+                    <span className="font-semibold" style={{ fontFamily: "var(--font-mono)" }}>{j.accession}</span>
+                    {" (next is "}<span style={{ fontFamily: "var(--font-mono)" }}>{j.next_value}</span>{")"}
+                    {j.title ? ` · ${j.title}` : ""}
+                    {j.location ? <span className="text-ink-500">{` · ${j.location}`}</span> : null}
+                  </li>
+                ))}
+              </ul>
+              {!applied && (
+                <label className="flex items-start gap-2 text-ink-900 cursor-pointer" style={body()}>
+                  <input
+                    type="checkbox"
+                    checked={jumpsConfirmed}
+                    onChange={(e) => setJumpsConfirmed(e.target.checked)}
+                    className="mt-1 accent-green-700"
+                  />
+                  I checked these against the labels on the books, and they are correct.
+                </label>
+              )}
+            </div>
+          )}
           {preview.errors.length > 0 && <IssueList issues={preview.errors} variant="error" />}
           {preview.warnings.length > 0 && <IssueList issues={preview.warnings} variant="warning" />}
 

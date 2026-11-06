@@ -1,10 +1,12 @@
-// Read-only table of a book's copies: status, and borrower and due date for
-// copies on loan. Statuses only change through borrowing, returns and
-// reshelving. The shelf location comes from the book.
+// Table of a book's copies: status, and borrower and due date for copies on
+// loan. Statuses only change through borrowing, returns and reshelving.
+// Accession numbers are read-only; onCorrect adds a "Correct number" action
+// that opens the logged correction dialog. The shelf location comes from
+// the book.
 
 'use client'
 
-import { MapPin } from 'lucide-react'
+import { MapPin, PenLine } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { copyStatusConfig } from '@/lib/copyStatus'
 
@@ -23,6 +25,8 @@ type CopyManagementTableProps = {
   copies: BookCopy[]
   // The book's shelf location (the same for every copy).
   shelfLocation?: string | null
+  // Librarians only: correct a copy's accession number (with a reason).
+  onCorrect?: (copy: BookCopy) => void
   className?: string
 }
 
@@ -63,7 +67,23 @@ function BorrowerInfo({ copy }: { copy: BookCopy }) {
 
 // ─── Mobile card view (< md) ──────────────────────────────────────────────────
 
-function CopyCard({ copy, shelfLocation }: { copy: BookCopy; shelfLocation?: string | null }) {
+function CorrectButton({ copy, onCorrect }: { copy: BookCopy; onCorrect: (copy: BookCopy) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onCorrect(copy)}
+      className="inline-flex items-center gap-1 text-ink-500 hover:text-green-700 transition-colors font-medium whitespace-nowrap"
+      style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-body)' }}
+      aria-label={`Correct accession number ${copy.accession_number}`}
+    >
+      <PenLine size={12} /> Correct number
+    </button>
+  )
+}
+
+function CopyCard({
+  copy, shelfLocation, onCorrect,
+}: { copy: BookCopy; shelfLocation?: string | null; onCorrect?: (copy: BookCopy) => void }) {
   return (
     <div className="flex flex-col gap-2 p-4 bg-white border border-ink-200 rounded-(--radius) shadow-(--shadow-sm)">
       <div className="flex items-center justify-between gap-2">
@@ -89,13 +109,18 @@ function CopyCard({ copy, shelfLocation }: { copy: BookCopy; shelfLocation?: str
           {shelfLocation}
         </p>
       )}
+      {onCorrect && (
+        <div className="flex justify-end">
+          <CorrectButton copy={copy} onCorrect={onCorrect} />
+        </div>
+      )}
     </div>
   )
 }
 
 // ─── Main exported component ──────────────────────────────────────────────────
 
-export function CopyManagementTable({ copies, shelfLocation, className }: CopyManagementTableProps) {
+export function CopyManagementTable({ copies, shelfLocation, onCorrect, className }: CopyManagementTableProps) {
   return (
     <div className={cn('flex flex-col gap-4', className)}>
 
@@ -123,7 +148,7 @@ export function CopyManagementTable({ copies, shelfLocation, className }: CopyMa
           {/* Mobile: card stack */}
           <div className="flex flex-col gap-3 md:hidden">
             {copies.map((copy) => (
-              <CopyCard key={copy.id} copy={copy} shelfLocation={shelfLocation} />
+              <CopyCard key={copy.id} copy={copy} shelfLocation={shelfLocation} onCorrect={onCorrect} />
             ))}
           </div>
 
@@ -132,9 +157,9 @@ export function CopyManagementTable({ copies, shelfLocation, className }: CopyMa
             <table className="w-full border-collapse text-left" style={{ minWidth: 560 }}>
               <thead>
                 <tr className="bg-ink-50 border-b border-ink-200">
-                  {['Accession #', 'Status', 'Borrower', 'Shelf Location'].map((h) => (
+                  {['Accession #', 'Status', 'Borrower', 'Shelf Location', ...(onCorrect ? [''] : [])].map((h, i) => (
                     <th
-                      key={h}
+                      key={h || `col-${i}`}
                       className="px-4 py-2.5 text-ink-500 font-semibold uppercase whitespace-nowrap"
                       style={{
                         fontSize: 'var(--text-2xs)',
@@ -177,6 +202,11 @@ export function CopyManagementTable({ copies, shelfLocation, className }: CopyMa
                     >
                       {shelfLocation ?? <span className="text-ink-300">—</span>}
                     </td>
+                    {onCorrect && (
+                      <td className="px-4 py-3 text-right">
+                        <CorrectButton copy={copy} onCorrect={onCorrect} />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

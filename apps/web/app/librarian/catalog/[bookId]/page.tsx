@@ -7,7 +7,7 @@ import Link from 'next/link'
 import {
   ArrowLeft, MapPin, Hash, Building2, Calendar,
   BookOpen, GraduationCap, Landmark, Copy, Pencil, Trash2,
-  Banknote, Store, HandCoins, Layers, StickyNote, Barcode, Ruler, Globe,
+  Banknote, Store, HandCoins, Layers, StickyNote, Ruler, Globe,
   Tags, Library, BookMarked, Type, CalendarPlus, RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -20,7 +20,13 @@ import { BookFormModal, type BookFormData } from '@/components/ui/catalog/BookFo
 import { DeleteBookModal } from '@/components/ui/catalog/DeleteBookModal'
 import { useRouter } from 'next/navigation'
 import { archiveBook } from '@/lib/weeding'
-import { fetchBookCopies, markCopyFound, updateBook, uploadBookCover, type BookCopy } from '@/lib/books'
+import {
+  fetchAccessionCorrections, fetchBookCopies, markCopyFound, updateBook, uploadBookCover,
+  type AccessionCorrection, type BookCopy,
+} from '@/lib/books'
+import {
+  AddCopiesDialog, AssignedNumbersDialog, CorrectAccessionDialog, RegisterCopyDialog,
+} from '@/components/ui/catalog/CopyDialogs'
 import { bookFormDataToPayload } from '@/lib/bookForm'
 import { copyStatusConfig, COPY_STATUSES } from '@/lib/copyStatus'
 import { BookCover } from '@/components/ui/catalog/BookCover'
@@ -121,16 +127,35 @@ export default function LibrarianBookDetailPage({
   const [archiveError, setArchiveError] = useState('')
   const [editError, setEditError] = useState('')
 
-  // The book's copies, for the copy table and the missing-copies banner.
+  // The book's copies, for the copy table and the missing-copies banner,
+  // and the log of accession number corrections.
   const [copies, setCopies] = useState<BookCopy[]>([])
+  const [corrections, setCorrections] = useState<AccessionCorrection[]>([])
+  const [copiesVersion, setCopiesVersion] = useState(0)
   useEffect(() => {
     if (!book) return
     let cancelled = false
     fetchBookCopies(book.id)
       .then((all) => { if (!cancelled) setCopies(all) })
       .catch(() => { /* best-effort — the book's own aggregate status still shows either way */ })
+    fetchAccessionCorrections(book.id)
+      .then((log) => { if (!cancelled) setCorrections(log) })
+      .catch(() => { /* the log is extra detail; the copies still show */ })
     return () => { cancelled = true }
-  }, [book?.id])
+  }, [book?.id, copiesVersion])
+
+  // Copy actions: add (numbers assigned), register (number already printed),
+  // correct (logged with a reason).
+  const [addCopiesOpen, setAddCopiesOpen] = useState(false)
+  const [registerOpen, setRegisterOpen] = useState(false)
+  const [correcting, setCorrecting] = useState<BookCopy | null>(null)
+  const [assigned, setAssigned] = useState<{ title: string; numbers: string[] } | null>(null)
+  const [copyNotice, setCopyNotice] = useState('')
+
+  function reloadCopies() {
+    setCopiesVersion((v) => v + 1)
+    refetch()
+  }
 
   const isMissing = book?.status === 'missing' || book?.status === 'misplaced'
   const missingCopies = copies.filter((c) => ['missing', 'lost', 'damaged', 'misplaced'].includes(c.status))
@@ -521,13 +546,6 @@ export default function LibrarianBookDetailPage({
           {/* Location & copies */}
           <div className="bg-white rounded-(--radius) border border-ink-200 p-5">
             <SectionHeading>Location & Copies</SectionHeading>
-            {book.accession_no && (
-              <MetaRow
-                icon={<Barcode size={14} />}
-                label="Accession No."
-                value={<span style={{ fontFamily: 'var(--font-mono)' }}>{book.accession_no}</span>}
-              />
-            )}
             <MetaRow
               icon={<Hash size={14} />}
               label="Call Number"
@@ -615,12 +633,92 @@ export default function LibrarianBookDetailPage({
 
       {/* ── Copy Management ── */}
       <div className="bg-white rounded-(--radius) border border-ink-200 p-5">
-        <div className="flex items-center justify-between gap-3 mb-1">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
           <SectionHeading>Copy Management</SectionHeading>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setRegisterOpen(true)}
+              className="px-3 py-1.5 rounded-sm border border-ink-200 text-ink-700 hover:bg-ink-50 transition-colors font-medium"
+              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+            >
+              Register existing copy
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddCopiesOpen(true)}
+              className="px-3 py-1.5 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors"
+              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}
+            >
+              Add copies
+            </button>
+          </div>
         </div>
 
-        <CopyManagementTable copies={copies} shelfLocation={book.shelf_location} />
+        {copyNotice && (
+          <p className="mb-3 text-green-700 font-medium" role="status" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+            {copyNotice}
+          </p>
+        )}
+
+        <CopyManagementTable copies={copies} shelfLocation={book.shelf_location} onCorrect={setCorrecting} />
+
+        {corrections.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-ink-100">
+            <p
+              className="text-ink-500 font-semibold uppercase mb-2"
+              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-2xs)', letterSpacing: 'var(--tracking-eyebrow)' }}
+            >
+              Accession number corrections
+            </p>
+            <ul className="flex flex-col gap-2">
+              {corrections.map((c) => (
+                <li key={c.id} className="text-ink-700 leading-snug" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{c.old_value}</span>
+                  {' → '}
+                  <span style={{ fontFamily: 'var(--font-mono)' }} className="font-semibold">{c.new_value}</span>
+                  <span className="text-ink-500">
+                    {' · '}{c.reason}{' · '}{c.corrected_by_name ?? 'Staff'}{', '}
+                    {new Date(c.corrected_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
+
+      <AddCopiesDialog
+        book={book}
+        open={addCopiesOpen}
+        onClose={() => setAddCopiesOpen(false)}
+        onAdded={(result) => {
+          setAddCopiesOpen(false)
+          setAssigned({ title: result.title, numbers: result.assigned_accession_numbers })
+          reloadCopies()
+        }}
+      />
+      <RegisterCopyDialog
+        book={book}
+        open={registerOpen}
+        onClose={() => setRegisterOpen(false)}
+        onRegistered={(copy) => {
+          setRegisterOpen(false)
+          setCopyNotice(`Registered copy ${copy.accession_number}.`)
+          reloadCopies()
+        }}
+      />
+      <CorrectAccessionDialog
+        copy={correcting}
+        open={correcting !== null}
+        onClose={() => setCorrecting(null)}
+        onCorrected={() => {
+          setCorrecting(null)
+          setCopyNotice('Accession number corrected. The change is logged below.')
+          reloadCopies()
+        }}
+      />
+      <AssignedNumbersDialog result={assigned} onClose={() => setAssigned(null)} />
 
       {/* Modals */}
       <BookFormModal

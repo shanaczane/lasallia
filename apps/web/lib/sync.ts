@@ -56,7 +56,17 @@ export type SyncPreview = {
   items: SyncItem[]
   errors: SyncIssue[]
   warnings: SyncIssue[]
+  // New copies more than 1,000 above their prefix's next accession number.
+  // Applying them needs confirmLargeJumps.
+  large_jumps: SyncLargeJump[]
   run_id: string | null
+}
+
+export type SyncLargeJump = {
+  accession: string
+  title: string | null
+  next_value: string  // the counter's next number before this import
+  location: string | null
 }
 
 export type SyncRun = {
@@ -79,12 +89,16 @@ export function isSpreadsheet(file: File): boolean {
 }
 
 // dryRun=true previews, dryRun=false applies; send the same file both times.
-// `college` is only used for .xlsx files.
-export async function importCatalog(file: File, dryRun: boolean, college?: string): Promise<SyncPreview> {
+// `college` is only used for .xlsx files. confirmLargeJumps is required to
+// apply a file whose preview listed large_jumps.
+export async function importCatalog(
+  file: File, dryRun: boolean, college?: string, confirmLargeJumps = false,
+): Promise<SyncPreview> {
   const form = new FormData()
   form.append("file", file)
   const qs = new URLSearchParams({ dry_run: String(dryRun) })
   if (college) qs.set("college", college)
+  if (confirmLargeJumps) qs.set("confirm_large_jumps", "true")
   const res = await fetch(`${API_URL}/sync/catalog?${qs}`, {
     method: "POST",
     headers: authHeaders(),

@@ -11,7 +11,10 @@ export type FundingSource = 'purchased' | 'donated' | 'grant'
 
 export type Book = {
   id: string
-  accession_no?: string      // LRC physical-copy identifier, e.g. "T44882" — encoded on the QR code
+  // Legacy: the first copy's number on books seeded before book_copies.
+  // No longer written; each copy's accession number is on BookCopy.
+  // Hidden from students and guests.
+  accession_no?: string
   title: string
   subtitle?: string
   alternate_title?: string
@@ -40,6 +43,7 @@ export type Book = {
   published_year?: number
   publisher?: string
   format?: BookFormat
+  // Counted from the book's copies on every read, never stored by the app.
   total_copies?: number
   available_copies?: number
   reserved_copies?: number

@@ -2,7 +2,7 @@
 
 import type { Book } from '@lasallia/types'
 import type { BookFormData } from '@/components/ui/catalog/BookFormModal'
-import type { BookWritePayload } from '@/lib/books'
+import type { BookCreatePayload, BookWritePayload } from '@/lib/books'
 
 // "a, b, c" -> ["a", "b", "c"].
 export function parseKeywords(raw: string): string[] | undefined {
@@ -15,7 +15,6 @@ export function bookFormDataToPayload(
   fallback: { category?: string; status?: Book['status'] } = {}
 ): BookWritePayload {
   return {
-    accession_no:           data.accession_no.trim() || undefined,
     title:                  data.title.trim(),
     subtitle:               data.subtitle.trim() || undefined,
     alternate_title:        data.alternateTitle.trim() || undefined,
@@ -36,8 +35,6 @@ export function bookFormDataToPayload(
     floor:                  data.floor,
     aisle:                  data.aisle.trim(),
     shelf_location:         `${data.floor} · ${data.aisle.trim()}`,
-    total_copies:           parseInt(data.total_copies, 10),
-    available_copies:       parseInt(data.total_copies, 10),
     category:               data.category.trim() || fallback.category || 'Uncategorised',
     subject:                data.subject.trim() || undefined,
     format:                 data.format || undefined,
@@ -52,5 +49,19 @@ export function bookFormDataToPayload(
     status:                 data.status || fallback.status || 'available',
     cover_url:              data.cover_url || undefined,
     collection_type:        data.collection_type || 'General',
+  }
+}
+
+// Adding a book also says how many copies to create and which accession
+// prefix they're numbered from.
+export function bookFormDataToCreatePayload(
+  data: BookFormData,
+  options: { confirmPossibleDuplicate?: boolean } = {},
+): BookCreatePayload {
+  return {
+    ...bookFormDataToPayload(data),
+    copy_count: parseInt(data.copy_count, 10),
+    prefix: data.prefix,
+    confirm_possible_duplicate: options.confirmPossibleDuplicate || undefined,
   }
 }

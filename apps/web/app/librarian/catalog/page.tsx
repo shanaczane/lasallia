@@ -23,8 +23,12 @@ import { useBooks } from '@/lib/hooks/useBooks'
 import { deriveCatalogOptions } from '@/lib/catalogOptions'
 import { programLabel } from '@/lib/programLabels'
 import { archiveBook } from '@/lib/weeding'
-import { addCopiesToBook, createBook, deleteBook, updateBook, uploadBookCover } from '@/lib/books'
-import { bookFormDataToPayload } from '@/lib/bookForm'
+import {
+  BookApiError, addCopiesToBook, createBook, deleteBook, updateBook, uploadBookCover,
+  type AccessionPrefix, type MatchedBook,
+} from '@/lib/books'
+import { bookFormDataToCreatePayload, bookFormDataToPayload } from '@/lib/bookForm'
+import { AssignedNumbersDialog } from '@/components/ui/catalog/CopyDialogs'
 
 const PAGE_SIZE = 24
 import { LibrarianBookCard } from '@/components/ui/catalog/LibrarianBookCard'
@@ -161,6 +165,8 @@ function LibrarianCatalogContent() {
   const [toast, setToast] = useState<string | null>(null)
   const [addFieldError, setAddFieldError]   = useState<{ field: keyof BookFormData; message: string } | null>(null)
   const [editFieldError, setEditFieldError] = useState<{ field: keyof BookFormData; message: string } | null>(null)
+  // Accession numbers a save just assigned, to write on the books.
+  const [assigned, setAssigned] = useState<{ title: string; numbers: string[] } | null>(null)
 
   // Copy the fetched books into local state (re-synced on every refetch).
   useEffect(() => {
@@ -198,13 +204,13 @@ function LibrarianCatalogContent() {
 
   // ── Handlers ──
 
-  async function handleAddSubmit(data: BookFormData) {
+  async function handleAddSubmit(data: BookFormData, options?: { confirmPossibleDuplicate?: boolean }) {
     setAddFieldError(null)
     try {
-      const newBook = await createBook(bookFormDataToPayload(data))
+      const newBook = await createBook(bookFormDataToCreatePayload(data, options))
       setBooks((prev) => [newBook, ...prev])
       setAddOpen(false)
-      showToast(`"${newBook.title}" added to the catalog.`)
+      setAssigned({ title: newBook.title, numbers: newBook.assigned_accession_numbers })
 
       // Upload the cover after the book exists (it needs the book's id).
       if (data.cover_image_file) {
@@ -213,21 +219,23 @@ function LibrarianCatalogContent() {
         showToast(`Cover added for "${newBook.title}".`)
       }
     } catch (err) {
+      // The form shows these as "add copies instead?".
+      if (err instanceof BookApiError && (err.code === 'duplicate_isbn' || err.code === 'possible_duplicate')) throw err
       const message = err instanceof Error ? err.message : 'Could not add this book.'
-      if (message.toLowerCase().includes('accession number')) {
-        setAddFieldError({ field: 'accession_no', message })
+      if (message.toLowerCase().includes('isbn')) {
+        setAddFieldError({ field: 'isbn', message })
       } else {
         showToast(message)
       }
     }
   }
 
-  async function handleAddCopies(existingBook: Book, count: number) {
+  async function handleAddCopies(existingBook: MatchedBook, count: number, prefix: AccessionPrefix) {
     try {
-      const updated = await addCopiesToBook(existingBook.id, count)
+      const updated = await addCopiesToBook(existingBook.id, count, prefix)
       setBooks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)))
       setAddOpen(false)
-      showToast(`Added ${count} more ${count === 1 ? 'copy' : 'copies'} to "${updated.title}".`)
+      setAssigned({ title: updated.title, numbers: updated.assigned_accession_numbers })
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not add copies to this book.')
     }
@@ -252,8 +260,8 @@ function LibrarianCatalogContent() {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not save changes to this book.'
-      if (message.toLowerCase().includes('accession number')) {
-        setEditFieldError({ field: 'accession_no', message })
+      if (message.toLowerCase().includes('isbn')) {
+        setEditFieldError({ field: 'isbn', message })
       } else {
         showToast(message)
       }
@@ -513,6 +521,8 @@ function LibrarianCatalogContent() {
         onArchive={handleArchive}
         onDelete={handleDelete}
       />
+
+      <AssignedNumbersDialog result={assigned} onClose={() => setAssigned(null)} />
 
       {toast && <Toast message={toast} />}
 
