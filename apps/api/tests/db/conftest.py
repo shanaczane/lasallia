@@ -1,5 +1,5 @@
-# Database tests for migrations/0058_accession_numbers.sql. They run the
-# real SQL against a throwaway Postgres and are skipped unless
+# Database tests for migrations/0058_accession_numbers.sql and
+# 0059_copy_origin.sql. They run the real SQL against a throwaway Postgres and are skipped unless
 # TEST_DATABASE_URL is set. Never point it at the Supabase project: every
 # test drops and recreates the public schema.
 #
@@ -16,7 +16,9 @@ import pytest
 psycopg = pytest.importorskip("psycopg")
 
 DB_URL = os.environ.get("TEST_DATABASE_URL")
-MIGRATION = Path(__file__).resolve().parents[2] / "migrations" / "0058_accession_numbers.sql"
+_MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
+# Applied in this order, like the live database.
+MIGRATIONS = [_MIGRATIONS_DIR / "0058_accession_numbers.sql", _MIGRATIONS_DIR / "0059_copy_origin.sql"]
 
 # The parts of books / book_copies / profiles the migration relies on, as
 # they are in the live schema (see migrations 0001, 0002, 0004, 0022).
@@ -72,14 +74,15 @@ def db_url():
 
 @pytest.fixture
 def conn(db_url):
-    """A fresh schema with the migration applied. Autocommit, like PostgREST
+    """A fresh schema with the migrations applied. Autocommit, like PostgREST
     (one transaction per call)."""
     with psycopg.connect(db_url, autocommit=True) as setup:
         setup.execute("drop schema if exists public cascade; create schema public;")
         setup.execute(BASE_SCHEMA)
-        setup.execute(MIGRATION.read_text(encoding="utf-8"))
-        # Applying it twice must be harmless (every migration is re-runnable).
-        setup.execute(MIGRATION.read_text(encoding="utf-8"))
+        # Applying them twice must be harmless (every migration is re-runnable).
+        for _ in range(2):
+            for migration in MIGRATIONS:
+                setup.execute(migration.read_text(encoding="utf-8"))
         setup.execute("grant all on all tables in schema public to service_role;")
     with psycopg.connect(db_url, autocommit=True) as c:
         yield c
