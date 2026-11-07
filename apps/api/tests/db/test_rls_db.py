@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 from psycopg import errors
+from psycopg.types.json import Jsonb
 
 MIGRATIONS = sorted((Path(__file__).resolve().parents[2] / "migrations").glob("*.sql"))
 
-# What Supabase provides and the migrations rely on. `profiles` is created by
-# Supabase Auth's signup flow, not by a migration, so its live policies aren't
-# covered here.
+# What Supabase provides and the migrations rely on. `profiles` was created by
+# Supabase's signup flow; 0065 records its rules.
 SUPABASE_STUBS = """
 do $$ begin
   if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role; end if;
@@ -27,7 +27,7 @@ end $$;
 alter role service_role bypassrls;
 
 create schema auth;
-create table auth.users (id uuid primary key, email text, encrypted_password text);
+create table auth.users (id uuid primary key, email text, encrypted_password text, raw_user_meta_data jsonb);
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $$;
@@ -90,6 +90,7 @@ def db(conn):
     tightening = [p for p in MIGRATIONS if p.name[:4] >= "0061"]
     _apply_all(conn, [p for p in MIGRATIONS if p.name[:4] < "0061"], tightening)
 
+    conn.execute("create trigger on_auth_user_created after insert on auth.users for each row execute function handle_new_user()")
     conn.execute("""
         insert into profiles (id, email, role) values
           (%s, 'a@dlsl.edu.ph', 'student'), (%s, 'b@dlsl.edu.ph', 'student'), (%s, 'lrc@dlsl.edu.ph', 'librarian')
@@ -242,3 +243,79 @@ def test_students_keep_their_saved_books(db):
         assert c.execute("select count(*) from saved_books").fetchone()[0] == 1
         with pytest.raises(errors.InsufficientPrivilege):
             c.execute("insert into saved_books (user_id, book_id) values (%s, %s)", (STUDENT_B, book))
+
+
+# ── profiles and book_copies (0065) ──
+
+def _sign_up(db, email: str, metadata: dict) -> dict:
+    new_id = db.execute("select gen_random_uuid()").fetchone()[0]
+    db.execute("insert into auth.users (id, email, raw_user_meta_data) values (%s, %s, %s)", (new_id, email, Jsonb(metadata)))
+    role, name = db.execute("select role, full_name from profiles where id = %s", (new_id,)).fetchone()
+    return {"role": role, "full_name": name}
+
+
+@pytest.mark.parametrize("email", ["attacker@gmail.com", "someone_new@dlsl.edu.ph", "first.last@dlsl.edu.ph"])
+@pytest.mark.parametrize("asked_for", ["librarian", "faculty", "student"])
+def test_signing_up_cant_choose_a_role(db, email, asked_for):
+    expected = {"attacker@gmail.com": "guest", "someone_new@dlsl.edu.ph": "student", "first.last@dlsl.edu.ph": "faculty"}
+    assert _sign_up(db, email, {"role": asked_for})["role"] == expected[email]
+
+
+@pytest.mark.parametrize("email, role", [
+    ("shana_czane_cruzat@dlsl.edu.ph", "student"),
+    ("khatrina.joice.gonzales@dlsl.edu.ph", "faculty"),
+    ("mixed.name_here@dlsl.edu.ph", "student"),
+    ("plainname@dlsl.edu.ph", "student"),
+    ("UPPER_CASE@DLSL.EDU.PH", "student"),
+    ("outsider@yahoo.com", "guest"),
+])
+def test_the_role_comes_from_the_email_address(db, email, role):
+    assert _sign_up(db, email, {})["role"] == role
+
+
+def test_sign_up_keeps_the_name(db):
+    assert _sign_up(db, "a_b@dlsl.edu.ph", {"full_name": "Ana Reyes"})["full_name"] == "Ana Reyes"
+    assert _sign_up(db, "c_d@dlsl.edu.ph", {"name": "Ben Cruz"})["full_name"] == "Ben Cruz"
+
+
+@pytest.mark.parametrize("statement", [
+    "update profiles set role = 'librarian'",
+    "delete from profiles",
+    "truncate profiles cascade",
+    f"insert into profiles (id, email, role) values (gen_random_uuid(), 'x@y.z', 'librarian')",
+    "update book_copies set status = 'available'",
+    "delete from book_copies",
+    "truncate book_copies cascade",
+])
+@pytest.mark.parametrize("user, role", [(STUDENT_A, "authenticated"), (LIBRARIAN, "authenticated"), (None, "anon")])
+def test_browsers_cant_write_profiles_or_copies(db, user, role, statement):
+    with _As(db, user, role=role) as c:
+        with pytest.raises(errors.InsufficientPrivilege):
+            c.execute(statement)
+
+
+def test_a_student_reads_only_their_own_profile(db):
+    with _As(db, STUDENT_A) as c:
+        assert c.execute("select id::text from profiles").fetchall() == [(STUDENT_A,)]
+
+
+def test_a_librarian_reads_every_profile(db):
+    with _As(db, LIBRARIAN) as c:
+        assert c.execute("select count(*) from profiles").fetchone()[0] == 3
+
+
+def test_logged_out_visitors_see_no_profiles(db):
+    with _As(db, None, role="anon") as c:
+        assert c.execute("select count(*) from profiles").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("user", [STUDENT_A, LIBRARIAN])
+def test_copies_are_only_read_through_the_api(db, user):
+    with _As(db, user) as c:
+        assert c.execute("select count(*) from book_copies").fetchone()[0] == 0
+
+
+def test_the_service_role_can_still_change_a_role(db):
+    with _As(db, None, role="service_role") as c:
+        c.execute("update profiles set role = 'faculty' where id = %s", (STUDENT_A,))
+    assert db.execute("select role from profiles where id = %s", (STUDENT_A,)).fetchone()[0] == "faculty"

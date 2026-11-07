@@ -119,6 +119,8 @@ Never use Tailwind's `text-sm` etc. for font sizes — use the CSS variables.
 - **`components/chat/shared/`** — shared chat UI (window, input, header, sidebar, message) used by the assistant pages across all three roles.
 - **`components/ui/notifications/NotificationContext.tsx`** — React context for notification state.
 
+`profiles.role` only ever comes from `handle_new_user()` (the email address) or a service-role change, never from user metadata, which the user controls. An account that needs another role, such as a replacement shared librarian login, is changed by hand afterwards.
+
 ## Scheduled jobs
 
 - `supabase/cron/loan_reminders_schedule.sql`: daily loan reminders (Edge Function).
