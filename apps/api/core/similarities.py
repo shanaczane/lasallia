@@ -8,8 +8,16 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from supabase import Client
 
+from core.paging import fetch_all_rows
+
 TOP_N_NEIGHBORS = 30
 MIN_SCORE = 0.05
+
+# Similarity is worked out for this many books at a time, so memory grows
+# with the catalog, not with its square. The scores are the same.
+CHUNK_BOOKS = 256
+# Rows sent to the database per call.
+WRITE_BATCH_ROWS = 5000
 
 # Repeating a field gives it more weight: title counts most, then subject
 # and author, then description.
@@ -40,8 +48,9 @@ class RebuildResult:
 
 def rebuild_similarities(admin: Client) -> RebuildResult:
     """Recomputes every book's top 30 similar books and replaces the whole
-    book_similarities table. The catalog is small enough for a full rebuild."""
-    books = admin.table("books").select("id, title, author, subject, abstract").execute().data
+    book_similarities table. Rows are staged in batches and published in one
+    transaction, so the live table stays whole if this stops partway."""
+    books = fetch_all_rows(lambda: admin.table("books").select("id, title, author, subject, abstract").order("id"))
 
     texts = [build_feature_text(b) for b in books]
     usable_idx = [i for i, t in enumerate(texts) if t.strip()]
@@ -49,7 +58,8 @@ def rebuild_similarities(admin: Client) -> RebuildResult:
 
     if len(usable_idx) < 2:
         # Too few books to compare; TF-IDF would fail.
-        admin.rpc("replace_book_similarities", {"rows": []}).execute()
+        admin.rpc("begin_book_similarities_rebuild", {}).execute()
+        admin.rpc("publish_book_similarities", {}).execute()
         return RebuildResult(updated=0, skipped_book_ids=[b["id"] for b in books])
 
     usable_books = [books[i] for i in usable_idx]
@@ -65,29 +75,41 @@ def rebuild_similarities(admin: Client) -> RebuildResult:
     for i in zero_rows:
         skipped_book_ids.append(usable_books[i]["id"])
 
-    sim = cosine_similarity(matrix)
+    admin.rpc("begin_book_similarities_rebuild", {}).execute()
 
     rows: list[dict] = []
     updated = 0
-    for i, book in enumerate(usable_books):
-        if i in zero_rows:
-            continue
-        scores = sim[i].copy()
-        scores[i] = -1  # exclude self
-        for j in zero_rows:
-            scores[j] = -1  # exclude neighbors with no usable text of their own
+    zero_columns = list(zero_rows)
+    for chunk_start in range(0, len(usable_books), CHUNK_BOOKS):
+        chunk_scores = cosine_similarity(matrix[chunk_start:chunk_start + CHUNK_BOOKS], matrix)
+        for offset, scores in enumerate(chunk_scores):
+            i = chunk_start + offset
+            if i in zero_rows:
+                continue
+            scores[i] = -1  # exclude self
+            scores[zero_columns] = -1  # exclude neighbors with no usable text of their own
 
-        ranked = np.argsort(scores)[::-1]
-        neighbors = [(j, scores[j]) for j in ranked if scores[j] > MIN_SCORE][:TOP_N_NEIGHBORS]
+            ranked = np.argsort(scores)[::-1]
+            neighbors = []
+            for j in ranked:
+                if scores[j] <= MIN_SCORE or len(neighbors) == TOP_N_NEIGHBORS:
+                    break
+                neighbors.append((j, scores[j]))
 
-        for rank, (j, score) in enumerate(neighbors, start=1):
-            rows.append({
-                "book_id": book["id"],
-                "neighbor_book_id": usable_books[j]["id"],
-                "score": float(score),
-                "rank": rank,
-            })
-        updated += 1
+            for rank, (j, score) in enumerate(neighbors, start=1):
+                rows.append({
+                    "book_id": usable_books[i]["id"],
+                    "neighbor_book_id": usable_books[j]["id"],
+                    "score": float(score),
+                    "rank": rank,
+                })
+            updated += 1
 
-    admin.rpc("replace_book_similarities", {"rows": rows}).execute()
+        if len(rows) >= WRITE_BATCH_ROWS:
+            admin.rpc("stage_book_similarities", {"rows": rows}).execute()
+            rows = []
+
+    if rows:
+        admin.rpc("stage_book_similarities", {"rows": rows}).execute()
+    admin.rpc("publish_book_similarities", {}).execute()
     return RebuildResult(updated=updated, skipped_book_ids=skipped_book_ids)

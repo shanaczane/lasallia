@@ -25,7 +25,7 @@ router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
 # "For You" is for students and faculty only.
 DEFAULT_LIMIT = 8
-STORED_LIMIT = 20  # must match STORED_PER_STUDENT in jobs/rebuild_recommendations.py
+STORED_LIMIT = 20  # must match STORED_PER_STUDENT in core/recommendation_rebuild.py
 
 # Personal picks older than this are skipped in favor of the popular list.
 STALE_AFTER_DAYS = 7

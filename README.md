@@ -100,14 +100,20 @@ pnpm dev:api    # http://localhost:8000 (check http://localhost:8000/health)
 
 **Database changes** are SQL files in `apps/api/migrations/`. Run new ones in the Supabase SQL editor, in number order.
 
-**Recommendations** are rebuilt by hand, in this order:
+**Recommendations** are rebuilt every night at 2:00 AM Manila time (`supabase/cron/recommendation_rebuild_schedule.sql`). To rebuild by hand:
 
 ```bash
 cd apps/api
-venv/Scripts/python.exe jobs/rebuild_similarities.py
-venv/Scripts/python.exe jobs/rebuild_cooccurrence.py
-venv/Scripts/python.exe jobs/rebuild_recommendations.py
+venv/Scripts/python.exe jobs/rebuild_all.py
 ```
+
+To see how one student's recommendations were worked out:
+
+```bash
+venv/Scripts/python.exe scripts/explain_recommendations.py <student id or email>
+```
+
+**API tests** run from `apps/api`: `venv/Scripts/python.exe -m pytest`. The tests in `tests/db` also need `TEST_DATABASE_URL`, a throwaway Postgres (see `tests/db/conftest.py`); they're skipped without it.
 
 ## Deployment
 

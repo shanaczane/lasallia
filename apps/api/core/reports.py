@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from supabase import Client
 
 from core.calendar import compute_fine
+from core.paging import fetch_all_rows as _fetch_all_rows
 from schemas.reports import (
     Bucket,
     CatalogueSlice,
@@ -90,19 +91,6 @@ def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
             loan["status"] = "overdue"
         result.append(loan)
     return result
-
-
-def _fetch_all_rows(make_query, page_size: int = 1000) -> list[dict]:
-    """Every row of a select, page by page (PostgREST returns at most 1000).
-    make_query builds a fresh query for each page."""
-    rows: list[dict] = []
-    start = 0
-    while True:
-        page = make_query().range(start, start + page_size - 1).execute().data
-        rows.extend(page)
-        if len(page) < page_size:
-            return rows
-        start += page_size
 
 
 def catalogue_report(admin: Client, filters: ReportFilters) -> list[CatalogueSlice]:

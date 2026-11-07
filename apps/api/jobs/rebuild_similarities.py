@@ -1,4 +1,5 @@
-# Rebuilds the similar-books table (logic in core/similarities.py).
+# Rebuilds the similar-books table (logic in core/similarities.py). Scheduled
+# nightly; see jobs/rebuild_all.py for all three steps.
 #
 # Usage: venv/Scripts/python.exe jobs/rebuild_similarities.py
 

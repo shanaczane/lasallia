@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from supabase import Client
 
 from core.cooccurrence import LIFT_CEILING
+from core.paging import fetch_all_rows, fetch_rows_for_ids
 
 # How much each kind of history counts. Fulfilled reservations already
 # count as loans; expired and cancelled ones don't count.
@@ -62,12 +63,47 @@ class _Source:
     book_id: str
     weight: float  # base weight × recency decay, already combined
     verb: str  # "borrowed" or "reserved" — for the reason string
+    # The parts of the weight, for scripts/explain_recommendations.py.
+    kind: str = ""  # e.g. "Loan (returned)"
+    base_weight: float = 0.0
+    days_since: float = 0.0
+    decay: float = 0.0
+
+
+@dataclass
+class ScoredPick:
+    """One recommendation and how its score was reached."""
+    book_id: str
+    score: float
+    reason_book_id: str | None
+    reason: str
+    content_score: float
+    similarities: dict[str, float]   # source book id -> similarity
+    contributions: dict[str, float]  # source book id -> similarity × source weight
+    lift: float | None
+    normalized_boost: float
+    lift_multiplier: float
+    program_multiplier: float
+
+
+@dataclass
+class StudentScoring:
+    """Everything score_student worked out, picks in final rank order."""
+    computed_at: datetime
+    sources: dict[str, _Source]
+    picks: list[ScoredPick]
+    candidate_count: int
+    titles: dict[str, str]
+    categories: dict[str, str | None]
+
+
+def _days_since(anchor_iso: str, now: datetime) -> float:
+    anchor = datetime.fromisoformat(anchor_iso)
+    return max((now - anchor).total_seconds() / 86400, 0)
 
 
 def _recency_decay(anchor_iso: str, now: datetime) -> float:
-    anchor = datetime.fromisoformat(anchor_iso)
-    days_since = max((now - anchor).total_seconds() / 86400, 0)
-    return 0.5 ** (days_since / RECENCY_HALF_LIFE_DAYS)
+    return 0.5 ** (_days_since(anchor_iso, now) / RECENCY_HALF_LIFE_DAYS)
 
 
 def _collect_sources(admin: Client, student_id: str, now: datetime) -> dict[str, _Source]:
@@ -75,28 +111,32 @@ def _collect_sources(admin: Client, student_id: str, now: datetime) -> dict[str,
     up more than once, only its strongest event counts."""
     sources: dict[str, _Source] = {}
 
-    def consider(book_id: str, base_weight: float, anchor_iso: str, verb: str) -> None:
-        weight = base_weight * _recency_decay(anchor_iso, now)
+    def consider(book_id: str, base_weight: float, anchor_iso: str, verb: str, kind: str) -> None:
+        decay = _recency_decay(anchor_iso, now)
+        weight = base_weight * decay
         existing = sources.get(book_id)
         if existing is None or weight > existing.weight:
-            sources[book_id] = _Source(book_id=book_id, weight=weight, verb=verb)
+            sources[book_id] = _Source(
+                book_id=book_id, weight=weight, verb=verb, kind=kind,
+                base_weight=base_weight, days_since=_days_since(anchor_iso, now), decay=decay,
+            )
 
     # Runs on live requests too, so fetch loans and reservations in parallel.
     with ThreadPoolExecutor(max_workers=2) as pool:
-        loans_future = pool.submit(
-            lambda: admin.table("loans")
+        loans_future = pool.submit(fetch_all_rows, lambda: (
+            admin.table("loans")
             .select("status, borrowed_at, book_copies(book_id)")
             .eq("student_id", student_id)
-            .execute()
-        )
-        reservations_future = pool.submit(
-            lambda: admin.table("reservations")
+            .order("id")
+        ))
+        reservations_future = pool.submit(fetch_all_rows, lambda: (
+            admin.table("reservations")
             .select("book_id, status, requested_at")
             .eq("user_id", student_id)
-            .execute()
-        )
-        loans = loans_future.result().data
-        reservations = reservations_future.result().data
+            .order("id")
+        ))
+        loans = loans_future.result()
+        reservations = reservations_future.result()
 
     for l in loans:
         base_weight = LOAN_WEIGHTS.get(l["status"])
@@ -104,12 +144,12 @@ def _collect_sources(admin: Client, student_id: str, now: datetime) -> dict[str,
         book_id = copy.get("book_id") if copy else None
         if base_weight is None or book_id is None:
             continue
-        consider(book_id, base_weight, l["borrowed_at"], "borrowed")
+        consider(book_id, base_weight, l["borrowed_at"], "borrowed", f"Loan ({l['status']})")
 
     for r in reservations:
         if r["status"] not in ACTIVE_RESERVATION_STATUSES:
             continue
-        consider(r["book_id"], RESERVATION_WEIGHT, r["requested_at"], "reserved")
+        consider(r["book_id"], RESERVATION_WEIGHT, r["requested_at"], "reserved", f"Reservation ({r['status']})")
 
     return sources
 
@@ -126,12 +166,12 @@ def _non_borrowable_book_ids(admin: Client) -> set[str]:
     if _non_borrowable_cache is not None and now - _non_borrowable_cache[0] < NON_BORROWABLE_CACHE_TTL_SECONDS:
         return _non_borrowable_cache[1]
 
-    rows = (
+    rows = fetch_all_rows(lambda: (
         admin.table("books")
         .select("id")
         .in_("collection_type", list(NON_BORROWABLE_COLLECTION_TYPES))
-        .execute()
-    ).data
+        .order("id")
+    ))
     ids = {b["id"] for b in rows}
     _non_borrowable_cache = (now, ids)
     return ids
@@ -167,10 +207,25 @@ def get_currently_excluded_book_ids(admin: Client, student_id: str) -> set[str]:
 
 
 def get_recommendations_for_student(admin: Client, student_id: str, limit: int = DEFAULT_LIMIT) -> list[Recommendation]:
+    return [
+        Recommendation(book_id=p.book_id, score=p.score, reason_book_id=p.reason_book_id, reason=p.reason)
+        for p in score_student(admin, student_id, limit).picks
+    ]
+
+
+def score_student(admin: Client, student_id: str, limit: int = DEFAULT_LIMIT) -> StudentScoring:
+    """The whole calculation for one student. Used by the nightly job and by
+    scripts/explain_recommendations.py, so the two always agree."""
     now = datetime.now(timezone.utc)
     sources = _collect_sources(admin, student_id, now)
+    titles: dict[str, str] = {}
+    categories: dict[str, str | None] = {}
+
+    def result(picks: list[ScoredPick], candidate_count: int = 0) -> StudentScoring:
+        return StudentScoring(now, sources, picks, candidate_count, titles, categories)
+
     if not sources:
-        return []
+        return result([])
 
     # For the program boost. Only runs in the nightly job, so the extra
     # query is fine.
@@ -178,15 +233,17 @@ def get_recommendations_for_student(admin: Client, student_id: str, limit: int =
     student_program = profile_res.data[0]["program"] if profile_res.data else None
 
     source_ids = list(sources.keys())
-    neighbor_rows = (
+    neighbor_rows = fetch_rows_for_ids(lambda ids: (
         admin.table("book_similarities")
         .select("book_id, neighbor_book_id, score")
-        .in_("book_id", source_ids)
-        .execute()
-    ).data
+        .in_("book_id", ids)
+        .order("book_id")
+        .order("rank")
+    ), source_ids)
 
     # candidate_book_id -> { source_book_id -> contribution }
     contributions: dict[str, dict[str, float]] = {}
+    similarities: dict[str, dict[str, float]] = {}
     for row in neighbor_rows:
         source = sources.get(row["book_id"])
         if source is None:
@@ -194,33 +251,36 @@ def get_recommendations_for_student(admin: Client, student_id: str, limit: int =
         contribution = row["score"] * source.weight
         candidate_id = row["neighbor_book_id"]
         contributions.setdefault(candidate_id, {})[row["book_id"]] = contribution
+        similarities.setdefault(candidate_id, {})[row["book_id"]] = row["score"]
 
     excluded = _excluded_book_ids(admin, student_id, set(source_ids))
     candidate_ids = [cid for cid in contributions if cid not in excluded]
     if not candidate_ids:
-        return []
+        books = fetch_rows_for_ids(lambda ids: (
+            admin.table("books").select("id, title, category").in_("id", ids).order("id")
+        ), source_ids)
+        titles.update({b["id"]: b["title"] for b in books})
+        return result([])
 
     # "Students also borrowed" data. Usually empty for now, so no boost.
-    cooc_rows = (
+    cooc_rows = fetch_rows_for_ids(lambda ids: (
         admin.table("book_cooccurrence")
         .select("book_id, neighbor_book_id, lift")
-        .in_("book_id", source_ids)
-        .execute()
-    ).data
+        .in_("book_id", ids)
+        .order("book_id")
+        .order("neighbor_book_id")
+    ), source_ids)
     cooc_lookup = {(r["book_id"], r["neighbor_book_id"]): r["lift"] for r in cooc_rows}
 
     needed_book_ids = set(candidate_ids) | set(source_ids)
-    books = (
-        admin.table("books")
-        .select("id, title, category")
-        .in_("id", list(needed_book_ids))
-        .execute()
-    ).data
-    titles = {b["id"]: b["title"] for b in books}
-    categories = {b["id"]: b.get("category") for b in books}
+    books = fetch_rows_for_ids(lambda ids: (
+        admin.table("books").select("id, title, category").in_("id", ids).order("id")
+    ), needed_book_ids)
+    titles.update({b["id"]: b["title"] for b in books})
+    categories.update({b["id"]: b.get("category") for b in books})
     verbs = {sid: s.verb for sid, s in sources.items()}
 
-    scored: list[tuple[str, float, str, str]] = []
+    scored: list[ScoredPick] = []
     for candidate_id in candidate_ids:
         cand_contributions = contributions[candidate_id]
         content_score = sum(cand_contributions.values())
@@ -228,38 +288,48 @@ def get_recommendations_for_student(admin: Client, student_id: str, limit: int =
 
         # Boost uses the same book the reason names, so the two agree.
         lift = cooc_lookup.get((reason_book_id, candidate_id))
+        normalized_boost = 0.0
+        lift_multiplier = 1.0
         if lift is not None:
             # Lift 1.0 means no link; below 1 gives no boost (never a penalty).
             normalized_boost = max(0.0, min((lift - 1) / (LIFT_CEILING - 1), 1.0))
-            score = content_score * (1 + COOCCURRENCE_ALPHA * normalized_boost)
+            lift_multiplier = 1 + COOCCURRENCE_ALPHA * normalized_boost
+            score = content_score * lift_multiplier
             reason = f"{reason} · popular with students who read it"
         else:
             score = content_score
 
         # Stacks with the boost above.
+        program_multiplier = 1.0
         if student_program and categories.get(candidate_id) == student_program:
-            score *= (1 + PROGRAM_ALPHA)
+            program_multiplier = 1 + PROGRAM_ALPHA
+            score *= program_multiplier
             reason = f"{reason} · matches your program"
 
-        scored.append((candidate_id, score, reason_book_id, reason))
+        scored.append(ScoredPick(
+            book_id=candidate_id, score=score, reason_book_id=reason_book_id, reason=reason,
+            content_score=content_score, similarities=similarities[candidate_id], contributions=cand_contributions,
+            lift=lift, normalized_boost=normalized_boost, lift_multiplier=lift_multiplier,
+            program_multiplier=program_multiplier,
+        ))
 
     # Highest score first; book_id breaks ties so the order is stable.
-    scored.sort(key=lambda t: (-t[1], t[0]))
+    scored.sort(key=lambda p: (-p.score, p.book_id))
 
     # At most 3 picks per category, for variety. Uses `category` because
     # `subject` is mostly empty.
-    results: list[Recommendation] = []
+    picks: list[ScoredPick] = []
     category_counts: dict[str | None, int] = {}
-    for candidate_id, score, reason_book_id, reason in scored:
-        if len(results) >= limit:
+    for pick in scored:
+        if len(picks) >= limit:
             break
-        category = categories.get(candidate_id)
+        category = categories.get(pick.book_id)
         if category_counts.get(category, 0) >= DIVERSITY_CAP_PER_CATEGORY:
             continue
         category_counts[category] = category_counts.get(category, 0) + 1
-        results.append(Recommendation(book_id=candidate_id, score=score, reason_book_id=reason_book_id, reason=reason))
+        picks.append(pick)
 
-    return results
+    return result(picks, len(scored))
 
 
 def _borrow_counts(admin: Client, since_iso: str, program: str | None = None) -> tuple[dict[str, int], set[str]]:
@@ -267,12 +337,12 @@ def _borrow_counts(admin: Client, since_iso: str, program: str | None = None) ->
     optionally for one program only. Counted in Python (no GROUP BY in
     PostgREST)."""
     # loans has two links to profiles, so name the borrower one.
-    rows = (
+    rows = fetch_all_rows(lambda: (
         admin.table("loans")
         .select("student_id, book_copies(book_id), profiles!loans_student_id_fkey(program)")
         .gte("borrowed_at", since_iso)
-        .execute()
-    ).data
+        .order("id")
+    ))
 
     counts: dict[str, int] = {}
     students: set[str] = set()

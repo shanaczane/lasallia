@@ -141,6 +141,8 @@ class _Query:
             matched = matched[self._range[0]: self._range[1] + 1]
         if self._limit is not None:
             matched = matched[: self._limit]
+        if self.db.max_rows is not None:
+            matched = matched[: self.db.max_rows]
         return SimpleNamespace(data=copy.deepcopy(matched), count=total)
 
 
@@ -161,6 +163,8 @@ class FakeSupabase:
         self.rpc_handlers: dict = {}
         # {table: {column: value}}, what Postgres would fill in on insert.
         self.column_defaults: dict = {}
+        # PostgREST's row limit, for tests of paging.
+        self.max_rows: int | None = None
         self.writes: list = []
 
     def table(self, name):

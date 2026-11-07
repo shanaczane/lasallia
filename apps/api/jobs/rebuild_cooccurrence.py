@@ -1,5 +1,5 @@
 # Rebuilds the "students also borrowed" table (logic in core/cooccurrence.py).
-# Not scheduled yet; run these by hand in this order:
+# Scheduled nightly; to run by hand, use this order (or jobs/rebuild_all.py):
 #   1. jobs/rebuild_similarities.py
 #   2. jobs/rebuild_cooccurrence.py   <- this one
 #   3. jobs/rebuild_recommendations.py

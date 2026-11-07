@@ -19,6 +19,9 @@ RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
 # and librarian write actions are refused.
 LIBRARIAN_PROFILE_SECRET: str = os.getenv("LIBRARIAN_PROFILE_SECRET", "")
 
+# Sent by pg_cron to /internal/*. Without it, those endpoints are refused.
+INTERNAL_CRON_SECRET: str = os.getenv("INTERNAL_CRON_SECRET", "")
+
 _missing = [
     name for name, val in {
         "SUPABASE_URL": SUPABASE_URL,

@@ -26,6 +26,7 @@ Never commit actual values to GitHub. Get the values from the lead dev.
 | `RESEND_API_KEY` | Resend API key for notification emails. Optional: without it, notifications are in-app only | resend.com → API Keys |
 | `FRONTEND_URL` | Frontend URL for CORS | `http://localhost:3000` for local, `https://www.lasallia.com` for production |
 | `FRONTEND_ORIGIN_REGEX` | Optional. Extra allowed frontend origins as a regex (e.g. Vercel preview URLs) | — |
+| `INTERNAL_CRON_SECRET` | Sent by pg_cron to the nightly rebuild endpoint, so it must match `supabase/cron/recommendation_rebuild_schedule.sql`. Without it, scheduled jobs are refused | Generate one: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `LIBRARIAN_PROFILE_SECRET` | Signs the librarian active-profile token. Required for librarian write actions, which are refused without it. Changing it ends every active librarian session | Generate one: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 
 ---

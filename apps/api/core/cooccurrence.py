@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 from supabase import Client
 
+from core.paging import fetch_all_rows
+
 # Privacy rule: pairs borrowed by fewer than 3 students are never stored,
 # or they could reveal what one person borrowed.
 MIN_COOCCURRENCE_STUDENTS = 3
@@ -60,7 +62,7 @@ def compute_lift_pairs(student_books: dict[str, set[str]]) -> list[dict]:
 
 
 def _load_student_books(admin: Client) -> dict[str, set[str]]:
-    rows = admin.table("loans").select("student_id, book_copies(book_id)").execute().data
+    rows = fetch_all_rows(lambda: admin.table("loans").select("student_id, book_copies(book_id)").order("id"))
     student_books: dict[str, set[str]] = defaultdict(set)
     for row in rows:
         book_id = (row.get("book_copies") or {}).get("book_id")
