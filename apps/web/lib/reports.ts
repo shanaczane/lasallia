@@ -223,7 +223,7 @@ export async function fetchInventoryReportItems(filters: ReportFilters): Promise
 // ─── Report export (PDF, Excel, CSV built by the API) ─────────────────────
 // Only Overdue Loans so far; the other tabs keep downloadCsv and Print.
 
-export type ExportableReport = "overdue"
+export type ExportableReport = "overdue" | "audit_log"
 export type ReportExportFormat = "pdf" | "xlsx" | "csv"
 
 // Filters for an export. Dates are Manila days ("YYYY-MM-DD"), both included.
@@ -235,6 +235,9 @@ export type ReportExportRequest = {
   program?: string
   college?: string
   year_level?: number
+  // Audit log only.
+  librarian_profile_id?: string
+  action?: string
 }
 
 export type ReportSignatureTitle = {
@@ -296,7 +299,7 @@ export async function fetchExportAiSummary(req: ReportExportRequest): Promise<st
   return body.summary ?? null
 }
 
-const EXPORT_SLUGS: Record<ExportableReport, string> = { overdue: "overdue-loans" }
+const EXPORT_SLUGS: Record<ExportableReport, string> = { overdue: "overdue-loans", audit_log: "audit-log" }
 
 // Same name the API gives the file (core/report_export/definitions.py).
 export function exportFileName(req: ReportExportRequest, format: ReportExportFormat): string {

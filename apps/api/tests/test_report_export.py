@@ -328,12 +328,12 @@ BODY = {"report": "overdue", "date_from": "2026-11-01", "date_to": "2026-11-30"}
     ("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"),
     ("csv", "text/csv", "csv"),
 ])
-def test_export_returns_each_format_and_writes_nothing(fake, fmt, content_type, extension):
+def test_export_returns_each_format_and_only_writes_the_audit_entry(fake, fmt, content_type, extension):
     res = _app().post("/reports/export", json={**BODY, "format": fmt, "prepared_by_name": "Ana Reyes"})
     assert res.status_code == 200, res.text
     assert res.headers["content-type"].startswith(content_type)
     assert f'filename="overdue-loans_2026-11-01_to_2026-11-30.{extension}"' in res.headers["content-disposition"]
-    assert fake.writes == []
+    assert [w[:2] for w in fake.writes] == [("audit_log", "insert")]
 
 
 def test_export_prints_the_reviewed_summary_with_its_label(fake):

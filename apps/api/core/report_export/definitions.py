@@ -3,16 +3,17 @@
 # chart and the columns. The PDF, Excel and CSV exporters only render a
 # ReportData, so no report logic lives in them.
 #
-# Only Overdue Loans is defined so far; the other reports keep the page's
-# own CSV and Print until they're added here.
+# Only Overdue Loans and the Audit Log are defined so far; the other reports
+# keep the page's own CSV and Print until they're added here.
 
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Callable, Literal
 
-from core.dates import manila_date_text, manila_now, report_bound
-from core.reports import ReportFilters, overdue_loans
+from core.audit import ACTIONS, audit_query
+from core.dates import MANILA, manila_date_text, manila_now, report_bound
+from core.reports import ReportFilters, _fetch_all_rows, overdue_loans
 
 ColumnKind = Literal["text", "int", "money", "date"]
 
@@ -50,6 +51,8 @@ class ExportFilters:
     program: str | None = None
     college: str | None = None
     year_level: int | None = None
+    librarian_profile_id: str | None = None
+    action: str | None = None
 
     def to_report_filters(self) -> ReportFilters:
         return ReportFilters(
@@ -272,6 +275,99 @@ def build_overdue(admin, filters: ExportFilters) -> ReportData:
     )
 
 
+AUDIT_COLUMNS = [
+    Column("created_at", "Date and time", "date", 20),
+    Column("librarian", "Librarian", "text", 20),
+    Column("action", "Action", "text", 22),
+    Column("entity", "Record", "text", 24),
+    Column("details", "Details", "text", 50),
+]
+_AUDIT_CHART_BARS = 8
+
+
+def _audit_detail_text(details: dict) -> str:
+    parts = []
+    for key, value in details.items():
+        if key == "changed" and isinstance(value, dict):
+            parts.extend(f"{field}: {change.get('from')} → {change.get('to')}" for field, change in value.items())
+        else:
+            parts.append(f"{key}: {value}")
+    return "; ".join(parts)
+
+
+def build_audit_log(admin, filters: ExportFilters) -> ReportData:
+    now = manila_now()
+    bounds = filters.to_report_filters()
+    entries = _fetch_all_rows(lambda: audit_query(
+        admin, bounds.date_from, bounds.date_to, filters.librarian_profile_id, filters.action,
+    ))
+
+    labels = [ACTIONS.get(e["action"], e["action"]) for e in entries]
+    table = [
+        {
+            "created_at": manila_time_text(datetime.fromisoformat(e["created_at"]).astimezone(MANILA)),
+            "librarian": e["librarian_name"],
+            "action": label,
+            "entity": " ".join(filter(None, [e["entity_type"], e.get("entity_id")])),
+            "details": _audit_detail_text(e.get("details") or {}),
+        }
+        for e, label in zip(entries, labels)
+    ]
+
+    count = len(entries)
+    librarians = len({e["librarian_profile_id"] for e in entries})
+    by_action = Counter(labels)
+    top_actions = by_action.most_common(_AUDIT_CHART_BARS)
+
+    key_figures = [
+        KeyFigure("Actions recorded", f"{count:,}", count, "#,##0"),
+        KeyFigure("Librarians", f"{librarians:,}", librarians, "#,##0"),
+        KeyFigure("Most common action", top_actions[0][0] if top_actions else "None"),
+    ]
+    summary = (
+        f"{_count_text(count, 'action was', 'actions were')} recorded by "
+        f"{_count_text(librarians, 'librarian', 'librarians')}. Most common: {top_actions[0][0]} ({top_actions[0][1]:,})."
+        if count else "No librarian actions were recorded in this period."
+    )
+
+    lines = filters.filter_lines()
+    if filters.librarian_profile_id:
+        named = next((e["librarian_name"] for e in entries), None)
+        lines.append(f"Librarian: {named or 'No actions in this period'}")
+    if filters.action:
+        lines.append(f"Action: {ACTIONS.get(filters.action, filters.action)}")
+
+    period = f"Actions recorded {'on any date' if filters.period_text() == 'All dates' else filters.period_text()} (Manila time)"
+
+    return ReportData(
+        report_id="audit_log",
+        title="Audit Log",
+        period=period,
+        filters=lines,
+        generated_at=now,
+        key_figures=key_figures,
+        computed_summary=summary,
+        ai_payload={
+            "report": "Librarian audit log",
+            "period": period,
+            "actions_recorded": count,
+            "librarians": librarians,
+            "actions_by_type": dict(sorted(by_action.items())),
+        },
+        chart=Chart(
+            title="Most common actions",
+            labels=[label for label, _ in top_actions],
+            values=[n for _, n in top_actions],
+            value_label="Actions",
+        ) if count else None,
+        columns=AUDIT_COLUMNS,
+        rows=table,
+        empty_message="No librarian actions were recorded in this period.",
+        filename_stem=_filename_stem("audit-log", filters),
+    )
+
+
 REPORTS: dict[str, ReportDefinition] = {
     "overdue": ReportDefinition(id="overdue", title="Overdue Loans", build=build_overdue),
+    "audit_log": ReportDefinition(id="audit_log", title="Audit Log", build=build_audit_log),
 }

@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from core.audit import log_action
 from core.deps import require_librarian, require_librarian_profile
 from core.loans import find_removal_blocker
 from core.supabase import get_admin_client
@@ -65,6 +66,7 @@ def archive(book_id: str, reason: str | None = None, librarian: UserProfile = De
         raise HTTPException(status.HTTP_409_CONFLICT, f'"{book[0]["title"]}" cannot be archived — it {blocker}.')
 
     archive_book(admin, book_id, librarian.id, reason=reason)
+    log_action(admin, librarian, "book.archive", "book", book_id, {"title": book[0]["title"], "reason": reason})
 
 
 @router.post("/{book_id}/restore", status_code=status.HTTP_204_NO_CONTENT)
@@ -74,6 +76,7 @@ def restore(book_id: str, librarian: UserProfile = Depends(require_librarian_pro
     if not book:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
     restore_book(admin, book_id, librarian.id)
+    log_action(admin, librarian, "book.restore", "book", book_id)
 
 
 @router.post("/{book_id}/dismiss", status_code=status.HTTP_204_NO_CONTENT)
@@ -83,3 +86,4 @@ def dismiss(book_id: str, reason: str | None = None, librarian: UserProfile = De
     if not book:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
     dismiss_candidate(admin, book_id, librarian.id, reason=reason)
+    log_action(admin, librarian, "book.dismiss", "book", book_id, {"reason": reason})

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from core.audit import changed_fields, log_action
 from core.deps import require_librarian, require_librarian_profile
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
@@ -41,7 +42,9 @@ def update_settings(
         return get_library_settings(get_admin_client())
 
     admin = get_admin_client()
-    _check_timers({**get_library_settings(admin), **changes})
+    before = get_library_settings(admin)
+    _check_timers({**before, **changes})
+    audited = changed_fields(before, changes)
     changes["updated_at"] = datetime.now(timezone.utc).isoformat()
     changes["updated_by"] = librarian.id
 
@@ -65,6 +68,7 @@ def update_settings(
 
     if not res.data:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not save settings")
+    log_action(admin, librarian, "settings.update", "library_settings", "1", {"changed": audited})
     # Re-read so numbers are converted the same way as everywhere else.
     return get_library_settings(admin)
 

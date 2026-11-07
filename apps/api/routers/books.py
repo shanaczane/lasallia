@@ -9,6 +9,7 @@ from postgrest.exceptions import APIError
 from core.accession import (
     accession_counters, accession_in_use, accession_sort_key, clean_accession_input, normalize_accession_number,
 )
+from core.audit import changed_fields, log_action
 from core.deps import get_optional_user, require_librarian, require_librarian_profile
 from core.embeddings import embed_single_book
 from core.importers.marc import LARGE_JUMP, large_jump
@@ -275,6 +276,10 @@ def create_book(body: BookCreate, librarian: UserProfile = Depends(require_libra
     }).execute().data)
 
     book = result["book"]
+    log_action(admin, librarian, "book.create", "book", book["id"], {
+        "title": book.get("title"),
+        "accession_numbers": result["accession_numbers"],
+    })
     # After the transaction, like every other save: a failure here never
     # undoes the book, and reembed_books catches anything it missed.
     embed_single_book(admin, book)
@@ -284,7 +289,7 @@ def create_book(body: BookCreate, librarian: UserProfile = Depends(require_libra
 @router.patch("/{book_id}", response_model=LibrarianBook)
 def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends(require_librarian_profile)):
     admin = get_admin_client()
-    existing = admin.table("books").select("id, accession_no, isbn").eq("id", book_id).execute()
+    existing = admin.table("books").select("*").eq("id", book_id).execute()
     if not existing.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
     current = existing.data[0]
@@ -306,6 +311,10 @@ def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends
             _check_isbn_duplicate(admin, payload["isbn"], exclude_book_id=book_id)
 
     res = admin.table("books").update(payload).eq("id", book_id).execute()
+    log_action(admin, librarian, "book.update", "book", book_id, {
+        "title": res.data[0].get("title"),
+        "changed": changed_fields(current, payload),
+    })
     embed_single_book(admin, res.data[0])
     return _book_with_counts(admin, res.data[0])
 
@@ -321,6 +330,7 @@ def add_copies(book_id: str, body: AddCopiesRequest, librarian: UserProfile = De
     }).execute().data)
 
     book = admin.table("books").select("*").eq("id", book_id).execute().data[0]
+    log_action(admin, librarian, "copy.add", "book", book_id, {"title": book.get("title"), "accession_numbers": numbers})
     return {**_book_with_counts(admin, book), "assigned_accession_numbers": numbers}
 
 
@@ -357,6 +367,7 @@ def register_existing_copy(book_id: str, body: RegisterCopyRequest, librarian: U
         }).execute().data[0]
     except APIError as e:
         _raise_db_error(e)
+    log_action(admin, librarian, "copy.register", "book_copy", row.get("id"), {"book_id": book_id, "accession_number": accession})
     return {k: row.get(k) for k in ("id", "accession_number", "status", "shelf_location")}
 
 
@@ -383,6 +394,11 @@ def correct_accession(copy_id: str, body: CorrectAccessionRequest, librarian: Us
         }).execute().data
     except APIError as e:
         _raise_db_error(e)
+    log_action(admin, librarian, "accession.correct", "book_copy", copy_id, {
+        "old_value": row.get("old_value"),
+        "new_value": row.get("new_value"),
+        "reason": reason,
+    })
     return {**row, "corrected_by_name": librarian.full_name}
 
 
@@ -425,6 +441,7 @@ def delete_book(book_id: str, librarian: UserProfile = Depends(require_librarian
             status.HTTP_409_CONFLICT,
             f'"{title}" has related records and can\'t be deleted — try archiving it instead.',
         )
+    log_action(admin, librarian, "book.delete", "book", book_id, {"title": title})
 
 @router.get("/{book_id}", response_model=LibrarianBook)
 def get_book(book_id: str, user: UserProfile | None = Depends(get_optional_user)):
@@ -568,6 +585,7 @@ def mark_copy_found(copy_id: str, librarian: UserProfile = Depends(require_libra
             f"This copy is currently '{copy['status']}', not missing/lost/damaged/misplaced",
         )
     admin.table("book_copies").update({"status": "for_reshelving"}).eq("id", copy_id).execute()
+    log_action(admin, librarian, "copy.mark_found", "book_copy", copy_id, {"previous_status": copy["status"]})
 
 
 COVER_BUCKET = "book-covers"
@@ -612,6 +630,7 @@ def upload_book_cover(
     cover_url = bucket.get_public_url(path)
 
     admin.table("books").update({"cover_url": cover_url}).eq("id", book_id).execute()
+    log_action(admin, librarian, "book.cover", "book", book_id)
 
     # Best-effort tidy-up of the cover this replaced (only if it lives in our bucket).
     old = book_res.data[0].get("cover_url")

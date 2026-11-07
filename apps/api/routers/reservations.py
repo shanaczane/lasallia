@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
+from core.audit import log_action
 from core.deps import get_current_user, get_user_supabase, require_profile_if_librarian
 from core.notify import notify, notify_librarians
 from core.email_template import EmailContent, staff_alert
@@ -286,6 +287,10 @@ def update_reservation(
     # Tell the student if a librarian cancelled it for them.
     if user.role == "librarian" and row["user_id"] != user.id:
         admin = get_admin_client()
+        log_action(admin, user, "reservation.cancel", "reservation", reservation_id, {
+            "student_id": row["user_id"],
+            "book_id": row["book_id"],
+        })
         book_res = admin.table("books").select("title").eq("id", row["book_id"]).execute()
         book_title = book_res.data[0]["title"] if book_res.data else "A book"
         notify(

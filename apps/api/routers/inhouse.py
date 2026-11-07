@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.accession import normalize_accession_number
+from core.audit import log_action
 from core.deps import require_librarian, require_librarian_profile
 from core.notify import notify_librarians
 from core.email_template import staff_alert
@@ -68,6 +69,12 @@ def create_in_house_loan(
     db.table("book_copies").update({"status": "on_loan"}).eq("id", copy["id"]).execute()
 
     loan = loan_res.data[0]
+    log_action(db, librarian, "in_house.checkout", "in_house_loan", loan["id"], {
+        "guest_name": body.guest_name.strip(),
+        "accession_number": copy["accession_number"],
+        "visitor_type": body.visitor_type,
+        "fee_paid": body.fee_paid,
+    })
     book_res = db.table("books").select("*").eq("id", copy["book_id"]).execute()
     loan["books"] = book_res.data[0] if book_res.data else None
     loan["accession_number"] = copy["accession_number"]
@@ -117,6 +124,10 @@ def return_in_house_loan(
     copy_res = db.table("book_copies").select("id, book_id, accession_number").eq("id", loan["book_copy_id"]).execute()
     copy = copy_res.data[0]
     db.table("book_copies").update({"status": "for_reshelving"}).eq("id", copy["id"]).execute()
+    log_action(db, librarian, "in_house.return", "in_house_loan", loan_id, {
+        "guest_name": loan["guest_name"],
+        "accession_number": copy["accession_number"],
+    })
 
     book_res = db.table("books").select("*").eq("id", copy["book_id"]).execute()
     loan["books"] = book_res.data[0] if book_res.data else None

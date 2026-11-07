@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
 
+from core.audit import log_action
 from core.dates import report_bound
 from core.deps import require_librarian, require_librarian_profile
 from core.inventory import list_sessions, report_items
@@ -216,6 +217,7 @@ def _export_data(body: ReportExportFilters) -> ReportData:
     filters = ExportFilters(
         date_from=body.date_from, date_to=body.date_to, category=body.category,
         program=body.program, college=body.college, year_level=body.year_level,
+        librarian_profile_id=body.librarian_profile_id, action=body.action,
     )
     return REPORTS[body.report].build(get_admin_client(), filters)
 
@@ -257,6 +259,12 @@ def export_report(body: ReportExportRequest, librarian: UserProfile = Depends(re
     media_type, extension = _EXPORT_TYPES[body.format]
     filename = f"{data.filename_stem}.{extension}"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    log_action(get_admin_client(), librarian, "report.export", "report", body.report, {
+        "format": body.format,
+        "period": data.period,
+        "filters": data.filters,
+        "rows": len(data.rows),
+    })
 
     if body.format == "csv":
         return Response(content=build_csv(data), media_type=media_type, headers=headers)

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from core.accession import normalize_accession_number
+from core.audit import log_action
 from core.calendar import compute_fine
 from core.deps import get_current_user, get_user_supabase, require_librarian, require_librarian_profile
 from core.desk import how_identified, tap_required
@@ -150,6 +151,7 @@ def create_librarian_assisted_loan(
     copy = copy_res.data[0]
 
     # A reserved copy can only go to the student it's reserved for.
+    pickup_reservation_id = None
     if copy["status"] == "reserved":
         own_ready_reservation = (
             admin.table("reservations")
@@ -163,15 +165,27 @@ def create_librarian_assisted_loan(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "This copy is on hold for another patron's reservation")
         if session["auth_method"] != "rfid" and tap_required(get_library_settings(admin)):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Library Settings require the borrower's ID tap to pick up a reservation")
+        pickup_reservation_id = own_ready_reservation.data[0]["id"]
     elif copy["status"] != "available":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"This copy isn't available to borrow (status: {copy['status']})")
 
     check_borrow_eligibility(admin, student_id, copy["book_id"])
 
-    return create_loan_and_notify(
+    loan = create_loan_and_notify(
         admin, student_id, copy["id"], copy["book_id"], body.station_session_id,
         body.condition, body.purpose, body.notes, assisted_by=librarian.id,
     )
+    details = {
+        "student_id": student_id,
+        "book_id": copy["book_id"],
+        "accession_number": normalize_accession_number(body.accession_number),
+        "identified_by": session["auth_method"],
+    }
+    if pickup_reservation_id:
+        log_action(admin, librarian, "reservation.pickup", "reservation", pickup_reservation_id, {**details, "loan_id": loan["id"]})
+    else:
+        log_action(admin, librarian, "loan.assisted_borrow", "loan", loan["id"], details)
+    return loan
 
 # Finds the open loan for a scanned or typed accession number (returns).
 @router.get("/lookup", response_model=LoanLookupResult)
@@ -282,6 +296,7 @@ def return_loan(
             "Library Settings require the borrower's ID tap to record a payment — tap their ID, or mark the fine Unsettled",
         )
 
+    fine_paid_by = ("id_tap" if returned_by == "id_tap" else "manual") if paid_now else None
     return_fields = {
         "returned_at": datetime.now(timezone.utc).isoformat(),
         "status": "returned",
@@ -299,11 +314,27 @@ def return_loan(
             "overdue_fine_amount": round(overdue_fine, 2),
             "damage_fine_amount": damage_fine,
             "returned_verified_by": returned_by,
-            "fine_paid_verified_by": ("id_tap" if returned_by == "id_tap" else "manual") if paid_now else None,
+            "fine_paid_verified_by": fine_paid_by,
         }).eq("id", loan_id).execute()
     except Exception:
         update_res = admin.table("loans").update(return_fields).eq("id", loan_id).execute()
     loan = update_res.data[0]
+
+    log_action(admin, librarian, "loan.return", "loan", loan_id, {
+        "student_id": loan["student_id"],
+        "accession_number": copy.get("accession_number"),
+        "condition_at_return": body.condition_at_return,
+        "returned_verified_by": returned_by,
+        "fine_amount": total_fine,
+        "fine_status": return_fields["fine_status"],
+    })
+    if paid_now:
+        log_action(admin, librarian, "fine.payment", "loan", loan_id, {
+            "student_id": loan["student_id"],
+            "amount": total_fine,
+            "receipt_number": body.receipt_number,
+            "fine_paid_verified_by": fine_paid_by,
+        })
 
     # If someone reserved this book, the copy goes to them (hold shelf).
     book_full_res = admin.table("books").select("*").eq("id", copy["book_id"]).execute()
@@ -448,6 +479,13 @@ def settle_fine(
         # Migration 0058 not applied yet: save the payment anyway.
         update_res = admin.table("loans").update(fields).eq("id", loan_id).execute()
     loan = update_res.data[0]
+
+    log_action(admin, librarian, "fine.payment", "loan", loan_id, {
+        "student_id": loan["student_id"],
+        "amount": loan.get("fine_amount"),
+        "receipt_number": receipt_number,
+        "fine_paid_verified_by": paid_by,
+    })
 
     copy_res = admin.table("book_copies").select("book_id").eq("id", loan["book_copy_id"]).execute()
     book_id = copy_res.data[0]["book_id"] if copy_res.data else None

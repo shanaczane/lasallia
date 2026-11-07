@@ -135,11 +135,13 @@ class _Query:
             for r in matched:
                 rows.remove(r)
             return SimpleNamespace(data=matched, count=None)
+        # Like count="exact": every match, not just this page.
+        total = len(matched)
         if self._range is not None:
             matched = matched[self._range[0]: self._range[1] + 1]
         if self._limit is not None:
             matched = matched[: self._limit]
-        return SimpleNamespace(data=copy.deepcopy(matched), count=len(matched))
+        return SimpleNamespace(data=copy.deepcopy(matched), count=total)
 
 
 class _Rpc:

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from postgrest.exceptions import APIError
 
+from core.audit import changed_fields, log_action
 from core.deps import require_librarian, require_librarian_profile
 from core.librarian_profiles import LOCK_SECONDS, MAX_FAILED_ATTEMPTS, hash_pin, issue_token, pin_matches
 from core.settings import get_library_settings
@@ -159,6 +160,7 @@ def create_profile(body: CreateProfileRequest, librarian: ActiveLibrarian = Depe
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter the librarian's name")
     _check_name_free(admin, full_name)
     row = admin.table("librarian_profiles").insert({"full_name": full_name, "pin_hash": hash_pin(body.pin)}).execute().data[0]
+    log_action(admin, librarian, "librarian_profile.create", "librarian_profile", row["id"], {"full_name": full_name})
     return _managed(_load(admin, row["id"]))
 
 
@@ -169,7 +171,7 @@ def update_profile(
     librarian: ActiveLibrarian = Depends(require_librarian_profile),
 ):
     admin = get_admin_client()
-    _load(admin, profile_id)
+    before = _load(admin, profile_id)
     changes = body.model_dump(exclude_unset=True, exclude_none=True)
 
     if "full_name" in changes:
@@ -185,6 +187,16 @@ def update_profile(
 
     if changes:
         admin.table("librarian_profiles").update(changes).eq("id", profile_id).execute()
+
+    name = {"full_name": changes.get("full_name", before["full_name"])}
+    if changes.get("is_active") is False and before["is_active"]:
+        log_action(admin, librarian, "librarian_profile.disable", "librarian_profile", profile_id, name)
+    if changes.get("is_active") is True and not before["is_active"]:
+        log_action(admin, librarian, "librarian_profile.enable", "librarian_profile", profile_id, name)
+    if "full_name" in changes and changes["full_name"] != before["full_name"]:
+        log_action(admin, librarian, "librarian_profile.update", "librarian_profile", profile_id, {
+            "changed": changed_fields(before, {"full_name": changes["full_name"]}),
+        })
     return _managed(_load(admin, profile_id))
 
 
@@ -196,12 +208,13 @@ def reset_pin(
     librarian: ActiveLibrarian = Depends(require_librarian_profile),
 ):
     admin = get_admin_client()
-    _load(admin, profile_id)
+    target = _load(admin, profile_id)
     admin.table("librarian_profiles").update({
         "pin_hash": hash_pin(body.pin),
         "failed_attempts": 0,
         "locked_until": None,
     }).eq("id", profile_id).execute()
+    log_action(admin, librarian, "librarian_profile.reset_pin", "librarian_profile", profile_id, {"full_name": target["full_name"]})
 
 
 @router.put("/{profile_id}/staff-card", response_model=ManagedProfile)
@@ -211,7 +224,7 @@ def link_staff_card(
     librarian: ActiveLibrarian = Depends(require_librarian_profile),
 ):
     admin = get_admin_client()
-    _load(admin, profile_id)
+    target = _load(admin, profile_id)
     uid = body.rfid_uid.strip()
     if not uid:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Tap the staff ID on the reader")
@@ -225,12 +238,14 @@ def link_staff_card(
         if e.code == "23505":
             raise HTTPException(status.HTTP_409_CONFLICT, "This staff ID is already linked to another librarian")
         raise
+    log_action(admin, librarian, "librarian_profile.link_card", "librarian_profile", profile_id, {"full_name": target["full_name"]})
     return _managed(_load(admin, profile_id))
 
 
 @router.delete("/{profile_id}/staff-card", response_model=ManagedProfile)
 def unlink_staff_card(profile_id: str, librarian: ActiveLibrarian = Depends(require_librarian_profile)):
     admin = get_admin_client()
-    _load(admin, profile_id)
+    target = _load(admin, profile_id)
     admin.table("librarian_profiles").update({"staff_rfid_uid": None}).eq("id", profile_id).execute()
+    log_action(admin, librarian, "librarian_profile.unlink_card", "librarian_profile", profile_id, {"full_name": target["full_name"]})
     return _managed(_load(admin, profile_id))

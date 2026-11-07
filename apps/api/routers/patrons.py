@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
+from core.audit import changed_fields, log_action
 from core.deps import get_user_supabase, require_librarian, require_librarian_profile
 from core.supabase import get_admin_client
 from core.email_template import EmailContent
@@ -97,9 +98,13 @@ def update_patron(
         prev = admin.table("profiles").select("status").eq("id", user_id).execute()
         previous_status = (prev.data[0].get("status") or "active") if prev.data else None
 
+    before = admin.table("profiles").select(", ".join(changes)).eq("id", user_id).execute().data
     res = admin.table("profiles").update(changes).eq("id", user_id).execute()
     if not res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Patron not found")
+    log_action(admin, librarian, "user.update", "user", user_id, {
+        "changed": changed_fields(before[0] if before else {}, changes),
+    })
 
     # Email the patron about the change (a deactivated account can't sign in
     # to see an in-app notice).

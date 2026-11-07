@@ -198,13 +198,13 @@ def _app(user=None, librarian=True):
     return TestClient(app)
 
 
-def test_endpoint_downloads_the_file_and_writes_nothing(fake):
+def test_endpoint_downloads_the_file_and_only_writes_the_audit_entry(fake):
     res = _app().get("/sync/export-new-copies", params={"date_from": "2026-11-01", "date_to": "2026-11-30"})
     assert res.status_code == 200, res.text
     assert res.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml")
     assert 'filename="lasallia-new-copies-2026-11-01-to-2026-11-30.xlsx"' in res.headers["content-disposition"]
     assert list(_sheets(res.content)) == ["BSIT"]
-    assert fake.writes == []
+    assert [w[:2] for w in fake.writes] == [("audit_log", "insert")]
 
 
 def test_endpoint_empty_range_is_a_clear_404(fake):

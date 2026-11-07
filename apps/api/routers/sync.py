@@ -9,6 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from fastapi.responses import Response
 
 from core.accession import accession_counters
+from core.audit import log_action
 from core.deps import require_librarian, require_librarian_profile
 from core.embeddings import reembed_books
 from core.exports import build_new_copies_workbook, fetch_new_copies
@@ -124,6 +125,15 @@ def import_catalog(
             "errors": [_issue_dict(e) for e in errors],
         }).execute().data
         run_id = run[0]["id"] if run else None
+        log_action(admin, librarian, "catalog.import", "sync_run", run_id, {
+            "source": source,
+            "file_name": file.filename,
+            "records_read": plan.records_read,
+            "books_added": plan.count("add"),
+            "books_updated": plan.count("update"),
+            "copies_added": plan.copies_added,
+            "errors": len(errors),
+        })
         if plan.count("add") or plan.count("update"):
             background.add_task(_reembed_in_background)
 
@@ -190,9 +200,16 @@ def export_new_copies(
     both included). Read-only."""
     if date_from > date_to:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "The start date is after the end date.")
-    rows = fetch_new_copies(get_admin_client(), date_from, date_to, include_registered)
+    admin = get_admin_client()
+    rows = fetch_new_copies(admin, date_from, date_to, include_registered)
     if not rows:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No copies were added in this date range.")
+    log_action(admin, librarian, "catalog.export_new_copies", "export", None, {
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "include_registered": include_registered,
+        "rows": len(rows),
+    })
     filename = f"lasallia-new-copies-{date_from.isoformat()}-to-{date_to.isoformat()}.xlsx"
     return Response(
         content=build_new_copies_workbook(rows),

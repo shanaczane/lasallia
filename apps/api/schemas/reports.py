@@ -119,7 +119,7 @@ class ReportSummaries(BaseModel):
 # ─── Report export (PDF / Excel / CSV), core/report_export ─────────────
 
 class ReportExportFilters(BaseModel):
-    report: Literal["overdue"]
+    report: Literal["overdue", "audit_log"]
     # Whole Manila days, both included. Leave out for all dates.
     date_from: date | None = None
     date_to: date | None = None
@@ -127,6 +127,9 @@ class ReportExportFilters(BaseModel):
     program: str | None = Field(None, max_length=200)
     college: str | None = Field(None, max_length=200)
     year_level: int | None = Field(None, ge=1, le=10)
+    # Audit log only.
+    librarian_profile_id: str | None = Field(None, max_length=64)
+    action: str | None = Field(None, max_length=64)
 
 
 class ReportExportRequest(ReportExportFilters):

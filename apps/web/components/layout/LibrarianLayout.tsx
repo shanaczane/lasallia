@@ -23,6 +23,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowLeftRight,
+  ScrollText,
 } from "lucide-react"
 import { useDialogKeyboard } from "@/lib/hooks/useDialogKeyboard"
 
@@ -57,6 +58,7 @@ const librarianNav: NavSection[] = [
       { label: "Catalog",       icon: <Library size={16} />,  href: "/librarian/catalog" },
       { label: "Patrons",       icon: <Users size={16} />,    href: "/librarian/patrons" },
       { label: "Catalog Import", icon: <DatabaseZap size={16} />, href: "/librarian/sync" },
+      { label: "Audit Log",     icon: <ScrollText size={16} />, href: "/librarian/audit-log" },
       { label: "Notifications", icon: <Bell size={16} />,     href: "/librarian/notifications" },
       { label: "Settings",      icon: <Settings size={16} />, href: "/librarian/settings" },
     ],
