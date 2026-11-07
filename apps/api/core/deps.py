@@ -69,11 +69,11 @@ def get_current_user(
     payload = _decode_token(credentials.credentials)
     meta = payload.get("user_metadata", {})
 
-    # Role comes from the profiles table, not the token. The token's role
-    # isn't kept up to date (Google sign-ins don't have one at all).
+    # Role comes from the profiles table, never the token: users can edit
+    # their own user_metadata through Supabase Auth.
     profile_res = get_admin_client().table("profiles").select("role, full_name, program, year_level, college, id_number, status, privacy_accepted_at, privacy_notice_version").eq("id", payload["sub"]).execute()
     profile = profile_res.data[0] if profile_res.data else {}
-    role: Role = profile.get("role") or meta.get("role", "guest")
+    role: Role = profile.get("role") or "guest"
 
     # Checked on every request, so a deactivated account loses access right
     # away, even in a session that's already open.

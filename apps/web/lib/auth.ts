@@ -98,8 +98,13 @@ export async function fetchMe(accessToken: string): Promise<UserProfile> {
 // convenience: the cookie can be faked, so the API checks roles itself.
 const SESSION_ROLE_COOKIE = "lasallia_role"
 
-function setSessionCookie(role: Role): void {
-  document.cookie = `${SESSION_ROLE_COOKIE}=${role}; path=/; max-age=${60 * 60 * 8}; SameSite=Lax`
+// Lasts as long as the session: a remembered one stays, the other ends with
+// the browser, so proxy.ts doesn't send a signed-in user to /login.
+const REMEMBERED_COOKIE_SECONDS = 60 * 60 * 24 * 30
+
+function setSessionCookie(role: Role, remember: boolean): void {
+  const lifetime = remember ? ` max-age=${REMEMBERED_COOKIE_SECONDS};` : ""
+  document.cookie = `${SESSION_ROLE_COOKIE}=${role}; path=/;${lifetime} SameSite=Lax`
 }
 
 function clearSessionCookie(): void {
@@ -125,7 +130,7 @@ export function saveSession(data: TokenResponse, remember: boolean = true): void
   store.setItem("user", JSON.stringify(data.user))
   // Clear the other storage so an older session there isn't picked up.
   for (const key of SESSION_KEYS) other.removeItem(key)
-  setSessionCookie(data.user.role)
+  setSessionCookie(data.user.role, remember)
 }
 
 // sessionStorage first, then localStorage.

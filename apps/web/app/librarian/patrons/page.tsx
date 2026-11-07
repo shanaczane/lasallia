@@ -294,7 +294,7 @@ function PatronsPageContent() {
         />
         <SummaryCard
           icon={<BookUser size={18} />} iconClass="bg-gold-100 text-gold-600"
-          label="Faculty" value={summary.faculty}
+          label="Faculty/Lasallian Partner" value={summary.faculty}
           active={quickFilter === "faculty"} onClick={() => toggleQuick("faculty")}
         />
         <SummaryCard

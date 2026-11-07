@@ -24,7 +24,7 @@ export const MOCK_PATRONS: UserProfile[] = [
 
 export const ROLE_LABEL: Record<UserRole, string> = {
   student: 'Student',
-  faculty: 'Faculty',
+  faculty: 'Faculty/Lasallian Partner',
   librarian: 'Librarian',
   guest: 'Guest',
 }

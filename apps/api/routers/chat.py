@@ -10,7 +10,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Iterator
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
 
@@ -151,6 +151,10 @@ def send_message(
     # The kiosk sends its session id; the web sends the previous one, or
     # nothing on the first message.
     session_id = body.session_id or str(uuid.uuid4())
+    existing = admin.table("chat_sessions").select("student_id").eq("id", session_id).execute().data
+    owner_id = existing[0]["student_id"] if existing else None
+    if owner_id is not None and (user is None or user.id != owner_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This conversation belongs to someone else")
     chat_sessions.start_session(admin, session_id, user.id if user else None, body.surface)
     prior_history = chat_sessions.get_history(admin, session_id)
 

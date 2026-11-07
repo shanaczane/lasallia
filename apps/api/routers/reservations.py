@@ -202,7 +202,8 @@ def create_reservation(
         .execute()
     ).count or 0
 
-    res = db.table("reservations").insert({
+    # The admin client: students can't write reservations directly (0062).
+    res = admin.table("reservations").insert({
         "user_id": user.id,
         "book_id": body.book_id,
         "status": "pending",
@@ -265,8 +266,8 @@ def update_reservation(
     user: UserProfile = Depends(require_profile_if_librarian),
     db: Client = Depends(get_user_supabase),
 ):
-    # Only cancelling is done here; 'ready' is set automatically. RLS
-    # decides whose reservations can be changed.
+    # Only cancelling is done here; 'ready' is set automatically. RLS decides
+    # which reservations the caller can see, so only those can be changed.
     current = db.table("reservations").select("id, user_id, book_id, book_copy_id, status").eq("id", reservation_id).execute()
     if not current.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Reservation not found")
@@ -275,7 +276,7 @@ def update_reservation(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This reservation can no longer be cancelled")
 
     now = datetime.now(timezone.utc)
-    db.table("reservations").update({
+    get_admin_client().table("reservations").update({
         "status": "cancelled",
         "cancelled_at": now.isoformat(),
     }).eq("id", reservation_id).execute()

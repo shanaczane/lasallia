@@ -3,7 +3,7 @@
 # TEST_DATABASE_URL is set. Never point it at the Supabase project: every
 # test drops and recreates the public schema.
 #
-#   docker run --rm -d --name lasallia-test-db -e POSTGRES_PASSWORD=test -p 54329:5432 postgres:16-alpine
+#   docker run --rm -d --name lasallia-test-db -e POSTGRES_PASSWORD=test -p 54329:5432 pgvector/pgvector:pg16
 #   set TEST_DATABASE_URL=postgresql://postgres:test@localhost:54329/postgres
 #   venv/Scripts/python.exe -m pytest tests/db
 #   docker stop lasallia-test-db
