@@ -19,7 +19,7 @@ def identify(body: IdentifyRequest, librarian: UserProfile = Depends(require_lib
     db = get_admin_client()
     user_id = tapped_user_id(db, body.rfid_uid)
     profile = (
-        db.table("profiles").select("id, full_name, avatar_url, role, program")
+        db.table("profiles").select("id, full_name, avatar_url, role, program, college, year_level")
         .eq("id", user_id).execute()
     ).data[0]
     return DeskPatron(

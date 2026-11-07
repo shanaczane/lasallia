@@ -3,6 +3,7 @@
 
 'use client'
 
+import { formatDate } from "@/lib/dueDates"
 import { useRef, useEffect, useState } from 'react'
 import { X, Info, AlertCircle, CalendarClock, Users } from 'lucide-react'
 import { fetchReservationEstimate, type ReservationEstimate } from '@/lib/reservations'
@@ -13,10 +14,6 @@ type EstimateState =
   | { status: 'loading' }
   | { status: 'ready'; estimate: ReservationEstimate }
   | { status: 'error'; message: string }
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-PH', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' })
-}
 
 // "today", "in about 5 days", "in about 2 weeks".
 export function relativeWait(iso: string): string {
@@ -168,7 +165,7 @@ export function ReserveConfirmModal({
                   </>
                 ) : (
                   <p className="text-ink-900 font-semibold" style={{ fontSize: 'var(--text-sm-body)' }}>
-                    No return date yet
+                    No due date yet
                   </p>
                 )}
               </div>

@@ -111,19 +111,24 @@ Never use Tailwind's `text-sm` etc. for font sizes — use the CSS variables.
 - Don't add sprint numbers or ticket tags (e.g. `// Sprint 5.4`, `F18`) to new comments — describe the behavior plainly. Existing `// Sprint …` comments are legacy; leave them unless you're already editing that code.
 - Commit messages are plain conventional commits with no sprint or ticket suffix: `fix: scroll to top on catalog pagination`.
 
+### Dates and due-date wording
+
+User-facing dates and times go through `lib/dueDates.ts` (web) and `date_text`, `time_text` and `overdue_text` in `core/dates.py` (API): "November 14, 2026", "5:00 PM", Manila time. Loans say "Due date", "Due tomorrow", "Due today, 5:00 PM", "Due in N days", "Overdue by N school days" ("library hours" for Reserve, Story book and Bible), "Returned on"; ready reservations say "Pick up by". A new loan's due date comes from `loan_due_date` in `core/calendar.py`: closing time, moved to the next school day. "deadline" is only for the kiosk hold timer, in code.
+
 ### Key components
 
 - **`components/layout/LibrarianLayout.tsx`** — sidebar with collapsible state, Quick Scan card, nav sections (Operations / Manage), sign-out. Renders differently when `collapsed`.
 - **`components/ui/catalog/FilterSidebar.tsx`** — exports `CatalogFilters` type and `DEFAULT_FILTERS`; used by catalog pages for genre/availability/format/floor/subject/call-number filtering.
 - **`components/ui/catalog/LibrarianBookCard.tsx`** — book card for librarian views with edit/delete actions.
 - **`components/chat/shared/`** — shared chat UI (window, input, header, sidebar, message) used by the assistant pages across all three roles.
+- **`components/desk/OverdueListPanel.tsx`** — the Overdue tab on Borrow & Return. Rows come from `core/overdue_list.py`, which reads `overdue_loans`, so it always matches the Overdue report.
 - **`components/ui/notifications/NotificationContext.tsx`** — React context for notification state.
 
 `profiles.role` only ever comes from `handle_new_user()` (the email address) or a service-role change, never from user metadata, which the user controls. An account that needs another role, such as a replacement shared librarian login, is changed by hand afterwards.
 
 ## Scheduled jobs
 
-- `supabase/cron/loan_reminders_schedule.sql`: daily loan reminders (Edge Function).
+- `supabase/cron/loan_reminders_api_schedule.sql`: pg_cron calls `POST /internal/send-loan-reminders` at 00:00 UTC (8:00 AM Manila) and `POST /internal/send-reserve-reminders` every 15 minutes, with `X-Internal-Secret`. The schedule is at the top of `core/loan_reminders.py`; `loan_reminder_log`'s unique key stops duplicates. The `loan-reminders` Edge Function is replaced and no longer scheduled.
 - `supabase/cron/recommendation_rebuild_schedule.sql`: pg_cron calls `POST /internal/rebuild-recommendations` at 18:00 UTC (2:00 AM Manila) with `X-Internal-Secret`. It answers 202 and runs similarities, co-borrowing, then recommendations in the background (`core/recommendation_rebuild.py`), recording start, end and step reached in `recommendation_rebuild_runs`.
 - Lapsed reservation pickups are swept every minute inside the API (`run_expiry_loop` in `main.py`).
 - `jobs/rebuild_all.py` runs the whole rebuild by hand; the other `jobs/rebuild_*.py` run one step.

@@ -6,6 +6,7 @@
 
 'use client'
 
+import { dueLabel, formatDate } from "@/lib/dueDates"
 import { MapPin, PenLine } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { copyStatusConfig } from '@/lib/copyStatus'
@@ -44,10 +45,6 @@ function CopyStatusBadge({ status }: { status: string }) {
   )
 }
 
-function formatDueDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 // ─── Borrower cell (name + due date, on_loan/overdue copies only) ─────────────
 
 function BorrowerInfo({ copy }: { copy: BookCopy }) {
@@ -58,7 +55,7 @@ function BorrowerInfo({ copy }: { copy: BookCopy }) {
       <span className="text-ink-900 font-medium">{copy.borrower_name}</span>
       {copy.due_date && (
         <span className={cn(overdue ? 'text-[#B91C1C]' : 'text-ink-400')} style={{ fontSize: 'var(--text-xs)' }}>
-          Due {formatDueDate(copy.due_date)}
+          {dueLabel(copy.due_date)}
         </span>
       )}
     </div>

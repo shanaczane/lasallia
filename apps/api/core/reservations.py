@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 # Philippine time has no DST, so a fixed offset works (and avoids needing
 # tzdata on Windows).
-MANILA = timezone(timedelta(hours=8))
 
 
 def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
@@ -60,7 +59,7 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
 
     book_res = admin.table("books").select("title").eq("id", book_id).execute()
     book_title = book_res.data[0]["title"] if book_res.data else "A book"
-    pickup_label = pickup_by.astimezone(MANILA).strftime("%B %d, %Y at %I:%M %p").replace(" 0", " ")
+    pickup_label = long_date_time(pickup_by)
     notify(
         pending[0]["user_id"], "reservation_confirmed",
         "Your reserved book is ready for pickup",
@@ -75,7 +74,7 @@ def promote_next_reservation(admin: Client, book_id: str, copy_id: str) -> bool:
                 ("Pick up by", long_date_time(pickup_by)),
             ],
             paragraphs=[
-                "Please claim it at the LRC counter before the deadline. If it is not picked up by then, "
+                "Please claim it at the LRC counter by the time above. If it is not picked up by then, "
                 "the reservation will expire and the book will go to the next person in line.",
             ],
             link_label="View your reservation",
@@ -153,13 +152,13 @@ def sweep_expired_reservations(admin: Client) -> int:
         notify(
             row["user_id"], "reservation_cancelled",
             "Your reservation has expired",
-            f'You didn\'t pick up "{book_title}" before the pickup deadline, so your reservation has expired '
+            f'You didn\'t pick up "{book_title}" in time, so your reservation has expired '
             "and the copy has been released. If you still want it, reserve it again "
             "— you'll join the end of the queue.",
             link=f"/user/catalog/{row['book_id']}?from=reservations",
             email=EmailContent(
                 subject="Your reservation has expired",
-                intro="Your reserved book was not picked up before the deadline, so the reservation has expired.",
+                intro="Your reserved book was not picked up in time, so the reservation has expired.",
                 details=[
                     ("Title", book_title),
                 ],

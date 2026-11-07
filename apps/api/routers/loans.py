@@ -5,9 +5,9 @@ from supabase import Client
 
 from core.accession import normalize_accession_number
 from core.audit import log_action
-from core.calendar import compute_fine
+from core.calendar import compute_fine, overdue_fields
 from core.deps import get_current_user, get_user_supabase, require_librarian, require_librarian_profile
-from core.desk import how_identified, tap_required
+from core.desk import LOAN_BORROWER, how_identified, tap_required
 from core.loans import check_borrow_eligibility, create_loan_and_notify, reshelve_copy_now
 from core.notify import notify, notify_librarians
 from core.email_template import EmailContent, long_date, peso, staff_alert
@@ -32,9 +32,7 @@ DAMAGE_PROCESSING_FEE = 50.0
 
 
 def _embed_book_and_borrower(db: Client, query):
-    # loans links to profiles twice, so name the borrower (student_id) link
-    # or the query fails.
-    return query.select("*, book_copies(book_id, accession_number, books(*)), profiles!loans_student_id_fkey(full_name, avatar_url)")
+    return query.select(f"*, book_copies(book_id, accession_number, books(*)), {LOAN_BORROWER}")
 
 
 def _flatten_loan(loan: dict) -> dict:
@@ -110,9 +108,7 @@ def list_loans(
     for loan in loans:
         if loan["status"] == "overdue":
             collection_type = (loan["books"] or {}).get("collection_type") or "General"
-            days_overdue, preview_fine = compute_fine(admin, loan["due_date"], collection_type)
-            loan["days_overdue"] = days_overdue
-            loan["preview_fine_amount"] = preview_fine
+            loan.update(overdue_fields(admin, loan["due_date"], collection_type))
 
     return loans
 
@@ -212,9 +208,7 @@ def lookup_loan(
 
     book_res = admin.table("books").select("collection_type").eq("id", copy["book_id"]).execute()
     collection_type = book_res.data[0]["collection_type"] if book_res.data else "General"
-    days_overdue, preview_fine = compute_fine(admin, loan["due_date"], collection_type)
-
-    return LoanLookupResult(**loan, days_overdue=days_overdue, preview_fine_amount=preview_fine)
+    return LoanLookupResult(**loan, **overdue_fields(admin, loan["due_date"], collection_type))
 
 # Search open loans by title or borrower name, for unreadable labels.
 # Filtered in Python.
@@ -245,8 +239,7 @@ def search_loans(
         if needle not in title and needle not in name:
             continue
         loan = _flatten_loan(raw)
-        days_overdue, preview_fine = compute_fine(admin, loan["due_date"], book.get("collection_type") or "General")
-        results.append(LoanLookupResult(**loan, days_overdue=days_overdue, preview_fine_amount=preview_fine))
+        results.append(LoanLookupResult(**loan, **overdue_fields(admin, loan["due_date"], book.get("collection_type") or "General")))
         if len(results) >= 20:
             break
 

@@ -12,12 +12,15 @@ _DEFAULTS: dict[str, object] = {
     "contact_number": "(043) 302-2900",
     "max_books_per_borrower": 3,
     "standard_loan_period_days": 7,
+    # Reserve, Story book and Bible (core/calendar.py).
+    "reserve_loan_period_days": 7,
     "max_renewals": 2,
     "renewal_period_days": 7,
     "fine_per_day": 5.00,
     "max_fine_per_book": 100.00,
     "reservation_hold_period_days": 3,
     "max_active_reservations": 3,
+    "max_copies_per_request": 10,
     # Kiosk and borrowing timers, in seconds.
     "kiosk_idle_timeout_seconds": 90,
     "kiosk_idle_warning_seconds": 15,
@@ -45,8 +48,8 @@ _DEFAULTS: dict[str, object] = {
 
 
 _INT_FIELDS = (
-    "max_books_per_borrower", "standard_loan_period_days", "max_renewals",
-    "renewal_period_days", "reservation_hold_period_days", "max_active_reservations",
+    "max_books_per_borrower", "standard_loan_period_days", "reserve_loan_period_days", "max_renewals",
+    "renewal_period_days", "reservation_hold_period_days", "max_active_reservations", "max_copies_per_request",
     "kiosk_idle_timeout_seconds", "kiosk_idle_warning_seconds", "hold_duration_seconds",
     "hold_extend_window_seconds", "hold_max_seconds", "kiosk_tap_confirm_seconds",
     "librarian_idle_timeout_minutes",

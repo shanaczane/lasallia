@@ -12,6 +12,7 @@ import { REPORT_TITLE_FIELDS, fetchLibrarySettings, updateLibrarySettings, type 
 import { changePassword, getUser, updateProfile, type UserProfile as AuthUser } from "@/lib/auth"
 import { SupportTicketsPanel } from "@/components/support/SupportTicketsPanel"
 import { LibrariansPanel } from "@/components/settings/LibrariansPanel"
+import { LibraryCalendarPanel } from "@/components/settings/LibraryCalendarPanel"
 
 const MIN_PASSWORD_LENGTH = 8
 
@@ -56,10 +57,12 @@ function draftError(d: Draft): string | null {
   const positiveIntFields: [keyof Draft, string][] = [
     ["max_books_per_borrower", "Maximum Books per Borrower"],
     ["standard_loan_period_days", "Standard Loan Period"],
+    ["reserve_loan_period_days", "Reserve, Story Book and Bible Loan Period"],
     ["max_renewals", "Maximum Renewals"],
     ["renewal_period_days", "Renewal Period"],
     ["reservation_hold_period_days", "Reservation Hold Period"],
     ["max_active_reservations", "Maximum Active Reservations per User"],
+    ["max_copies_per_request", "Maximum Copies per Book Request"],
   ]
   for (const [key, label] of positiveIntFields) {
     if (!Number.isInteger(d[key]) || (d[key] as number) <= 0) return `${label} must be a whole number greater than 0.`
@@ -111,12 +114,14 @@ function toDraft(s: LibrarySettings): Draft {
     contact_number: s.contact_number,
     max_books_per_borrower: s.max_books_per_borrower,
     standard_loan_period_days: s.standard_loan_period_days,
+    reserve_loan_period_days: s.reserve_loan_period_days,
     max_renewals: s.max_renewals,
     renewal_period_days: s.renewal_period_days,
     fine_per_day: s.fine_per_day,
     max_fine_per_book: s.max_fine_per_book,
     reservation_hold_period_days: s.reservation_hold_period_days,
     max_active_reservations: s.max_active_reservations,
+    max_copies_per_request: s.max_copies_per_request,
     kiosk_idle_timeout_seconds: s.kiosk_idle_timeout_seconds,
     kiosk_idle_warning_seconds: s.kiosk_idle_warning_seconds,
     hold_duration_seconds: s.hold_duration_seconds,
@@ -455,6 +460,10 @@ function LibrarianSettingsPageContent() {
                   </p>
                 </SettingsSection>
 
+                <SettingsSection title="Library Calendar">
+                  <LibraryCalendarPanel onDone={showToast} />
+                </SettingsSection>
+
                 <SettingsSection title="Report Signatures">
                   <p className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
                     Job titles printed under the signature lines on exported reports. The names are typed when
@@ -479,6 +488,7 @@ function LibrarianSettingsPageContent() {
                 <SettingsSection title="Loan Settings">
                   <Field label="Maximum Books per Borrower" value={String(draft.max_books_per_borrower)} onChange={(v) => setField("max_books_per_borrower", toInt(v))} type="number" />
                   <Field label="Standard Loan Period (days)" value={String(draft.standard_loan_period_days)} onChange={(v) => setField("standard_loan_period_days", toInt(v))} type="number" />
+                  <Field label="Reserve, Story Book and Bible Loan Period (days)" value={String(draft.reserve_loan_period_days)} onChange={(v) => setField("reserve_loan_period_days", toInt(v))} type="number" />
                   <Field label="Maximum Renewals" value={String(draft.max_renewals)} onChange={(v) => setField("max_renewals", toInt(v))} type="number" />
                   <Field label="Renewal Period (days)" value={String(draft.renewal_period_days)} onChange={(v) => setField("renewal_period_days", toInt(v))} type="number" />
                   <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
@@ -494,6 +504,10 @@ function LibrarianSettingsPageContent() {
                 <SettingsSection title="Reservation Settings">
                   <Field label="Reservation Hold Period (days)" value={String(draft.reservation_hold_period_days)} onChange={(v) => setField("reservation_hold_period_days", toInt(v))} type="number" />
                   <Field label="Maximum Active Reservations per User" value={String(draft.max_active_reservations)} onChange={(v) => setField("max_active_reservations", toInt(v))} type="number" />
+                </SettingsSection>
+
+                <SettingsSection title="Book Requests">
+                  <Field label="Maximum Copies per Book Request" value={String(draft.max_copies_per_request)} onChange={(v) => setField("max_copies_per_request", toInt(v))} type="number" />
                 </SettingsSection>
 
                 <SettingsSection title="ID Tap at the Desk">

@@ -3,11 +3,13 @@
 
 "use client"
 
+import { formatDate } from "@/lib/dueDates"
 import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { BookPlus, Clock, CheckCircle2, XCircle, PackageCheck, Paperclip, X, Ban, ChevronUp, ChevronDown } from "lucide-react"
+import { BookPlus, Clock, CheckCircle2, XCircle, PackageCheck, Paperclip, X, Ban, ChevronUp, ChevronDown, Eye } from "lucide-react"
 import { getUser } from "@/lib/auth"
 import {
+  CatalogMatchError,
   createBookRequest,
   uploadRequestAttachments,
   fetchMyBookRequests,
@@ -15,6 +17,16 @@ import {
   type BookRequestStatus,
   type BookRequestFormat,
 } from "@/lib/bookRequests"
+import {
+  DEFAULT_MAX_COPIES,
+  hasErrors,
+  MAX_ATTACHMENT_BYTES,
+  tooManyFiles,
+  validateRequestForm,
+  type RequestFormErrors,
+} from "@/lib/bookRequestForm"
+import { fetchPublicLibrarySettings } from "@/lib/settings"
+import { FieldError } from "@/components/ui/requests/FieldError"
 import { MyBookRequestModal } from "@/components/ui/requests/MyBookRequestModal"
 import { Pagination } from "@/components/ui/catalog"
 import { inManilaDateRange, resolveDateRange, type DateRangePreset } from "@/lib/reports"
@@ -26,6 +38,7 @@ const SELECT_CHEVRON =
 
 const STATUS_CONFIG: Record<BookRequestStatus, { label: string; icon: React.ReactNode; badge: string }> = {
   pending:   { label: "Pending",   icon: <Clock size={12} />,        badge: "bg-warn-bg text-warn" },
+  under_review: { label: "Under review", icon: <Eye size={12} />,      badge: "bg-gold-100 text-gold-600" },
   approved:  { label: "Approved",  icon: <CheckCircle2 size={12} />, badge: "bg-info-bg text-info" },
   rejected:  { label: "Rejected",  icon: <XCircle size={12} />,      badge: "bg-danger-bg text-danger" },
   fulfilled: { label: "Fulfilled", icon: <PackageCheck size={12} />, badge: "bg-success-bg text-success" },
@@ -36,8 +49,6 @@ const FORMAT_LABEL: Record<BookRequestFormat, string> = {
   print: "Print", ebook: "eBook", either: "Either format",
 }
 
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
-
 // Sized so a page of history sits about level with the form beside it.
 const REQUESTS_PER_PAGE = 5
 
@@ -46,6 +57,7 @@ type FilterKey = "all" | BookRequestStatus
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "all", label: "All" },
   { key: "pending", label: "Pending" },
+  { key: "under_review", label: "Under review" },
   { key: "approved", label: "Approved" },
   { key: "rejected", label: "Rejected" },
   { key: "fulfilled", label: "Fulfilled" },
@@ -59,10 +71,6 @@ const DATE_FILTERS: { key: DateRangePreset; label: string }[] = [
   { key: "month", label: "This month" },
   { key: "semester", label: "Semester" },
 ]
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
-}
 
 export default function RequestABookPage() {
   // null until checked, so faculty don't see the message flash.
@@ -85,6 +93,10 @@ export default function RequestABookPage() {
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
+  const [fieldErrors, setFieldErrors] = useState<RequestFormErrors>({})
+  // Set when the title is already in the catalog, until they decide.
+  const [catalogWarning, setCatalogWarning] = useState("")
+  const [maxCopies, setMaxCopies] = useState(DEFAULT_MAX_COPIES)
   const [justSubmitted, setJustSubmitted] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
@@ -101,6 +113,10 @@ export default function RequestABookPage() {
     if (isFaculty) load()
   }, [isFaculty])
 
+  useEffect(() => {
+    fetchPublicLibrarySettings().then((s) => setMaxCopies(s.max_copies_per_request)).catch(() => {})
+  }, [])
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files ?? [])
     e.target.value = "" // lets picking the same file again re-add it after removal
@@ -108,6 +124,11 @@ export default function RequestABookPage() {
     const tooBig = picked.find((f) => f.size > MAX_ATTACHMENT_BYTES)
     if (tooBig) {
       setError(`'${tooBig.name}' is over 10 MB`)
+      return
+    }
+    const tooMany = tooManyFiles(files.length, picked.length)
+    if (tooMany) {
+      setError(tooMany)
       return
     }
     setError("")
@@ -118,20 +139,28 @@ export default function RequestABookPage() {
     setFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!title.trim()) return
+    submit(false)
+  }
+
+  async function submit(confirmInCatalog: boolean) {
+    const problems = validateRequestForm({ title, author, isbn, copies, course }, maxCopies)
+    setFieldErrors(problems)
+    if (hasErrors(problems)) return
     setSubmitting(true)
     setError("")
+    setCatalogWarning("")
     try {
       const created = await createBookRequest({
         title: title.trim(),
-        author: author.trim() || undefined,
+        author: author.trim(),
         isbn: isbn.trim() || undefined,
         note: note.trim() || undefined,
         format,
         copies,
-        course: course.trim() || undefined,
+        course: course.trim(),
+        confirm_in_catalog: confirmInCatalog,
       })
       // Attachments are uploaded after the request. If that fails, the
       // request is still saved, so just warn.
@@ -150,7 +179,8 @@ export default function RequestABookPage() {
       setPage(1) // the new request lands at the top of the list
       load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not submit your request")
+      if (err instanceof CatalogMatchError) setCatalogWarning(err.message)
+      else setError(err instanceof Error ? err.message : "Could not submit your request")
     } finally {
       setSubmitting(false)
     }
@@ -191,7 +221,7 @@ export default function RequestABookPage() {
               New Request
             </p>
           </div>
-        <form onSubmit={handleSubmit} className="bg-white rounded-(--radius) border border-ink-200 p-4 sm:p-5 flex flex-col gap-3">
+        <form onSubmit={handleSubmit} noValidate className="bg-white rounded-(--radius) border border-ink-200 p-4 sm:p-5 flex flex-col gap-3">
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="flex flex-col gap-1">
               <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
@@ -205,10 +235,11 @@ export default function RequestABookPage() {
                 className="px-3 py-2 rounded-sm border border-ink-200 focus:outline-none focus:border-green-700"
                 style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
               />
+              <FieldError message={fieldErrors.title} />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-                Author
+                Author <span className="text-danger">*</span>
               </label>
               <input
                 type="text"
@@ -217,6 +248,7 @@ export default function RequestABookPage() {
                 className="px-3 py-2 rounded-sm border border-ink-200 focus:outline-none focus:border-green-700"
                 style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
               />
+              <FieldError message={fieldErrors.author} />
             </div>
           </div>
 
@@ -233,6 +265,7 @@ export default function RequestABookPage() {
                 className="px-3 py-2 rounded-sm border border-ink-200 focus:outline-none focus:border-green-700"
                 style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }}
               />
+              <FieldError message={fieldErrors.isbn} />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
@@ -251,12 +284,13 @@ export default function RequestABookPage() {
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-                Copies needed
+                Copies needed <span className="text-danger">*</span>
               </label>
               <div className="relative">
                 <input
                   type="number"
                   min={1}
+                  max={maxCopies}
                   value={copies}
                   onChange={(e) => setCopies(Math.max(1, Number(e.target.value) || 1))}
                   className="px-3 py-2 pr-7 rounded-sm border border-ink-200 focus:outline-none focus:border-green-700 w-full"
@@ -281,12 +315,13 @@ export default function RequestABookPage() {
                   </button>
                 </div>
               </div>
+              <FieldError message={fieldErrors.copies} />
             </div>
           </div>
 
           <div className="flex flex-col gap-1">
             <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-              Course / program (optional)
+              Related course <span className="text-danger">*</span>
             </label>
             <input
               type="text"
@@ -296,6 +331,7 @@ export default function RequestABookPage() {
               className="px-3 py-2 rounded-sm border border-ink-200 focus:outline-none focus:border-green-700"
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
             />
+            <FieldError message={fieldErrors.course} />
           </div>
 
           <div className="flex flex-col gap-1">
@@ -353,13 +389,29 @@ export default function RequestABookPage() {
           {error && (
             <p className="text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>{error}</p>
           )}
+          {catalogWarning && (
+            <div className="rounded-sm border border-gold-500 bg-gold-100 px-3 py-2 flex flex-wrap items-center justify-between gap-2" role="alert">
+              <p className="text-ink-800" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+                {catalogWarning} Do you still want to request it?
+              </p>
+              <button
+                type="button"
+                onClick={() => submit(true)}
+                disabled={submitting}
+                className="px-3 py-1.5 rounded-sm bg-white border border-gold-500 text-ink-800 font-semibold hover:bg-gold-100 transition-colors disabled:opacity-50"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+              >
+                Yes, request it
+              </button>
+            </div>
+          )}
           {justSubmitted && (
             <p className="text-success" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>Request submitted.</p>
           )}
 
           <button
             type="submit"
-            disabled={submitting || !title.trim()}
+            disabled={submitting}
             className="self-start px-4 py-2.5 rounded-sm bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors disabled:opacity-50"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
           >

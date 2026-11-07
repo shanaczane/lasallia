@@ -95,7 +95,7 @@ def test_more_than_a_thousand_loans_are_all_read():
 def test_period_and_file_name():
     filters = ExportFilters(date_from=date(2026, 11, 1), date_to=date(2026, 11, 30), program="BSIT")
     data = _data([], filters)
-    assert data.period.startswith("Loans borrowed 1 November 2026 to 30 November 2026 (Manila time), overdue as of ")
+    assert data.period.startswith("Loans borrowed November 1, 2026 to November 30, 2026 (Manila time), overdue as of ")
     assert data.filters == ["Program: BSIT"]
     assert data.filename_stem == "overdue-loans_2026-11-01_to_2026-11-30"
     assert _data([]).period.startswith("Loans borrowed on any date (Manila time)")
@@ -108,7 +108,7 @@ def test_pdf_has_the_whole_layout():
     pages = _pdf_text(build_pdf(data, _options(data)))
     text = "\n".join(pages)
     for expected in ("De La Salle Lipa", "Learning Resource Center", "Overdue Loans", "Period covered:",
-                     "Key figures", "Summary (computed from the report data)", "Overdue loans by days overdue",
+                     "Key figures", "Summary (computed from the report data)", "Overdue loans by school days overdue",
                      "Borrower", "José Niño Santos", "₱60.00", "Prepared by:", "Noted by:", "Approved by:",
                      "Ana Reyes", "Head Librarian", "Page 1 of 1"):
         assert expected in text, expected
@@ -129,7 +129,7 @@ def test_pdf_table_header_repeats_on_every_page():
     assert len(pages) > 3
     for page in pages:
         if "Sample book" in page:  # every page with table rows has the header row
-            assert "Borrower" in page and "Days" in page and "Fine" in page
+            assert "Borrower" in page and "School" in page and "Fine" in page
     assert all("Sample book" in page for page in pages[:-1])
     assert f"Page {len(pages)} of {len(pages)}" in pages[-1]
 
@@ -235,7 +235,7 @@ def test_excel_key_figures_are_numbers_with_formats():
         "Overdue loans": (2, "#,##0"),
         "Borrowers with overdue loans": (2, "#,##0"),
         "Fines so far": (110, '"₱"#,##0.00'),
-        "Average days overdue": (11.5, "0.0"),
+        "Average school days overdue": (11.5, "0.0"),
         "Longest overdue": (21, '#,##0 "days"'),
     }
     for label, (number, fmt) in expected.items():
@@ -419,7 +419,7 @@ def test_excel_chart_has_no_value_axis_title():
     data = _data([loan(1, days_late=12)])
     xml = _chart_xml(build_excel(data, _options(data)))
     assert "<title>" not in _axis(xml, "valAx") and "<c:title>" not in _axis(xml, "valAx")
-    assert "Overdue loans by days overdue" in xml  # the chart title stays
+    assert "Overdue loans by school days overdue" in xml  # the chart title stays
 
 
 def test_excel_rows_are_tall_enough_for_wrapped_text_in_every_column():
@@ -543,15 +543,15 @@ def test_excel_header_without_a_separator_keeps_the_address_style():
         ("Learning Resource Center", True, 14), (ADDRESS, False, 9)]
 
 
-# ─── Average days overdue always shows one decimal ──────────────────────
+# ─── Average school days overdue always shows one decimal ──────────────────────
 
 def test_average_days_overdue_shows_one_decimal_in_pdf_and_excel():
     data = _data([loan(1, days_late=12)])  # a whole-number average
     figures = {f.label: f for f in data.key_figures}
-    assert figures["Average days overdue"].value == "12.0"
-    assert "On average they are 12.0 days overdue" in data.computed_summary
+    assert figures["Average school days overdue"].value == "12.0"
+    assert "On average they are 12.0 school days overdue" in data.computed_summary
     assert "12.0" in "\n".join(_pdf_text(build_pdf(data, _options(data))))
     ws = _sheet(build_excel(data, _options(data)))["Overdue Loans"]
-    [cell] = [ws.cell(r, 3) for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value == "Average days overdue"]
+    [cell] = [ws.cell(r, 3) for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value == "Average school days overdue"]
     assert cell.value == 12 and cell.number_format == "0.0"  # Excel shows 12.0
-    assert {f.label: f.value for f in _data([]).key_figures}["Average days overdue"] == "0.0"
+    assert {f.label: f.value for f in _data([]).key_figures}["Average school days overdue"] == "0.0"

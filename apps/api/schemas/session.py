@@ -29,6 +29,9 @@ class StationSession(BaseModel):
     # For the kiosk's "For you" tab, which has no login to read them from.
     program: str | None = None
     college: str | None = None
+    # The user type shown on the kiosk and at the desk.
+    role: str | None = None
+    year_level: int | None = None
     # Shown on the kiosk after a tap: books ready to pick up, and what stops
     # new borrowing until it's settled at the desk.
     ready_pickups: list[ReadyPickup] = []

@@ -1,6 +1,10 @@
 // @ts-nocheck — Supabase Edge Function: runs on Deno, which VS Code's
 // TypeScript checker doesn't know about (Deno.env, npm: imports).
 
+// REPLACED by apps/api/core/loan_reminders.py, which pg_cron calls through
+// /internal (supabase/cron/loan_reminders_api_schedule.sql). Kept for
+// reference; don't schedule it again, or borrowers get both sets of reminders.
+//
 // Daily job: notifies and emails students about books due soon, overdue
 // books, and unpaid fines. The email layout copies
 // apps/api/core/email_template.py (Deno can't import it), so keep them in sync.

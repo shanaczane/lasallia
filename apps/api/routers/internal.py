@@ -6,6 +6,7 @@ import secrets
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, status
 
 from core import config
+from core.loan_reminders import send_daily_reminders, send_reserve_reminders
 from core.recommendation_rebuild import execute_run, start_run
 from core.supabase import get_admin_client
 
@@ -34,3 +35,25 @@ def rebuild_recommendations(
         raise HTTPException(status.HTTP_409_CONFLICT, "A rebuild is already running")
     background.add_task(execute_run, admin, run_id)
     return {"run_id": run_id}
+
+
+# Daily, 8:00 AM Manila. Safe to call twice: loan_reminder_log stops repeats.
+@router.post("/send-loan-reminders", status_code=status.HTTP_202_ACCEPTED)
+def send_loan_reminders(
+    background: BackgroundTasks,
+    x_internal_secret: str | None = Header(None),
+):
+    _check_secret(x_internal_secret)
+    background.add_task(send_daily_reminders, get_admin_client())
+    return {"started": True}
+
+
+# Every 15 minutes, for the collections fined by the library hour.
+@router.post("/send-reserve-reminders", status_code=status.HTTP_202_ACCEPTED)
+def send_reserve_loan_reminders(
+    background: BackgroundTasks,
+    x_internal_secret: str | None = Header(None),
+):
+    _check_secret(x_internal_secret)
+    background.add_task(send_reserve_reminders, get_admin_client())
+    return {"started": True}

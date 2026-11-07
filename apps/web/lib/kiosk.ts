@@ -3,7 +3,7 @@
 // has no login and identifies itself with its session id.
 
 import { getToken } from '@/lib/auth'
-import type { Book } from '@lasallia/types'
+import type { Book, UserRole } from '@lasallia/types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
@@ -64,6 +64,10 @@ export type StationSession = {
   // For the kiosk's "For you" tab.
   program: string | null
   college: string | null
+  // For the user type shown on the kiosk and at the desk. Missing on
+  // sessions saved before this was added.
+  role?: UserRole
+  year_level?: number | null
   // Shown on the kiosk after the tap. Missing on sessions saved before
   // this was added.
   ready_pickups?: ReadyPickup[]
@@ -304,6 +308,8 @@ export type Loan = {
   books: Book | null
   // Only set by GET /loans for status === 'overdue' rows.
   days_overdue: number | null
+  // "Overdue by 3 school days", or library hours for reserve materials.
+  overdue_label?: string | null
   preview_fine_amount: number | null
 }
 

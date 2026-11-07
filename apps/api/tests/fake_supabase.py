@@ -42,9 +42,11 @@ class _Query:
         self.op, self.payload = "update", payload
         return self
 
-    def upsert(self, payload, **_kwargs):
-        # Insert, or update the row with the same id.
+    def upsert(self, payload, on_conflict="id", ignore_duplicates=False, **_kwargs):
+        # Insert, or update the row with the same key.
         self.op, self.payload = "upsert", payload
+        self._conflict = on_conflict.split(",")
+        self._ignore_duplicates = ignore_duplicates
         return self
 
     def delete(self):
@@ -72,6 +74,9 @@ class _Query:
 
     def lte(self, col, value):
         return self._add(lambda r: r.get(col) is not None and _comparable(r.get(col)) <= _comparable(value))
+
+    def gt(self, col, value):
+        return self._add(lambda r: r.get(col) is not None and _comparable(r.get(col)) > _comparable(value))
 
     def lt(self, col, value):
         return self._add(lambda r: r.get(col) is not None and _comparable(r.get(col)) < _comparable(value))
@@ -115,10 +120,12 @@ class _Query:
         if self.op == "upsert":
             done = []
             for row in self.payload if isinstance(self.payload, list) else [self.payload]:
-                existing = next((r for r in rows if r.get("id") == row.get("id")), None)
+                existing = next((r for r in rows if all(r.get(c) == row.get(c) for c in self._conflict)), None)
                 if existing is None:
                     existing = {"id": str(uuid.uuid4()), **copy.deepcopy(row)}
                     rows.append(existing)
+                elif self._ignore_duplicates:
+                    continue
                 else:
                     existing.update(copy.deepcopy(row))
                 done.append(copy.deepcopy(existing))

@@ -8,6 +8,7 @@
 
 'use client'
 
+import { formatDate } from "@/lib/dueDates"
 import { useEffect, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { X, Info, AlertCircle, Monitor, RotateCcw, IdCard, CheckCircle2 } from 'lucide-react'
@@ -32,10 +33,6 @@ type ClaimState =
   | { status: 'gone' }
   // retryable: no answer came back (connection, timeout), so retrying may work.
   | { status: 'error'; message: string; retryable: boolean }
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
-}
 
 export function BorrowModal({
   book,
@@ -323,7 +320,7 @@ export function BorrowModal({
             </p>
             {claim.dueDate && (
               <p className="text-green-700 font-semibold" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-                Due back {formatDate(claim.dueDate)}
+                Due date: {formatDate(claim.dueDate)}
               </p>
             )}
           </div>

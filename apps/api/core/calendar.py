@@ -1,7 +1,9 @@
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 
 from supabase import Client
 
+from core.dates import MANILA, overdue_text
 from core.settings import get_library_settings
 
 # These collections are fined per open library hour. Everything else is
@@ -10,17 +12,26 @@ from core.settings import get_library_settings
 HOURLY_FINE_COLLECTION_TYPES = {"Reserve", "Story book", "Bible"}
 HOURLY_FINE_RATE = 2.0
 
+_LONGEST_CLOSURE_DAYS = 60
+# Only if the library has no hours on the due date at all.
+_FALLBACK_CLOSE = time(17, 0)
+
 
 def _parse_time(value: str) -> time:
     return time.fromisoformat(value)
+
+
+def _manila_date(moment: datetime) -> date:
+    # School days are Manila days. A UTC date is the day before until 8:00 AM.
+    return moment.astimezone(MANILA).date()
 
 
 def _calendar_rows(db: Client, start: datetime, end: datetime) -> dict[str, dict]:
     rows = (
         db.table("library_calendar")
         .select("date, is_school_day, open_time, close_time")
-        .gte("date", start.date().isoformat())
-        .lte("date", end.date().isoformat())
+        .gte("date", _manila_date(start).isoformat())
+        .lte("date", _manila_date(end).isoformat())
         .execute()
     ).data
     return {row["date"]: row for row in rows}
@@ -28,8 +39,9 @@ def _calendar_rows(db: Client, start: datetime, end: datetime) -> dict[str, dict
 
 def _dates_after_start(start: datetime, end: datetime):
     # The due date itself doesn't count as overdue, so start the day after.
-    d = start.date() + timedelta(days=1)
-    while d <= end.date():
+    d = _manila_date(start) + timedelta(days=1)
+    last = _manila_date(end)
+    while d <= last:
         yield d
         d += timedelta(days=1)
 
@@ -61,6 +73,34 @@ def _day_hours(cfg: dict, calendar: dict[str, dict], d: date) -> tuple[time | No
     return _weekly_hours(cfg, d)
 
 
+def next_school_day(db: Client, day: date, cfg: dict) -> date:
+    """`day`, or the first school day after it. Gives `day` back if the library
+    is closed for the whole stretch, so a loan can still be made."""
+    last = day + timedelta(days=_LONGEST_CLOSURE_DAYS)
+    calendar = _calendar_rows(
+        db, datetime.combine(day, time.min, tzinfo=MANILA), datetime.combine(last, time.min, tzinfo=MANILA),
+    )
+    d = day
+    while d <= last:
+        if _day_hours(cfg, calendar, d)[0] is not None:
+            return d
+        d += timedelta(days=1)
+    return day
+
+
+def loan_due_date(db: Client, borrowed_at: datetime, cfg: dict, collection_type: str | None) -> datetime:
+    """Closing time on the last day of the loan period, moved to the next
+    school day if that day is closed."""
+    hourly = collection_type in HOURLY_FINE_COLLECTION_TYPES
+    period = cfg["reserve_loan_period_days"] if hourly else cfg["standard_loan_period_days"]
+    day = next_school_day(db, _manila_date(borrowed_at) + timedelta(days=period), cfg)
+    calendar = _calendar_rows(
+        db, datetime.combine(day, time.min, tzinfo=MANILA), datetime.combine(day, time.min, tzinfo=MANILA),
+    )
+    close_time = _day_hours(cfg, calendar, day)[1] or _FALLBACK_CLOSE
+    return datetime.combine(day, close_time, tzinfo=MANILA)
+
+
 def count_school_days(db: Client, start: datetime, end: datetime, cfg: dict) -> int:
     """Days between start and end when the library was open. The daily
     fine only counts these."""
@@ -76,33 +116,66 @@ def count_school_days(db: Client, start: datetime, end: datetime, cfg: dict) -> 
 
 
 def count_library_hours(db: Client, start: datetime, end: datetime, cfg: dict) -> float:
-    """Open library hours between start and end, for the hourly fine.
-    Counts whole open days only (not minute-exact) until the policy is final."""
+    """Open library hours between start and end, to the minute, for the
+    hourly fine. Only the part of each day inside opening hours counts."""
     if end <= start:
         return 0.0
     calendar = _calendar_rows(db, start, end)
     total = 0.0
-    for d in _dates_after_start(start, end):
+    d = _manila_date(start)
+    last = _manila_date(end)
+    while d <= last:
         open_time, close_time = _day_hours(cfg, calendar, d)
-        if open_time is None or close_time is None:
-            continue
-        hours = (datetime.combine(d, close_time) - datetime.combine(d, open_time)).total_seconds() / 3600
-        total += max(hours, 0.0)
+        if open_time is not None and close_time is not None:
+            counted_from = max(start, datetime.combine(d, open_time, tzinfo=MANILA))
+            counted_to = min(end, datetime.combine(d, close_time, tzinfo=MANILA))
+            total += max((counted_to - counted_from).total_seconds() / 3600, 0.0)
+        d += timedelta(days=1)
     return total
+
+
+@dataclass
+class OverdueStatus:
+    school_days: int
+    # Only worked out for the hourly collections.
+    library_hours: float
+    fine: float
+
+
+def overdue_status(db: Client, due_date_iso: str, collection_type: str) -> OverdueStatus:
+    """How overdue an open loan is as of now, and its fine so far.
+
+    Hourly collections: open library hours since the due time x HOURLY_FINE_RATE.
+    Everything else: school days after the due date x fine_per_day.
+    Both stop at max_fine_per_book."""
+    due_date = datetime.fromisoformat(due_date_iso)
+    now = datetime.now(timezone.utc)
+    cfg = get_library_settings(db)
+    days_overdue = count_school_days(db, due_date, now, cfg)
+    hours = 0.0
+    if collection_type in HOURLY_FINE_COLLECTION_TYPES:
+        hours = count_library_hours(db, due_date, now, cfg)
+        fine = round(hours * HOURLY_FINE_RATE, 2)
+    else:
+        fine = round(days_overdue * cfg["fine_per_day"], 2)
+    return OverdueStatus(days_overdue, hours, min(fine, cfg["max_fine_per_book"]))
+
+
+def overdue_fields(db: Client, due_date_iso: str, collection_type: str) -> dict:
+    """The fields of an open loan that say how overdue it is."""
+    status = overdue_status(db, due_date_iso, collection_type)
+    past_due = datetime.fromisoformat(due_date_iso) < datetime.now(timezone.utc)
+    return {
+        "days_overdue": status.school_days,
+        "preview_fine_amount": status.fine,
+        "overdue_label": overdue_text(
+            status.school_days, status.library_hours, collection_type in HOURLY_FINE_COLLECTION_TYPES,
+        ) if past_due else None,
+    }
 
 
 def compute_fine(db: Client, due_date_iso: str, collection_type: str) -> tuple[int, float]:
     """(days_overdue, fine_amount) for an open loan as of now. Used by both
     the return counter and the Overdue report, so they always agree."""
-    due_date = datetime.fromisoformat(due_date_iso)
-    now = datetime.now(timezone.utc)
-    cfg = get_library_settings(db)
-    days_overdue = count_school_days(db, due_date, now, cfg)
-    if days_overdue == 0:
-        return 0, 0.0
-    if collection_type in HOURLY_FINE_COLLECTION_TYPES:
-        fine = round(count_library_hours(db, due_date, now, cfg) * HOURLY_FINE_RATE, 2)
-    else:
-        fine = round(days_overdue * cfg["fine_per_day"], 2)
-    fine = min(fine, cfg["max_fine_per_book"])
-    return days_overdue, fine
+    status = overdue_status(db, due_date_iso, collection_type)
+    return status.school_days, status.fine

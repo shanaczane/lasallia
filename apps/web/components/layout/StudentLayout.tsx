@@ -5,6 +5,7 @@ import { useState, useEffect, useLayoutEffect, useRef } from "react"
 
 const useLayoutEffectSafe = typeof window !== "undefined" ? useLayoutEffect : useEffect
 import { TopNav } from "./TopNav"
+import { RoleBadge } from "@/components/ui/patrons/RoleBadge"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
@@ -134,6 +135,7 @@ function StudentLayoutInner({
   const [privacyStep, setPrivacyStep] = useState(0)
   const passwordUnknown = useRef(false)
   const [isFaculty, setIsFaculty] = useState(false)
+  const [account, setAccount] = useState<UserProfile | null>(null)
 
   // No session (e.g. signed out, then Back) → /login, including pages
   // restored from the browser's back/forward cache.
@@ -152,6 +154,7 @@ function StudentLayoutInner({
       }
       if (user.email) setDisplayEmail(user.email)
       setIsFaculty(user.role === "faculty")
+      setAccount(user)
     }
   }, [])
 
@@ -208,6 +211,7 @@ function StudentLayoutInner({
 
   function handleProfileDone() {
     setProfileSeed(null)
+    setAccount(getUser())
     if (!passwordUnknown.current) return
     checkNeedsPassword().then((noPassword) => {
       passwordUnknown.current = noPassword === null
@@ -295,6 +299,14 @@ function StudentLayoutInner({
         userName={displayName}
         userEmail={displayEmail}
         userInitials={displayInitials}
+        userType={account && (
+          <RoleBadge
+            role={account.role}
+            college={account.college}
+            program={account.program}
+            yearLevel={account.year_level}
+          />
+        )}
         notificationCount={unreadCount}
         notificationsHref="/user/notifications"
         homeHref="/user/dashboard"

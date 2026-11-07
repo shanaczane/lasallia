@@ -1,5 +1,6 @@
 "use client"
 
+import { formatDate, formatTime } from "@/lib/dueDates"
 import { useState, useMemo, useEffect, useRef } from "react"
 import { cn } from "@/lib/utils"
 import {
@@ -33,14 +34,6 @@ const SELECT_CHEVRON =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
-}
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", hour12: true })
-}
-
 function patronName(r: Reservation): string {
   return r.profiles?.full_name ?? "Unknown patron"
 }
@@ -527,7 +520,7 @@ function ReservationRow({ reservation: r, isLast, showStatus, onReject, onProces
           </span>
           {isReady && r.pickup_by && (
             <span className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-              On hold shelf — pickup by <span className="font-medium">{formatDate(r.pickup_by)}</span>
+              On hold shelf — Pick up by <span className="font-medium">{formatDate(r.pickup_by)}</span>
             </span>
           )}
         </div>

@@ -2,6 +2,7 @@
 // Every report tab uses ReportTableCard (search, Export CSV, pagination).
 "use client"
 
+import { formatDate } from "@/lib/dueDates"
 import { Fragment, Suspense, cloneElement, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
@@ -79,10 +80,14 @@ import {
   type ReportSummaries,
   type DateRangePreset,
   type ReportFilters,
+  type ReportUserType,
   exportRequest,
   type ReportExportFormat,
   type ReportExportRequest,
 } from "@/lib/reports"
+import { ROLE_LABEL } from "@/lib/roles"
+import { REQUEST_STATUS_BADGE, REQUEST_STATUS_LABEL } from "@/lib/bookRequestForm"
+import { RejectRequestDialog } from "@/components/ui/requests/RejectRequestDialog"
 import { ReportExportDialog } from "@/components/ui/reports/ReportExportDialog"
 import {
   fetchWeedingCandidates,
@@ -110,6 +115,12 @@ const YEAR_LEVEL_LABELS: Record<string, number> = {
   "2nd Year": 2,
   "3rd Year": 3,
   "4th Year": 4,
+}
+
+const ALL_USER_TYPES = "All User Types"
+const USER_TYPES: Record<string, ReportUserType> = {
+  [ROLE_LABEL.student]: "student",
+  [ROLE_LABEL.faculty]: "faculty",
 }
 
 const REPORT_PAGE_SIZE = 8
@@ -715,11 +726,11 @@ function buildCirculationRows(feed: FeedItem[], dateFrom?: string, dateTo?: stri
     .filter((f) => inManilaDateRange(f.timestamp, dateFrom, dateTo))
     .map((f) => ({
       id: f.id,
-      date: new Date(f.timestamp).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
+      date: formatDate(new Date(f.timestamp)),
       title: f.item,
       patron: f.user,
       type: f.type === "checkout" ? "Borrow" : "Return",
-      due: f.type === "checkout" && f.loan?.due_date ? new Date(f.loan.due_date).toLocaleDateString("en-PH", { month: "short", day: "numeric" }) : "—",
+      due: f.type === "checkout" && f.loan?.due_date ? formatDate(f.loan.due_date) : "—",
     }))
 }
 
@@ -799,24 +810,14 @@ function CirculationTable({ rows, onExport }: { rows: CirculationRow[]; onExport
   )
 }
 
-// ─── Requests: faculty book requests. A librarian approves or rejects
-// each one, then marks approved ones fulfilled.
-const REQUEST_STATUS_LABEL: Record<BookRequestStatus, string> = {
-  pending: "Pending", approved: "Approved", rejected: "Rejected", fulfilled: "Fulfilled", cancelled: "Cancelled",
-}
-const REQUEST_STATUS_BADGE: Record<BookRequestStatus, string> = {
-  pending: "bg-warn-bg text-warn",
-  approved: "bg-info-bg text-info",
-  rejected: "bg-danger-bg text-danger",
-  fulfilled: "bg-success-bg text-success",
-  cancelled: "bg-ink-100 text-ink-500",
-}
-
+// ─── Requests: faculty book requests. A librarian starts a review, approves
+// or rejects with a reason, then marks approved ones fulfilled.
 type RequestTabKey = "all" | BookRequestStatus
 
 const REQUEST_TABS: { key: RequestTabKey; label: string; showCount: boolean }[] = [
   { key: "all",       label: "All",       showCount: false },
   { key: "pending",   label: "Pending",   showCount: true },
+  { key: "under_review", label: "Under review", showCount: true },
   { key: "approved",  label: "Approved",  showCount: true },
   { key: "rejected",  label: "Rejected",  showCount: false },
   { key: "fulfilled", label: "Fulfilled", showCount: false },
@@ -832,6 +833,7 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
   const [toast, setToast] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [rejecting, setRejecting] = useState<BookRequest | null>(null)
   const PAGE_SIZE = 10
 
   function showToast(msg: string) {
@@ -846,11 +848,17 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
 
   useEffect(() => { load() }, [])
 
-  async function handleDecision(r: BookRequest, status: BookRequestStatus) {
+  async function handleDecision(r: BookRequest, status: BookRequestStatus, rejectionReason?: string) {
+    // A rejection needs a reason first.
+    if (status === "rejected" && rejectionReason === undefined) {
+      setRejecting(r)
+      return
+    }
     setBusyId(r.id)
     try {
-      await updateBookRequest(r.id, status)
-      showToast(`"${r.title}" marked ${status}.`)
+      await updateBookRequest(r.id, status, rejectionReason)
+      showToast(`"${r.title}" marked ${REQUEST_STATUS_LABEL[status].toLowerCase()}.`)
+      setRejecting(null)
       load()
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Could not update this request")
@@ -865,6 +873,7 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
   const tabCounts: Record<RequestTabKey, number> = {
     all: inRange.length,
     pending: inRange.filter((r) => r.status === "pending").length,
+    under_review: inRange.filter((r) => r.status === "under_review").length,
     approved: inRange.filter((r) => r.status === "approved").length,
     rejected: inRange.filter((r) => r.status === "rejected").length,
     fulfilled: inRange.filter((r) => r.status === "fulfilled").length,
@@ -887,7 +896,7 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-  const openCount = inRange.filter((r) => r.status === "pending").length
+  const openCount = tabCounts.pending + tabCounts.under_review
 
   return (
     <div className="flex flex-col gap-3">
@@ -943,7 +952,8 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
           Course: r.course ?? "",
           Requester: r.profiles?.full_name ?? "",
           Email: r.profiles?.email ?? "",
-          Status: r.status,
+          Status: REQUEST_STATUS_LABEL[r.status],
+          "Rejection Reason": r.rejection_reason ?? "",
           Attachments: r.attachments.map((a) => a.url).join("; "),
           "Requested At": r.created_at,
         })))}
@@ -1017,10 +1027,19 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
                       </span>
                     </td>
                     <td className="py-2.5 px-4 text-ink-700 whitespace-nowrap" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
-                      {new Date(r.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
+                      {formatDate(r.created_at)}
                     </td>
                     <td className="py-2.5 px-4" onClick={(e) => e.stopPropagation()}>
                       {r.status === "pending" ? (
+                        <button
+                          onClick={() => handleDecision(r, "under_review")}
+                          disabled={busyId === r.id}
+                          className="px-2.5 py-1 rounded bg-green-700 text-white hover:bg-green-800 disabled:opacity-40 transition-colors font-medium whitespace-nowrap"
+                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+                        >
+                          Start Review
+                        </button>
+                      ) : r.status === "under_review" ? (
                         <div className="flex gap-2">
                           <button
                             onClick={() => handleDecision(r, "rejected")}
@@ -1075,6 +1094,15 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
           />
         )
       })()}
+
+      {rejecting && (
+        <RejectRequestDialog
+          title={rejecting.title}
+          busy={busyId === rejecting.id}
+          onCancel={() => setRejecting(null)}
+          onConfirm={(reason) => handleDecision(rejecting, "rejected", reason)}
+        />
+      )}
     </div>
   )
 }
@@ -1441,7 +1469,7 @@ function WeedingPanel() {
                           {e.performed_by_name ?? "—"}
                         </td>
                         <td className="py-2.5 px-4 text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-                          {new Date(e.occurred_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
+                          {formatDate(e.occurred_at)}
                         </td>
                         <td className="py-2.5 px-4">
                           {e.event_type === "archived" && currentEventIdByBook.get(e.book_id) === e.id && (
@@ -1735,7 +1763,7 @@ function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => 
                   { label: "Program / Year", key: "program" as SortKey },
                   { label: "Book",     key: "book"   as SortKey },
                   { label: "Due Date", key: "due"    as SortKey },
-                  { label: "Days Overdue", key: "days" as SortKey },
+                  { label: "Overdue", key: "days" as SortKey },
                   { label: "Fine", key: null },
                   { label: "Status",   key: null },
                 ].map((col) => (
@@ -1810,7 +1838,7 @@ function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => 
                       className="text-ink-700"
                       style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
                     >
-                      {new Date(row.dueDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
+                      {formatDate(row.dueDate)}
                     </p>
                   </td>
                   <td className="py-3 px-4">
@@ -1826,7 +1854,7 @@ function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => 
                       style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
                     >
                       {row.daysOverdue >= 7 && <AlertTriangle size={10} />}
-                      {row.daysOverdue}d
+                      {row.overdueLabel}
                     </span>
                   </td>
                   <td className="py-3 px-4">
@@ -2259,13 +2287,15 @@ function ReportsPageContent() {
   // The borrower's college, for loan-based reports.
   const [college, setCollege]       = useState("All Colleges")
   const [yearLevel, setYearLevel]   = useState("All Year Levels")
+  const [userType, setUserType]     = useState(ALL_USER_TYPES)
 
   // The activity feed with the page's filters applied (these two tabs are
   // built in the browser, not by the API).
   const activityFeed = useMemo(() => {
     const full = buildFeed(loans, reservations)
     const wantedYear = YEAR_LEVEL_LABELS[yearLevel]
-    if (category === "All Categories" && college === "All Colleges" && !wantedYear) return full
+    const wantedType = USER_TYPES[userType]
+    if (category === "All Categories" && college === "All Colleges" && !wantedYear && !wantedType) return full
 
     const patronsById = new Map(patrons.map((p) => [p.id, p]))
     return full.filter((tx) => {
@@ -2273,14 +2303,15 @@ function ReportsPageContent() {
         const cat = tx.loan?.books?.category ?? tx.reservation?.books?.category
         if (cat !== category) return false
       }
-      if (college !== "All Colleges" || wantedYear) {
+      if (college !== "All Colleges" || wantedYear || wantedType) {
         const patron = tx.userId ? patronsById.get(tx.userId) : undefined
         if (college !== "All Colleges" && patron?.college !== college) return false
         if (wantedYear && patron?.year_level !== wantedYear) return false
+        if (wantedType && patron?.role !== wantedType) return false
       }
       return true
     })
-  }, [loans, reservations, category, college, yearLevel, patrons])
+  }, [loans, reservations, category, college, yearLevel, userType, patrons])
 
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
@@ -2308,8 +2339,9 @@ function ReportsPageContent() {
       category: category === "All Categories" ? undefined : category,
       college: college === "All Colleges" ? undefined : college,
       yearLevel: YEAR_LEVEL_LABELS[yearLevel],
+      userType: USER_TYPES[userType],
     }
-  }, [dateRange, fromDate, toDate, category, college, yearLevel])
+  }, [dateRange, fromDate, toDate, category, college, yearLevel, userType])
 
   // The date range on its own, for tabs that filter in the browser.
   const activeDateBounds = resolveDateRange(dateRange, fromDate, toDate)
@@ -2645,6 +2677,11 @@ function ReportsPageContent() {
       </div>
 
       {/* ── Filter bar (one row; scrolls sideways if it doesn't fit) ── */}
+      {userType !== ALL_USER_TYPES && (
+        <p className="hidden print:block text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+          User type: {userType}
+        </p>
+      )}
       <div className="rounded border border-ink-200 bg-white p-4 flex flex-nowrap items-end gap-3 overflow-x-auto no-scrollbar print:hidden" style={{ boxShadow: "var(--shadow)" }}>
         {/* Date range quick select */}
         <div className="flex flex-col gap-1 shrink-0">
@@ -2705,6 +2742,8 @@ function ReportsPageContent() {
             options: ["All Colleges", ...COLLEGES] },
           { label: "Year Level", value: yearLevel, setter: setYearLevel,
             options: ["All Year Levels", "1st Year", "2nd Year", "3rd Year", "4th Year"] },
+          { label: "User Type", value: userType, setter: setUserType,
+            options: [ALL_USER_TYPES, ...Object.keys(USER_TYPES)] },
         ].map((f) => (
           <div key={f.label} className="flex flex-col gap-1 flex-1 min-w-36">
             <label className="text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>

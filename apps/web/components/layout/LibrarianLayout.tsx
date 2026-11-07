@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, useLayoutEffect } from "react"
 import { TopNav } from "./TopNav"
+import { RoleBadge } from "@/components/ui/patrons/RoleBadge"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -230,6 +231,7 @@ function LibrarianLayoutInner({
           userName={activeName ?? displayName}
           userEmail={displayEmail}
           userInitials={activeName ? getInitials(activeName) : displayInitials}
+          userType={<RoleBadge role="librarian" profileName={activeName} />}
           notificationCount={unreadCount}
           notificationsHref="/librarian/notifications"
           homeHref="/librarian/dashboard"

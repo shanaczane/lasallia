@@ -1,5 +1,6 @@
 "use client"
 
+import { formatDate } from "@/lib/dueDates"
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
@@ -28,10 +29,6 @@ function deriveStatus(loan: ApiLoan): BorrowStatus {
   if (loan.status === "overdue") return "overdue"
   const daysLeft = (new Date(loan.due_date).getTime() - Date.now()) / 86_400_000
   return daysLeft <= DUE_SOON_DAYS ? "due_soon" : "active"
-}
-
-function formatShortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
 function greeting(): string {
@@ -132,7 +129,7 @@ export default function StudentDashboard() {
           iconBg="bg-warn-bg"
           label="Due Soon"
           value={String(dueSoonCount)}
-          sub={nextDue ? `"${nextDue.loan.books?.title ?? "Untitled"}" — ${formatShortDate(nextDue.loan.due_date)}` : "Nothing due soon"}
+          sub={nextDue ? `"${nextDue.loan.books?.title ?? "Untitled"}" — ${formatDate(nextDue.loan.due_date)}` : "Nothing due soon"}
         />
         <StatCard
           icon={<AlertTriangle size={18} className="text-danger" />}

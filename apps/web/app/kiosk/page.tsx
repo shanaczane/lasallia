@@ -6,6 +6,7 @@
 
 import { IdCard } from 'lucide-react'
 import { useKioskSession } from '@/components/kiosk/KioskSessionProvider'
+import { RoleBadge } from '@/components/ui/patrons/RoleBadge'
 
 export default function KioskEntryPage() {
   const { session, opening, openError, guestBrowsing, startGuest } = useKioskSession()
@@ -52,6 +53,7 @@ export default function KioskEntryPage() {
             >
               De La Salle Lipa · LRC
             </span>
+            <RoleBadge role="guest" className="mt-2" />
           </div>
 
           <div className="mb-4 text-center">

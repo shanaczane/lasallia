@@ -3,6 +3,7 @@
 
 "use client"
 
+import { formatDate } from "@/lib/dueDates"
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { Search } from "lucide-react"
@@ -20,10 +21,6 @@ const body = (size = "var(--text-sm-body)") => ({ fontFamily: "var(--font-body)"
 
 const SELECT_CHEVRON =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"
-
-function formatDay(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
-}
 
 export function AllCopiesList({
   copies,
@@ -173,7 +170,7 @@ export function AllCopiesList({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-ink-500 truncate" title="Last returned or found in a check">
-                    {c.last_seen_at ? formatDay(c.last_seen_at) : <span className="text-ink-300">—</span>}
+                    {c.last_seen_at ? formatDate(c.last_seen_at) : <span className="text-ink-300">—</span>}
                   </td>
                 </tr>
               )

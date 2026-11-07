@@ -3,6 +3,7 @@
 
 'use client'
 
+import { formatDate } from "@/lib/dueDates"
 import { useRef, useEffect, useState } from 'react'
 import { X, Mail, Phone, ChevronDown, Loader2, CheckCircle2, Copy, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -360,7 +361,7 @@ function TrackTab({ prefill }: { prefill: { ticketNumber: string; email: string 
             </span>
           </div>
           <p className="text-ink-400" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}>
-            Submitted {new Date(result.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+            Submitted {formatDate(result.created_at)}
           </p>
           {result.resolution_note && (
             <div className="border-t border-ink-100 pt-2 mt-1">

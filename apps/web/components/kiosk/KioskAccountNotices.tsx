@@ -5,15 +5,11 @@
 
 'use client'
 
+import { formatDate } from "@/lib/dueDates"
 import { useState } from 'react'
 import Link from 'next/link'
 import { PackageCheck, Receipt, X } from 'lucide-react'
 import type { StationSession } from '@/lib/kiosk'
-
-function shortDate(iso: string | null): string {
-  if (!iso) return ''
-  return new Date(iso).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
-}
 
 export function KioskAccountNotices({ session }: { session: StationSession }) {
   // Hidden for the rest of this session once closed.
@@ -68,7 +64,7 @@ export function KioskAccountNotices({ session }: { session: StationSession }) {
                 </p>
                 {p.pickup_by && (
                   <p className="text-ink-500" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-xs)' }}>
-                    On the hold shelf until {shortDate(p.pickup_by)}
+                    On the hold shelf until {formatDate(p.pickup_by)}
                   </p>
                 )}
               </div>

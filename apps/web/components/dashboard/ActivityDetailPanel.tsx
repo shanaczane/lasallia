@@ -3,12 +3,13 @@
 
 'use client'
 
+import { formatDate, formatTime } from "@/lib/dueDates"
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { X, Camera, BookOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock'
-import { TX_CONFIG, timeLabel, dateLabel, type FeedItem, type TxType } from '@/lib/activity'
+import { TX_CONFIG, dateLabel, type FeedItem, type TxType } from '@/lib/activity'
 import type { Loan } from '@/lib/kiosk'
 import type { Reservation } from '@lasallia/types'
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
@@ -76,16 +77,16 @@ function relatedEventsForBook(bookId: string | null, excludeId: string, loans: L
     if (loan.books?.id !== bookId) continue
     const user = loan.profiles?.full_name ?? 'Unknown patron'
     if (`checkout-${loan.id}` !== excludeId) {
-      events.push({ key: `checkout-${loan.id}`, type: 'checkout', date: dateLabel(loan.borrowed_at), time: timeLabel(loan.borrowed_at), user })
+      events.push({ key: `checkout-${loan.id}`, type: 'checkout', date: dateLabel(loan.borrowed_at), time: formatTime(loan.borrowed_at), user })
     }
     if (loan.returned_at && `return-${loan.id}` !== excludeId) {
-      events.push({ key: `return-${loan.id}`, type: 'return', date: dateLabel(loan.returned_at), time: timeLabel(loan.returned_at), user })
+      events.push({ key: `return-${loan.id}`, type: 'return', date: dateLabel(loan.returned_at), time: formatTime(loan.returned_at), user })
     }
   }
   for (const r of reservations) {
     const rBookId = r.books?.id ?? r.book_id
     if (rBookId !== bookId || `reserve-${r.id}` === excludeId) continue
-    events.push({ key: `reserve-${r.id}`, type: 'reserve', date: dateLabel(r.requested_at), time: timeLabel(r.requested_at), user: r.profiles?.full_name ?? 'Unknown patron' })
+    events.push({ key: `reserve-${r.id}`, type: 'reserve', date: dateLabel(r.requested_at), time: formatTime(r.requested_at), user: r.profiles?.full_name ?? 'Unknown patron' })
   }
 
   return events.sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1)).slice(0, 6)
@@ -226,14 +227,14 @@ export function ActivityDetailPanel({ item, loans, reservations, onClose }: Acti
 
           {loan && (
             <Section title="Loan">
-              <Field label="Borrowed" value={`${dateLabel(loan.borrowed_at)} · ${timeLabel(loan.borrowed_at)}`} />
-              <Field label="Due" value={new Date(loan.due_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })} />
+              <Field label="Borrowed" value={`${dateLabel(loan.borrowed_at)} · ${formatTime(loan.borrowed_at)}`} />
+              <Field label="Due date" value={formatDate(loan.due_date)} />
               {loan.returned_at && (
-                <Field label="Returned" value={`${dateLabel(loan.returned_at)} · ${timeLabel(loan.returned_at)}`} />
+                <Field label="Returned on" value={`${dateLabel(loan.returned_at)} · ${formatTime(loan.returned_at)}`} />
               )}
               <Field
                 label="Status"
-                value={loan.status === 'overdue' ? `Overdue${loan.days_overdue ? ` (${loan.days_overdue}d)` : ''}` : loan.status}
+                value={loan.status === 'overdue' ? (loan.overdue_label ?? 'Overdue') : loan.status}
                 danger={loan.status === 'overdue'}
               />
               {loan.assisted_by && <Field label="Checked out by" value="Librarian-assisted" />}
@@ -277,12 +278,12 @@ export function ActivityDetailPanel({ item, loans, reservations, onClose }: Acti
 
           {reservation && (
             <Section title="Reservation">
-              <Field label="Requested" value={`${dateLabel(reservation.requested_at)} · ${timeLabel(reservation.requested_at)}`} />
+              <Field label="Requested" value={`${dateLabel(reservation.requested_at)} · ${formatTime(reservation.requested_at)}`} />
               <Field label="Status" value={reservation.status} />
               {reservation.pickup_by && (
                 <Field
-                  label="Pickup by"
-                  value={new Date(reservation.pickup_by).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  label="Pick up by"
+                  value={formatDate(reservation.pickup_by)}
                 />
               )}
               {typeof reservation.queue_position === 'number' && (

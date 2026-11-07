@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
+from core.calendar import loan_due_date
 from core.deps import get_current_user, get_user_supabase, require_librarian
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
@@ -38,7 +39,7 @@ def create_borrow(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No patron found with that email")
     patron_id = profile_res.data[0]["id"]
 
-    book_res = db.table("books").select("available_copies").eq("id", body.book_id).execute()
+    book_res = db.table("books").select("available_copies, collection_type").eq("id", body.book_id).execute()
     if not book_res.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
 
@@ -46,8 +47,9 @@ def create_borrow(
     if available <= 0:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No copies available to borrow")
 
-    cfg = get_library_settings(get_admin_client())
-    due_date = (datetime.now(timezone.utc) + timedelta(days=cfg["standard_loan_period_days"])).isoformat()
+    admin = get_admin_client()
+    cfg = get_library_settings(admin)
+    due_date = loan_due_date(admin, datetime.now(timezone.utc), cfg, book_res.data[0].get("collection_type")).isoformat()
     tx_res = db.table("borrow_transactions").insert({
         "user_id": patron_id,
         "book_id": body.book_id,

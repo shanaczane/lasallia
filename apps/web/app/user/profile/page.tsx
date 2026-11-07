@@ -3,6 +3,7 @@
 
 "use client"
 
+import { formatDate } from "@/lib/dueDates"
 import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { AlertCircle, ChevronDown, Eye, EyeOff } from "lucide-react"
@@ -19,10 +20,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "profile", label: "Profile" },
   { key: "settings", label: "Settings" },
 ]
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
-}
 
 // The student's own fines, like the librarian's patron Fines tab.
 type FineKind = "unsettled" | "accruing" | "paid"
@@ -100,8 +97,8 @@ function StudentProfileContent() {
           title,
           amount: l.preview_fine_amount!,
           kind: "accruing",
-          detail: `${days} day${days === 1 ? "" : "s"} overdue · not yet returned`,
-          reason: `"${title}" was due ${formatDate(l.due_date)} and still hasn't been returned — ${days} day${days === 1 ? "" : "s"} overdue so far. This fine keeps growing until the book comes back.`,
+          detail: `${l.overdue_label ?? "Overdue"} · not yet returned`,
+          reason: `"${title}" was due ${formatDate(l.due_date)} and still hasn't been returned. ${l.overdue_label ?? "Overdue"} so far. This fine keeps growing until the book comes back.`,
         })
       }
     }

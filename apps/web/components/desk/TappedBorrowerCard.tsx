@@ -4,16 +4,13 @@
 
 "use client"
 
+import { dueLabel, formatDate } from "@/lib/dueDates"
 import { useState } from "react"
 import Link from "next/link"
 import { BookOpen, Receipt, PackageCheck, X, IdCard } from "lucide-react"
+import { RoleBadge } from "@/components/ui/patrons/RoleBadge"
 import { settleFine } from "@/lib/kiosk"
 import type { DeskPatron } from "@/lib/desk"
-
-function shortDate(iso: string | null): string {
-  if (!iso) return ""
-  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric" })
-}
 
 const text = (size: string) => ({ fontFamily: "var(--font-body)", fontSize: `var(${size})` })
 
@@ -64,6 +61,15 @@ export function TappedBorrowerCard({
           <p className="text-ink-900 font-semibold truncate" style={text("--text-sm-body")}>
             {patron.full_name ?? "Unknown borrower"}
           </p>
+          {patron.role && (
+            <RoleBadge
+              role={patron.role}
+              college={patron.college}
+              program={patron.program}
+              yearLevel={patron.year_level}
+              className="my-0.5"
+            />
+          )}
           <p className="text-ink-500" style={text("--text-2xs")}>
             ID tapped · {patron.open_loans.length} book{patron.open_loans.length === 1 ? "" : "s"} out
             {fineTotal > 0 && ` · ₱${fineTotal.toFixed(2)} unpaid`}
@@ -99,12 +105,12 @@ export function TappedBorrowerCard({
                   {loan.books?.title ?? "Unknown title"}
                 </span>
                 <span className="block text-ink-400" style={text("--text-2xs")}>
-                  {loan.accession_number} · Due {shortDate(loan.due_date)}
+                  {loan.accession_number} · {dueLabel(loan.due_date)}
                 </span>
               </span>
               {loan.days_overdue > 0 && (
                 <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 font-semibold shrink-0" style={text("--text-2xs")}>
-                  {loan.days_overdue}d overdue
+                  {loan.overdue_label}
                 </span>
               )}
             </button>
@@ -175,7 +181,7 @@ export function TappedBorrowerCard({
           {patron.ready_pickups.map((p) => (
             <p key={p.reservation_id} className="text-ink-700" style={text("--text-sm")}>
               {p.title}
-              {p.pickup_by && <span className="text-ink-400"> · until {shortDate(p.pickup_by)}</span>}
+              {p.pickup_by && <span className="text-ink-400"> · until {formatDate(p.pickup_by)}</span>}
             </p>
           ))}
           <Link href="/librarian/reservations" className="self-start text-green-700 font-semibold hover:text-green-900" style={text("--text-2xs")}>

@@ -12,12 +12,14 @@ class LibrarySettings(BaseModel):
 
     max_books_per_borrower: int
     standard_loan_period_days: int
+    reserve_loan_period_days: int = 7
     max_renewals: int
     renewal_period_days: int
     fine_per_day: float
     max_fine_per_book: float
     reservation_hold_period_days: int
     max_active_reservations: int
+    max_copies_per_request: int = 10
 
     # Kiosk and borrowing timers, in seconds.
     kiosk_idle_timeout_seconds: int = 90
@@ -60,6 +62,8 @@ class PublicLibrarySettings(BaseModel):
     address: str
     contact_email: str
     contact_number: str
+    # For the book request form's limit.
+    max_copies_per_request: int = 10
 
     weekday_open_time: str | None = None
     weekday_close_time: str | None = None
@@ -74,6 +78,15 @@ class PublicLibrarySettings(BaseModel):
 
 
 # Only the fields sent are saved.
+class LibraryCalendarDate(BaseModel):
+    date: str
+    note: str | None = None
+
+
+class CloseDateRequest(BaseModel):
+    note: str | None = Field(None, max_length=200)
+
+
 class UpdateLibrarySettingsRequest(BaseModel):
     library_name: str | None = None
     address: str | None = None
@@ -82,12 +95,14 @@ class UpdateLibrarySettingsRequest(BaseModel):
 
     max_books_per_borrower: int | None = None
     standard_loan_period_days: int | None = None
+    reserve_loan_period_days: int | None = Field(None, ge=1)
     max_renewals: int | None = None
     renewal_period_days: int | None = None
     fine_per_day: float | None = None
     max_fine_per_book: float | None = None
     reservation_hold_period_days: int | None = None
     max_active_reservations: int | None = None
+    max_copies_per_request: int | None = Field(None, ge=1)
 
     kiosk_idle_timeout_seconds: int | None = Field(None, ge=30)
     kiosk_idle_warning_seconds: int | None = Field(None, ge=5)

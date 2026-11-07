@@ -1,5 +1,6 @@
 "use client"
 
+import { formatDate } from "@/lib/dueDates"
 import { useRef, useState } from "react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
@@ -13,10 +14,6 @@ import type { Reservation, ReservationStatus } from "@lasallia/types"
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric" })
-}
-
 function bookTitle(r: Reservation): string {
   return r.books?.title ?? "Unknown title"
 }

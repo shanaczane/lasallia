@@ -1,5 +1,6 @@
 "use client"
 
+import { formatTime } from "@/lib/dueDates"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -275,7 +276,7 @@ export default function LibrarianNotificationsPage() {
                               {n.title}
                             </p>
                             <span className="text-ink-400 shrink-0 whitespace-nowrap" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                              {new Date(n.created_at).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}
+                              {formatTime(n.created_at)}
                             </span>
                           </div>
                           <p className="text-ink-500 mt-0.5 leading-snug" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>

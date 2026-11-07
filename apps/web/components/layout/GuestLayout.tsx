@@ -4,6 +4,8 @@ import { useRef, useState, useEffect, useLayoutEffect } from "react"
 
 const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 import { TopNav } from "./TopNav"
+import { GuestBanner } from "./GuestBanner"
+import { RoleBadge } from "@/components/ui/patrons/RoleBadge"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -146,6 +148,7 @@ export function GuestLayout({
       <TopNav
         userName={userName}
         userInitials={userInitials}
+        userType={<RoleBadge role="guest" />}
         notificationCount={0}
         showNotifications={false}
         showSignOut={false}
@@ -223,6 +226,7 @@ export function GuestLayout({
         )}
         style={{ paddingTop: "var(--height-nav)" }}
       >
+        <GuestBanner loginHref="/login" />
         <div className="w-full">{children}</div>
       </main>
     </div>

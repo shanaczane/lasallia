@@ -9,6 +9,7 @@ import { collegeForProgram } from "@/lib/collegeForProgram"
 import type { UserProfile } from "@lasallia/types"
 import { AccountStatusPill } from "./AccountStatusPill"
 import { PatronActionsMenu } from "./PatronActionsMenu"
+import { RoleBadge } from "./RoleBadge"
 
 // Per-patron loan figures, worked out by the page from the loans list.
 export type PatronStats = {
@@ -23,8 +24,11 @@ export const EMPTY_STATS: PatronStats = { booksOut: 0, overdue: 0, owed: 0 }
 // One column layout for the header and every row, so they line up.
 // md: Name | Books out | Overdue | Fines | Status | Actions
 // lg: Name | College | Books out | Overdue | Fines | Status | Actions
+// xl: Name | College | User Type | Books out | Overdue | Fines | Status | Actions
+// Below xl there's no room for the long faculty label, so the badge sits
+// under the name.
 const ROW_GRID =
-  "grid-cols-[minmax(0,2.4fr)_76px_76px_96px_92px_44px] lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.4fr)_76px_76px_96px_92px_44px]"
+  "grid-cols-[minmax(0,2.4fr)_76px_76px_96px_92px_44px] lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.4fr)_76px_76px_96px_92px_44px] xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1.2fr)_156px_76px_76px_96px_92px_44px]"
 
 const body = (size: string) => ({ fontFamily: "var(--font-body)", fontSize: size })
 
@@ -69,6 +73,7 @@ export function PatronsTable({ patrons, stats, onView, onToggleStatus, selfId }:
       >
         <span>Name</span>
         <span className="hidden lg:block">College</span>
+        <span className="hidden xl:block">User Type</span>
         <span className="text-center">Books out</span>
         <span className="text-center">Overdue</span>
         <span className="text-center">Fines owed</span>
@@ -115,6 +120,7 @@ export function PatronsTable({ patrons, stats, onView, onToggleStatus, selfId }:
                       {patron.email}
                       {patron.id_number ? ` · ${patron.id_number}` : ""}
                     </p>
+                    <RoleBadge role={patron.role} className="mt-1 xl:hidden" />
                   </div>
                 </button>
 
@@ -124,6 +130,10 @@ export function PatronsTable({ patrons, stats, onView, onToggleStatus, selfId }:
                     <p className="text-ink-400 truncate" style={body("var(--text-xs)")} title={program}>{program}</p>
                   )}
                 </div>
+
+                <span className="hidden xl:flex min-w-0">
+                  <RoleBadge role={patron.role} />
+                </span>
 
                 <span
                   className={cn("text-center", s.booksOut > 0 ? "text-ink-900 font-semibold" : "text-ink-300")}
@@ -177,6 +187,7 @@ export function PatronsTable({ patrons, stats, onView, onToggleStatus, selfId }:
                     <p className="text-ink-400 truncate" style={body("var(--text-sm)")}>
                       {[college, program].filter(Boolean).join(" · ") || patron.email}
                     </p>
+                    <RoleBadge role={patron.role} className="mt-1" />
                     {(s.booksOut > 0 || s.overdue > 0 || s.owed > 0 || patron.status === "inactive") && (
                       <div className="flex flex-wrap items-center gap-1.5 mt-1">
                         {s.booksOut > 0 && (

@@ -2,6 +2,7 @@
 
 'use client'
 
+import { formatDate } from "@/lib/dueDates"
 import Link from 'next/link'
 import { Copy, Calendar, Pencil, Trash2 } from 'lucide-react'
 import { Book } from '@lasallia/types'
@@ -170,11 +171,7 @@ export function LibrarianBookCard({ book, onEdit, onDelete, className }: Librari
             >
               <Calendar size={11} className="text-ink-300 shrink-0" />
               Acquired{' '}
-              {new Date(book.created_at).toLocaleDateString('en-PH', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-              })}
+              {formatDate(book.created_at)}
             </span>
           )}
         </div>

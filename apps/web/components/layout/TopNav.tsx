@@ -16,6 +16,8 @@ type TopNavProps = {
   userName?: string
   userEmail?: string
   userInitials?: string
+  /** The user's RoleBadge. Every layout passes one. */
+  userType?: React.ReactNode
   notificationCount?: number
   notificationsHref?: string
   showNotifications?: boolean
@@ -40,6 +42,7 @@ export function TopNav({
   userName = "User",
   userEmail = "",
   userInitials = "U",
+  userType,
   notificationCount = 0,
   notificationsHref = "/user/notifications",
   showNotifications = true,
@@ -153,6 +156,9 @@ export function TopNav({
       {/* Right side */}
       <div className="flex items-center gap-1 shrink-0">
 
+        {/* Narrow on phones; the menu below has room for the whole line. */}
+        {userType && <div className="flex min-w-0 max-w-24 sm:max-w-xs mr-1">{userType}</div>}
+
         {/* Bell — dropdown preview with a "View all" link to the full page */}
         {showNotifications && (
           <NotificationBellMenu count={notificationCount} href={notificationsHref} />
@@ -207,6 +213,7 @@ export function TopNav({
                     {userEmail}
                   </p>
                 )}
+                {userType && <div className="flex mt-2">{userType}</div>}
               </div>
               {profileHref && (
                 <Link

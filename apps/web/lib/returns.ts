@@ -1,7 +1,7 @@
 // API calls for returns and reshelving (librarians only).
 
 import { getToken } from "@/lib/auth"
-import type { Book } from "@lasallia/types"
+import type { Book, UserRole } from "@lasallia/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
@@ -23,6 +23,10 @@ export type FineStatus = "none" | "paid" | "unsettled"
 export type Borrower = {
   full_name: string | null
   avatar_url: string | null
+  role?: UserRole | null
+  program?: string | null
+  college?: string | null
+  year_level?: number | null
 }
 
 export type Loan = {
@@ -49,6 +53,8 @@ export type Loan = {
 
 export type LoanLookupResult = Loan & {
   days_overdue: number
+  // "Overdue by 3 school days", or library hours for reserve materials.
+  overdue_label?: string | null
   preview_fine_amount: number
 }
 

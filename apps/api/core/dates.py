@@ -29,6 +29,44 @@ def manila_now() -> datetime:
     return datetime.now(MANILA)
 
 
+def _as_manila(value: str | datetime) -> datetime:
+    moment = parse_timestamp(value) if isinstance(value, str) else value
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(MANILA)
+
+
+def date_text(value: str | datetime) -> str:
+    """"November 14, 2026" in Manila time."""
+    moment = _as_manila(value)
+    return f"{moment:%B} {moment.day}, {moment.year}"
+
+
+def time_text(value: str | datetime) -> str:
+    """"5:00 PM" in Manila time."""
+    moment = _as_manila(value)
+    return f"{moment.hour % 12 or 12}:{moment:%M} {'AM' if moment.hour < 12 else 'PM'}"
+
+
+def school_days_text(days: int) -> str:
+    return f"Overdue by {days} school day{'' if days == 1 else 's'}"
+
+
+def library_hours_text(hours: float) -> str:
+    shown = round(hours, 1)
+    return f"Overdue by {shown:g} library hour{'' if shown == 1 else 's'}"
+
+
+def overdue_text(school_days: int, library_hours: float, hourly: bool) -> str:
+    """Past the due time, but no school day or library hour has gone by yet
+    reads "Overdue today"."""
+    if hourly and library_hours > 0:
+        return library_hours_text(library_hours)
+    if not hourly and school_days > 0:
+        return school_days_text(school_days)
+    return "Overdue today"
+
+
 def manila_date_text(value: str | None) -> str:
     """'2026-11-03T15:30:00+00:00' -> '2026-11-03' (the Manila date)."""
     if not value:

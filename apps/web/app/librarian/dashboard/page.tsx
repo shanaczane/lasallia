@@ -14,7 +14,8 @@ import { cn } from "@/lib/utils"
 import { fetchLoans, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
 import { fetchBooks } from "@/lib/books"
-import { buildFeed, timeLabel, TX_CONFIG, type FeedItem } from "@/lib/activity"
+import { buildFeed, TX_CONFIG, type FeedItem } from "@/lib/activity"
+import { formatTime } from "@/lib/dueDates"
 import { ActivityDetailPanel } from "@/components/dashboard/ActivityDetailPanel"
 import type { Reservation } from "@lasallia/types"
 import { pressable } from "@/lib/a11y"
@@ -286,7 +287,7 @@ export default function LibrarianDashboard() {
                         Book Successfully Returned
                       </p>
                       <p className="text-ink-400" style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-body)" }}>
-                        {timeLabel(r.returned_at!)}
+                        {formatTime(r.returned_at!)}
                       </p>
                     </div>
                   </div>

@@ -191,7 +191,7 @@ def test_the_report_shows_manila_time_and_readable_details():
     )])
     data = build_audit_log(db, ExportFilters())
     row = data.rows[0]
-    assert row["created_at"] == "6 November 2026, 1:30 AM"
+    assert row["created_at"] == "November 6, 2026, 1:30 AM"
     assert row["action"] == "Book edited"
     assert row["details"] == "title: Old → New; reason: Typo"
 

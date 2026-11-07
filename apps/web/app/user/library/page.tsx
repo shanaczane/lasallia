@@ -2,6 +2,7 @@
 
 "use client"
 
+import { dueLabel, formatDate } from "@/lib/dueDates"
 import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
@@ -286,14 +287,6 @@ function deriveBorrowStatus(loan: ApiLoan): BorrowStatus {
   return daysLeft <= DUE_SOON_DAYS ? "due_soon" : "active"
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-}
-
-function formatShortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-}
-
 // No "Renew" button: renewals aren't built yet.
 function BorrowedCard({ loan, status }: { loan: ApiLoan; status: BorrowStatus }) {
   const book = loan.books
@@ -347,7 +340,7 @@ function BorrowedCard({ loan, status }: { loan: ApiLoan; status: BorrowStatus })
 
         <div className="flex items-center justify-between gap-2">
           <span className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
-            Due {formatShortDate(loan.due_date)}
+            {dueLabel(loan.due_date)}
           </span>
           <span className={cn("font-semibold", dateColor)} style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
             {daysLabel}
@@ -710,7 +703,7 @@ function HistoryCard({ loan, status }: { loan: ApiLoan; status: HistoryStatus })
           className="text-ink-400 pt-1.5"
           style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
         >
-          Returned {loan.returned_at ? formatDate(loan.returned_at) : "—"}
+          Returned on {loan.returned_at ? formatDate(loan.returned_at) : "—"}
         </p>
         {!!loan.fine_amount && (() => {
           const fine = fineParts(loan, status)

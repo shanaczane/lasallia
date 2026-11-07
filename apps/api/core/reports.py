@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 
 from supabase import Client
 
-from core.calendar import compute_fine
+from core.calendar import HOURLY_FINE_COLLECTION_TYPES, compute_fine, overdue_status
+from core.dates import overdue_text
 from core.paging import fetch_all_rows as _fetch_all_rows
 from schemas.reports import (
     Bucket,
@@ -23,13 +24,16 @@ from schemas.reports import (
     TransactionTrendPoint,
 )
 
+# The user types a borrower-based report can be narrowed to.
+USER_TYPE_LABELS = {"student": "Student", "faculty": "Faculty/Lasallian Partner"}
+
 CATALOGUE_COLORS = ["#006F3C", "#00874A", "#B8923D", "#4A6FA5", "#8B5CF6", "#DDDFD7"]
 
 
 @dataclass
 class ReportFilters:
-    """Report filters. Dates, program and year level only apply to
-    loan-based reports. Category applies everywhere."""
+    """Report filters. Dates, program, year level and user type only apply
+    to borrower-based reports. Category applies everywhere."""
 
     date_from: str | None = None
     date_to: str | None = None
@@ -39,6 +43,8 @@ class ReportFilters:
     # book's own college (books.subject) on the catalogue and shelf list.
     college: str | None = None
     year_level: int | None = None
+    # "student" or "faculty" (profiles.role). None means everyone.
+    user_type: str | None = None
 
 
 def _year_suffix(n: int) -> str:
@@ -59,7 +65,7 @@ def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
     # query fails.
     def query():
         q = admin.table("loans").select(
-            "*, book_copies(book_id, books(*)), profiles!loans_student_id_fkey(full_name, email, program, college, year_level)"
+            "*, book_copies(book_id, accession_number, books(*)), profiles!loans_student_id_fkey(full_name, email, program, college, year_level, role)"
         )
         if filters.date_from:
             q = q.gte("borrowed_at", filters.date_from)
@@ -84,8 +90,11 @@ def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
             continue
         if filters.year_level is not None and (not profile or profile.get("year_level") != filters.year_level):
             continue
+        if filters.user_type and (not profile or profile.get("role") != filters.user_type):
+            continue
 
         loan["books"] = book
+        loan["accession_number"] = copy.get("accession_number") if copy else None
         loan["profiles"] = profile
         if loan["status"] == "active" and datetime.fromisoformat(loan["due_date"]) < now:
             loan["status"] = "overdue"
@@ -239,7 +248,7 @@ def overdue_loans(admin: Client, filters: ReportFilters) -> list[tuple[str, Over
         book = loan.get("books") or {}
         profile = loan.get("profiles") or {}
         collection_type = book.get("collection_type") or "General"
-        days_overdue, fine = compute_fine(admin, loan["due_date"], collection_type)
+        status = overdue_status(admin, loan["due_date"], collection_type)
         year_level = profile.get("year_level")
 
         rows.append((loan["student_id"], OverdueRow(
@@ -251,8 +260,15 @@ def overdue_loans(admin: Client, filters: ReportFilters) -> list[tuple[str, Over
             book=book.get("title") or "Unknown title",
             author=book.get("author") or "—",
             dueDate=loan["due_date"],
-            daysOverdue=days_overdue,
-            fine=fine,
+            daysOverdue=status.school_days,
+            fine=status.fine,
+            role=profile.get("role"),
+            accession=loan.get("accession_number"),
+            collectionType=collection_type,
+            libraryHours=round(status.library_hours, 2),
+            overdueLabel=overdue_text(
+                status.school_days, status.library_hours, collection_type in HOURLY_FINE_COLLECTION_TYPES,
+            ),
         )))
     return rows
 
@@ -306,13 +322,17 @@ def fines_report(admin: Client, filters: ReportFilters) -> list[FineRow]:
                 })
         elif loan["status"] == "overdue":
             collection_type = book.get("collection_type") or "General"
-            days_overdue, fine = compute_fine(admin, loan["due_date"], collection_type)
+            status = overdue_status(admin, loan["due_date"], collection_type)
+            fine = status.fine
             entry["accruing"] += fine
             entry["entries"].append({
                 "title": title,
                 "kind": "accruing",
                 "amount": round(fine, 2),
-                "detail": f"{days_overdue} day{'s' if days_overdue != 1 else ''} overdue — still out, not yet returned",
+                "detail": (
+                    f"{overdue_text(status.school_days, status.library_hours, collection_type in HOURLY_FINE_COLLECTION_TYPES)}"
+                    " — still out, not yet returned"
+                ),
                 "loan_id": loan["id"],
             })
 
@@ -394,7 +414,7 @@ def transaction_stats(admin: Client, filters: ReportFilters) -> TransactionStats
     """Totals and rates for the filtered period (not broken down by time)."""
     loans = _fetch_filtered_loans(admin, filters)
 
-    res_query = admin.table("reservations").select("status, requested_at, books(category), profiles(program, college, year_level)")
+    res_query = admin.table("reservations").select("status, requested_at, books(category), profiles(program, college, year_level, role)")
     if filters.date_from:
         res_query = res_query.gte("requested_at", filters.date_from)
     if filters.date_to:
@@ -405,6 +425,7 @@ def transaction_stats(admin: Client, filters: ReportFilters) -> TransactionStats
         and (not filters.program or (r.get("profiles") or {}).get("program") == filters.program)
         and (not filters.college or (r.get("profiles") or {}).get("college") == filters.college)
         and (filters.year_level is None or (r.get("profiles") or {}).get("year_level") == filters.year_level)
+        and (not filters.user_type or (r.get("profiles") or {}).get("role") == filters.user_type)
     ]
 
     completed = [l for l in loans if l["status"] == "returned" and l.get("returned_at")]

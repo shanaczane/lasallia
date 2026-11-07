@@ -2,37 +2,35 @@
 
 "use client"
 
-import { useRef, useState } from "react"
+import { formatDate } from "@/lib/dueDates"
+import { useEffect, useRef, useState } from "react"
 import { X, Paperclip, Download, Pencil, Trash2, Ban, ChevronUp, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
+  CatalogMatchError,
   updateMyBookRequest,
   cancelBookRequest,
   uploadRequestAttachments,
   deleteRequestAttachment,
   type BookRequest,
-  type BookRequestStatus,
   type BookRequestFormat,
 } from "@/lib/bookRequests"
+import {
+  DEFAULT_MAX_COPIES,
+  hasErrors,
+  MAX_ATTACHMENT_BYTES,
+  REQUEST_STATUS_BADGE as STATUS_BADGE,
+  REQUEST_STATUS_LABEL as STATUS_LABEL,
+  tooManyFiles,
+  validateRequestForm,
+  type RequestFormErrors,
+} from "@/lib/bookRequestForm"
+import { fetchPublicLibrarySettings } from "@/lib/settings"
+import { FieldError } from "./FieldError"
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 
-const STATUS_LABEL: Record<BookRequestStatus, string> = {
-  pending: "Pending", approved: "Approved", rejected: "Rejected", fulfilled: "Fulfilled", cancelled: "Cancelled",
-}
-const STATUS_BADGE: Record<BookRequestStatus, string> = {
-  pending: "bg-warn-bg text-warn",
-  approved: "bg-info-bg text-info",
-  rejected: "bg-danger-bg text-danger",
-  fulfilled: "bg-success-bg text-success",
-  cancelled: "bg-ink-100 text-ink-500",
-}
 const FORMAT_LABEL: Record<BookRequestFormat, string> = {
   print: "Print", ebook: "eBook", either: "Either format",
-}
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
 }
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -69,6 +67,13 @@ export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookReq
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+  const [fieldErrors, setFieldErrors] = useState<RequestFormErrors>({})
+  const [catalogWarning, setCatalogWarning] = useState("")
+  const [maxCopies, setMaxCopies] = useState(DEFAULT_MAX_COPIES)
+
+  useEffect(() => {
+    fetchPublicLibrarySettings().then((s) => setMaxCopies(s.max_copies_per_request)).catch(() => {})
+  }, [])
 
   const [title, setTitle] = useState(r.title)
   const [author, setAuthor] = useState(r.author ?? "")
@@ -102,16 +107,18 @@ export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookReq
     setTitle(r.title); setAuthor(r.author ?? ""); setIsbn(r.isbn ?? ""); setNote(r.note ?? "")
     setFormat(r.format); setCopies(r.copies); setCourse(r.course ?? "")
     setError("")
+    setFieldErrors({})
+    setCatalogWarning("")
     setEditing(true)
   }
 
-  async function handleSave() {
-    if (!title.trim()) {
-      setError("Title is required")
-      return
-    }
+  async function handleSave(confirmInCatalog = false) {
+    const problems = validateRequestForm({ title, author, isbn, copies, course }, maxCopies)
+    setFieldErrors(problems)
+    if (hasErrors(problems)) return
     setSaving(true)
     setError("")
+    setCatalogWarning("")
     try {
       const updated = await updateMyBookRequest(r.id, {
         title: title.trim(),
@@ -121,11 +128,13 @@ export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookReq
         format,
         copies,
         course: course.trim(),
+        confirm_in_catalog: confirmInCatalog,
       })
       onUpdated(updated)
       setEditing(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save your changes")
+      if (err instanceof CatalogMatchError) setCatalogWarning(err.message)
+      else setError(err instanceof Error ? err.message : "Could not save your changes")
     } finally {
       setSaving(false)
     }
@@ -138,6 +147,11 @@ export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookReq
     const tooBig = picked.find((f) => f.size > MAX_ATTACHMENT_BYTES)
     if (tooBig) {
       setError(`'${tooBig.name}' is over 10 MB`)
+      return
+    }
+    const tooMany = tooManyFiles(r.attachments.length, picked.length)
+    if (tooMany) {
+      setError(tooMany)
       return
     }
     setUploading(true)
@@ -217,6 +231,8 @@ export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookReq
             <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
               {r.status === "cancelled"
                 ? "You withdrew this request — it can no longer be edited."
+                : r.status === "under_review"
+                ? "A librarian is reviewing this request, so it can no longer be edited."
                 : "This request has already been reviewed and can no longer be edited."}
             </p>
           )}
@@ -227,6 +243,28 @@ export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookReq
           {error && (
             <p className="text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>{error}</p>
           )}
+          {catalogWarning && (
+            <div className="rounded-sm border border-gold-500 bg-gold-100 px-3 py-2 flex flex-wrap items-center justify-between gap-2" role="alert">
+              <p className="text-ink-800" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+                {catalogWarning} Do you still want to request it?
+              </p>
+              <button
+                type="button"
+                onClick={() => handleSave(true)}
+                disabled={saving}
+                className="px-3 py-1.5 rounded-sm bg-white border border-gold-500 text-ink-800 font-semibold transition-colors disabled:opacity-50"
+                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}
+              >
+                Yes, request it
+              </button>
+            </div>
+          )}
+          {r.status === "rejected" && r.rejection_reason && (
+            <div className="rounded-sm border border-ink-200 bg-ink-50 px-3 py-2">
+              <p className="text-ink-500 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>Reason for rejection</p>
+              <p className="text-ink-800 whitespace-pre-wrap" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{r.rejection_reason}</p>
+            </div>
+          )}
 
           {editing ? (
             <div className="flex flex-col gap-3">
@@ -236,12 +274,14 @@ export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookReq
                     Title <span className="text-danger">*</span>
                   </label>
                   <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} style={inputStyle} />
+                  <FieldError message={fieldErrors.title} />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-                    Author
+                    Author <span className="text-danger">*</span>
                   </label>
                   <input type="text" value={author} onChange={(e) => setAuthor(e.target.value)} className={inputClass} style={inputStyle} />
+                  <FieldError message={fieldErrors.author} />
                 </div>
               </div>
               <div className="grid sm:grid-cols-3 gap-3">
@@ -250,6 +290,7 @@ export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookReq
                     ISBN
                   </label>
                   <input type="text" value={isbn} onChange={(e) => setIsbn(e.target.value)} className={inputClass} style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm-body)" }} />
+                  <FieldError message={fieldErrors.isbn} />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
@@ -263,12 +304,13 @@ export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookReq
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-                    Copies needed
+                    Copies needed <span className="text-danger">*</span>
                   </label>
                   <div className="relative">
                     <input
                       type="number"
                       min={1}
+                      max={maxCopies}
                       value={copies}
                       onChange={(e) => setCopies(Math.max(1, Number(e.target.value) || 1))}
                       className={cn(inputClass, "pr-7")}
@@ -293,13 +335,15 @@ export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookReq
                       </button>
                     </div>
                   </div>
+                  <FieldError message={fieldErrors.copies} />
                 </div>
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
-                  Course / program
+                  Related course <span className="text-danger">*</span>
                 </label>
                 <input type="text" value={course} onChange={(e) => setCourse(e.target.value)} className={inputClass} style={inputStyle} />
+                <FieldError message={fieldErrors.course} />
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-ink-700 font-medium" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
@@ -411,8 +455,8 @@ export function MyBookRequestModal({ request: r, onClose, onUpdated }: MyBookReq
                 </button>
                 <button
                   type="button"
-                  onClick={handleSave}
-                  disabled={saving || !title.trim()}
+                  onClick={() => handleSave()}
+                  disabled={saving}
                   className="px-4 py-2.5 rounded-sm bg-green-700 text-white hover:bg-green-800 disabled:opacity-40 transition-colors font-semibold"
                   style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
                 >

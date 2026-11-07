@@ -8,6 +8,7 @@
 
 'use client'
 
+import { formatDate } from "@/lib/dueDates"
 import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -31,10 +32,6 @@ const CONDITION_OPTIONS: Array<{ value: Condition; label: string }> = [
   { value: 'minor_wear', label: 'Minor wear' },
   { value: 'already_damaged', label: 'Already damaged' },
 ]
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
-}
 
 // Counts down from the server's seconds_left, so a device with a wrong
 // clock still shows the right time.
@@ -413,7 +410,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
             {hold.book.title}
           </p>
           <p className="text-green-700 font-semibold mt-2" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-            Due back {formatDate(confirmed.dueDate)}
+            Due date: {formatDate(confirmed.dueDate)}
           </p>
         </div>
         <div className="flex flex-col items-center gap-3 mt-2">
@@ -609,7 +606,7 @@ export default function BorrowFormPage({ params }: { params: Promise<{ token: st
               Loan details
             </p>
             <p className="text-ink-700" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}>
-              Due back <span className="font-semibold">{formatDate(hold.due_date_preview)}</span> ({hold.loan_period_days}-day loan, starting {hold.needs_kiosk_tap ? 'when you tap your ID at the kiosk' : 'the moment you confirm'})
+              Due date: <span className="font-semibold">{formatDate(hold.due_date_preview)}</span> ({hold.loan_period_days}-day loan, starting {hold.needs_kiosk_tap ? 'when you tap your ID at the kiosk' : 'the moment you confirm'})
             </p>
           </div>
 

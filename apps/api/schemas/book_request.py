@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-RequestStatus = str  # 'pending' | 'approved' | 'rejected' | 'fulfilled' | 'cancelled'
+RequestStatus = str  # 'pending' | 'under_review' | 'approved' | 'rejected' | 'fulfilled' | 'cancelled'
 RequestFormat = str  # 'print' | 'ebook' | 'either'
 
 
@@ -29,6 +29,7 @@ class BookRequest(BaseModel):
     copies: int
     course: str | None = None
     status: RequestStatus
+    rejection_reason: str | None = None
     reviewed_by: str | None = None
     reviewed_at: str | None = None
     created_at: str
@@ -46,10 +47,14 @@ class CreateBookRequestRequest(BaseModel):
     format: RequestFormat = "either"
     copies: int = 1
     course: str | None = None
+    # The title is already in the catalog and the requester still wants it.
+    confirm_in_catalog: bool = False
 
 
 class UpdateBookRequestRequest(BaseModel):
     status: RequestStatus | None = None
+    # Required when rejecting.
+    rejection_reason: str | None = None
 
 
 # Faculty editing their own pending request. Send only the fields that changed.
@@ -61,3 +66,4 @@ class UpdateOwnBookRequestRequest(BaseModel):
     format: RequestFormat | None = None
     copies: int | None = None
     course: str | None = None
+    confirm_in_catalog: bool = False

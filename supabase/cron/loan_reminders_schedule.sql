@@ -1,3 +1,6 @@
+-- REPLACED by loan_reminders_api_schedule.sql, which unschedules this job.
+-- Don't run this any more.
+--
 -- Run ONCE in the Supabase SQL editor after deploying the function
 -- (`supabase functions deploy loan-reminders --project-ref <ref>`).
 -- Not in apps/api/migrations because it holds a secret.

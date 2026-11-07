@@ -38,6 +38,7 @@ from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.inventory import InventoryReportItem, InventorySession
 from schemas.reports import (
+    ReportUserType,
     Bucket,
     CatalogueSlice,
     FineRow,
@@ -59,6 +60,10 @@ from schemas.reports import (
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
+def _one_user_type(value: str | None) -> str | None:
+    return None if value == "all" else value
+
+
 def report_filters(
     date_from: str | None = None,
     date_to: str | None = None,
@@ -66,12 +71,13 @@ def report_filters(
     program: str | None = None,
     college: str | None = None,
     year_level: int | None = None,
+    user_type: ReportUserType | None = None,
 ) -> ReportFilters:
     # A plain date ("2026-11-30") means the whole Manila day: from its first
     # instant, to its last.
     return ReportFilters(
         date_from=report_bound(date_from, end=False), date_to=report_bound(date_to, end=True), category=category,
-        program=program, college=college, year_level=year_level,
+        program=program, college=college, year_level=year_level, user_type=_one_user_type(user_type),
     )
 
 
@@ -217,6 +223,7 @@ def _export_data(body: ReportExportFilters) -> ReportData:
     filters = ExportFilters(
         date_from=body.date_from, date_to=body.date_to, category=body.category,
         program=body.program, college=body.college, year_level=body.year_level,
+        user_type=_one_user_type(body.user_type),
         librarian_profile_id=body.librarian_profile_id, action=body.action,
     )
     return REPORTS[body.report].build(get_admin_client(), filters)

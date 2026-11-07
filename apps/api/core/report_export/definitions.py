@@ -13,7 +13,7 @@ from typing import Any, Callable, Literal
 
 from core.audit import ACTIONS, audit_query
 from core.dates import MANILA, manila_date_text, manila_now, report_bound
-from core.reports import ReportFilters, _fetch_all_rows, overdue_loans
+from core.reports import USER_TYPE_LABELS, ReportFilters, _fetch_all_rows, overdue_loans
 
 ColumnKind = Literal["text", "int", "money", "date"]
 
@@ -51,6 +51,7 @@ class ExportFilters:
     program: str | None = None
     college: str | None = None
     year_level: int | None = None
+    user_type: str | None = None
     librarian_profile_id: str | None = None
     action: str | None = None
 
@@ -62,6 +63,7 @@ class ExportFilters:
             program=self.program,
             college=self.college,
             year_level=self.year_level,
+            user_type=self.user_type,
         )
 
     def period_text(self) -> str:
@@ -77,6 +79,8 @@ class ExportFilters:
 
     def filter_lines(self) -> list[str]:
         lines = []
+        if self.user_type:
+            lines.append(f"User type: {USER_TYPE_LABELS[self.user_type]}")
         if self.category:
             lines.append(f"Category: {self.category}")
         if self.college:
@@ -115,7 +119,7 @@ class ReportDefinition:
 
 
 def _long_date(day: date) -> str:
-    return f"{day.day} {day.strftime('%B %Y')}"
+    return f"{day:%B} {day.day}, {day.year}"
 
 
 def manila_time_text(moment: datetime) -> str:
@@ -157,7 +161,7 @@ OVERDUE_COLUMNS = [
     Column("book", "Book title", "text", 34),
     Column("author", "Author", "text", 20),
     Column("due_date", "Due date", "date", 11),
-    Column("days_overdue", "Days overdue", "int", 9),
+    Column("days_overdue", "School days overdue", "int", 9),
     Column("fine", "Fine (PHP)", "money", 10),
 ]
 
@@ -221,7 +225,7 @@ def build_overdue(admin, filters: ExportFilters) -> ReportData:
         KeyFigure("Overdue loans", f"{count:,}", count, "#,##0"),
         KeyFigure("Borrowers with overdue loans", f"{borrowers:,}", borrowers, "#,##0"),
         KeyFigure("Fines so far", _peso(total_fine), total_fine, '"₱"#,##0.00'),
-        KeyFigure("Average days overdue", f"{average_days:.1f}", average_days, "0.0"),
+        KeyFigure("Average school days overdue", f"{average_days:.1f}", average_days, "0.0"),
         KeyFigure("Longest overdue", _count_text(longest, "day", "days"), longest,
                   '0 "day"' if longest == 1 else '#,##0 "days"'),
         KeyFigure("Program with the most overdue loans", _top_programs_text(top_programs, top_count)),
@@ -231,7 +235,7 @@ def build_overdue(admin, filters: ExportFilters) -> ReportData:
         summary = (
             f"{_count_text(count, 'loan', 'loans')} by {_count_text(borrowers, 'borrower', 'borrowers')} "
             f"{'is' if count == 1 else 'are'} overdue, with {_peso(total_fine)} in fines so far. "
-            f"On average they are {average_days:.1f} days overdue; the longest is "
+            f"On average they are {average_days:.1f} school days overdue; the longest is "
             f"{_count_text(longest, 'day', 'days')}. "
             f"Most overdue loans: {_top_programs_text(top_programs, top_count)}."
         )
@@ -263,7 +267,7 @@ def build_overdue(admin, filters: ExportFilters) -> ReportData:
         },
         # No chart when there's nothing to show.
         chart=Chart(
-            title="Overdue loans by days overdue",
+            title="Overdue loans by school days overdue",
             labels=[label for label, _, _ in OVERDUE_BUCKETS],
             values=[by_bucket.get(label, 0) for label, _, _ in OVERDUE_BUCKETS],
             value_label="Overdue loans",

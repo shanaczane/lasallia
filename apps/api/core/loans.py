@@ -4,7 +4,8 @@ from fastapi import HTTPException, status
 
 from core.accession import normalize_accession_number
 from core.notify import notify, notify_librarians
-from core.email_template import EmailContent, long_date, peso, staff_alert
+from core.calendar import loan_due_date
+from core.email_template import EmailContent, long_date, long_date_time, peso, staff_alert
 from core.reservations import promote_next_reservation
 from core.settings import get_library_settings
 
@@ -121,7 +122,11 @@ def create_loan_and_notify(
     reservation for it, and notifies the student and librarians. Used by
     both the kiosk and the desk."""
     cfg = get_library_settings(db)
-    due_date = (datetime.now(timezone.utc) + timedelta(days=cfg["standard_loan_period_days"])).isoformat()
+    book_res = db.table("books").select("*").eq("id", book_id).execute()
+    book = book_res.data[0] if book_res.data else None
+    due_date = loan_due_date(
+        db, datetime.now(timezone.utc), cfg, book.get("collection_type") if book else None,
+    ).isoformat()
 
     loan_res = db.table("loans").insert({
         "book_copy_id": book_copy_id,
@@ -147,15 +152,14 @@ def create_loan_and_notify(
     }).eq("book_copy_id", book_copy_id).eq("status", "ready").eq("user_id", student_id).execute()
 
     loan = loan_res.data[0]
-    book_res = db.table("books").select("*").eq("id", book_id).execute()
-    loan["books"] = book_res.data[0] if book_res.data else None
+    loan["books"] = book
 
     book_title = loan["books"]["title"] if loan["books"] else "A book"
-    due_label = datetime.fromisoformat(due_date).strftime("%B %d, %Y")
+    due_label = long_date_time(due_date)
     notify(
         student_id, "loan_confirmed",
         "Book successfully borrowed",
-        f'You\'ve borrowed "{book_title}". It\'s due back on {due_label}.',
+        f'You\'ve borrowed "{book_title}". Due date: {due_label}.',
         link="/user/library",
         email=EmailContent(
             subject=f"Borrowing confirmed: {book_title}",
@@ -163,7 +167,7 @@ def create_loan_and_notify(
             details=[
                 ("Title", book_title),
                 ("Borrowed on", long_date(loan["borrowed_at"] if loan.get("borrowed_at") else datetime.now(timezone.utc))),
-                ("Due date", long_date(due_date)),
+                ("Due date", due_label),
             ],
             paragraphs=[
                 "Please return it to the LRC counter on or before the due date to avoid an overdue fine "
@@ -177,7 +181,7 @@ def create_loan_and_notify(
     borrower_name = borrower_res.data[0]["full_name"] if borrower_res.data else "A student"
     notify_librarians(
         "Book checked out",
-        f'{borrower_name} checked out "{book_title}", due {due_label}.',
+        f'{borrower_name} checked out "{book_title}". Due date: {due_label}.',
         link="/librarian/borrow-return",
         email=staff_alert(
             subject=f"Book checked out: {book_title}",
@@ -185,7 +189,7 @@ def create_loan_and_notify(
             details=[
                 ("Borrower", borrower_name),
                 ("Title", book_title),
-                ("Due date", long_date(due_date)),
+                ("Due date", due_label),
             ],
             action="No action is needed. The loan is recorded under Borrow & Return.",
             link_label="View Borrow & Return",

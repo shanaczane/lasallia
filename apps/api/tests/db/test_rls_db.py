@@ -319,3 +319,100 @@ def test_the_service_role_can_still_change_a_role(db):
     with _As(db, None, role="service_role") as c:
         c.execute("update profiles set role = 'faculty' where id = %s", (STUDENT_A,))
     assert db.execute("select role from profiles where id = %s", (STUDENT_A,)).fetchone()[0] == "faculty"
+
+
+# ── loan_reminder_log (0066) and library_calendar.note (0067) ──
+
+def _any_loan(db) -> str:
+    return db.execute("select id::text from loans limit 1").fetchone()[0]
+
+
+@pytest.mark.parametrize("user, role", [(STUDENT_A, "authenticated"), (LIBRARIAN, "authenticated"), (None, "anon")])
+@pytest.mark.parametrize("statement", [
+    "select * from loan_reminder_log",
+    "delete from loan_reminder_log",
+])
+def test_browsers_cant_reach_the_reminder_log(db, user, role, statement):
+    with _As(db, user, role=role) as c:
+        with pytest.raises(errors.InsufficientPrivilege):
+            c.execute(statement)
+
+
+def test_the_same_reminder_can_only_be_logged_once(db):
+    loan_id = _any_loan(db)
+    insert = "insert into loan_reminder_log (loan_id, kind, occurrence, channel) values (%s, 'overdue_repeat', 2, 'email')"
+    db.execute(insert, (loan_id,))
+    with pytest.raises(errors.UniqueViolation):
+        db.execute(insert, (loan_id,))
+
+
+def test_each_channel_and_repeat_gets_its_own_row(db):
+    loan_id = _any_loan(db)
+    for occurrence, channel in ((1, "in_app"), (1, "email"), (2, "in_app")):
+        db.execute(
+            "insert into loan_reminder_log (loan_id, kind, occurrence, channel) values (%s, 'overdue_repeat', %s, %s)",
+            (loan_id, occurrence, channel),
+        )
+    assert db.execute("select count(*) from loan_reminder_log").fetchone()[0] == 3
+
+
+def test_an_unknown_kind_is_refused(db):
+    with pytest.raises(errors.CheckViolation):
+        db.execute("insert into loan_reminder_log (loan_id, kind, channel) values (%s, 'nope', 'email')", (_any_loan(db),))
+
+
+def test_the_migration_copies_the_old_markers(db):
+    loan_id = _any_loan(db)
+    db.execute("update loans set due_reminder_sent_at = now(), overdue_notified_at = now() where id = %s", (loan_id,))
+    sql = next(p for p in MIGRATIONS if p.name.startswith("0066")).read_text(encoding="utf8")
+    db.execute(sql)
+    db.execute(sql)  # safe to run twice
+    rows = db.execute("select kind, channel from loan_reminder_log where loan_id = %s order by 1, 2", (loan_id,)).fetchall()
+    assert rows == [("due_tomorrow", "email"), ("due_tomorrow", "in_app"), ("overdue_first", "email"), ("overdue_first", "in_app")]
+
+
+def test_a_closed_date_keeps_its_reason(db):
+    db.execute("insert into library_calendar (date, is_school_day, note) values ('2026-12-25', false, 'Christmas Day')")
+    assert db.execute("select note from library_calendar where date = '2026-12-25'").fetchone()[0] == "Christmas Day"
+
+
+# ── book requests (0068) ──
+
+def _request(db, status: str) -> None:
+    db.execute(
+        "insert into book_requests (requester_id, title, status) values (%s, 'A book', %s)", (STUDENT_A, status),
+    )
+
+
+def test_under_review_is_a_valid_status(db):
+    _request(db, "under_review")
+    assert db.execute("select status from book_requests").fetchone()[0] == "under_review"
+
+
+def test_an_unknown_request_status_is_refused(db):
+    with pytest.raises(errors.CheckViolation):
+        _request(db, "maybe")
+
+
+def test_the_copies_limit_defaults_to_ten(db):
+    db.execute("insert into library_settings (id) values (1) on conflict do nothing")
+    assert db.execute("select max_copies_per_request from library_settings").fetchone()[0] == 10
+
+
+def test_the_copies_limit_cant_be_zero(db):
+    db.execute("insert into library_settings (id) values (1) on conflict do nothing")
+    with pytest.raises(errors.CheckViolation):
+        db.execute("update library_settings set max_copies_per_request = 0")
+
+
+# ── reserve loan length (0069) ──
+
+def test_the_reserve_loan_period_defaults_to_seven_days(db):
+    db.execute("insert into library_settings (id) values (1) on conflict do nothing")
+    assert db.execute("select reserve_loan_period_days from library_settings").fetchone()[0] == 7
+
+
+def test_the_reserve_loan_period_cant_be_zero(db):
+    db.execute("insert into library_settings (id) values (1) on conflict do nothing")
+    with pytest.raises(errors.CheckViolation):
+        db.execute("update library_settings set reserve_loan_period_days = 0")

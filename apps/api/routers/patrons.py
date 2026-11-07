@@ -3,6 +3,7 @@ from supabase import Client
 
 from core.audit import changed_fields, log_action
 from core.deps import get_user_supabase, require_librarian, require_librarian_profile
+from core.paging import fetch_all_rows
 from core.supabase import get_admin_client
 from core.email_template import EmailContent
 from core.notify import email_user
@@ -29,10 +30,13 @@ def list_patrons(
     librarian: UserProfile = Depends(require_librarian),
     db: Client = Depends(get_user_supabase),
 ):
-    query = db.table("profiles").select("*")
-    if role:
-        query = query.eq("role", role)
-    patrons = query.order("full_name").execute().data
+    def query():
+        rows = db.table("profiles").select("*")
+        if role:
+            rows = rows.eq("role", role)
+        return rows.order("full_name").order("id")
+
+    patrons = fetch_all_rows(query)
 
     # Filtered in Python so user text never goes into a query filter. The
     # list is small, so this is cheap.

@@ -5,7 +5,7 @@ import { getToken } from "@/lib/auth"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
-export type BookRequestStatus = "pending" | "approved" | "rejected" | "fulfilled" | "cancelled"
+export type BookRequestStatus = "pending" | "under_review" | "approved" | "rejected" | "fulfilled" | "cancelled"
 export type BookRequestFormat = "print" | "ebook" | "either"
 
 export type BookRequestAttachment = {
@@ -26,6 +26,7 @@ export type BookRequest = {
   copies: number
   course: string | null
   status: BookRequestStatus
+  rejection_reason: string | null
   reviewed_by: string | null
   reviewed_at: string | null
   created_at: string
@@ -47,9 +48,13 @@ function authOnlyHeaders(): HeadersInit {
   return { Authorization: `Bearer ${token}` }
 }
 
+// The title is already in the catalog. Send confirm_in_catalog to go ahead.
+export class CatalogMatchError extends Error {}
+
 async function parseErrorOrThrow(res: Response, fallback: string): Promise<never> {
   const body = await res.json().catch(() => ({}))
-  throw new Error(body.detail ?? fallback)
+  if (body.detail?.code === "in_catalog") throw new CatalogMatchError(body.detail.message)
+  throw new Error(typeof body.detail === "string" ? body.detail : fallback)
 }
 
 export async function createBookRequest(fields: {
@@ -60,6 +65,7 @@ export async function createBookRequest(fields: {
   format?: BookRequestFormat
   copies?: number
   course?: string
+  confirm_in_catalog?: boolean
 }): Promise<BookRequest> {
   const res = await fetch(`${API_URL}/book-requests`, {
     method: "POST",
@@ -103,6 +109,7 @@ export async function updateMyBookRequest(
     format: BookRequestFormat
     copies: number
     course: string
+    confirm_in_catalog: boolean
   }>
 ): Promise<BookRequest> {
   const res = await fetch(`${API_URL}/book-requests/${id}/edit`, {
@@ -136,11 +143,11 @@ export async function fetchBookRequests(status?: BookRequestStatus): Promise<Boo
   return res.json()
 }
 
-export async function updateBookRequest(id: string, status: BookRequestStatus): Promise<BookRequest> {
+export async function updateBookRequest(id: string, status: BookRequestStatus, rejectionReason?: string): Promise<BookRequest> {
   const res = await fetch(`${API_URL}/book-requests/${id}`, {
     method: "PATCH",
     headers: authHeaders(),
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, rejection_reason: rejectionReason }),
   })
   if (!res.ok) return parseErrorOrThrow(res, "Could not update this request")
   return res.json()

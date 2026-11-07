@@ -1,15 +1,24 @@
 # Book requests: faculty submit and track their own; librarians review them
 # in Reports > Requests.
 
-import traceback
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
+from core.audit import log_action
+from core.book_requests import (
+    MAX_FILES_PER_REQUEST,
+    check_transition,
+    clean_fields,
+    clean_rejection_reason,
+    reject_duplicate,
+    warn_if_in_catalog,
+)
 from core.deps import require_faculty, require_librarian, require_librarian_profile
 from core.notify import notify, notify_librarians
 from core.email_template import EmailContent, long_date, staff_alert
+from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.book_request import (
@@ -26,6 +35,13 @@ _SELECT = (
     "*, profiles!book_requests_requester_id_fkey(full_name, email, college), "
     "attachments:book_request_attachments(id, url, name, created_at)"
 )
+
+_DECISION_ACTIONS = {
+    "under_review": "book_request.review",
+    "approved": "book_request.approve",
+    "rejected": "book_request.reject",
+    "fulfilled": "book_request.fulfill",
+}
 
 ATTACHMENT_BUCKET = "book-request-attachments"
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
@@ -49,23 +65,18 @@ def create_book_request(
     body: CreateBookRequestRequest,
     user: UserProfile = Depends(require_faculty),
 ):
-    title = body.title.strip()
-    if not title:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Title is required")
-
-    if body.copies < 1:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Copies must be at least 1")
-
     admin = get_admin_client()
+    fields = clean_fields(body.model_dump(), get_library_settings(admin)["max_copies_per_request"])
+    reject_duplicate(admin, user.id, fields)
+    if not body.confirm_in_catalog:
+        warn_if_in_catalog(admin, fields)
+
+    title = fields["title"]
     res = admin.table("book_requests").insert({
+        **fields,
         "requester_id": user.id,
-        "title": title,
-        "author": (body.author or "").strip() or None,
-        "isbn": (body.isbn or "").strip() or None,
         "note": (body.note or "").strip() or None,
         "format": body.format,
-        "copies": body.copies,
-        "course": (body.course or "").strip() or None,
     }).execute()
     if not res.data:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not submit this request")
@@ -85,9 +96,9 @@ def create_book_request(
             details=[
                 ("Requested by", requester_name),
                 ("Title", title),
-                ("Author", (body.author or "").strip() or None),
-                ("Copies", str(body.copies)),
-                ("Course", (body.course or "").strip() or None),
+                ("Author", fields["author"]),
+                ("Copies", str(fields["copies"])),
+                ("Course", fields["course"]),
                 ("Reason", (body.note or "").strip() or None),
             ],
             action="Please review the request and approve or decline it in the librarian dashboard.",
@@ -107,29 +118,31 @@ def edit_book_request(
     user: UserProfile = Depends(require_faculty),
 ):
     changes = body.model_dump(exclude_unset=True)
+    confirmed = changes.pop("confirm_in_catalog", False)
     if not changes:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No changes given")
 
     admin = get_admin_client()
-    existing = admin.table("book_requests").select("id, requester_id, status").eq("id", request_id).execute()
+    existing = admin.table("book_requests").select("*").eq("id", request_id).execute()
     if not existing.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Request not found")
-    if existing.data[0]["requester_id"] != user.id:
+    before = existing.data[0]
+    if before["requester_id"] != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You can only edit your own request")
-    if existing.data[0]["status"] != "pending":
+    if before["status"] != "pending":
         raise HTTPException(status.HTTP_409_CONFLICT, "This request has already been reviewed and can no longer be edited")
 
-    if "title" in changes:
-        title = (changes["title"] or "").strip()
-        if not title:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Title is required")
-        changes["title"] = title
-    if "copies" in changes and (changes["copies"] or 0) < 1:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Copies must be at least 1")
-    for field in ("author", "isbn", "note", "course"):
-        if field in changes:
-            changes[field] = (changes[field] or "").strip() or None
+    # The whole request has to pass, so an older one gets its missing details
+    # filled in the first time it's edited.
+    fields = clean_fields({**before, **changes}, get_library_settings(admin)["max_copies_per_request"])
+    reject_duplicate(admin, user.id, fields, ignore_id=request_id)
+    book_changed = fields["title"] != before["title"] or fields["isbn"] != before.get("isbn")
+    if book_changed and not confirmed:
+        warn_if_in_catalog(admin, fields)
 
+    if "note" in changes:
+        changes["note"] = (changes["note"] or "").strip() or None
+    changes.update(fields)
     changes["updated_at"] = datetime.now(timezone.utc).isoformat()
     admin.table("book_requests").update(changes).eq("id", request_id).execute()
 
@@ -186,55 +199,41 @@ def upload_request_attachments(
     files: list[UploadFile] = File(...),
     user: UserProfile = Depends(require_faculty),
 ):
-    # TEMP DEBUG: remove once the "attachments never save" bug is fixed.
-    # Logs every call to attachment_debug.log.
-    with open("attachment_debug.log", "a", encoding="utf-8") as dbg:
-        dbg.write(f"\n=== upload call === request_id={request_id} user={user.id} ({user.email}) role={user.role}\n")
-        dbg.write(f"files received: {[(f.filename, f.content_type) for f in files]}\n")
+    admin = get_admin_client()
+    existing = admin.table("book_requests").select("id, requester_id").eq("id", request_id).execute()
+    if not existing.data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Request not found")
+    if existing.data[0]["requester_id"] != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You can only attach files to your own request")
 
-    try:
-        admin = get_admin_client()
-        existing = admin.table("book_requests").select("id, requester_id").eq("id", request_id).execute()
-        if not existing.data:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Request not found")
-        if existing.data[0]["requester_id"] != user.id:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "You can only attach files to your own request")
+    already = admin.table("book_request_attachments").select("id").eq("request_id", request_id).execute().data
+    if len(already) + len(files) > MAX_FILES_PER_REQUEST:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"A request can have at most {MAX_FILES_PER_REQUEST} files")
 
-        bucket = admin.storage.from_(ATTACHMENT_BUCKET)
-        rows = []
-        for file in files:
-            data = file.file.read(MAX_ATTACHMENT_BYTES + 1)
-            if len(data) > MAX_ATTACHMENT_BYTES:
-                raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"'{file.filename}' is over 10 MB")
-            sniffed = _sniff_attachment_type(data)
-            if not sniffed:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"'{file.filename}' must be a JPG, PNG, WebP, or PDF file")
-            content_type, ext = sniffed
+    bucket = admin.storage.from_(ATTACHMENT_BUCKET)
+    rows = []
+    for file in files:
+        data = file.file.read(MAX_ATTACHMENT_BYTES + 1)
+        if len(data) > MAX_ATTACHMENT_BYTES:
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"'{file.filename}' is over 10 MB")
+        sniffed = _sniff_attachment_type(data)
+        if not sniffed:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"'{file.filename}' must be a JPG, PNG, WebP, or PDF file")
+        content_type, ext = sniffed
 
-            path = f"{request_id}/{uuid.uuid4().hex}.{ext}"
-            bucket.upload(path, data, {"content-type": content_type})
-            rows.append({
-                "request_id": request_id,
-                "url": bucket.get_public_url(path),
-                "name": file.filename or path,
-            })
+        path = f"{request_id}/{uuid.uuid4().hex}.{ext}"
+        bucket.upload(path, data, {"content-type": content_type})
+        rows.append({
+            "request_id": request_id,
+            "url": bucket.get_public_url(path),
+            "name": file.filename or path,
+        })
 
-        if rows:
-            admin.table("book_request_attachments").insert(rows).execute()
+    if rows:
+        admin.table("book_request_attachments").insert(rows).execute()
 
-        updated = admin.table("book_requests").select(_SELECT).eq("id", request_id).execute()
-        with open("attachment_debug.log", "a", encoding="utf-8") as dbg:
-            dbg.write(f"SUCCESS: inserted {len(rows)} attachment row(s)\n")
-        return updated.data[0]
-    except HTTPException as e:
-        with open("attachment_debug.log", "a", encoding="utf-8") as dbg:
-            dbg.write(f"HTTPException: {e.status_code} {e.detail}\n")
-        raise
-    except Exception:
-        with open("attachment_debug.log", "a", encoding="utf-8") as dbg:
-            dbg.write("UNHANDLED EXCEPTION:\n")
-            dbg.write(traceback.format_exc())
-        raise
+    updated = admin.table("book_requests").select(_SELECT).eq("id", request_id).execute()
+    return updated.data[0]
 
 
 @router.delete("/{request_id}/attachments/{attachment_id}", response_model=BookRequest)
@@ -299,18 +298,30 @@ def update_book_request(
     body: UpdateBookRequestRequest,
     librarian: UserProfile = Depends(require_librarian_profile),
 ):
-    changes = body.model_dump(exclude_unset=True)
-    if not changes:
+    if not body.status:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No changes given")
 
-    changes["updated_at"] = datetime.now(timezone.utc).isoformat()
-    changes["reviewed_by"] = librarian.id
-    changes["reviewed_at"] = datetime.now(timezone.utc).isoformat()
-
     admin = get_admin_client()
-    res = admin.table("book_requests").update(changes).eq("id", request_id).execute()
-    if not res.data:
+    existing = admin.table("book_requests").select("id, status, title").eq("id", request_id).execute()
+    if not existing.data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Request not found")
+    current = existing.data[0]["status"]
+    check_transition(current, body.status)
+
+    now = datetime.now(timezone.utc).isoformat()
+    changes = {"status": body.status, "updated_at": now, "reviewed_by": librarian.id, "reviewed_at": now}
+    if body.status == "rejected":
+        changes["rejection_reason"] = clean_rejection_reason(body.rejection_reason)
+
+    # Only from the status just checked, so two librarians can't both decide.
+    res = admin.table("book_requests").update(changes).eq("id", request_id).eq("status", current).execute()
+    if not res.data:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This request was just changed by someone else. Please refresh")
+
+    details = {"from": current, "to": body.status, "title": existing.data[0]["title"]}
+    if body.status == "rejected":
+        details["reason"] = changes["rejection_reason"]
+    log_action(admin, librarian, _DECISION_ACTIONS[body.status], "book_request", request_id, details)
 
     row = res.data[0]
     decision_notice = {
@@ -320,7 +331,7 @@ def update_book_request(
         ),
         "rejected": (
             "book_request_rejected", "Your book request was declined",
-            f'"{row["title"]}" was not approved for acquisition.',
+            f'"{row["title"]}" was not approved for acquisition. Reason: {row.get("rejection_reason")}',
         ),
         "fulfilled": (
             "book_request_fulfilled", "Your requested book is now available",
@@ -357,6 +368,7 @@ def update_book_request(
                     ("Author", row.get("author")),
                     ("Requested on", long_date(row["created_at"])),
                     ("Status", status_label),
+                    ("Reason", row.get("rejection_reason") if decision == "rejected" else None),
                 ],
                 paragraphs=[closing],
                 link_label="View your requests",

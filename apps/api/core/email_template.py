@@ -5,17 +5,17 @@ them in sync.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from html import escape
 
 from core.config import FRONTEND_URL
+from core.dates import date_text, time_text
 
 CLOSING = "Sincerely,"
 SIGNATURE = "Lasallia, De La Salle Lipa Learning Resource Center"
 AUTOMATED_NOTE = "This is an automated message. Please do not reply to this email."
 
 # Philippine time has no DST, so a fixed offset is exact.
-MANILA = timezone(timedelta(hours=8))
 
 
 @dataclass
@@ -107,24 +107,13 @@ def render_html(content: EmailContent, recipient_name: str | None = None) -> str
 
 # ─── Shared formatting ─────────────────────────────────────────────────────
 
-def _as_manila(value: str | datetime) -> datetime:
-    dt = datetime.fromisoformat(value) if isinstance(value, str) else value
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(MANILA)
-
-
 def long_date(value: str | datetime) -> str:
-    """"Friday, October 17, 2026" in Philippine time."""
-    d = _as_manila(value)
-    return f"{d:%A}, {d:%B} {d.day}, {d.year}"
+    return date_text(value)
 
 
 def long_date_time(value: str | datetime) -> str:
-    """"Monday, October 20, 2026, 6:00 PM" in Philippine time."""
-    d = _as_manila(value)
-    hour = d.hour % 12 or 12
-    return f"{long_date(d)}, {hour}:{d:%M} {'AM' if d.hour < 12 else 'PM'}"
+    """"October 20, 2026, 6:00 PM" in Philippine time."""
+    return f"{date_text(value)}, {time_text(value)}"
 
 
 def peso(amount: float | int | None) -> str:

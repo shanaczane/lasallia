@@ -38,6 +38,20 @@ class OverdueRow(BaseModel):
     dueDate: str
     daysOverdue: int
     fine: float
+    role: str | None = None
+    accession: str | None = None
+    collectionType: str = "General"
+    libraryHours: float = 0
+    overdueLabel: str = ""
+
+
+class OverdueListRow(OverdueRow):
+    """A row of the librarians' overdue list: the report row plus reminders."""
+    studentId: str
+    lastReminderAt: str | None = None
+    lastReminderKind: str | None = None
+    reminderCount: int = 0
+    remindedToday: bool = False
 
 
 class ProgramUsage(BaseModel):
@@ -118,6 +132,10 @@ class ReportSummaries(BaseModel):
 
 # ─── Report export (PDF / Excel / CSV), core/report_export ─────────────
 
+# "all" and leaving it out mean the same thing.
+ReportUserType = Literal["student", "faculty", "all"]
+
+
 class ReportExportFilters(BaseModel):
     report: Literal["overdue", "audit_log"]
     # Whole Manila days, both included. Leave out for all dates.
@@ -127,6 +145,7 @@ class ReportExportFilters(BaseModel):
     program: str | None = Field(None, max_length=200)
     college: str | None = Field(None, max_length=200)
     year_level: int | None = Field(None, ge=1, le=10)
+    user_type: ReportUserType | None = None
     # Audit log only.
     librarian_profile_id: str | None = Field(None, max_length=64)
     action: str | None = Field(None, max_length=64)

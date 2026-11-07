@@ -11,12 +11,15 @@ import { useRouter, usePathname } from 'next/navigation'
 import { Search, Sparkles, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { TopNav } from '@/components/layout/TopNav'
+import { GuestBanner } from '@/components/layout/GuestBanner'
+import { RoleBadge } from '@/components/ui/patrons/RoleBadge'
 import { KioskSessionProvider, useKioskSession, readInitialActiveKey } from '@/components/kiosk/KioskSessionProvider'
 import { RfidListener } from '@/components/kiosk/RfidListener'
 import { KioskAccountNotices } from '@/components/kiosk/KioskAccountNotices'
 import { useIdleTimeout } from '@/components/kiosk/useIdleTimeout'
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
 import { fetchPublicLibrarySettings } from '@/lib/settings'
+import { ROLE_LABEL } from '@/lib/roles'
 
 const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
@@ -44,6 +47,8 @@ function KioskShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
 
   const active = !!session || guestBrowsing
+  // Sessions saved before the role was sent can only be students.
+  const sessionRole = session?.role ?? 'student'
 
   const [timers, setTimers] = useState({ timeout: DEFAULT_IDLE_TIMEOUT_SECONDS, warning: DEFAULT_WARNING_SECONDS })
   useEffect(() => {
@@ -115,6 +120,16 @@ function KioskShell({ children }: { children: React.ReactNode }) {
             // Older saved sessions may not have the full name.
             userName={session ? (session.student_full_name || session.student_first_name) : 'Guest'}
             userInitials={session ? getInitials(session.student_full_name || session.student_first_name) : 'G'}
+            userType={session ? (
+              <RoleBadge
+                role={sessionRole}
+                college={session.college}
+                program={session.program}
+                yearLevel={session.year_level}
+              />
+            ) : (
+              <RoleBadge role="guest" />
+            )}
             showNotifications={false}
             showSignOut={true}
             homeHref="/kiosk/catalog"
@@ -178,6 +193,16 @@ function KioskShell({ children }: { children: React.ReactNode }) {
         className={cn('min-h-screen transition-all duration-200', active && (collapsed ? 'md:pl-14' : 'md:pl-(--width-side)'))}
         style={active ? { paddingTop: 'var(--height-nav)' } : undefined}
       >
+        {session && (
+          <p
+            role="status"
+            className="px-4 md:px-6 py-2 bg-green-50 text-green-800 font-semibold border-b border-green-200"
+            style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+          >
+            Welcome, {session.student_full_name || session.student_first_name} — {ROLE_LABEL[sessionRole]}
+          </p>
+        )}
+        {!session && guestBrowsing && <GuestBanner />}
         {session && <KioskAccountNotices session={session} />}
         {/* Without a session, show nothing until the redirect to /kiosk. */}
         {(active || pathname === '/kiosk') && children}

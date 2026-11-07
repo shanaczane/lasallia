@@ -4,6 +4,7 @@
 import { getToken } from "@/lib/auth"
 import type { LoanLookupResult } from "@/lib/returns"
 import type { Loan, ReadyPickup } from "@/lib/kiosk"
+import type { UserRole } from "@lasallia/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
@@ -11,8 +12,10 @@ export type DeskPatron = {
   id: string
   full_name: string | null
   avatar_url: string | null
-  role: string | null
+  role: UserRole | null
   program: string | null
+  college: string | null
+  year_level: number | null
   open_loans: LoanLookupResult[]
   unpaid_fines: Loan[]
   ready_pickups: ReadyPickup[]

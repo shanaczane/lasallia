@@ -2,6 +2,7 @@
 
 'use client'
 
+import { formatDate } from "@/lib/dueDates"
 import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
@@ -73,10 +74,6 @@ function MetaRow({
       </span>
     </div>
   )
-}
-
-function formatLongDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
 }
 
 const FUNDING_LABEL: Record<NonNullable<Book['funding_source']>, string> = {
@@ -574,7 +571,7 @@ export default function LibrarianBookDetailPage({
           <div className="bg-white rounded-(--radius) border border-ink-200 p-5 lg:flex-1">
             <SectionHeading>Acquisition (librarian only)</SectionHeading>
             {book.date_acquired && (
-              <MetaRow icon={<Calendar size={14} />} label="Date acquired" value={formatLongDate(book.date_acquired)} />
+              <MetaRow icon={<Calendar size={14} />} label="Date acquired" value={formatDate(book.date_acquired)} />
             )}
             {book.purchase_price != null && (
               <MetaRow
@@ -597,8 +594,8 @@ export default function LibrarianBookDetailPage({
                 No acquisition details recorded yet — add them with Edit.
               </p>
             )}
-            <MetaRow icon={<CalendarPlus size={14} />} label="Added to catalog" value={formatLongDate(book.created_at)} />
-            <MetaRow icon={<RefreshCw size={14} />} label="Last updated" value={formatLongDate(book.updated_at)} />
+            <MetaRow icon={<CalendarPlus size={14} />} label="Added to catalog" value={formatDate(book.created_at)} />
+            <MetaRow icon={<RefreshCw size={14} />} label="Last updated" value={formatDate(book.updated_at)} />
           </div>
         </div>
       </div>

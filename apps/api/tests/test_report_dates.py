@@ -72,4 +72,4 @@ def test_export_uses_the_same_manila_days(monkeypatch):
     })
     assert res.status_code == 200, res.text
     assert res.json()["row_count"] == 2
-    assert res.json()["period"].startswith("Loans borrowed 1 November 2026 to 30 November 2026 (Manila time)")
+    assert res.json()["period"].startswith("Loans borrowed November 1, 2026 to November 30, 2026 (Manila time)")

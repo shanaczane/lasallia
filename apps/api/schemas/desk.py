@@ -24,6 +24,8 @@ class DeskPatron(BaseModel):
     avatar_url: str | None = None
     role: str | None = None
     program: str | None = None
+    college: str | None = None
+    year_level: int | None = None
     open_loans: list[LoanLookupResult] = []
     unpaid_fines: list[Loan] = []
     ready_pickups: list[ReadyPickup] = []

@@ -62,7 +62,7 @@ lasallia/
 ├── packages/
 │   └── types/            # Shared TypeScript types (@lasallia/types)
 ├── supabase/
-│   ├── functions/        # loan-reminders Edge Function (daily emails)
+│   ├── functions/        # loan-reminders Edge Function (replaced by the API, kept for reference)
 │   └── cron/             # Schedule for the daily reminders
 ├── tools/
 │   └── nfc-bridge/       # Makes an ACR122U card reader work with the kiosk

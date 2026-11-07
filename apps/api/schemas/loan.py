@@ -22,6 +22,11 @@ class LibrarianAssistedLoanRequest(BaseModel):
 class Borrower(BaseModel):
     full_name: str | None = None
     avatar_url: str | None = None
+    # The user type shown at the desk.
+    role: str | None = None
+    program: str | None = None
+    college: str | None = None
+    year_level: int | None = None
 
 class Loan(BaseModel):
     id: str
@@ -55,6 +60,8 @@ class Loan(BaseModel):
     # Only set on overdue loans: the fine so far. Returned loans use fine_amount.
     days_overdue: int | None = None
     preview_fine_amount: float | None = None
+    # "Overdue by 3 school days", or library hours for the hourly collections.
+    overdue_label: str | None = None
     # Only on the return response: whether the copy goes to reshelving (true)
     # or is held for a reservation (false).
     needs_reshelving: bool | None = None

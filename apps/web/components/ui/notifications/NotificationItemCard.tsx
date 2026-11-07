@@ -1,4 +1,5 @@
 
+import { formatTime } from "@/lib/dueDates"
 import { cn } from "@/lib/utils"
 import type { Notification, NotificationType } from "@lasallia/types"
 import { Clock, BookOpen, BookCheck, BookPlus, CheckCircle, XCircle, Ban, Bell, AlertTriangle, Users, Bookmark, ArrowUpCircle, Banknote, AlertCircle } from "lucide-react"
@@ -104,14 +105,6 @@ export const fallbackNotificationConfig: TypeConfig = {
   icon: () => <Bell size={15} />,
   iconBg: "bg-ink-100",
   iconColor: "text-ink-400",
-}
-
-function formatTime(isoString: string): string {
-  return new Date(isoString).toLocaleTimeString("en-PH", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  })
 }
 
 export function NotificationItemCard({

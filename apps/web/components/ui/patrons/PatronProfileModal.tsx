@@ -3,6 +3,7 @@
 
 "use client"
 
+import { formatDate } from "@/lib/dueDates"
 import { useRef, useEffect, useMemo, useState } from "react"
 import { X, BookOpen, Bookmark, History, Mail, UserX, UserCheck, ChevronDown, ChevronUp, Info } from "lucide-react"
 import { cn, ordinal } from "@/lib/utils"
@@ -26,10 +27,6 @@ type PatronProfileModalProps = {
 }
 
 const DUE_SOON_DAYS = 3
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
-}
 
 // Loan status tags.
 const LOAN_CFG = {
@@ -200,11 +197,11 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
           title,
           amount: l.preview_fine_amount!,
           kind: "accruing",
-          detail: `${days} day${days === 1 ? "" : "s"} overdue · not yet returned`,
+          detail: `${l.overdue_label ?? "Overdue"} · not yet returned`,
           reasons: [
             { label: "Borrowed", value: formatDate(l.borrowed_at) },
-            { label: "Due", value: formatDate(l.due_date) },
-            { label: "Overdue", value: `${dayCount(days)} as of today`, tone: "danger" },
+            { label: "Due date", value: formatDate(l.due_date) },
+            { label: "Overdue", value: `${l.overdue_label ?? dayCount(days)} as of today`, tone: "danger" },
             { label: "Amount", value: "Estimate - grows each library day until the book is returned" },
           ],
         })
@@ -474,7 +471,7 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
                     book: r.books,
                     title: r.books?.title ?? "Unknown title",
                     line1: `Requested ${formatDate(r.requested_at)}`,
-                    line2: r.status === "ready" && r.pickup_by ? `Pickup by ${formatDate(r.pickup_by)}` : undefined,
+                    line2: r.status === "ready" && r.pickup_by ? `Pick up by ${formatDate(r.pickup_by)}` : undefined,
                     cfg: RES_CFG[r.status],
                   }))}
                 />

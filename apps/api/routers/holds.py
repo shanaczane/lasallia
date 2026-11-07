@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from postgrest.exceptions import APIError
 
 from core.accession import normalize_accession_number
+from core.calendar import HOURLY_FINE_COLLECTION_TYPES, loan_due_date
 from core.config import FRONTEND_URL
 from core.deps import get_current_user, get_optional_user
 from core.email_template import staff_alert
@@ -235,7 +236,9 @@ def get_hold(token: str, user: UserProfile = Depends(get_current_user)):
 
     cfg = get_library_settings(db)
     hold_seconds, window, max_seconds = hold_timers(cfg)
-    due_preview = (datetime.now(timezone.utc) + timedelta(days=cfg["standard_loan_period_days"])).isoformat()
+    collection_type = book.get("collection_type")
+    due_preview = loan_due_date(db, datetime.now(timezone.utc), cfg, collection_type).isoformat()
+    hourly = collection_type in HOURLY_FINE_COLLECTION_TYPES
 
     return HoldDetail(
         token=token,
@@ -247,7 +250,7 @@ def get_hold(token: str, user: UserProfile = Depends(get_current_user)):
         active_loan_count=active_loans.count or 0,
         due_date_preview=due_preview,
         borrow_limit=cfg["max_books_per_borrower"],
-        loan_period_days=cfg["standard_loan_period_days"],
+        loan_period_days=cfg["reserve_loan_period_days"] if hourly else cfg["standard_loan_period_days"],
         hold_duration_seconds=hold_seconds,
         extend_window_seconds=window,
         needs_kiosk_tap=hold["needs_kiosk_tap"],

@@ -2,26 +2,13 @@
 
 "use client"
 
+import { formatDate } from "@/lib/dueDates"
 import { useRef } from 'react'
 import { X, Paperclip, Download, Mail, GraduationCap, Hash, BookOpen } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { BookRequest, BookRequestStatus } from "@/lib/bookRequests"
+import { REQUEST_STATUS_BADGE, REQUEST_STATUS_LABEL } from "@/lib/bookRequestForm"
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
-
-const REQUEST_STATUS_LABEL: Record<BookRequestStatus, string> = {
-  pending: "Pending", approved: "Approved", rejected: "Rejected", fulfilled: "Fulfilled", cancelled: "Cancelled",
-}
-const REQUEST_STATUS_BADGE: Record<BookRequestStatus, string> = {
-  pending: "bg-warn-bg text-warn",
-  approved: "bg-info-bg text-info",
-  rejected: "bg-danger-bg text-danger",
-  fulfilled: "bg-success-bg text-success",
-  cancelled: "bg-ink-100 text-ink-500",
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
-}
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -214,6 +201,12 @@ export function BookRequestDetailModal({ request: r, onClose, onDecision, busy }
           </div>
         </div>
 
+        {r.status === "rejected" && r.rejection_reason && (
+          <div className="px-4 sm:px-6 py-3 border-t border-ink-100 shrink-0">
+            <Field label="Reason for rejection" value={r.rejection_reason} />
+          </div>
+        )}
+
         {/* Footer actions */}
         <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 p-4 sm:p-5 border-t border-ink-100 shrink-0">
           <button
@@ -225,6 +218,16 @@ export function BookRequestDetailModal({ request: r, onClose, onDecision, busy }
             Close
           </button>
           {r.status === "pending" ? (
+            <button
+              type="button"
+              onClick={() => onDecision("under_review")}
+              disabled={busy}
+              className="px-4 py-2.5 rounded-sm bg-green-700 text-white hover:bg-green-800 disabled:opacity-40 transition-colors font-semibold"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+            >
+              Start Review
+            </button>
+          ) : r.status === "under_review" ? (
             <>
               <button
                 type="button"

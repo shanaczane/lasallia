@@ -5,7 +5,10 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 
-from core.calendar import compute_fine
+from core.calendar import overdue_fields
+
+# loans links to profiles twice, so the borrower link has to be named.
+LOAN_BORROWER = "profiles!loans_student_id_fkey(full_name, avatar_url, role, program, college, year_level)"
 
 UNKNOWN_ID = "We don't recognize this ID — search for the student by name instead"
 
@@ -69,7 +72,7 @@ def open_loans(db, user_id: str) -> list[dict]:
     """Loans still out, with the fine so far, like the return lookup."""
     loans = (
         db.table("loans")
-        .select("*, book_copies(book_id, accession_number, books(*)), profiles!loans_student_id_fkey(full_name, avatar_url)")
+        .select(f"*, book_copies(book_id, accession_number, books(*)), {LOAN_BORROWER}")
         .eq("student_id", user_id).in_("status", ["active", "overdue"]).execute()
     ).data
     now = datetime.now(timezone.utc)
@@ -81,7 +84,7 @@ def open_loans(db, user_id: str) -> list[dict]:
         if loan["status"] == "active" and datetime.fromisoformat(loan["due_date"]) < now:
             loan["status"] = "overdue"
         collection_type = (loan["books"] or {}).get("collection_type") or "General"
-        loan["days_overdue"], loan["preview_fine_amount"] = compute_fine(db, loan["due_date"], collection_type)
+        loan.update(overdue_fields(db, loan["due_date"], collection_type))
         result.append(loan)
     result.sort(key=lambda l: l["due_date"])
     return result

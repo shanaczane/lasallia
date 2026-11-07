@@ -12,7 +12,7 @@ import { collegeForProgram } from "@/lib/collegeForProgram"
 import { cn } from "@/lib/utils"
 import { getUser } from "@/lib/auth"
 import { downloadCsv } from "@/lib/reports"
-import { ROLE_LABEL } from "@/lib/mock/patrons"
+import { ROLE_LABEL } from "@/lib/roles"
 import { Pagination } from "@/components/ui/catalog"
 import {
   PatronsToolbar,

@@ -23,12 +23,14 @@ export type LibrarySettings = {
 
   max_books_per_borrower: number
   standard_loan_period_days: number
+  reserve_loan_period_days: number
   max_renewals: number
   renewal_period_days: number
   fine_per_day: number
   max_fine_per_book: number
   reservation_hold_period_days: number
   max_active_reservations: number
+  max_copies_per_request: number
 
   // Kiosk and borrowing timers, in seconds.
   kiosk_idle_timeout_seconds: number
@@ -74,6 +76,30 @@ export const REPORT_TITLE_FIELDS: { key: "report_prepared_by_title" | "report_no
   { key: "report_approved_by_title", label: "Approved by", placeholder: "Director, Learning Resource Center" },
 ]
 
+// A date the library is closed. Dates not listed follow the weekly hours.
+export type ClosedDate = { date: string; note: string | null }
+
+export async function fetchClosedDates(): Promise<ClosedDate[]> {
+  const res = await fetch(`${API_URL}/settings/calendar`, { headers: authHeaders() })
+  if (!res.ok) return parseErrorOrThrow(res, "Could not load the library calendar")
+  return res.json()
+}
+
+export async function closeDate(date: string, note: string): Promise<ClosedDate> {
+  const res = await fetch(`${API_URL}/settings/calendar/${date}`, {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify({ note }),
+  })
+  if (!res.ok) return parseErrorOrThrow(res, "Could not mark that date closed")
+  return res.json()
+}
+
+export async function reopenDate(date: string): Promise<void> {
+  const res = await fetch(`${API_URL}/settings/calendar/${date}`, { method: "DELETE", headers: authHeaders() })
+  if (!res.ok) return parseErrorOrThrow(res, "Could not remove that date")
+}
+
 export async function fetchLibrarySettings(): Promise<LibrarySettings> {
   const res = await fetch(`${API_URL}/settings`, { headers: authHeaders() })
   if (!res.ok) return parseErrorOrThrow(res, "Failed to load settings")
@@ -88,6 +114,7 @@ export type PublicLibrarySettings = Pick<
   | "sunday_open_time" | "sunday_close_time"
   // The kiosk reads its idle timer before anyone taps in.
   | "kiosk_idle_timeout_seconds" | "kiosk_idle_warning_seconds"
+  | "max_copies_per_request"
 >
 
 // No login needed (used by the login page).

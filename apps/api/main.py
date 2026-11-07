@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from core.config import FRONTEND_URL, FRONTEND_ORIGIN_REGEX
 from core.reservations import run_expiry_loop
-from routers import audit, auth, book_requests, books, chat, desk, holds, inhouse, internal, inventory, librarian_profiles, loans, notifications, patrons, recommendations, reports, reservations, saved_books, search, sessions, settings, shelf_reports, support_tickets, sync, weeding
+from routers import audit, auth, book_requests, books, chat, desk, holds, inhouse, internal, inventory, librarian_profiles, loans, notifications, overdue, patrons, recommendations, reports, reservations, saved_books, search, sessions, settings, shelf_reports, support_tickets, sync, weeding
 
 # Expires lapsed reservation pickups on a timer, so the student is
 # notified and the copy handed on without waiting for someone to load a
@@ -106,6 +106,7 @@ app.include_router(shelf_reports.router)
 app.include_router(librarian_profiles.router)
 app.include_router(audit.router)
 app.include_router(internal.router)
+app.include_router(overdue.router)
 
 @app.get("/health")
 def health_check():

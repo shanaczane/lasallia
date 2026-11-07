@@ -1,6 +1,7 @@
 // Borrow & Return: desk checkout, returns, reshelving and guest use.
 "use client"
 
+import { dueLabel, formatDate, formatTime } from "@/lib/dueDates"
 import { Suspense, useState, useEffect, useCallback, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import {
@@ -22,7 +23,9 @@ import type { UserProfile } from "@lasallia/types"
 import { Pagination } from "@/components/ui/catalog"
 import { ScannerListener } from "@/components/ui/ScannerListener"
 import { TapIdField } from "@/components/desk/TapIdField"
+import { OverdueListPanel } from "@/components/desk/OverdueListPanel"
 import { TappedBorrowerCard } from "@/components/desk/TappedBorrowerCard"
+import { RoleBadge } from "@/components/ui/patrons/RoleBadge"
 import { identifyPatron, type DeskPatron } from "@/lib/desk"
 import { searchPatrons } from "@/lib/users"
 import {
@@ -57,7 +60,7 @@ import {
 } from "@/lib/inhouse"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = "borrow" | "return" | "reshelving" | "guest"
+type Tab = "borrow" | "return" | "reshelving" | "guest" | "overdue"
 
 const BORROW_CONDITIONS: { value: Condition; label: string }[] = [
   { value: "good", label: "Good" },
@@ -310,8 +313,15 @@ function AssistedBorrowPanel({ onSettled }: { onSettled: () => void }) {
                         {p.full_name ?? "Unnamed"}
                       </span>
                       <span className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
-                        {p.email} · {p.role}
+                        {p.email}
                       </span>
+                      <RoleBadge
+                        role={p.role}
+                        college={p.college}
+                        program={p.program}
+                        yearLevel={p.year_level}
+                        className="mt-1 self-start"
+                      />
                     </button>
                   ))}
                 </div>
@@ -329,6 +339,15 @@ function AssistedBorrowPanel({ onSettled }: { onSettled: () => void }) {
           <div className="rounded bg-green-50 border border-green-200 px-3 py-2 flex items-center justify-between gap-2">
             <p className="text-ink-900" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
               Borrowing for <span className="font-semibold">{session.student_first_name}</span>
+              {session.role && (
+                <RoleBadge
+                  role={session.role}
+                  college={session.college}
+                  program={session.program}
+                  yearLevel={session.year_level}
+                  className="ml-2 align-middle"
+                />
+              )}
             </p>
             <button
               onClick={reset}
@@ -445,7 +464,7 @@ function loanToSessionRecord(loan: ActiveLoan, timeField: "borrowed_at" | "retur
   return {
     title: loan.books?.title ?? "Unknown title",
     patron: loan.profiles?.full_name ?? "Unknown",
-    time: new Date(timestamp).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
+    time: formatTime(timestamp),
     note: fine > 0 ? `₱${fine.toFixed(2)} fine` : undefined,
   }
 }
@@ -454,12 +473,8 @@ function reshelvedToSessionRecord(item: ReshelvedItem): SessionRecord {
   return {
     title: item.books?.title ?? "Unknown title",
     patron: "—",
-    time: new Date(item.reshelved_at).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
+    time: formatTime(item.reshelved_at),
   }
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
 }
 
 const RETURN_CONDITIONS: { value: ReturnCondition; label: string }[] = [
@@ -830,13 +845,22 @@ function ReturnPanel({
             <p className="text-ink-900 font-semibold" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
               {loan.profiles?.full_name ?? "Unknown borrower"}
             </p>
+            {loan.profiles?.role && (
+              <RoleBadge
+                role={loan.profiles.role}
+                college={loan.profiles.college}
+                program={loan.profiles.program}
+                yearLevel={loan.profiles.year_level}
+                className="my-0.5"
+              />
+            )}
             <p className="text-ink-400" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
-              Borrowed {formatDate(loan.borrowed_at)} · Due {formatDate(loan.due_date)}
+              Borrowed {formatDate(loan.borrowed_at)} · {dueLabel(loan.due_date)}
             </p>
           </div>
           {loan.days_overdue > 0 && (
             <span className="px-2 py-1 rounded bg-red-100 text-red-700 font-semibold shrink-0" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
-              {loan.days_overdue}d overdue
+              {loan.overdue_label}
             </span>
           )}
         </div>
@@ -1070,6 +1094,15 @@ function ReturnPanel({
                 >
                   <span className="font-medium text-ink-900">{r.books?.title ?? "Unknown title"}</span>
                   <span className="text-ink-400"> — {r.profiles?.full_name ?? "Unknown borrower"}</span>
+                  {r.profiles?.role && (
+                    <RoleBadge
+                      role={r.profiles.role}
+                      college={r.profiles.college}
+                      program={r.profiles.program}
+                      yearLevel={r.profiles.year_level}
+                      className="ml-2 align-middle"
+                    />
+                  )}
                 </button>
               ))}
             </div>
@@ -1161,7 +1194,7 @@ function ActiveBorrowersList({
                     </span>
                   ) : (
                     <span className="text-ink-400 shrink-0 whitespace-nowrap" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
-                      Due {formatDate(l.due_date)}
+                      {dueLabel(l.due_date)}
                     </span>
                   )}
                 </button>
@@ -1252,7 +1285,7 @@ function ReshelvingQueueList({
                   </div>
                   {item.returned_at && (
                     <span className="text-ink-400 shrink-0 whitespace-nowrap" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
-                      Returned {formatDate(item.returned_at)}
+                      Returned on {formatDate(item.returned_at)}
                     </span>
                   )}
                 </button>
@@ -1722,7 +1755,7 @@ function InHouseActiveList({ loans, onReturn }: { loans: InHouseLoan[]; onReturn
             </div>
             <p className="text-ink-400 truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
               {loan.guest_name} · {loan.accession_number} ·{" "}
-              {new Date(loan.checked_out_at).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}
+              {formatTime(loan.checked_out_at)}
             </p>
           </div>
           <button
@@ -1740,7 +1773,7 @@ function InHouseActiveList({ loans, onReturn }: { loans: InHouseLoan[]; onReturn
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
-const VALID_TABS: Tab[] = ["borrow", "return", "reshelving", "guest"]
+const VALID_TABS: Tab[] = ["borrow", "return", "reshelving", "guest", "overdue"]
 
 function BorrowAndReturnPageContent() {
   const searchParams = useSearchParams()
@@ -1831,6 +1864,7 @@ function BorrowAndReturnPageContent() {
     { key: "return", label: "Return", icon: <RotateCcw size={14} />, count: activeLoans.length },
     { key: "reshelving", label: "Reshelving", icon: <PackageCheck size={14} />, count: reshelvingQueue.length },
     { key: "guest", label: "Guest / In-House", icon: <UserPlus size={14} /> },
+    { key: "overdue", label: "Overdue", icon: <AlertCircle size={14} /> },
   ]
 
   return (
@@ -1853,13 +1887,13 @@ function BorrowAndReturnPageContent() {
         </div>
 
         {/* Tabs, with counts on Return and Reshelving */}
-        <div className="flex items-center gap-1 p-1 rounded bg-ink-100 self-start">
+        <div className="flex items-center gap-1 p-1 rounded bg-ink-100 self-start max-w-full overflow-x-auto no-scrollbar">
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
               className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded font-semibold transition-colors",
+                "flex items-center gap-2 px-4 py-2 rounded font-semibold transition-colors whitespace-nowrap",
                 tab === t.key ? "bg-white text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-700"
               )}
               style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
@@ -1882,8 +1916,10 @@ function BorrowAndReturnPageContent() {
         </div>
       </div>
 
+      {tab === "overdue" && <OverdueListPanel />}
+
       {/* ── Two-column layout ─────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className={cn("grid grid-cols-1 lg:grid-cols-2 gap-6", tab === "overdue" && "hidden")}>
         {/* Left: scanner / lookup */}
         {tab === "borrow" && <AssistedBorrowPanel onSettled={loadBorrowedToday} />}
         {tab === "return" && (

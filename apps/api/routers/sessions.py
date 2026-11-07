@@ -34,14 +34,16 @@ def _insert_session(student_id: str, auth_method: str, station_id: str) -> dict:
     session = res.data[0]
 
     # First name for the kiosk greeting; program and college for its
-    # "For you" tab.
-    profile_res = admin.table("profiles").select("full_name, program, college").eq("id", student_id).execute()
+    # "For you" tab; role and year level for the user type on the screen.
+    profile_res = admin.table("profiles").select("full_name, program, college, role, year_level").eq("id", student_id).execute()
     profile = profile_res.data[0] if profile_res.data else {}
     full_name = profile.get("full_name") or ""
     session["student_first_name"] = full_name.split(" ")[0] or "there"
     session["student_full_name"] = full_name or session["student_first_name"]
     session["program"] = profile.get("program")
     session["college"] = profile.get("college")
+    session["role"] = profile.get("role")
+    session["year_level"] = profile.get("year_level")
     # Pickups, fines and overdue books, shown on the kiosk after the tap.
     session.update(kiosk_notices(admin, student_id))
     return session

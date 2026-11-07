@@ -32,6 +32,7 @@ export type OverdueRow = {
   dueDate: string
   daysOverdue: number
   fine: number
+  overdueLabel: string
 }
 export type FineEntry = { title: string; kind: "unsettled" | "accruing" | "paid"; amount: number; detail: string; loan_id: string }
 export type FineRow = {
@@ -87,6 +88,8 @@ export type ReportSummaries = {
   overdue: string | null
 }
 
+export type ReportUserType = "student" | "faculty"
+
 export type ReportFilters = {
   dateFrom?: string
   dateTo?: string
@@ -94,6 +97,8 @@ export type ReportFilters = {
   program?: string
   college?: string
   yearLevel?: number
+  // Borrower-based reports. Left out means everyone.
+  userType?: ReportUserType
 }
 
 // Report dates ("YYYY-MM-DD") are whole Manila days; the helpers are in
@@ -110,6 +115,7 @@ function filterParams(filters: ReportFilters): URLSearchParams {
   if (filters.program) params.set("program", filters.program)
   if (filters.college) params.set("college", filters.college)
   if (filters.yearLevel != null) params.set("year_level", String(filters.yearLevel))
+  if (filters.userType) params.set("user_type", filters.userType)
   return params
 }
 
@@ -235,6 +241,7 @@ export type ReportExportRequest = {
   program?: string
   college?: string
   year_level?: number
+  user_type?: ReportUserType
   // Audit log only.
   librarian_profile_id?: string
   action?: string
@@ -275,6 +282,7 @@ export function exportRequest(report: ExportableReport, filters: ReportFilters):
     program: filters.program,
     college: filters.college,
     year_level: filters.yearLevel,
+    user_type: filters.userType,
   }
 }
 

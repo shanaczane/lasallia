@@ -3,6 +3,7 @@
 
 'use client'
 
+import { formatDate } from "@/lib/dueDates"
 import { use, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -190,7 +191,7 @@ function ActionPanel({
           className="text-green-800 leading-snug"
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
         >
-          <span className="font-semibold">You&apos;ve borrowed this book</span> — due back {formatDate(loan.due_date)}.
+          <span className="font-semibold">You&apos;ve borrowed this book</span> — Due date: {formatDate(loan.due_date)}.
         </p>
       </div>
     )
@@ -324,7 +325,7 @@ function ActionPanel({
             <p className="pl-[22px] sm:pl-0">
               {expectedBack
                 ? expectedBackIsPast
-                  ? <>Was due {formatDate(book.expected_back!)} · not yet returned</>
+                  ? <>Due date: {formatDate(book.expected_back!)} · not yet returned</>
                   : <>Expected back {formatDate(book.expected_back!)}</>
                 : 'No copies currently out'}
               {typeof book.waiting_count === 'number' && book.waiting_count > 0 && (
@@ -355,10 +356,6 @@ function ActionPanel({
       )}
     </div>
   )
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
 // ─── You may also like ────────────────────────────────────────────────────────

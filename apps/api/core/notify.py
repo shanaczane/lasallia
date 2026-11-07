@@ -45,10 +45,9 @@ def email_user(user_id: str, content: EmailContent) -> None:
         print(f"email_user() failed (user_id={user_id}): {e}")
 
 
-# Sends an in-app notification, plus an email when `email` is given.
-# Never raises: it runs after the real action already succeeded, so a
-# notification problem must not fail it. Due-date reminders are sent
-# separately by supabase/functions/loan-reminders.
+# Sends an in-app notification, plus an email when `email` is given. Returns
+# whether the notification was saved. Never raises: it runs after the real
+# action already succeeded, so a notification problem must not fail it.
 def notify(
     user_id: str,
     type: NotificationType,
@@ -56,7 +55,7 @@ def notify(
     message: str,
     link: str | None = None,
     email: EmailContent | None = None,
-) -> None:
+) -> bool:
     admin = get_admin_client()
     try:
         admin.table("notifications").insert({
@@ -68,10 +67,11 @@ def notify(
         }).execute()
     except Exception as e:
         print(f"notify() failed (user_id={user_id}, type={type}): {e}")
-        return
+        return False
 
     if email is not None:
         email_user(user_id, email)
+    return True
 
 # Notifies every librarian (one notification row each).
 def notify_librarians(
