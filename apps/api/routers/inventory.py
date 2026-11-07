@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends
 
-from core.deps import require_librarian
+from core.deps import require_librarian, require_librarian_profile
 from core.inventory import (
     all_copies,
     cancel_session,
@@ -61,7 +61,7 @@ def get_sessions(limit: int = 100, librarian: UserProfile = Depends(require_libr
 
 
 @router.post("/sessions", response_model=InventorySession)
-def post_session(body: StartSessionRequest, librarian: UserProfile = Depends(require_librarian)):
+def post_session(body: StartSessionRequest, librarian: UserProfile = Depends(require_librarian_profile)):
     return start_session(get_admin_client(), body.floor, body.aisle or None, librarian.id, body.skip_recently_seen)
 
 
@@ -71,20 +71,20 @@ def get_session(session_id: str, librarian: UserProfile = Depends(require_librar
 
 
 @router.post("/sessions/{session_id}/scan", response_model=ScanResult)
-def post_scan(session_id: str, body: ScanRequest, librarian: UserProfile = Depends(require_librarian)):
+def post_scan(session_id: str, body: ScanRequest, librarian: UserProfile = Depends(require_librarian_profile)):
     return scan(get_admin_client(), session_id, body.code, librarian.id)
 
 
 @router.post("/sessions/{session_id}/complete", response_model=InventorySession)
-def post_complete(session_id: str, librarian: UserProfile = Depends(require_librarian)):
+def post_complete(session_id: str, librarian: UserProfile = Depends(require_librarian_profile)):
     return complete_session(get_admin_client(), session_id, librarian.id)
 
 
 @router.post("/sessions/{session_id}/cancel", response_model=InventorySession)
-def post_cancel(session_id: str, librarian: UserProfile = Depends(require_librarian)):
+def post_cancel(session_id: str, librarian: UserProfile = Depends(require_librarian_profile)):
     return cancel_session(get_admin_client(), session_id)
 
 
 @router.post("/items/{item_id}/resolve", response_model=InventoryItem)
-def post_resolve(item_id: str, body: ResolveRequest, librarian: UserProfile = Depends(require_librarian)):
+def post_resolve(item_id: str, body: ResolveRequest, librarian: UserProfile = Depends(require_librarian_profile)):
     return resolve_item(get_admin_client(), item_id, body.action, librarian.id)

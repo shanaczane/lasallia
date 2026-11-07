@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
 
 from core.dates import report_bound
-from core.deps import require_librarian
+from core.deps import require_librarian, require_librarian_profile
 from core.inventory import list_sessions, report_items
 from core.report_export.csv_file import build_csv
 from core.report_export.definitions import REPORTS, ExportFilters, ReportData
@@ -249,7 +249,7 @@ def ai_summary_for_export(body: ReportExportFilters, librarian: UserProfile = De
 
 
 @router.post("/export")
-def export_report(body: ReportExportRequest, librarian: UserProfile = Depends(require_librarian)):
+def export_report(body: ReportExportRequest, librarian: UserProfile = Depends(require_librarian_profile)):
     """The report as a file. Rows, key figures and chart are recomputed here;
     only the reviewed summary text and the signatory names come from the
     browser."""

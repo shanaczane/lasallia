@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
-from core.deps import get_current_user, get_user_supabase
+from core.deps import get_current_user, get_user_supabase, require_profile_if_librarian
 from core.notify import notify, notify_librarians
 from core.email_template import EmailContent, staff_alert
 from core.reservations import (
@@ -261,7 +261,7 @@ def create_reservation(
 def update_reservation(
     reservation_id: str,
     body: UpdateReservationRequest,
-    user: UserProfile = Depends(get_current_user),
+    user: UserProfile = Depends(require_profile_if_librarian),
     db: Client = Depends(get_user_supabase),
 ):
     # Only cancelling is done here; 'ready' is set automatically. RLS

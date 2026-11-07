@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from core.deps import require_faculty, require_librarian
+from core.deps import require_faculty, require_librarian, require_librarian_profile
 from core.notify import notify, notify_librarians
 from core.email_template import EmailContent, long_date, staff_alert
 from core.supabase import get_admin_client
@@ -297,7 +297,7 @@ def list_book_requests(
 def update_book_request(
     request_id: str,
     body: UpdateBookRequestRequest,
-    librarian: UserProfile = Depends(require_librarian),
+    librarian: UserProfile = Depends(require_librarian_profile),
 ):
     changes = body.model_dump(exclude_unset=True)
     if not changes:

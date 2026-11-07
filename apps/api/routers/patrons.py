@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
-from core.deps import get_user_supabase, require_librarian
+from core.deps import get_user_supabase, require_librarian, require_librarian_profile
 from core.supabase import get_admin_client
 from core.email_template import EmailContent
 from core.notify import email_user
@@ -49,7 +49,7 @@ def list_patrons(
 def update_patron(
     user_id: str,
     body: UpdatePatronRequest,
-    librarian: UserProfile = Depends(require_librarian),
+    librarian: UserProfile = Depends(require_librarian_profile),
 ):
     changes = body.model_dump(exclude_unset=True)
     if not changes:

@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from core.deps import require_librarian
+from core.deps import require_librarian, require_librarian_profile
 from core.loans import find_removal_blocker
 from core.supabase import get_admin_client
 from core.weeding import (
@@ -54,7 +54,7 @@ def get_events(limit: int = 50, librarian: UserProfile = Depends(require_librari
 
 
 @router.post("/{book_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
-def archive(book_id: str, reason: str | None = None, librarian: UserProfile = Depends(require_librarian)):
+def archive(book_id: str, reason: str | None = None, librarian: UserProfile = Depends(require_librarian_profile)):
     admin = get_admin_client()
     book = admin.table("books").select("id, title").eq("id", book_id).execute().data
     if not book:
@@ -68,7 +68,7 @@ def archive(book_id: str, reason: str | None = None, librarian: UserProfile = De
 
 
 @router.post("/{book_id}/restore", status_code=status.HTTP_204_NO_CONTENT)
-def restore(book_id: str, librarian: UserProfile = Depends(require_librarian)):
+def restore(book_id: str, librarian: UserProfile = Depends(require_librarian_profile)):
     admin = get_admin_client()
     book = admin.table("books").select("id").eq("id", book_id).execute().data
     if not book:
@@ -77,7 +77,7 @@ def restore(book_id: str, librarian: UserProfile = Depends(require_librarian)):
 
 
 @router.post("/{book_id}/dismiss", status_code=status.HTTP_204_NO_CONTENT)
-def dismiss(book_id: str, reason: str | None = None, librarian: UserProfile = Depends(require_librarian)):
+def dismiss(book_id: str, reason: str | None = None, librarian: UserProfile = Depends(require_librarian_profile)):
     admin = get_admin_client()
     book = admin.table("books").select("id").eq("id", book_id).execute().data
     if not book:

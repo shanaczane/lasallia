@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 import core.report_summaries as report_summaries
 import routers.reports as reports_router
-from core.deps import require_librarian
+from tests.librarian_auth import allow_librarian
 from schemas.auth import UserProfile
 from tests.fake_supabase import FakeSupabase
 from tests.report_export_fixtures import loan, predictable_fines  # noqa: F401  (autouse fixture)
@@ -56,7 +56,7 @@ def client(monkeypatch):
     monkeypatch.setattr(reports_router, "get_admin_client", lambda: fake)
     app = FastAPI()
     app.include_router(reports_router.router)
-    app.dependency_overrides[require_librarian] = lambda: LIBRARIAN
+    allow_librarian(app, LIBRARIAN)
     return TestClient(app)
 
 

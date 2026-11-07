@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from core.deps import require_librarian
+from core.deps import require_librarian, require_librarian_profile
 from core.settings import get_library_settings
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
@@ -29,7 +29,7 @@ def get_public_settings():
 @router.patch("", response_model=LibrarySettings)
 def update_settings(
     body: UpdateLibrarySettingsRequest,
-    librarian: UserProfile = Depends(require_librarian),
+    librarian: UserProfile = Depends(require_librarian_profile),
 ):
     changes = body.model_dump(exclude_unset=True)
     for key in ("report_prepared_by_title", "report_noted_by_title", "report_approved_by_title"):
@@ -57,7 +57,8 @@ def update_settings(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 "Settings can't be saved yet — a database migration hasn't been applied "
                 "(migrations/0024_library_settings.sql, 0025_library_operating_hours.sql, "
-                "0057_kiosk_borrow_security.sql, 0058_desk_id_tap.sql and 0060_report_signatures.sql). "
+                "0057_kiosk_borrow_security.sql, 0058_desk_id_tap.sql, 0060_report_signatures.sql and "
+                "0061_librarian_profiles.sql). "
                 "Ask whoever manages the database to run it, then try again.",
             )
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not save settings")

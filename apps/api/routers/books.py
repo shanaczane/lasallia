@@ -9,7 +9,7 @@ from postgrest.exceptions import APIError
 from core.accession import (
     accession_counters, accession_in_use, accession_sort_key, clean_accession_input, normalize_accession_number,
 )
-from core.deps import get_optional_user, require_librarian
+from core.deps import get_optional_user, require_librarian, require_librarian_profile
 from core.embeddings import embed_single_book
 from core.importers.marc import LARGE_JUMP, large_jump
 from core.isbn import clean_isbn_input, normalize_isbn
@@ -247,7 +247,7 @@ def _reject_accession_field(sent: str | None, current: str | None) -> None:
 # A new book and its copies are saved in one transaction, and the copies get
 # the next numbers from the accession counter.
 @router.post("", response_model=BookWithNewCopies, status_code=status.HTTP_201_CREATED)
-def create_book(body: BookCreate, librarian: UserProfile = Depends(require_librarian)):
+def create_book(body: BookCreate, librarian: UserProfile = Depends(require_librarian_profile)):
     _reject_accession_field(body.accession_no, None)
     try:
         isbn = clean_isbn_input(body.isbn)
@@ -282,7 +282,7 @@ def create_book(body: BookCreate, librarian: UserProfile = Depends(require_libra
 
 
 @router.patch("/{book_id}", response_model=LibrarianBook)
-def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends(require_librarian)):
+def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends(require_librarian_profile)):
     admin = get_admin_client()
     existing = admin.table("books").select("id, accession_no, isbn").eq("id", book_id).execute()
     if not existing.data:
@@ -312,7 +312,7 @@ def update_book(book_id: str, body: BookUpdate, librarian: UserProfile = Depends
 
 # New copies of a book already in the catalog, numbered from the counter.
 @router.post("/{book_id}/add-copies", response_model=BookWithNewCopies)
-def add_copies(book_id: str, body: AddCopiesRequest, librarian: UserProfile = Depends(require_librarian)):
+def add_copies(book_id: str, body: AddCopiesRequest, librarian: UserProfile = Depends(require_librarian_profile)):
     admin = get_admin_client()
     numbers = _assign_numbers(lambda: admin.rpc("add_book_copies", {
         "p_book_id": book_id,
@@ -327,7 +327,7 @@ def add_copies(book_id: str, body: AddCopiesRequest, librarian: UserProfile = De
 # A copy whose number is already printed on it (cataloged before Lasallia
 # assigned numbers). Moves the counter past it if needed.
 @router.post("/{book_id}/copies/register", response_model=BookCopy, status_code=status.HTTP_201_CREATED)
-def register_existing_copy(book_id: str, body: RegisterCopyRequest, librarian: UserProfile = Depends(require_librarian)):
+def register_existing_copy(book_id: str, body: RegisterCopyRequest, librarian: UserProfile = Depends(require_librarian_profile)):
     try:
         accession = clean_accession_input(body.accession_number)
     except ValueError as e:
@@ -363,7 +363,7 @@ def register_existing_copy(book_id: str, body: RegisterCopyRequest, librarian: U
 # The only way to change a copy's number once saved. Needs a reason; the old
 # and new values, reason, who and when are kept in accession_corrections.
 @router.post("/copies/{copy_id}/correct-accession", response_model=AccessionCorrection)
-def correct_accession(copy_id: str, body: CorrectAccessionRequest, librarian: UserProfile = Depends(require_librarian)):
+def correct_accession(copy_id: str, body: CorrectAccessionRequest, librarian: UserProfile = Depends(require_librarian_profile)):
     reason = body.reason.strip()
     if not reason:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Give a reason for the correction.")
@@ -406,7 +406,7 @@ def list_accession_corrections(book_id: str, librarian: UserProfile = Depends(re
     return [{**r, "corrected_by_name": names.get(r.get("corrected_by"))} for r in rows]
 
 @router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_book(book_id: str, librarian: UserProfile = Depends(require_librarian)):
+def delete_book(book_id: str, librarian: UserProfile = Depends(require_librarian_profile)):
     admin = get_admin_client()
     book_res = admin.table("books").select("id, title").eq("id", book_id).execute()
     if not book_res.data:
@@ -556,7 +556,7 @@ def list_book_copies(book_id: str, librarian: UserProfile = Depends(require_libr
 # Marks a lost/missing/damaged/misplaced copy as found. It goes to the
 # reshelving queue; the reshelving scan makes it available.
 @router.post("/copies/{copy_id}/mark-found", status_code=status.HTTP_204_NO_CONTENT)
-def mark_copy_found(copy_id: str, librarian: UserProfile = Depends(require_librarian)):
+def mark_copy_found(copy_id: str, librarian: UserProfile = Depends(require_librarian_profile)):
     admin = get_admin_client()
     copy_res = admin.table("book_copies").select("id, status").eq("id", copy_id).execute()
     if not copy_res.data:
@@ -591,7 +591,7 @@ def _sniff_image_type(data: bytes) -> tuple[str, str] | None:
 def upload_book_cover(
     book_id: str,
     file: UploadFile = File(...),
-    librarian: UserProfile = Depends(require_librarian),
+    librarian: UserProfile = Depends(require_librarian_profile),
 ):
     admin = get_admin_client()
     book_res = admin.table("books").select("id, cover_url").eq("id", book_id).execute()

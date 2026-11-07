@@ -39,6 +39,8 @@ export type LibrarySettings = {
   kiosk_tap_confirm_seconds: number
   // Fine payments and desk pickups need the borrower's own ID tap.
   require_id_tap_at_desk: boolean
+  // Back to the profile picker after this long with no activity.
+  librarian_idle_timeout_minutes: number
 
   // Job titles under the signature lines on exported reports (migration 0060).
   report_prepared_by_title: string

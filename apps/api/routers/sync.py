@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from fastapi.responses import Response
 
 from core.accession import accession_counters
-from core.deps import require_librarian
+from core.deps import require_librarian, require_librarian_profile
 from core.embeddings import reembed_books
 from core.exports import build_new_copies_workbook, fetch_new_copies
 from core.importers.marc import LARGE_JUMP, ImportIssue, apply_plan, parse_marc, plan_import
@@ -59,7 +59,7 @@ def import_catalog(
     # Required to apply a file with copies far above the accession counter
     # (see large_jumps in the preview).
     confirm_large_jumps: bool = False,
-    librarian: UserProfile = Depends(require_librarian),
+    librarian: UserProfile = Depends(require_librarian_profile),
 ):
     data = file.file.read(MAX_FILE_BYTES + 1)
     if len(data) > MAX_FILE_BYTES:
@@ -184,7 +184,7 @@ def export_new_copies(
     # Copies entered with "Register existing copy" already had a number, so
     # they may already be in the library's system.
     include_registered: bool = False,
-    librarian: UserProfile = Depends(require_librarian),
+    librarian: UserProfile = Depends(require_librarian_profile),
 ):
     """Excel file of copies Lasallia added between two dates (Manila time,
     both included). Read-only."""

@@ -28,6 +28,8 @@ class LibrarySettings(BaseModel):
     kiosk_tap_confirm_seconds: int = 60
     # Fine payments and desk pickups need the borrower's own ID tap.
     require_id_tap_at_desk: bool = False
+    # Back to the profile picker after this long with no activity.
+    librarian_idle_timeout_minutes: int = 15
 
     # Job titles under the signature lines on exported reports. Placeholders
     # until the library confirms them.
@@ -94,6 +96,7 @@ class UpdateLibrarySettingsRequest(BaseModel):
     hold_max_seconds: int | None = Field(None, ge=60)
     kiosk_tap_confirm_seconds: int | None = Field(None, ge=15)
     require_id_tap_at_desk: bool | None = None
+    librarian_idle_timeout_minutes: int | None = Field(None, ge=5, le=120)
 
     report_prepared_by_title: str | None = Field(None, min_length=1, max_length=120)
     report_noted_by_title: str | None = Field(None, min_length=1, max_length=120)

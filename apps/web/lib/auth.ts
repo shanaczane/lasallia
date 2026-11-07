@@ -106,6 +106,9 @@ function clearSessionCookie(): void {
   document.cookie = `${SESSION_ROLE_COOKIE}=; path=/; max-age=0; SameSite=Lax`
 }
 
+// The active librarian profile for this tab (lib/librarianProfile.ts).
+export const LIBRARIAN_PROFILE_KEY = "lasallia-librarian-profile"
+
 // "Remember me" on (and Google sign-in): localStorage, kept after closing
 // the browser. Off: sessionStorage, gone when the tab closes.
 const SESSION_KEYS = ["access_token", "refresh_token", "user"] as const
@@ -266,6 +269,7 @@ export function clearSession(): void {
     localStorage.removeItem(key)
     sessionStorage.removeItem(key)
   }
+  sessionStorage.removeItem(LIBRARIAN_PROFILE_KEY)
   clearSessionCookie()
   clearClientCache()
 }

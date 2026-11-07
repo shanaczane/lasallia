@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.accession import normalize_accession_number
-from core.deps import require_librarian
+from core.deps import require_librarian, require_librarian_profile
 from core.notify import notify_librarians
 from core.email_template import staff_alert
 from core.supabase import get_admin_client
@@ -34,7 +34,7 @@ def list_in_house_loans(
 @router.post("", response_model=InHouseLoan, status_code=status.HTTP_201_CREATED)
 def create_in_house_loan(
     body: CreateInHouseLoanRequest,
-    librarian: UserProfile = Depends(require_librarian),
+    librarian: UserProfile = Depends(require_librarian_profile),
 ):
     db = get_admin_client()
 
@@ -96,7 +96,7 @@ def create_in_house_loan(
 @router.post("/{loan_id}/return", response_model=InHouseLoan)
 def return_in_house_loan(
     loan_id: str,
-    librarian: UserProfile = Depends(require_librarian),
+    librarian: UserProfile = Depends(require_librarian_profile),
 ):
     db = get_admin_client()
 

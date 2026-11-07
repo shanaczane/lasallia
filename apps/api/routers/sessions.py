@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from core import chat_sessions
 from core.desk import kiosk_notices
-from core.deps import get_current_user, get_optional_user
+from core.deps import get_current_user, get_optional_user, verify_active_profile
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.session import OpenSessionRequest, StationSession
@@ -51,7 +51,11 @@ def _insert_session(student_id: str, auth_method: str, station_id: str) -> dict:
 # it's a shared screen. librarian_assisted instead needs a librarian's
 # login, since the student gives no credential.
 @router.post("", response_model=StationSession, status_code=status.HTTP_201_CREATED)
-def open_session(body: OpenSessionRequest, caller: UserProfile | None = Depends(get_optional_user)):
+def open_session(
+    body: OpenSessionRequest,
+    caller: UserProfile | None = Depends(get_optional_user),
+    librarian_profile: str | None = Header(None, alias="X-Librarian-Profile"),
+):
     if body.auth_method == "rfid":
         if not body.rfid_uid:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "rfid_uid is required for rfid")
@@ -63,6 +67,7 @@ def open_session(body: OpenSessionRequest, caller: UserProfile | None = Depends(
     elif body.auth_method == "librarian_assisted":
         if caller is None or caller.role != "librarian":
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only a librarian can open an assisted session")
+        verify_active_profile(caller, librarian_profile)
         if not body.student_id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "student_id is required for librarian_assisted")
         student_id = body.student_id

@@ -3,11 +3,12 @@ import time
 import jwt
 import httpx
 from jwt.algorithms import ECAlgorithm
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from supabase import Client
-from schemas.auth import UserProfile, Role
+from schemas.auth import ActiveLibrarian, UserProfile, Role
 from core.config import SUPABASE_URL
+from core.librarian_profiles import ProfileSecretMissing, profile_id_from_token
 from core.supabase import get_admin_client, get_user_client
 
 bearer = HTTPBearer()
@@ -132,6 +133,47 @@ def require_role(*roles: Role):
     return _check
 
 require_librarian = require_role("librarian")
+
+# Sent back when a write needs an active profile. The browser matches this
+# text to reopen the profile picker (lib/librarianProfile.ts).
+PROFILE_REQUIRED = "Choose your librarian profile to continue."
+
+def verify_active_profile(librarian: UserProfile, token: str | None) -> ActiveLibrarian:
+    """Checks the token from "Who is using Lasallia?". The profile is looked
+    up every time, so disabling one takes effect at once."""
+    if not token:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, PROFILE_REQUIRED)
+    try:
+        profile_id = profile_id_from_token(token, librarian.id)
+    except ProfileSecretMissing:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Librarian profiles aren't set up on the server yet")
+    if profile_id is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, PROFILE_REQUIRED)
+
+    rows = get_admin_client().table("librarian_profiles").select("full_name, is_active").eq("id", profile_id).execute().data
+    if not rows or not rows[0]["is_active"]:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, PROFILE_REQUIRED)
+    return ActiveLibrarian(
+        **librarian.model_dump(),
+        librarian_profile_id=profile_id,
+        librarian_name=rows[0]["full_name"],
+    )
+
+# For every librarian write action. Read-only librarian pages use
+# require_librarian alone.
+def require_librarian_profile(
+    librarian: UserProfile = Depends(require_librarian),
+    token: str | None = Header(None, alias="X-Librarian-Profile"),
+) -> ActiveLibrarian:
+    return verify_active_profile(librarian, token)
+
+# For routes shared with students: only librarians need an active profile.
+def require_profile_if_librarian(
+    user: UserProfile = Depends(get_current_user),
+    token: str | None = Header(None, alias="X-Librarian-Profile"),
+) -> UserProfile:
+    return verify_active_profile(user, token) if user.role == "librarian" else user
+
 # Students and faculty share the same rules (librarians are allowed too).
 require_student = require_role("librarian", "student", "faculty")
 # Faculty only (book requests). Librarians are deliberately excluded.

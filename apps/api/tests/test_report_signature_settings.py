@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import routers.settings as settings_router
-from core.deps import require_librarian
+from tests.librarian_auth import allow_librarian
 from core.report_export.layout import PLACEHOLDER_TITLES, placeholder_roles, signature_titles
 from core.settings import _DEFAULTS
 from schemas.auth import UserProfile
@@ -26,7 +26,7 @@ def db(monkeypatch):
 def client(db):
     app = FastAPI()
     app.include_router(settings_router.router)
-    app.dependency_overrides[require_librarian] = lambda: LIBRARIAN
+    allow_librarian(app, LIBRARIAN)
     return TestClient(app)
 
 

@@ -28,6 +28,11 @@ class UserProfile(BaseModel):
     privacy_accepted_at: datetime | None = None
     privacy_notice_version: str | None = None
 
+# The shared librarian login, plus who is using it right now.
+class ActiveLibrarian(UserProfile):
+    librarian_profile_id: str
+    librarian_name: str
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str

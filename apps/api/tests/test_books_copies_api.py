@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from postgrest.exceptions import APIError
 
 import routers.books as books_router
-from core.deps import require_librarian
+from tests.librarian_auth import allow_librarian
 from schemas.auth import UserProfile
 from tests.fake_supabase import FakeSupabase
 
@@ -50,7 +50,7 @@ def db(monkeypatch):
 def client(db):
     app = FastAPI()
     app.include_router(books_router.router)
-    app.dependency_overrides[require_librarian] = lambda: LIBRARIAN
+    allow_librarian(app, LIBRARIAN)
     return TestClient(app)
 
 

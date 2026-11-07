@@ -14,6 +14,7 @@ import Link from "next/link"
 import { AlertCircle, AlertTriangle, Download, FileText, Loader2, Sparkles, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDialogKeyboard } from "@/lib/hooks/useDialogKeyboard"
+import { useActiveLibrarian } from "@/components/layout/LibrarianProfileGate"
 import {
   downloadReportExport,
   fetchExportAiSummary,
@@ -73,7 +74,12 @@ export function ReportExportDialog({
   const [aiDraft, setAiDraft] = useState<string | null | undefined>(undefined)
   const [choice, setChoice] = useState<"ai" | "computed">("ai")
   const [edited, setEdited] = useState<string | null>(null)
-  const [names, setNames] = useState<Names>(loadNames)
+  // Prepared by starts as whoever is using Lasallia; it can still be edited.
+  const preparedBy = useActiveLibrarian()?.full_name
+  const [names, setNames] = useState<Names>(() => {
+    const saved = loadNames()
+    return { ...saved, prepared_by: preparedBy ?? saved.prepared_by }
+  })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

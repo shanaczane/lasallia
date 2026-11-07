@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 
 import core.exports as exports
 import routers.sync as sync_router
-from core.deps import get_current_user, require_librarian
+from core.deps import get_current_user
+from tests.librarian_auth import allow_librarian
 from core.exports import UNCATEGORISED, build_new_copies_workbook, fetch_new_copies, manila_day_bounds, sheet_name_for
 from core.importers.spreadsheet import parse_spreadsheet
 from schemas.auth import UserProfile
@@ -191,7 +192,7 @@ def _app(user=None, librarian=True):
     app = FastAPI()
     app.include_router(sync_router.router)
     if librarian:
-        app.dependency_overrides[require_librarian] = lambda: LIBRARIAN
+        allow_librarian(app, LIBRARIAN)
     elif user is not None:
         app.dependency_overrides[get_current_user] = lambda: user
     return TestClient(app)

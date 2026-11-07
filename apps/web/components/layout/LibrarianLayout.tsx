@@ -6,8 +6,9 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { getUser } from "@/lib/auth"
-import { useRequireSession } from "@/lib/hooks/useRequireSession"
+import { clearActiveProfile } from "@/lib/librarianProfile"
 import { NotificationProvider, useNotifications } from "@/components/ui/notifications/NotificationContext"
+import { LibrarianProfileGate, useActiveLibrarian } from "./LibrarianProfileGate"
 import {
   LayoutDashboard,
   BookOpen,
@@ -21,6 +22,7 @@ import {
   ClipboardCheck,
   ChevronLeft,
   ChevronRight,
+  ArrowLeftRight,
 } from "lucide-react"
 import { useDialogKeyboard } from "@/lib/hooks/useDialogKeyboard"
 
@@ -74,11 +76,13 @@ function getInitials(name: string): string {
 // The unread count comes from NotificationContext.
 export function LibrarianLayout({ children, userName, userInitials }: LibrarianLayoutProps) {
   return (
-    <NotificationProvider>
-      <LibrarianLayoutInner userName={userName} userInitials={userInitials}>
-        {children}
-      </LibrarianLayoutInner>
-    </NotificationProvider>
+    <LibrarianProfileGate>
+      <NotificationProvider>
+        <LibrarianLayoutInner userName={userName} userInitials={userInitials}>
+          {children}
+        </LibrarianLayoutInner>
+      </NotificationProvider>
+    </LibrarianProfileGate>
   )
 }
 
@@ -98,10 +102,8 @@ function LibrarianLayoutInner({
   const [displayName, setDisplayName] = useState(userName ?? "")
   const [displayInitials, setDisplayInitials] = useState(userInitials ?? "")
   const [displayEmail, setDisplayEmail] = useState("")
-
-  // No session (e.g. signed out, then Back) → /login, including pages
-  // restored from the browser's back/forward cache.
-  useRequireSession()
+  // The shared login's name is only a fallback.
+  const activeName = useActiveLibrarian()?.full_name
 
   useLayoutEffectSafe(() => {
     if (localStorage.getItem("librarian-sidebar-collapsed") === "true") setCollapsed(true)
@@ -188,6 +190,33 @@ function LibrarianLayoutInner({
           </div>
         ))}
       </nav>
+      <div className={cn("shrink-0 border-t border-ink-100", isCollapsed ? "flex justify-center p-2" : "p-3")}>
+        {!isCollapsed && (
+          <div className="px-2 pb-2">
+            <p className="text-ink-400" style={{ fontSize: "var(--text-2xs)", fontFamily: "var(--font-body)" }}>
+              Active librarian
+            </p>
+            <p className="text-ink-900 font-semibold truncate" style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>
+              {activeName}
+            </p>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={clearActiveProfile}
+          title={isCollapsed ? "Switch librarian" : undefined}
+          aria-label="Switch librarian"
+          className={cn(
+            "flex items-center rounded-sm text-ink-500 hover:bg-ink-50 hover:text-ink-900 transition-colors",
+            isCollapsed ? "justify-center p-2" : "gap-2.5 w-full px-2 py-1.5"
+          )}
+        >
+          <ArrowLeftRight size={16} className="text-ink-400" />
+          {!isCollapsed && (
+            <span style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}>Switch librarian</span>
+          )}
+        </button>
+      </div>
     </>
   )
 
@@ -196,9 +225,9 @@ function LibrarianLayoutInner({
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="print:hidden">
         <TopNav
-          userName={displayName}
+          userName={activeName ?? displayName}
           userEmail={displayEmail}
-          userInitials={displayInitials}
+          userInitials={activeName ? getInitials(activeName) : displayInitials}
           notificationCount={unreadCount}
           notificationsHref="/librarian/notifications"
           homeHref="/librarian/dashboard"

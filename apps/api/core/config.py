@@ -15,6 +15,10 @@ OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 # Optional: without it, notifications are in-app only (emails are skipped).
 RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
 
+# Signs the librarian "active profile" token. Without it, profile sign-in
+# and librarian write actions are refused.
+LIBRARIAN_PROFILE_SECRET: str = os.getenv("LIBRARIAN_PROFILE_SECRET", "")
+
 _missing = [
     name for name, val in {
         "SUPABASE_URL": SUPABASE_URL,

@@ -5,7 +5,7 @@ from supabase import Client
 
 from core.accession import normalize_accession_number
 from core.calendar import compute_fine
-from core.deps import get_current_user, get_user_supabase, require_librarian
+from core.deps import get_current_user, get_user_supabase, require_librarian, require_librarian_profile
 from core.desk import how_identified, tap_required
 from core.loans import check_borrow_eligibility, create_loan_and_notify, reshelve_copy_now
 from core.notify import notify, notify_librarians
@@ -120,7 +120,7 @@ def list_loans(
 @router.post("/librarian-assisted", response_model=Loan, status_code=status.HTTP_201_CREATED)
 def create_librarian_assisted_loan(
     body: LibrarianAssistedLoanRequest,
-    librarian: UserProfile = Depends(require_librarian),
+    librarian: UserProfile = Depends(require_librarian_profile),
 ):
     admin = get_admin_client()
 
@@ -245,7 +245,7 @@ def search_loans(
 def return_loan(
     loan_id: str,
     body: ReturnLoanRequest,
-    librarian: UserProfile = Depends(require_librarian),
+    librarian: UserProfile = Depends(require_librarian_profile),
 ):
     admin = get_admin_client()
 
@@ -413,7 +413,7 @@ def return_loan(
 def settle_fine(
     loan_id: str,
     body: SettleFineRequest,
-    librarian: UserProfile = Depends(require_librarian),
+    librarian: UserProfile = Depends(require_librarian_profile),
 ):
     admin = get_admin_client()
 
@@ -521,7 +521,7 @@ def reshelving_queue(librarian: UserProfile = Depends(require_librarian)):
 @router.post("/reshelve", response_model=dict)
 def reshelve_copy(
     body: ReshelveRequest,
-    librarian: UserProfile = Depends(require_librarian),
+    librarian: UserProfile = Depends(require_librarian_profile),
 ):
     admin = get_admin_client()
     copy_res = admin.table("book_copies").select("id, book_id, status").eq("accession_number", normalize_accession_number(body.accession_number)).execute()

@@ -106,7 +106,7 @@ class _Query:
             new = self.payload if isinstance(self.payload, list) else [self.payload]
             inserted = []
             for row in new:
-                row = {"id": str(uuid.uuid4()), **copy.deepcopy(row)}
+                row = {"id": str(uuid.uuid4()), **self.db.column_defaults.get(self.table, {}), **copy.deepcopy(row)}
                 rows.append(row)
                 inserted.append(copy.deepcopy(row))
             self.db.writes.append((self.table, "insert", new))
@@ -157,6 +157,8 @@ class FakeSupabase:
         self.tables = {name: [copy.deepcopy(r) for r in rows] for name, rows in tables.items()}
         self.rpc_calls: list[tuple[str, dict]] = []
         self.rpc_handlers: dict = {}
+        # {table: {column: value}}, what Postgres would fill in on insert.
+        self.column_defaults: dict = {}
         self.writes: list = []
 
     def table(self, name):

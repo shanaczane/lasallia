@@ -15,7 +15,8 @@ from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
 import routers.reports as reports_router
-from core.deps import get_current_user, require_librarian
+from core.deps import get_current_user
+from tests.librarian_auth import allow_librarian
 from core.report_export import layout
 from core.report_export.csv_file import build_csv
 from core.report_export.definitions import OVERDUE_COLUMNS, ExportFilters, build_overdue
@@ -313,7 +314,7 @@ def _app(user=None, librarian=True):
     app = FastAPI()
     app.include_router(reports_router.router)
     if librarian:
-        app.dependency_overrides[require_librarian] = lambda: LIBRARIAN
+        allow_librarian(app, LIBRARIAN)
     elif user is not None:
         app.dependency_overrides[get_current_user] = lambda: user
     return TestClient(app)

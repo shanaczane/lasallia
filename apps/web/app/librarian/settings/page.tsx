@@ -11,14 +11,16 @@ import { cn } from "@/lib/utils"
 import { REPORT_TITLE_FIELDS, fetchLibrarySettings, updateLibrarySettings, type LibrarySettings, type UpdateLibrarySettings } from "@/lib/settings"
 import { changePassword, getUser, updateProfile, type UserProfile as AuthUser } from "@/lib/auth"
 import { SupportTicketsPanel } from "@/components/support/SupportTicketsPanel"
+import { LibrariansPanel } from "@/components/settings/LibrariansPanel"
 
 const MIN_PASSWORD_LENGTH = 8
 
-type TabKey = "library" | "borrowing" | "account" | "support"
+type TabKey = "library" | "borrowing" | "librarians" | "account" | "support"
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "library", label: "Library Info" },
   { key: "borrowing", label: "Borrowing Rules" },
+  { key: "librarians", label: "Librarians" },
   { key: "account", label: "Account" },
   { key: "support", label: "Support" },
 ]
@@ -69,6 +71,9 @@ function draftError(d: Draft): string | null {
   if (d.kiosk_idle_warning_seconds >= d.kiosk_idle_timeout_seconds) return "The session warning must start before the session ends."
   if (d.hold_extend_window_seconds >= d.hold_duration_seconds) return "The \"Add time\" window must be shorter than the hold."
   if (d.hold_max_seconds < d.hold_duration_seconds) return "The longest hold can't be shorter than the hold itself."
+  if (!Number.isInteger(d.librarian_idle_timeout_minutes) || d.librarian_idle_timeout_minutes < 5 || d.librarian_idle_timeout_minutes > 120) {
+    return "Librarian Idle Lock must be between 5 and 120 minutes."
+  }
   if (typeof d.fine_per_day !== "number" || d.fine_per_day < 0) return "Fine per Day can't be negative."
   if (typeof d.max_fine_per_book !== "number" || d.max_fine_per_book <= 0) return "Maximum Fine per Book must be greater than 0."
 
@@ -119,6 +124,7 @@ function toDraft(s: LibrarySettings): Draft {
     hold_max_seconds: s.hold_max_seconds,
     kiosk_tap_confirm_seconds: s.kiosk_tap_confirm_seconds,
     require_id_tap_at_desk: s.require_id_tap_at_desk,
+    librarian_idle_timeout_minutes: s.librarian_idle_timeout_minutes ?? 15,
     // An API without migration 0060's fields sends none; use the placeholders.
     ...Object.fromEntries(REPORT_TITLE_FIELDS.map((f) => [f.key, s[f.key] ?? f.placeholder])) as
       Pick<Draft, (typeof REPORT_TITLE_FIELDS)[number]["key"]>,
@@ -131,7 +137,10 @@ function toDraft(s: LibrarySettings): Draft {
   }
 }
 
-const VALID_TABS: TabKey[] = ["library", "borrowing", "account", "support"]
+const VALID_TABS: TabKey[] = ["library", "borrowing", "librarians", "account", "support"]
+
+// These tabs have their own buttons, not the page's Save.
+const HAS_OWN_SAVE: TabKey[] = ["librarians", "support"]
 
 function LibrarianSettingsPageContent() {
   const searchParams = useSearchParams()
@@ -226,6 +235,10 @@ function LibrarianSettingsPageContent() {
         if (settings && draft[key].trim() === (settings[key] ?? REPORT_TITLE_FIELDS.find((f) => f.key === key)?.placeholder)) delete changes[key]
         else changes[key] = draft[key].trim()
       }
+      // Sent only when changed too, for before migration 0061.
+      if (draft.librarian_idle_timeout_minutes === (settings?.librarian_idle_timeout_minutes ?? 15)) {
+        delete changes.librarian_idle_timeout_minutes
+      }
       const updated = await updateLibrarySettings(changes)
       setSettings(updated)
       setDraft(toDraft(updated))
@@ -293,7 +306,7 @@ function LibrarianSettingsPageContent() {
           </p>
         </div>
 
-        {activeTab !== "support" && (
+        {!HAS_OWN_SAVE.includes(activeTab) && (
           <button
             onClick={handleSave}
             disabled={
@@ -318,7 +331,7 @@ function LibrarianSettingsPageContent() {
         </div>
       )}
 
-      {activeTab !== "support" && settings?.is_default && (
+      {!HAS_OWN_SAVE.includes(activeTab) && settings?.is_default && (
         <div
           className="flex items-start gap-2 rounded-(--radius) border border-warn/30 bg-warn-bg px-4 py-3 text-warn"
           style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
@@ -331,7 +344,7 @@ function LibrarianSettingsPageContent() {
         </div>
       )}
 
-      {activeTab !== "support" && (saveError || (activeTab !== "account" && validationError)) && (
+      {!HAS_OWN_SAVE.includes(activeTab) && (saveError || (activeTab !== "account" && validationError)) && (
         <div
           className="flex items-start gap-2 rounded-(--radius) border border-danger/30 bg-danger-bg px-4 py-3 text-danger"
           style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
@@ -368,6 +381,8 @@ function LibrarianSettingsPageContent() {
 
         {activeTab === "support" ? (
           <SupportTicketsPanel />
+        ) : activeTab === "librarians" ? (
+          <LibrariansPanel onDone={showToast} />
         ) : loadError ? (
           <p className="text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
             {loadError}
@@ -510,6 +525,20 @@ function LibrarianSettingsPageContent() {
                       </p>
                     </div>
                   ))}
+                </SettingsSection>
+
+                <SettingsSection title="Librarian Profiles">
+                  <div className="flex flex-col gap-1">
+                    <Field
+                      label="Librarian Idle Lock (minutes)"
+                      value={String(draft.librarian_idle_timeout_minutes)}
+                      onChange={(v) => setField("librarian_idle_timeout_minutes", toInt(v))}
+                      type="number"
+                    />
+                    <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
+                      With no activity for this long, the librarian pages go back to &quot;Who is using Lasallia?&quot;. Between 5 and 120 minutes.
+                    </p>
+                  </div>
                 </SettingsSection>
               </>
             )}

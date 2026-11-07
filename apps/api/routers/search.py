@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from core.deps import get_optional_user, require_librarian
+from core.deps import get_optional_user, require_librarian_profile
 from core.embeddings import embed_text, reembed_books, semantic_search as run_semantic_search
 from core.supabase import get_admin_client
 from routers.books import _apply_real_availability, _redact_for_patrons
@@ -37,6 +37,6 @@ def semantic_search(
 
 
 @router.post("/reembed", response_model=ReembedResponse)
-def reembed(librarian: UserProfile = Depends(require_librarian)):
+def reembed(librarian: UserProfile = Depends(require_librarian_profile)):
     updated = reembed_books(get_admin_client())
     return ReembedResponse(updated=updated)

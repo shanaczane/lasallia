@@ -3,7 +3,7 @@
 
 from fastapi import APIRouter, Depends, status
 
-from core.deps import get_current_user, require_librarian
+from core.deps import get_current_user, require_librarian, require_librarian_profile
 from core.shelf_reports import list_open_reports, report_book, resolve_report
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
@@ -24,6 +24,6 @@ def get_shelf_reports(librarian: UserProfile = Depends(require_librarian)):
 
 @router.post("/inventory/shelf-reports/{report_id}/resolve", status_code=status.HTTP_204_NO_CONTENT)
 def post_resolve_shelf_report(
-    report_id: str, body: ResolveShelfReportRequest, librarian: UserProfile = Depends(require_librarian),
+    report_id: str, body: ResolveShelfReportRequest, librarian: UserProfile = Depends(require_librarian_profile),
 ):
     resolve_report(get_admin_client(), report_id, body.action, librarian.id)

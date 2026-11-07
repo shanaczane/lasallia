@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, status, Depends
 
-from core.deps import require_librarian
+from core.deps import require_librarian, require_librarian_profile
 from core.notify import notify_librarians
 from core.email_template import EmailContent
 
@@ -104,7 +104,7 @@ def list_tickets(
 def update_ticket(
     ticket_id: str,
     body: UpdateSupportTicketRequest,
-    librarian: UserProfile = Depends(require_librarian),
+    librarian: UserProfile = Depends(require_librarian_profile),
 ):
     changes = body.model_dump(exclude_unset=True)
     if not changes:

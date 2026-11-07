@@ -26,6 +26,8 @@ _DEFAULTS: dict[str, object] = {
     "hold_max_seconds": 540,
     "kiosk_tap_confirm_seconds": 60,
     "require_id_tap_at_desk": False,
+    # Back to the profile picker after this long with no activity.
+    "librarian_idle_timeout_minutes": 15,
     # Report signature job titles: placeholders until the library confirms
     # them (core/report_export/layout.py, migration 0060).
     "report_prepared_by_title": "Librarian",
@@ -47,6 +49,7 @@ _INT_FIELDS = (
     "renewal_period_days", "reservation_hold_period_days", "max_active_reservations",
     "kiosk_idle_timeout_seconds", "kiosk_idle_warning_seconds", "hold_duration_seconds",
     "hold_extend_window_seconds", "hold_max_seconds", "kiosk_tap_confirm_seconds",
+    "librarian_idle_timeout_minutes",
 )
 _FLOAT_FIELDS = ("fine_per_day", "max_fine_per_book")
 
