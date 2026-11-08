@@ -157,8 +157,8 @@ def _horizontal_chart(chart, width: float, palette) -> Drawing:
     bars.valueAxis.labels.fontSize = CHART_FONT_SIZE
     bars.valueAxis.valueMin = 0
     top = max((max(values, default=0) for _, values in series), default=0)
-    bars.valueAxis.valueMax = max(top, 1) * 1.15 if top else 1
-    bars.valueAxis.valueStep = max(1, round(max(top, 1) / 4))
+    # A round step (1, 2 or 5 times a power of ten), as in the Excel charts.
+    bars.valueAxis.valueStep, bars.valueAxis.valueMax = layout.axis_scale(top)
     for i in range(len(series)):
         bars.bars[i].fillColor = palette[i % len(palette)]
         bars.bars[i].strokeColor = None
@@ -172,6 +172,8 @@ def _horizontal_chart(chart, width: float, palette) -> Drawing:
         legend.x, legend.y = bars.x + bars.width + 12, bars.y + bars.height
         legend.fontName, legend.fontSize = FONT, CHART_FONT_SIZE
         legend.boxAnchor = "nw"
+        # One column, close enough for five series to fit beside the plot.
+        legend.columnMaximum, legend.deltay, legend.dy, legend.dx = len(series), 13, 7, 7
         legend.colorNamePairs = [(palette[i % len(palette)], name) for i, (name, _) in enumerate(series)]
         drawing.add(legend)
     drawing.add(String(0, height - 10, chart.title, fontName=FONT_BOLD, fontSize=9.5,
@@ -223,6 +225,8 @@ def _chart(data: ReportData, width: float) -> Drawing | None:
         legend.x, legend.y = bars.x + bars.width + 12, bars.y + bars.height
         legend.fontName, legend.fontSize = FONT, 7.5
         legend.boxAnchor = "nw"
+        # One column, close enough for five series to fit beside the plot.
+        legend.columnMaximum, legend.deltay, legend.dy, legend.dx = len(series), 13, 7, 7
         legend.colorNamePairs = [(palette[i % len(palette)], name) for i, (name, _) in enumerate(series)]
         drawing.add(legend)
     drawing.add(String(0, height - 10, chart.title, fontName=FONT_BOLD, fontSize=9.5,
@@ -440,6 +444,8 @@ def build_pdf(data: ReportData, options: layout.ExportOptions) -> bytes:
     if drawing is not None:
         story.append(Spacer(1, 4 * mm))
         story.append(drawing)
+        if data.chart.note:
+            story.append(Paragraph(_text(data.chart.note), styles["meta"]))
 
     story.append(Paragraph(_text(f"Details ({len(data.rows):,} {'row' if len(data.rows) == 1 else 'rows'})"), styles["heading"]))
     table, left_out = _table(data, styles, width)

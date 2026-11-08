@@ -9,7 +9,7 @@
 # They add themselves to REPORTS (imported at the end).
 
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import Any, Callable, Literal
 
@@ -63,6 +63,9 @@ class KeyFigure:
     value: str                       # as shown in the PDF and the dialog
     number: float | int | None = None  # the same figure as a number, for Excel
     number_format: str | None = None   # Excel number format for `number`
+    # What the figure covers, in reports that mix the period with "as of
+    # now" (see the constants below). Sent to the AI so it keeps them apart.
+    covers: str | None = None
 
 
 # A label this short can stay under a vertical bar, slanted if need be.
@@ -80,6 +83,8 @@ class Chart:
     value_label: str  # what a bar counts, e.g. "Overdue loans"
     # More bars per label, e.g. [("Returns", [...])] next to borrows.
     extra_series: list[tuple[str, list[float]]] = field(default_factory=list)
+    # A short line printed under the chart.
+    note: str | None = None
 
     @property
     def _label_load(self) -> int:
@@ -196,10 +201,12 @@ class ReportData:
 
 def ai_input(data: "ReportData") -> dict[str, Any]:
     """What the AI summary is drafted from: the report's labelled key figures
-    (exact wording to copy, totals only) and its aggregated data."""
+    (exact wording to copy, totals only), each with what it covers where the
+    report mixes the period with "as of now", and its aggregated data."""
     return {
         "report": data.title,
-        "key_figures": [{"label": f.label, "value": f.value} for f in data.key_figures],
+        "key_figures": [{"label": f.label, "value": f.value, **({"covers": f.covers} if f.covers else {})}
+                        for f in data.key_figures],
         **{k: v for k, v in data.ai_payload.items() if k != "report"},
     }
 
@@ -364,7 +371,7 @@ def build_overdue(admin, filters: ExportFilters) -> ReportData:
         period=period,
         filters=filters.filter_lines(),
         generated_at=now,
-        key_figures=key_figures,
+        key_figures=[_covers(OVERDUE_RULE, f) for f in key_figures],
         computed_summary=summary,
         ai_payload={
             "report": "Overdue loans",
@@ -393,6 +400,18 @@ def build_overdue(admin, filters: ExportFilters) -> ReportData:
 
 
 # ─── Shared helpers for the reports below ───────────────────────────────
+
+# What a key figure covers, in reports that mix the two.
+IN_PERIOD = "In the period"
+AS_OF_NOW = "As of now"
+OVERDUE_RULE = "Borrowed in the period, overdue now"
+FINES_RULE = "On books returned in the period, plus fines still growing now"
+RETURNED_IN_PERIOD = "On books returned in the period"
+
+
+def _covers(covers: str, figure: KeyFigure) -> KeyFigure:
+    return replace(figure, covers=covers)
+
 
 def _int_figure(label: str, n: int) -> KeyFigure:
     return KeyFigure(label, f"{n:,}", n, "#,##0")
@@ -456,11 +475,22 @@ def _top_groups_chart(title: str, counts: Counter, value_label: str, group: tupl
         left_out = _count_text(sum(n for _, n in rest), *unit)
         others = _count_text(len(rest), f"other {group[0]}", f"other {group[1]}")
         title = f"{title}: top {len(shown)} of {len(ranked)} {group[1]} ({left_out} in {others} not shown)"
-    return Chart(title, [k for k, _ in shown], [n for _, n in shown], value_label)
+    # The cut-off fell in a tie, so which of them made the chart is arbitrary.
+    tied = sum(1 for _, n in rest if n == shown[-1][1]) if rest else 0
+    note = (f"{_count_text(tied, f'other {group[0]}', f'other {group[1]}')} tied at "
+            f"{_count_text(shown[-1][1], *unit)} {'is' if tied == 1 else 'are'} in the table.") if tied else None
+    return Chart(title, [k for k, _ in shown], [n for _, n in shown], value_label, note=note)
 
 
-def _report_buckets(filters: ExportFilters):
-    return period_buckets(filters.date_from, filters.date_to, default="month", default_count=6)
+def _report_buckets(filters: ExportFilters, moments: list[datetime] | None = None):
+    """Chart periods. With `moments` (the Manila times being charted), a
+    missing start or end date comes from the data, so the bars cover every
+    event and add up to the report's total, even on "All time"."""
+    first, last = filters.date_from, filters.date_to
+    if moments:
+        first = first or min(moments).date()
+        last = last or max(max(moments).date(), manila_now().date())
+    return period_buckets(first, last, default="month", default_count=6)
 
 
 def _profile(loan: dict) -> dict:
@@ -532,7 +562,7 @@ def build_circulation(admin, filters: ExportFilters) -> ReportData:
     rows = [row(*e) for e in events]
     counts = Counter(kind for _, kind, _ in events)
 
-    buckets = _report_buckets(filters)
+    buckets = _report_buckets(filters, [when for when, _, _ in events])
     by_bucket = {kind: [0] * len(buckets) for kind in CIRCULATION_TYPES}
     for when, kind, _ in events:
         i = bucket_index(buckets, when)
@@ -583,11 +613,14 @@ def build_circulation(admin, filters: ExportFilters) -> ReportData:
             "borrows_by_period": dict(zip(labels, by_bucket["Borrow"])),
             "returns_by_period": dict(zip(labels, by_bucket["Return"])),
             "in_house_checkouts_by_period": dict(zip(labels, by_bucket["In-house checkout"])),
+            "in_house_returns_by_period": dict(zip(labels, by_bucket["In-house return"])),
             "borrows_by_program": dict(sorted(Counter(_profile(l).get("program") or "—" for l in borrowed).items())),
         },
-        chart=Chart("Borrows, returns and in-house checkouts", labels, by_bucket["Borrow"], "Borrows",
+        # One series per transaction type, so the bars add up to Transactions.
+        chart=Chart("Transactions by type", labels, by_bucket["Borrow"], "Borrows",
                     extra_series=[("Returns", by_bucket["Return"]),
-                                  ("In-house checkouts", by_bucket["In-house checkout"])]) if events else None,
+                                  ("In-house checkouts", by_bucket["In-house checkout"]),
+                                  ("In-house returns", by_bucket["In-house return"])]) if events else None,
         columns=CIRCULATION_COLUMNS, rows=rows,
         empty_message=empty,
         filename_stem=_filename_stem("circulation", filters),
@@ -639,14 +672,15 @@ def build_borrowing_stats(admin, filters: ExportFilters) -> ReportData:
 
     avg = stats.average_loan_duration_days
     key_figures = [
-        _int_figure("Loans", stats.loan_count),
-        _int_figure("Reservations", stats.reservation_count),
-        _int_figure("Total transactions", stats.total_transactions),
-        KeyFigure("Average loan length (days)", f"{avg:.1f}" if avg is not None else "—",
-                  avg if avg is not None else None, "0.0" if avg is not None else None),
-        _int_figure("Borrowers with books still out", library.active_borrowers),
-        _text_figure("Most active category", library.most_active_category or "—"),
-        _percent_figure("Copies on loan now", library.utilization_rate),
+        _covers(IN_PERIOD, _int_figure("Loans", stats.loan_count)),
+        _covers(IN_PERIOD, _int_figure("Reservations", stats.reservation_count)),
+        _covers(IN_PERIOD, _int_figure("Total transactions", stats.total_transactions)),
+        _covers(IN_PERIOD, KeyFigure("Average loan length (days)", f"{avg:.1f}" if avg is not None else "—",
+                                     avg if avg is not None else None, "0.0" if avg is not None else None)),
+        _covers("Borrowed in the period, still out now",
+                _int_figure("Borrowers with books still out", library.active_borrowers)),
+        _covers(IN_PERIOD, _text_figure("Most active category", library.most_active_category or "—")),
+        _covers(AS_OF_NOW, _percent_figure("Copies on loan now", library.utilization_rate)),
     ]
     summary = (
         f"{_count_text(stats.loan_count, 'loan', 'loans')} and "
@@ -806,12 +840,12 @@ def build_fines(admin, filters: ExportFilters) -> ReportData:
         period=_fines_period(filters, now),
         filters=filters.filter_lines(), generated_at=now,
         key_figures=[
-            _money_figure("Outstanding", outstanding),
-            _money_figure("Unsettled", totals["unsettled"]),
-            _money_figure("Still growing", totals["accruing"]),
-            _money_figure("Paid", totals["paid"]),
-            _int_figure("Borrowers with fines", len(borrowers)),
-            _int_figure("Fines", len(rows)),
+            _covers(FINES_RULE, _money_figure("Outstanding", outstanding)),
+            _covers(RETURNED_IN_PERIOD, _money_figure("Unsettled", totals["unsettled"])),
+            _covers(AS_OF_NOW, _money_figure("Still growing", totals["accruing"])),
+            _covers(RETURNED_IN_PERIOD, _money_figure("Paid", totals["paid"])),
+            _covers(FINES_RULE, _int_figure("Borrowers with fines", len(borrowers))),
+            _covers(FINES_RULE, _int_figure("Fines", len(rows))),
         ],
         computed_summary=summary,
         ai_payload={

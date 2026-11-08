@@ -97,7 +97,9 @@ def test_overview_says_how_each_figure_is_counted_and_figures_add_up():
     assert counts["Borrows"] + counts["Returns"] + counts["In-house checkouts"] + counts["In-house returns"] \
         == counts["Transactions"]
     assert counts["Copies available"] + counts["Copies not available"] == counts["Copies"]
-    assert "Period figures 1 November 2026 to 30 November 2026 (Manila time)" in data.period
+    assert data.period.startswith("1 November 2026 to 30 November 2026 (Manila time). Collection figures are as of ")
+    assert data.period_heading.startswith("Period covered: 1 November 2026 to")
+    assert data.period.endswith(".") and "Period figures" not in data.period
     assert any("use only the Category filter" in line for line in data.filters)
 
 

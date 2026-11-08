@@ -15,6 +15,7 @@ from openpyxl.utils import get_column_letter
 
 from core.report_export import layout
 from core.report_export.cells import put_cell
+from core.report_export.layout import axis_scale
 from core.report_export.definitions import ReportData, manila_time_text
 
 _PAPER_CODES = {"A4": 9, "Letter": 1}  # openpyxl / Excel paperSize values
@@ -51,18 +52,6 @@ def wrapped_lines(text: str, width: float) -> int:
 _SERIES_COLORS = [c.lstrip("#") for c in layout.SERIES_COLORS]
 # More bars than this and the counts on top of them would crowd each other.
 _MAX_LABELLED_BARS = 24
-
-
-def axis_scale(highest: float) -> tuple[float, float]:
-    """(step, maximum) for a value axis starting at 0: a round step (1, 2 or
-    5 times a power of ten) giving about five gridlines, and a maximum at
-    least one full step above the highest bar, so the count on top of it
-    can't reach the chart title."""
-    highest = max(float(highest), 1.0)
-    rough = highest / 5
-    magnitude = 10 ** math.floor(math.log10(rough)) if rough >= 1 else 1
-    step = max(1, next(m * magnitude for m in (1, 2, 5, 10) if m * magnitude >= rough))
-    return step, math.ceil((highest + step) / step) * step
 
 
 def style_chart_axes(chart: BarChart, show_values: bool = True, highest: float = 0, horizontal: bool = False) -> None:
@@ -204,6 +193,8 @@ def build_excel(data: ReportData, options: layout.ExportOptions) -> bytes:
         row += 1
         ws.add_chart(chart, f"A{row}")
         row += max(_CHART_ROWS, math.ceil(chart.height / _CM_PER_ROW) + 1)
+        if data.chart.note:
+            row = line(row, data.chart.note, Font(size=9, color=_MUTED))
 
     row += 1
     row = line(row, f"Details ({len(data.rows):,} {'row' if len(data.rows) == 1 else 'rows'})", Font(bold=True, color=_GREEN))

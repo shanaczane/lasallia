@@ -2,6 +2,7 @@
 # the summary label and the signature lines. Used by the PDF and Excel
 # exporters.
 
+import math
 import re
 from dataclasses import dataclass
 
@@ -12,6 +13,18 @@ ORIENTATION = "landscape"    # "landscape" or "portrait"
 # A PDF longer than this many table rows stops there and says so; Excel and
 # CSV always have every row.
 PDF_MAX_ROWS = 2000
+
+def axis_scale(highest: float) -> tuple[float, float]:
+    """(step, maximum) for a value axis starting at 0: a round step (1, 2 or
+    5 times a power of ten) giving about five gridlines, and a maximum at
+    least one full step above the highest bar, so the count on top of it
+    can't reach the chart title."""
+    highest = max(float(highest), 1.0)
+    rough = highest / 5
+    magnitude = 10 ** math.floor(math.log10(rough)) if rough >= 1 else 1
+    step = max(1, next(m * magnitude for m in (1, 2, 5, 10) if m * magnitude >= rough))
+    return step, math.ceil((highest + step) / step) * step
+
 
 # Brand colours (apps/web/app/globals.css).
 GREEN_700 = "#006F3C"
