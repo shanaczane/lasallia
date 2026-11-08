@@ -3,6 +3,7 @@
 # row repeats on every page) and signature lines.
 
 import io
+import re
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -150,19 +151,117 @@ def _chart(data: ReportData, width: float) -> Drawing | None:
     return drawing
 
 
+# ─── Table column widths ────────────────────────────────────────────────
+# Widths come from the content, so no number, date, year or word is ever
+# split across lines: a column that doesn't wrap is as wide as its longest
+# value; one that wraps (titles, authors, remarks) is at least as wide as
+# its longest word, and shares the space left over. Headers wrap only
+# between words. If the table can't fit at the normal size, the font steps
+# down a little.
+
+CELL_PADDING = 6  # ReportLab's default left and right cell padding
+TABLE_FONT_SIZES = [8, 7.5, 7, 6.5]
+_SLACK = 1.0  # points, so rounding never pushes a value onto a second line
+
+
+def _width(text: str, font: str, size: float) -> float:
+    return pdfmetrics.stringWidth(text, font, size)
+
+
+# Phrases that must stay on one line inside wrapping text: dates ("3 November
+# 2026"), times ("7:05 PM") and codes ("IT 301", "COURSE 100"). Their spaces
+# become non-breaking, so ReportLab wraps around them, not inside them.
+_MONTHS = "January|February|March|April|May|June|July|August|September|October|November|December"
+_KEEP_TOGETHER = [
+    re.compile(rf"\b\d{{1,2}} (?:{_MONTHS}) \d{{4}}\b"),
+    re.compile(r"\b\d{1,2}:\d{2} (?:AM|PM)\b"),
+    re.compile(r"\b[A-Z]{2,} \d+[A-Z]?\b"),
+]
+NBSP = " "
+
+
+def cell_text(value, kind: str) -> str:
+    """A cell's text as the PDF prints it."""
+    text = _format(value, kind)
+    for pattern in _KEEP_TOGETHER:
+        text = pattern.sub(lambda m: m.group(0).replace(" ", NBSP), text)
+    return text
+
+
+def _words(text: str) -> list[str]:
+    """The pieces a line can break between: ordinary spaces and line breaks
+    only (a non-breaking space keeps its phrase in one piece)."""
+    return [w for w in re.split(r"[ \n\t]+", text) if w] or [""]
+
+
+def column_needs(data: ReportData, size: float) -> list[float]:
+    """The narrowest each column can be at this font size, padding included:
+    its header's longest word, and its longest value (no wrapping) or
+    longest word (wrapping)."""
+    _register_fonts()
+    rows = data.rows[: layout.PDF_MAX_ROWS]
+    needs = []
+    for c in data.columns:
+        need = max(_width(w, FONT_BOLD, size) for w in _words(c.label))
+        for row in rows:
+            text = cell_text(row.get(c.key), c.kind)
+            pieces = _words(text) if c.wraps else [text]
+            need = max(need, max(_width(p, FONT, size) for p in pieces))
+        needs.append(need + 2 * CELL_PADDING + _SLACK)
+    return needs
+
+
+def column_widths(data: ReportData, width: float) -> tuple[list[float], float]:
+    """(column widths, table font size) for the PDF table: the largest font
+    in TABLE_FONT_SIZES at which every column gets what it needs."""
+    sizes = [s for s in TABLE_FONT_SIZES if s <= (data.table_font_size or TABLE_FONT_SIZES[0])] or TABLE_FONT_SIZES[-1:]
+    for size in sizes:
+        needs = column_needs(data, size)
+        if sum(needs) <= width:
+            break
+    else:
+        # Still too wide at the smallest size: scale down evenly (a report
+        # with this many columns needs fewer; tests keep every report out of
+        # this branch).
+        scale = width / sum(needs)
+        return [n * scale for n in needs], size
+
+    # Columns that don't wrap get exactly what they need. The wrapping ones
+    # share the rest by their relative widths; one whose share would be too
+    # narrow keeps its need, and the others share what's left. (With no
+    # wrapping column, every column shares, so the table still fills the page.)
+    widths = list(needs)
+    active = [i for i, c in enumerate(data.columns) if c.wraps] or list(range(len(needs)))
+    available = width - sum(needs[i] for i in range(len(needs)) if i not in active)
+    while active:
+        weight = sum(data.columns[i].width for i in active) or len(active)
+        share = {i: available * (data.columns[i].width or 1) / weight for i in active}
+        short = [i for i in active if share[i] < needs[i]]
+        if not short:
+            for i in active:
+                widths[i] = share[i]
+            break
+        for i in short:
+            active.remove(i)
+            available -= needs[i]
+    return widths, size
+
+
 def _table(data: ReportData, styles, width: float) -> tuple[LongTable | Paragraph, int]:
     if not data.rows:
         return Paragraph(_text(data.empty_message), styles["body"]), 0
     rows = data.rows[: layout.PDF_MAX_ROWS]
+    col_widths, size = column_widths(data, width)
+    cell = {name: ParagraphStyle(f"{name}_{size}", parent=styles[name], fontSize=size, leading=size + 2)
+            for name in ("head", "head_right", "cell", "cell_right")}
     numeric = {c.key for c in data.columns if c.kind in ("int", "plain", "money")}
-    header = [Paragraph(_text(c.label), styles["head_right" if c.key in numeric else "head"]) for c in data.columns]
+    header = [Paragraph(_text(c.label), cell["head_right" if c.key in numeric else "head"]) for c in data.columns]
     body = [
-        [Paragraph(_text(_format(row.get(c.key), c.kind)), styles["cell_right" if c.key in numeric else "cell"])
+        [Paragraph(_text(cell_text(row.get(c.key), c.kind)), cell["cell_right" if c.key in numeric else "cell"])
          for c in data.columns]
         for row in rows
     ]
-    total = sum(c.width for c in data.columns)
-    table = LongTable([header] + body, colWidths=[width * c.width / total for c in data.columns], repeatRows=1)
+    table = LongTable([header] + body, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(layout.GREEN_700)),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor(layout.GREEN_50)]),

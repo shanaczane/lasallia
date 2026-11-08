@@ -155,8 +155,8 @@ RESERVATION_COLUMNS = [
     Column("author", "Author", "text", 17),
     Column("patron", "Patron", "text", 19),
     Column("program", "Program", "text", 14),
-    Column("year", "Year", "text", 9),
-    Column("status", "Status", "text", 13),
+    Column("year", "Year", "text", 9, wrap=False),
+    Column("status", "Status", "text", 13, wrap=False),
     Column("outcome", "Outcome", "text", 30),
 ]
 
@@ -288,22 +288,39 @@ REGISTER_STATUS = {
     "damaged": "Damaged",
 }
 ACCESSION_COLUMNS = [
-    Column("accession", "Accession no.", "text", 11),
+    Column("accession", "Accession no.", "text", 11, wrap=False),
     Column("added", "Date added", "date", 10),
     Column("origin", "How added", "text", 14),
-    Column("title", "Title", "text", 28),
+    # The edition follows the title ("Title (2nd ed.)"), to keep the
+    # register to 11 columns on A4 landscape.
+    Column("title", "Title (edition)", "text", 30),
     Column("author", "Author", "text", 16),
-    Column("edition", "Edition", "text", 8),
     Column("year", "Year", "plain", 6),
     Column("call_number", "Call no.", "text", 14),
     Column("acquired", "Date acquired", "date", 10),
-    Column("source", "Source", "text", 9),
-    Column("status", "Status", "text", 10),
+    Column("source", "Source", "text", 9, wrap=False),
+    Column("status", "Status", "text", 10, wrap=False),
     Column("remarks", "Remarks", "text", 20),
 ]
 REGISTER_NOTE = ("Date added: when the copy was entered in Lasallia (copies from before Lasallia show the date "
                  "they were imported). Date acquired and source: from the title's record.")
 _ACCESSION = re.compile(r"^\s*([A-Za-z]*)0*(\d+)(.*)$")
+
+
+def _with_edition(title: str, edition: str | None) -> str:
+    """'Clean code (2nd ed.)'; the title alone when it has no edition or
+    already ends with it."""
+    edition = (edition or "").strip()
+    if not edition or title.lower().rstrip(" .)").endswith(edition.lower().rstrip(" .")):
+        return title
+    return f"{title} ({edition})"
+
+
+# How each way a copy was added reads in the summary sentence ("6 numbered
+# by Lasallia"), with Lasallia capitalised.
+ORIGIN_WORDS = {"Numbered by Lasallia": "numbered by Lasallia",
+                "Registered existing number": "registered with their existing number",
+                "Imported": "imported", "Not recorded": "with no record of how they were added"}
 
 
 def accession_key(value: str | None) -> tuple:
@@ -341,8 +358,8 @@ def build_accession_register(admin, filters: ExportFilters) -> ReportData:
         rows.append({
             "accession": c.get("accession_number") or "", "added": manila_date_text(c.get("created_at")),
             "origin": COPY_ORIGINS.get(c.get("origin"), c.get("origin") or "Not recorded"),
-            "title": book.get("title") or "Unknown title", "author": book.get("author") or "—",
-            "edition": book.get("edition") or "", "year": book.get("published_year"),
+            "title": _with_edition(book.get("title") or "Unknown title", book.get("edition")),
+            "author": book.get("author") or "—", "year": book.get("published_year"),
             "call_number": book.get("call_number") or "", "acquired": manila_date_text(book.get("date_acquired")),
             "source": FUNDING_SOURCES.get(book.get("funding_source"), book.get("funding_source") or ""),
             "status": REGISTER_STATUS.get(c.get("status"), c.get("status") or ""),
@@ -358,7 +375,7 @@ def build_accession_register(admin, filters: ExportFilters) -> ReportData:
 
     summary = (
         f"{_count_text(len(rows), 'copy', 'copies')} of {_count_text(titles, 'title', 'titles')}: "
-        + _join_and([f"{by_origin[o]:,} {o.lower()}" for o in origins]) + "."
+        + _join_and([f"{by_origin[o]:,} {ORIGIN_WORDS.get(o, o.lower())}" for o in origins]) + "."
         + (f" {_count_text(corrected, 'copy has', 'copies have')} a corrected number." if corrected else "")
     ) if rows else "No copies match these filters."
 
@@ -384,6 +401,7 @@ def build_accession_register(admin, filters: ExportFilters) -> ReportData:
         columns=ACCESSION_COLUMNS, rows=rows,
         empty_message="No copies match these filters.",
         filename_stem=f"accession-register_as_of_{now.date().isoformat()}", uses_dates=False,
+        table_font_size=7.5,
     )
 
 

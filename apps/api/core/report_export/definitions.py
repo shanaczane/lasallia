@@ -46,6 +46,15 @@ class Column:
     label: str
     kind: ColumnKind = "text"
     width: int = 14  # relative width; Excel uses it as characters
+    # Whether the PDF may wrap a value onto more lines (between words only).
+    # None: text wraps; numbers, years, money and dates never do. Set False
+    # for short text that must stay on one line: accession numbers, times,
+    # statuses, types.
+    wrap: bool | None = None
+
+    @property
+    def wraps(self) -> bool:
+        return self.wrap if self.wrap is not None else self.kind == "text"
 
 
 @dataclass
@@ -149,6 +158,9 @@ class ReportData:
     # False for snapshot reports ("as of" now): the date filter doesn't apply.
     uses_dates: bool = True
     details: DetailTable | None = None
+    # The PDF table's starting font size (points), for reports with many
+    # columns; it steps down further if the columns still don't fit.
+    table_font_size: float | None = None
 
 
 def ai_input(data: "ReportData") -> dict[str, Any]:
@@ -212,7 +224,7 @@ OVERDUE_BUCKETS: list[tuple[str, int, int | None]] = [
 OVERDUE_COLUMNS = [
     Column("borrower", "Borrower", "text", 22),
     Column("program", "Program", "text", 16),
-    Column("year", "Year", "text", 9),
+    Column("year", "Year", "text", 9, wrap=False),
     Column("book", "Book title", "text", 34),
     Column("author", "Author", "text", 20),
     Column("due_date", "Due date", "date", 11),
@@ -420,13 +432,13 @@ def _book(loan: dict) -> dict:
 
 CIRCULATION_COLUMNS = [
     Column("date", "Date", "date", 11),
-    Column("time", "Time", "text", 9),
-    Column("type", "Type", "text", 13),
+    Column("time", "Time", "text", 9, wrap=False),
+    Column("type", "Type", "text", 13, wrap=False),
     Column("book", "Book title", "text", 30),
     Column("author", "Author", "text", 17),
     Column("borrower", "Borrower", "text", 19),
     Column("program", "Program", "text", 15),
-    Column("year", "Year", "text", 9),
+    Column("year", "Year", "text", 9, wrap=False),
     Column("due_date", "Due date", "date", 11),
 ]
 # In this order on the same minute, and in the key figures.
@@ -541,10 +553,10 @@ def build_circulation(admin, filters: ExportFilters) -> ReportData:
 
 BORROWING_COLUMNS = [
     Column("program", "Program", "text", 28),
-    Column("year", "Year level", "text", 12),
+    Column("year", "Year level", "text", 12, wrap=False),
     Column("borrowers", "Borrowers", "int", 11),
     Column("loans", "Loans", "int", 10),
-    Column("share", "Share of loans", "text", 12),
+    Column("share", "Share of loans", "text", 12, wrap=False),
 ]
 
 
@@ -627,7 +639,7 @@ TOP_PATRON_COLUMNS = [
     Column("rank", "Rank", "int", 7),
     Column("borrower", "Borrower", "text", 26),
     Column("program", "Program", "text", 20),
-    Column("year", "Year level", "text", 11),
+    Column("year", "Year level", "text", 11, wrap=False),
     Column("loans", "Loans", "int", 9),
     Column("last_borrowed", "Last borrowed", "date", 13),
 ]
@@ -692,13 +704,13 @@ FINE_KINDS = {"unsettled": "Unsettled", "paid": "Paid", "accruing": "Still growi
 FINE_COLUMNS = [
     Column("borrower", "Borrower", "text", 20),
     Column("program", "Program", "text", 15),
-    Column("year", "Year", "text", 9),
+    Column("year", "Year", "text", 9, wrap=False),
     Column("book", "Book title", "text", 30),
-    Column("kind", "Type", "text", 12),
+    Column("kind", "Type", "text", 12, wrap=False),
     Column("returned", "Returned", "date", 11),
     Column("days_overdue", "Days overdue", "int", 9),
     Column("amount", "Amount (PHP)", "money", 11),
-    Column("receipt", "Receipt no.", "text", 12),
+    Column("receipt", "Receipt no.", "text", 12, wrap=False),
 ]
 
 
@@ -780,7 +792,7 @@ CATALOG_COLUMNS = [
     Column("title", "Title", "text", 34),
     Column("author", "Author", "text", 20),
     Column("program", "Program", "text", 16),
-    Column("college", "College", "text", 10),
+    Column("college", "College", "text", 10, wrap=False),
     Column("call_number", "Call no.", "text", 16),
     Column("year", "Year", "plain", 7),
     Column("copies", "Copies", "int", 8),
@@ -862,11 +874,11 @@ COPY_STATUS = {
 }
 SHELF_COLUMNS = [
     Column("call_number", "Call no.", "text", 18),
-    Column("accession", "Accession no.", "text", 12),
+    Column("accession", "Accession no.", "text", 12, wrap=False),
     Column("title", "Title", "text", 36),
     Column("author", "Author", "text", 20),
     Column("location", "Location", "text", 18),
-    Column("status", "Status", "text", 13),
+    Column("status", "Status", "text", 13, wrap=False),
 ]
 
 
@@ -913,7 +925,7 @@ WEEDING_CANDIDATE_COLUMNS = [
     Column("author", "Author", "text", 20),
     Column("program", "Program", "text", 16),
     Column("published", "Published", "plain", 10),
-    Column("years", "Years in collection", "text", 11),
+    Column("years", "Years in collection", "text", 11, wrap=False),
     Column("borrows", "Borrows (24 months)", "int", 11),
     Column("reason", "Reason", "text", 36),
 ]
@@ -965,9 +977,9 @@ def build_weeding_candidates(admin, filters: ExportFilters) -> ReportData:
 WEEDING_ACTIONS = {"archived": "Archived", "restored": "Restored", "dismissed": "Kept (dismissed)"}
 WEEDING_LOG_COLUMNS = [
     Column("date", "Date", "date", 11),
-    Column("time", "Time", "text", 9),
+    Column("time", "Time", "text", 9, wrap=False),
     Column("book", "Book title", "text", 36),
-    Column("action", "Action", "text", 16),
+    Column("action", "Action", "text", 16, wrap=False),
     Column("reason", "Reason", "text", 30),
     Column("by", "Performed by", "text", 20),
 ]
@@ -1023,7 +1035,7 @@ ITEM_RESOLUTIONS = {"marked_missing": "Marked missing", "marked_found": "Marked 
 INVENTORY_COLUMNS = [
     Column("started", "Started", "date", 11),
     Column("location", "Location", "text", 20),
-    Column("status", "Status", "text", 12),
+    Column("status", "Status", "text", 12, wrap=False),
     Column("by", "Started by", "text", 18),
     Column("expected", "Expected", "int", 9),
     Column("found", "Found", "int", 8),
@@ -1036,11 +1048,11 @@ INVENTORY_DETAIL_COLUMNS = [
     Column("started", "Started", "date", 11),
     Column("location", "Location", "text", 20),
     Column("call_number", "Call no.", "text", 18),
-    Column("accession", "Accession no.", "text", 12),
+    Column("accession", "Accession no.", "text", 12, wrap=False),
     Column("title", "Title", "text", 34),
-    Column("result", "Result", "text", 11),
+    Column("result", "Result", "text", 11, wrap=False),
     Column("expected_location", "Belongs at", "text", 18),
-    Column("resolution", "Resolution", "text", 14),
+    Column("resolution", "Resolution", "text", 14, wrap=False),
 ]
 
 
@@ -1113,13 +1125,13 @@ REQUEST_COLUMNS = [
     Column("requested", "Requested", "date", 11),
     Column("title", "Title", "text", 30),
     Column("author", "Author", "text", 18),
-    Column("isbn", "ISBN", "text", 15),
-    Column("format", "Format", "text", 8),
+    Column("isbn", "ISBN", "text", 15, wrap=False),
+    Column("format", "Format", "text", 8, wrap=False),
     Column("copies", "Copies", "int", 7),
     Column("course", "Course", "text", 14),
     Column("requester", "Requester", "text", 18),
-    Column("college", "Requester's college", "text", 11),
-    Column("status", "Status", "text", 10),
+    Column("college", "Requester's college", "text", 11, wrap=False),
+    Column("status", "Status", "text", 10, wrap=False),
     Column("reviewed", "Reviewed", "date", 11),
 ]
 

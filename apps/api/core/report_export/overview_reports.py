@@ -47,7 +47,7 @@ from core.report_export.usage_reports import build_assistant_usage, build_librar
 OVERVIEW_COLUMNS = [
     Column("area", "Area", "text", 18),
     Column("figure", "Figure", "text", 30),
-    Column("value", "Value", "text", 20),
+    Column("value", "Value", "text", 20, wrap=False),
     Column("counted", "Counted", "text", 40),
 ]
 IN_PERIOD = "In the period"
@@ -154,8 +154,8 @@ ACTIVITY_FIGURES = {"Borrow": "Borrows", "Return": "Returns", "Reservation made"
                     "In-house checkout": "In-house checkouts", "In-house return": "In-house returns"}
 ACTIVITY_COLUMNS = [
     Column("date", "Date", "date", 11),
-    Column("time", "Time", "text", 9),
-    Column("activity", "Activity", "text", 15),
+    Column("time", "Time", "text", 9, wrap=False),
+    Column("activity", "Activity", "text", 15, wrap=False),
     Column("patron", "Patron", "text", 24),
     Column("program", "Program", "text", 16),
     Column("book", "Book title", "text", 36),

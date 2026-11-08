@@ -80,14 +80,14 @@ def _without_category(filters: ExportFilters, what: str) -> list[str]:
 KIOSK_STATION_ID = "kiosk-1"
 USAGE_COLUMNS = [
     Column("date", "Date", "date", 12),
-    Column("day", "Day", "text", 11),
+    Column("day", "Day", "text", 11, wrap=False),
     Column("sessions", "Sessions", "int", 10),
     Column("students", "Students", "int", 10),
-    Column("peak_hour", "Peak hour", "text", 14),
+    Column("peak_hour", "Peak hour", "text", 14, wrap=False),
     Column("peak_sessions", "Sessions in peak hour", "int", 12),
 ]
 HOUR_COLUMNS = [
-    Column("hour", "Hour", "text", 16),
+    Column("hour", "Hour", "text", 16, wrap=False),
     Column("sessions", "Sessions", "int", 10),
 ]
 
