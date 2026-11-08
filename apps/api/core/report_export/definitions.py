@@ -65,6 +65,13 @@ class KeyFigure:
     number_format: str | None = None   # Excel number format for `number`
 
 
+# A label this short can stay under a vertical bar, slanted if need be.
+SHORT_CHART_LABEL = 12
+# Longest label x bars that still fits level under the bars of a PDF chart.
+CHART_AXIS_LOAD = 72
+CHART_TOP_GROUPS = 10
+
+
 @dataclass
 class Chart:
     title: str
@@ -73,6 +80,24 @@ class Chart:
     value_label: str  # what a bar counts, e.g. "Overdue loans"
     # More bars per label, e.g. [("Returns", [...])] next to borrows.
     extra_series: list[tuple[str, list[float]]] = field(default_factory=list)
+
+    @property
+    def _label_load(self) -> int:
+        """Longest label x number of bars: how full the axis under the bars
+        would be."""
+        return max((len(label) for label in self.labels), default=0) * len(self.labels)
+
+    @property
+    def horizontal(self) -> bool:
+        """Long category names (programs, statuses) that wouldn't fit side
+        by side under the bars: draw the bars sideways, a name per line.
+        Period and rank labels ("Oct 18", "#3") are short and stay vertical."""
+        return max((len(label) for label in self.labels), default=0) > SHORT_CHART_LABEL and self._label_load > CHART_AXIS_LOAD
+
+    @property
+    def crowded(self) -> bool:
+        """Short labels, but too many to sit level: slant them."""
+        return not self.horizontal and (len(self.labels) > 12 or self._label_load > CHART_AXIS_LOAD)
 
     @property
     def series(self) -> list[tuple[str, list[float]]]:
@@ -161,6 +186,12 @@ class ReportData:
     # The PDF table's starting font size (points), for reports with many
     # columns; it steps down further if the columns still don't fit.
     table_font_size: float | None = None
+
+    @property
+    def period_heading(self) -> str:
+        """The period line under the title. A snapshot's already reads
+        "As of ...", so it gets no "Period covered:" label."""
+        return f"Period covered: {self.period}" if self.uses_dates else self.period
 
 
 def ai_input(data: "ReportData") -> dict[str, Any]:
@@ -412,6 +443,20 @@ def _top_with_other(counts: Counter, top: int = 10) -> tuple[list[str], list[int
         labels.append("Other")
         values.append(rest)
     return labels, values
+
+
+def _top_groups_chart(title: str, counts: Counter, value_label: str, group: tuple[str, str],
+                      unit: tuple[str, str]) -> Chart:
+    """The largest groups as bars. The rest aren't drawn, since one "Other"
+    bar would dwarf them; the title says how much was left out, and the key
+    figures and table still count everything."""
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    shown, rest = ranked[:CHART_TOP_GROUPS], ranked[CHART_TOP_GROUPS:]
+    if rest:
+        left_out = _count_text(sum(n for _, n in rest), *unit)
+        others = _count_text(len(rest), f"other {group[0]}", f"other {group[1]}")
+        title = f"{title}: top {len(shown)} of {len(ranked)} {group[1]} ({left_out} in {others} not shown)"
+    return Chart(title, [k for k, _ in shown], [n for _, n in shown], value_label)
 
 
 def _report_buckets(filters: ExportFilters):
@@ -858,7 +903,8 @@ def build_catalog(admin, filters: ExportFilters) -> ReportData:
             "copies_available": sum(available.values()), "titles_with_no_copies": no_copies,
             "copies_by_program": dict(zip(labels, values)),
         },
-        chart=Chart("Copies by program", labels, values, "Copies") if rows else None,
+        chart=_top_groups_chart("Copies by program", by_program, "Copies", ("program", "programs"),
+                                ("copy", "copies")) if rows else None,
         columns=CATALOG_COLUMNS, rows=rows,
         empty_message="No titles match these filters.",
         filename_stem=f"catalog_as_of_{now.date().isoformat()}", uses_dates=False,
@@ -965,7 +1011,8 @@ def build_weeding_candidates(admin, filters: ExportFilters) -> ReportData:
         ai_payload={"report": "Weeding candidates", "as_of": manila_time_text(now), "rule": rule,
                     "candidates": len(rows), "not_borrowed_in_24_months": never, "oldest_published": oldest,
                     "candidates_by_program": dict(zip(labels, values))},
-        chart=Chart("Candidates by program", labels, values, "Titles") if rows else None,
+        chart=_top_groups_chart("Candidates by program", by_program, "Titles", ("program", "programs"),
+                                ("title", "titles")) if rows else None,
         columns=WEEDING_CANDIDATE_COLUMNS, rows=rows,
         empty_message="No titles meet the weeding rule right now.",
         filename_stem=f"weeding-candidates_as_of_{now.date().isoformat()}", uses_dates=False,
