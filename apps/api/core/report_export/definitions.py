@@ -3,8 +3,9 @@
 # chart and the columns. The PDF, Excel and CSV exporters only render a
 # ReportData, so no report logic lives in them.
 #
-# Reports added later (round 2) keep the page's own CSV and Print until
-# they're defined here.
+# Top titles, Reservations and the Accession register are in
+# collection_reports.py; Library usage and Assistant usage in
+# usage_reports.py. They add themselves to REPORTS (imported at the end).
 
 from collections import Counter
 from dataclasses import dataclass, field
@@ -157,6 +158,11 @@ def ai_input(data: "ReportData") -> dict[str, Any]:
         "key_figures": [{"label": f.label, "value": f.value} for f in data.key_figures],
         **{k: v for k, v in data.ai_payload.items() if k != "report"},
     }
+
+
+class ReportUnavailable(Exception):
+    """The report can't be built yet (e.g. its table isn't there). The
+    message says why, for the librarian."""
 
 
 @dataclass(frozen=True)
@@ -1191,3 +1197,7 @@ REPORTS: dict[str, ReportDefinition] = {
     "inventory": ReportDefinition(id="inventory", title="Inventory", build=build_inventory),
     "book_requests": ReportDefinition(id="book_requests", title="Book Requests", build=build_book_requests),
 }
+
+# The reports defined in their own modules add themselves to REPORTS. At the
+# end, so everything they import from here already exists.
+from core.report_export import collection_reports, usage_reports  # noqa: E402, F401

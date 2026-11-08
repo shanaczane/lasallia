@@ -7,7 +7,7 @@ from core.dates import report_bound
 from core.deps import require_librarian
 from core.inventory import list_sessions, report_items
 from core.report_export.csv_file import build_csv
-from core.report_export.definitions import REPORTS, ExportFilters, ReportData, ai_input
+from core.report_export.definitions import REPORTS, ExportFilters, ReportData, ReportUnavailable, ai_input
 from core.report_export.excel import build_excel
 from core.report_export.layout import (
     SIGNATURE_ROLES,
@@ -46,6 +46,7 @@ from schemas.reports import (
     ReportExportFilters,
     ReportExportPreview,
     ReportExportRequest,
+    ReportExportRows,
     ReportKeyFigure,
     ReportSignatureTitle,
     ReportSummaries,
@@ -218,7 +219,10 @@ def _export_data(body: ReportExportFilters) -> ReportData:
         program=body.program, college=body.college, year_level=body.year_level,
         floor=body.floor, aisle=body.aisle,
     )
-    return REPORTS[body.report].build(get_admin_client(), filters)
+    try:
+        return REPORTS[body.report].build(get_admin_client(), filters)
+    except ReportUnavailable as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from e
 
 
 @router.post("/export/preview", response_model=ReportExportPreview)
@@ -241,6 +245,20 @@ def preview_export(body: ReportExportFilters, librarian: UserProfile = Depends(r
             ReportSignatureTitle(key=key, label=label, title=titles[key], placeholder=titles[key] == placeholder)
             for key, label, placeholder in SIGNATURE_ROLES
         ],
+    )
+
+
+@router.post("/export/rows", response_model=ReportExportRows)
+def export_rows(body: ReportExportFilters, librarian: UserProfile = Depends(require_librarian)):
+    """The report's table, as the export would print it, for showing on the
+    page (the Usage tab). Same rows as the PDF, Excel and CSV."""
+    data = _export_data(body)
+    return ReportExportRows(
+        title=data.title,
+        period=data.period,
+        columns=[{"key": c.key, "label": c.label, "kind": c.kind} for c in data.columns],
+        rows=data.rows,
+        empty_message=data.empty_message,
     )
 
 

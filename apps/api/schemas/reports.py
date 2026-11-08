@@ -121,6 +121,7 @@ class ReportSummaries(BaseModel):
 ExportableReport = Literal[
     "overdue", "circulation", "borrowing_stats", "top_patrons", "fines", "catalog", "shelf_list",
     "weeding_candidates", "weeding_log", "inventory", "book_requests",
+    "top_titles", "reservations", "accession_register", "library_usage", "assistant_usage",
 ]
 
 
@@ -178,6 +179,21 @@ class ReportExportPreview(BaseModel):
     details_title: str | None = None
     details_row_count: int = 0
     signature_titles: list[ReportSignatureTitle]
+
+
+class ReportExportColumn(BaseModel):
+    key: str
+    label: str
+    kind: Literal["text", "int", "plain", "money", "date"]
+
+
+class ReportExportRows(BaseModel):
+    """A report's table for the page: the export's own columns and rows."""
+    title: str
+    period: str
+    columns: list[ReportExportColumn]
+    rows: list[dict[str, str | int | float | None]]
+    empty_message: str
 
 
 class ReportAiSummary(BaseModel):

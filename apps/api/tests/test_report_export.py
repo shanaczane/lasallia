@@ -377,7 +377,7 @@ def test_ai_summary_is_null_without_ai(fake):
 
 @pytest.mark.parametrize("body, code", [
     ({**BODY, "format": "docx"}, 422),
-    ({**BODY, "report": "accession_register", "format": "pdf"}, 422),  # round 2, not built
+    ({**BODY, "report": "not_a_report", "format": "pdf"}, 422),
     ({**BODY, "format": "pdf", "summary_text": "x" * 2001}, 422),
     ({**BODY, "format": "pdf", "prepared_by_name": "x" * 121}, 422),
     ({**BODY, "date_from": "2026-11-30", "date_to": "2026-11-01", "format": "pdf"}, 400),
