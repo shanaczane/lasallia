@@ -20,6 +20,17 @@ import type { ReportExportFormat, ReportExportRequest } from "@/lib/reports"
 const body = { fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" } as const
 const small = { fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" } as const
 const fieldClass = "w-full px-3 py-2 rounded-sm border border-ink-200 bg-white text-ink-900 outline-none transition-colors focus:border-green-700 focus:ring-1 focus:ring-green-700"
+// Same chevron as the other filter dropdowns, inset from the edge, with
+// room on the right so a long name doesn't run under it.
+const SELECT_CHEVRON =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238E9189' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"
+const selectClass = `${fieldClass} appearance-none pr-9 cursor-pointer hover:border-ink-300`
+const selectStyle = {
+  ...body,
+  backgroundImage: `url("${SELECT_CHEVRON}")`,
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 12px center",
+} as const
 
 const WHEN = new Intl.DateTimeFormat("en-PH", {
   timeZone: "Asia/Manila", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit",
@@ -101,14 +112,14 @@ export default function AuditLogPage() {
         </label>
         <label className="flex flex-col gap-1 text-ink-700 font-medium" style={small}>
           Librarian
-          <select value={filters.librarian_profile_id ?? ""} onChange={(e) => setFilter("librarian_profile_id", e.target.value)} className={fieldClass} style={body}>
+          <select value={filters.librarian_profile_id ?? ""} onChange={(e) => setFilter("librarian_profile_id", e.target.value)} className={selectClass} style={selectStyle}>
             <option value="">All librarians</option>
             {options?.librarians.map((l) => <option key={l.id} value={l.id}>{l.full_name}</option>)}
           </select>
         </label>
         <label className="flex flex-col gap-1 text-ink-700 font-medium" style={small}>
           Action
-          <select value={filters.action ?? ""} onChange={(e) => setFilter("action", e.target.value)} className={fieldClass} style={body}>
+          <select value={filters.action ?? ""} onChange={(e) => setFilter("action", e.target.value)} className={selectClass} style={selectStyle}>
             <option value="">All actions</option>
             {options?.actions.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
           </select>
