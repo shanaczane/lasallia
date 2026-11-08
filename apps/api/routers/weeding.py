@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from core.dates import report_bound
 from core.deps import require_librarian
 from core.loans import find_removal_blocker
 from core.supabase import get_admin_client
@@ -49,8 +50,17 @@ def get_candidates(librarian: UserProfile = Depends(require_librarian)):
 
 
 @router.get("/events", response_model=list[WeedingEvent])
-def get_events(limit: int = 50, librarian: UserProfile = Depends(require_librarian)):
-    return get_weeding_events(get_admin_client(), limit=limit)
+def get_events(
+    limit: int | None = None,
+    # Whole Manila days ("YYYY-MM-DD"), like the Reports page's other dates.
+    date_from: str | None = None,
+    date_to: str | None = None,
+    librarian: UserProfile = Depends(require_librarian),
+):
+    return get_weeding_events(
+        get_admin_client(), limit=limit,
+        date_from=report_bound(date_from, end=False), date_to=report_bound(date_to, end=True),
+    )
 
 
 @router.post("/{book_id}/archive", status_code=status.HTTP_204_NO_CONTENT)

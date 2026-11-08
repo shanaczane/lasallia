@@ -70,6 +70,9 @@ class _Query:
     def gte(self, col, value):
         return self._add(lambda r: r.get(col) is not None and _comparable(r.get(col)) >= _comparable(value))
 
+    def gt(self, col, value):
+        return self._add(lambda r: r.get(col) is not None and _comparable(r.get(col)) > _comparable(value))
+
     def lte(self, col, value):
         return self._add(lambda r: r.get(col) is not None and _comparable(r.get(col)) <= _comparable(value))
 

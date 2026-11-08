@@ -1,13 +1,14 @@
 # Data for the librarian Reports page. Totals are computed in Python,
 # since PostgREST has no GROUP BY.
 
-import calendar as cal
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 
 from supabase import Client
 
 from core.calendar import compute_fine
+from core.dates import bucket_index, filter_days, parse_timestamp, period_buckets
+from core.rows import call_number_key, fetch_all_rows
 from schemas.reports import (
     Bucket,
     CatalogueSlice,
@@ -50,20 +51,27 @@ def _year_suffix(n: int) -> str:
     return "th"
 
 
-def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
-    """Loans with their book and borrower. Dates are filtered in the query;
-    the other filters in Python. Overdue status is worked out here, since
+def _fetch_filtered_loans(
+    admin: Client, filters: ReportFilters, *, date_column: str | None = "borrowed_at", narrow=None,
+) -> list[dict]:
+    """Loans with their book and borrower. The period applies to
+    `date_column` (borrowed_at by default, returned_at for returns and
+    fines, None for no date limit); `narrow` can add query filters. The
+    other filters apply in Python. Overdue status is worked out here, since
     the database doesn't set it."""
     # loans has two links to profiles, so name the borrower one or the
     # query fails.
     def query():
         q = admin.table("loans").select(
-            "*, book_copies(book_id, books(*)), profiles!loans_student_id_fkey(full_name, email, program, college, year_level)"
+            "*, book_copies(book_id, books(*)), "
+            "profiles!loans_student_id_fkey(full_name, email, program, college, year_level)"
         )
-        if filters.date_from:
-            q = q.gte("borrowed_at", filters.date_from)
-        if filters.date_to:
-            q = q.lte("borrowed_at", filters.date_to)
+        if date_column and filters.date_from:
+            q = q.gte(date_column, filters.date_from)
+        if date_column and filters.date_to:
+            q = q.lte(date_column, filters.date_to)
+        if narrow:
+            q = narrow(q)
         return q.order("id")
 
     loans = _fetch_all_rows(query)
@@ -92,17 +100,8 @@ def _fetch_filtered_loans(admin: Client, filters: ReportFilters) -> list[dict]:
     return result
 
 
-def _fetch_all_rows(make_query, page_size: int = 1000) -> list[dict]:
-    """Every row of a select, page by page (PostgREST returns at most 1000).
-    make_query builds a fresh query for each page."""
-    rows: list[dict] = []
-    start = 0
-    while True:
-        page = make_query().range(start, start + page_size - 1).execute().data
-        rows.extend(page)
-        if len(page) < page_size:
-            return rows
-        start += page_size
+# Kept under this name for the modules that already import it.
+_fetch_all_rows = fetch_all_rows
 
 
 def catalogue_report(admin: Client, filters: ReportFilters) -> list[CatalogueSlice]:
@@ -140,74 +139,59 @@ def catalogue_report(admin: Client, filters: ReportFilters) -> list[CatalogueSli
     ]
 
 
+def _chart_buckets(filters: ReportFilters, *, default: str, count: int):
+    """Chart buckets that cover the report period in Manila time (days,
+    weeks or months), or the last `count` months/weeks without dates."""
+    first, last = filter_days(filters.date_from, filters.date_to)
+    return period_buckets(first, last, default=default, default_count=count)
+
+
+def _covering(filters: ReportFilters, buckets) -> ReportFilters:
+    """The filters, starting at the first chart bucket when no start date
+    was picked (the default months or weeks)."""
+    if filters.date_from or not buckets:
+        return filters
+    return replace(filters, date_from=buckets[0].start.isoformat())
+
+
+def _count_by_bucket(buckets, moments) -> list[int]:
+    counts = [0] * len(buckets)
+    for moment in moments:
+        i = bucket_index(buckets, moment)
+        if i is not None:
+            counts[i] += 1
+    return counts
+
+
 def circulation_summary(admin: Client, filters: ReportFilters, months: int = 6) -> list[Bucket]:
-    """Loans per month, oldest first, ending this month."""
-    loans = _fetch_filtered_loans(admin, filters)
-
-    bucket_months: list[tuple[int, int]] = []
-    y, m = datetime.now(timezone.utc).year, datetime.now(timezone.utc).month
-    for _ in range(months):
-        bucket_months.append((y, m))
-        m -= 1
-        if m == 0:
-            m, y = 12, y - 1
-    bucket_months.reverse()
-
-    index_by_ym = {ym: i for i, ym in enumerate(bucket_months)}
-    buckets = [Bucket(label=cal.month_abbr[m], value=0) for (_, m) in bucket_months]
-
-    for loan in loans:
-        d = datetime.fromisoformat(loan["borrowed_at"])
-        idx = index_by_ym.get((d.year, d.month))
-        if idx is not None:
-            buckets[idx].value += 1
-    return buckets
+    """Loans borrowed per day, week or month across the period (Manila
+    time), oldest first. Without dates, the last `months` months."""
+    buckets = _chart_buckets(filters, default="month", count=months)
+    loans = _fetch_filtered_loans(admin, _covering(filters, buckets))
+    counts = _count_by_bucket(buckets, (parse_timestamp(l["borrowed_at"]) for l in loans))
+    return [Bucket(label=b.label, value=n) for b, n in zip(buckets, counts)]
 
 
 def borrowing_trends(admin: Client, filters: ReportFilters, weeks: int = 8) -> list[Bucket]:
-    """Loans per week (weeks start on Sunday), oldest first."""
-    loans = _fetch_filtered_loans(admin, filters)
-
-    now = datetime.now(timezone.utc)
-    days_since_sunday = now.isoweekday() % 7  # Mon=1..Sat=6, Sun=0
-    start_of_this_week = (now - timedelta(days=days_since_sunday)).replace(hour=0, minute=0, second=0, microsecond=0)
-    starts = [start_of_this_week - timedelta(weeks=i) for i in range(weeks - 1, -1, -1)]
-    buckets = [Bucket(label=f"{cal.month_abbr[s.month]} {s.day}", value=0) for s in starts]
-
-    for loan in loans:
-        d = datetime.fromisoformat(loan["borrowed_at"])
-        for i in range(len(starts) - 1, -1, -1):
-            if d >= starts[i]:
-                buckets[i].value += 1
-                break
-    return buckets
+    """Like circulation_summary, but weekly when no dates are picked (the
+    last `weeks` weeks, starting on Sunday in Manila)."""
+    buckets = _chart_buckets(filters, default="week", count=weeks)
+    loans = _fetch_filtered_loans(admin, _covering(filters, buckets))
+    counts = _count_by_bucket(buckets, (parse_timestamp(l["borrowed_at"]) for l in loans))
+    return [Bucket(label=b.label, value=n) for b, n in zip(buckets, counts)]
 
 
 def transaction_trend(admin: Client, filters: ReportFilters, weeks: int = 8) -> list[TransactionTrendPoint]:
-    """Borrows and returns per week, as two series for the Overview chart."""
-    loans = _fetch_filtered_loans(admin, filters)
-
-    now = datetime.now(timezone.utc)
-    days_since_sunday = now.isoweekday() % 7
-    start_of_this_week = (now - timedelta(days=days_since_sunday)).replace(hour=0, minute=0, second=0, microsecond=0)
-    starts = [start_of_this_week - timedelta(weeks=i) for i in range(weeks - 1, -1, -1)]
-    points = [TransactionTrendPoint(label=f"{cal.month_abbr[s.month]} {s.day}", borrows=0, returns=0) for s in starts]
-
-    def bucket_index(d: datetime) -> int | None:
-        for i in range(len(starts) - 1, -1, -1):
-            if d >= starts[i]:
-                return i
-        return None
-
-    for loan in loans:
-        idx = bucket_index(datetime.fromisoformat(loan["borrowed_at"]))
-        if idx is not None:
-            points[idx].borrows += 1
-        if loan.get("returned_at"):
-            idx = bucket_index(datetime.fromisoformat(loan["returned_at"]))
-            if idx is not None:
-                points[idx].returns += 1
-    return points
+    """Borrows (by borrow date) and returns (by return date) across the
+    period in Manila time, as two series for the Overview chart."""
+    buckets = _chart_buckets(filters, default="week", count=weeks)
+    period = _covering(filters, buckets)
+    borrows = _count_by_bucket(
+        buckets, (parse_timestamp(l["borrowed_at"]) for l in _fetch_filtered_loans(admin, period)))
+    returns = _count_by_bucket(
+        buckets, (parse_timestamp(l["returned_at"])
+                  for l in _fetch_filtered_loans(admin, period, date_column="returned_at") if l.get("returned_at")))
+    return [TransactionTrendPoint(label=b.label, borrows=nb, returns=nr) for b, nb, nr in zip(buckets, borrows, returns)]
 
 
 def top_patrons(admin: Client, filters: ReportFilters, limit: int = 5) -> list[TopPatron]:
@@ -221,7 +205,8 @@ def top_patrons(admin: Client, filters: ReportFilters, limit: int = 5) -> list[T
         counts[sid] = counts.get(sid, 0) + 1
         info.setdefault(sid, loan.get("profiles") or {})
 
-    ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+    # Ties in name order, so the list doesn't change between loads.
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], (info[kv[0]].get("full_name") or "").lower()))[:limit]
     return [
         TopPatron(
             id=sid,
@@ -269,11 +254,26 @@ def overdue_loans(admin: Client, filters: ReportFilters) -> list[tuple[str, Over
     return rows
 
 
+def fine_loans(admin: Client, filters: ReportFilters) -> list[dict]:
+    """The loans behind the fines report: books returned in the period with
+    a fine (paid or not), plus every loan still out and overdue now (its
+    fine is still growing), whenever it was borrowed."""
+    returned = _fetch_filtered_loans(
+        admin, filters, date_column="returned_at",
+        narrow=lambda q: q.eq("status", "returned").gt("fine_amount", 0),
+    )
+    still_out = _fetch_filtered_loans(
+        admin, filters, date_column=None, narrow=lambda q: q.in_("status", ["active", "overdue"]),
+    )
+    return returned + [l for l in still_out if l["status"] == "overdue"]
+
+
 def fines_report(admin: Client, filters: ReportFilters) -> list[FineRow]:
-    """One row per patron with any fine: unpaid, still growing (open
-    overdue loans) and paid. `entries` lists each loan behind the totals,
-    so a librarian can see which book each fine is for."""
-    loans = _fetch_filtered_loans(admin, filters)
+    """One row per patron with any fine: unpaid and paid fines on books
+    returned in the period, and fines still growing on overdue books not yet
+    returned (as of now). `entries` lists each loan behind the totals, so a
+    librarian can see which book each fine is for."""
+    loans = fine_loans(admin, filters)
 
     totals: dict[str, dict] = {}
     for loan in loans:
@@ -354,17 +354,19 @@ def fines_report(admin: Client, filters: ReportFilters) -> list[FineRow]:
 def library_stats(admin: Client, filters: ReportFilters) -> LibraryStats:
     """Headline numbers. Catalog numbers use only the category filter;
     borrower and overdue numbers use all filters."""
-    books_query = admin.table("books").select("id, category").is_("archived_at", "null")
-    if filters.category:
-        books_query = books_query.eq("category", filters.category)
-    books = books_query.execute().data
+    def books_query():
+        q = admin.table("books").select("id, category").is_("archived_at", "null").order("id")
+        return q.eq("category", filters.category) if filters.category else q
+
+    books = fetch_all_rows(books_query)
     total_titles = len(books)
-    book_ids = [b["id"] for b in books]
+    book_ids = {b["id"] for b in books}
 
     total_copies = 0
     utilization_rate = 0.0
     if book_ids:
-        copies = admin.table("book_copies").select("status").in_("book_id", book_ids).execute().data
+        copies = [c for c in fetch_all_rows(lambda: admin.table("book_copies").select("book_id, status").order("id"))
+                  if c["book_id"] in book_ids]
         total_copies = len(copies)
         on_loan = sum(1 for c in copies if c["status"] == "on_loan")
         utilization_rate = round(on_loan / total_copies, 4) if total_copies else 0.0
@@ -406,13 +408,17 @@ def transaction_stats(admin: Client, filters: ReportFilters) -> TransactionStats
     """Totals and rates for the filtered period (not broken down by time)."""
     loans = _fetch_filtered_loans(admin, filters)
 
-    res_query = admin.table("reservations").select("status, requested_at, books(category), profiles(program, college, year_level)")
-    if filters.date_from:
-        res_query = res_query.gte("requested_at", filters.date_from)
-    if filters.date_to:
-        res_query = res_query.lte("requested_at", filters.date_to)
+    def res_query():
+        q = admin.table("reservations").select(
+            "id, status, requested_at, books(category), profiles(program, college, year_level)")
+        if filters.date_from:
+            q = q.gte("requested_at", filters.date_from)
+        if filters.date_to:
+            q = q.lte("requested_at", filters.date_to)
+        return q.order("id")
+
     reservations = [
-        r for r in res_query.execute().data
+        r for r in fetch_all_rows(res_query)
         if (not filters.category or (r.get("books") or {}).get("category") == filters.category)
         and (not filters.program or (r.get("profiles") or {}).get("program") == filters.program)
         and (not filters.college or (r.get("profiles") or {}).get("college") == filters.college)
@@ -448,27 +454,29 @@ def _real_shelf_location(value: str | None) -> str | None:
 def shelf_list(admin: Client, filters: ReportFilters, floor: str | None = None, aisle: str | None = None) -> list[ShelfListRow]:
     """One row per physical copy, in shelf order (call number, then
     accession number)."""
-    books_query = admin.table("books").select("id, title, author, call_number, category, shelf_location, floor, aisle").is_("archived_at", "null")
-    if filters.category:
-        books_query = books_query.eq("category", filters.category)
-    # Book-centric, so College means the book's own college here.
-    if filters.college:
-        books_query = books_query.eq("subject", filters.college)
-    if floor:
-        books_query = books_query.eq("floor", floor)
-    if aisle:
-        books_query = books_query.eq("aisle", aisle)
-    books = books_query.execute().data
-    books_by_id = {b["id"]: b for b in books}
+    def books_query():
+        q = (admin.table("books").select("id, title, author, call_number, category, shelf_location, floor, aisle")
+             .is_("archived_at", "null").order("id"))
+        if filters.category:
+            q = q.eq("category", filters.category)
+        # Book-centric, so College means the book's own college here.
+        if filters.college:
+            q = q.eq("subject", filters.college)
+        if floor:
+            q = q.eq("floor", floor)
+        if aisle:
+            q = q.eq("aisle", aisle)
+        return q
+
+    books_by_id = {b["id"]: b for b in fetch_all_rows(books_query)}
     if not books_by_id:
         return []
 
-    copies = (
-        admin.table("book_copies")
-        .select("accession_number, book_id, shelf_location, status")
-        .in_("book_id", list(books_by_id.keys()))
-        .execute()
-    ).data
+    copies = [
+        c for c in fetch_all_rows(
+            lambda: admin.table("book_copies").select("id, accession_number, book_id, shelf_location, status").order("id"))
+        if c["book_id"] in books_by_id
+    ]
 
     rows = []
     for c in copies:
@@ -485,5 +493,6 @@ def shelf_list(admin: Client, filters: ReportFilters, floor: str | None = None, 
             aisle=book.get("aisle"),
             status=c["status"],
         ))
-    rows.sort(key=lambda r: (r.call_number, r.accession_number))
+    # Shelf order: call number as a call number (005.13 before 005.2).
+    rows.sort(key=lambda r: (call_number_key(r.call_number), r.accession_number))
     return rows

@@ -12,6 +12,7 @@ from core.notify import notify, notify_librarians
 from core.email_template import EmailContent, long_date, peso, staff_alert
 from core.reservations import maybe_sweep_expired_reservations, promote_next_reservation
 from core.settings import get_library_settings
+from core.rows import fetch_all_rows, fetch_rows_by_ids
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.loan import (
@@ -58,19 +59,22 @@ def list_loans(
     # RLS limits students to their own loans; librarians see all.
     # student_id narrows a librarian's view to one patron.
     maybe_sweep_expired_reservations(get_admin_client())
-    query = db.table("loans").select("*").order("borrowed_at", desc=True)
-    if student_id:
-        query = query.eq("student_id", student_id)
-    if borrowed_from:
-        query = query.gte("borrowed_at", borrowed_from)
-    if borrowed_to:
-        query = query.lt("borrowed_at", borrowed_to)
-    if returned_from:
-        query = query.gte("returned_at", returned_from)
-    if returned_to:
-        query = query.lt("returned_at", returned_to)
-    res = query.execute()
-    loans = res.data
+    # Every matching loan, page by page (a single read stops at 1,000).
+    def query():
+        q = db.table("loans").select("*").order("borrowed_at", desc=True).order("id")
+        if student_id:
+            q = q.eq("student_id", student_id)
+        if borrowed_from:
+            q = q.gte("borrowed_at", borrowed_from)
+        if borrowed_to:
+            q = q.lt("borrowed_at", borrowed_to)
+        if returned_from:
+            q = q.gte("returned_at", returned_from)
+        if returned_to:
+            q = q.lt("returned_at", returned_to)
+        return q
+
+    loans = fetch_all_rows(query)
 
     # Copies need the admin client (no RLS access). Safe, since the user
     # could already see these loans.
@@ -79,9 +83,12 @@ def list_loans(
     books_by_copy_id: dict[str, dict | None] = {}
     accession_by_copy_id: dict[str, str | None] = {}
     if copy_ids:
-        copies = admin.table("book_copies").select("id, book_id, accession_number").in_("id", copy_ids).execute().data
+        copies = fetch_rows_by_ids(
+            lambda ids: admin.table("book_copies").select("id, book_id, accession_number").in_("id", ids).order("id"),
+            copy_ids)
         book_ids = list({c["book_id"] for c in copies})
-        books = admin.table("books").select("*").in_("id", book_ids).execute().data if book_ids else []
+        books = fetch_rows_by_ids(
+            lambda ids: admin.table("books").select("*").in_("id", ids).order("id"), book_ids) if book_ids else []
         books_by_id = {b["id"]: b for b in books}
         books_by_copy_id = {c["id"]: books_by_id.get(c["book_id"]) for c in copies}
         accession_by_copy_id = {c["id"]: c["accession_number"] for c in copies}
@@ -94,7 +101,9 @@ def list_loans(
     student_ids = list({loan["student_id"] for loan in loans})
     profiles_by_id: dict[str, dict] = {}
     if student_ids:
-        profiles = admin.table("profiles").select("id, full_name, avatar_url").in_("id", student_ids).execute().data
+        profiles = fetch_rows_by_ids(
+            lambda ids: admin.table("profiles").select("id, full_name, avatar_url").in_("id", ids).order("id"),
+            student_ids)
         profiles_by_id = {p["id"]: p for p in profiles}
     for loan in loans:
         loan["profiles"] = profiles_by_id.get(loan["student_id"])

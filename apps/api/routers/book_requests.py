@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from core.deps import require_faculty, require_librarian
 from core.notify import notify, notify_librarians
 from core.email_template import EmailContent, long_date, staff_alert
+from core.rows import fetch_all_rows
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
 from schemas.book_request import (
@@ -287,10 +288,12 @@ def list_book_requests(
     request_status: str | None = None,
     librarian: UserProfile = Depends(require_librarian),
 ):
-    query = get_admin_client().table("book_requests").select(_SELECT).order("created_at", desc=True)
-    if request_status:
-        query = query.eq("status", request_status)
-    return query.execute().data
+    # Every request, page by page (a single read stops at 1,000).
+    def query():
+        q = get_admin_client().table("book_requests").select(_SELECT).order("created_at", desc=True).order("id")
+        return q.eq("status", request_status) if request_status else q
+
+    return fetch_all_rows(query)
 
 
 @router.patch("/{request_id}", response_model=BookRequest)

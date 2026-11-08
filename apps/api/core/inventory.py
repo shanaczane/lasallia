@@ -11,6 +11,7 @@ from supabase import Client
 
 from core.accession import normalize_accession_number
 from core.loans import reshelve_copy_now
+from core.rows import call_number_key, fetch_all_rows, fetch_rows_by_ids
 from schemas.inventory import (
     FlaggedCopy,
     InventoryCopy,
@@ -188,12 +189,16 @@ def _require_open(session: dict) -> None:
 def _summaries(admin: Client, sessions: list[dict]) -> list[InventorySession]:
     if not sessions:
         return []
-    items = (
-        admin.table("inventory_items")
-        .select("session_id, expected, result, resolution")
-        .in_("session_id", [s["id"] for s in sessions])
-        .execute()
-    ).data
+    # Every item, page by page: a check can have hundreds of copies, and a
+    # single read stops at 1,000.
+    items = fetch_rows_by_ids(
+        lambda ids: admin.table("inventory_items")
+        .select("id, session_id, expected, result, resolution")
+        .in_("session_id", ids)
+        .order("id"),
+        [s["id"] for s in sessions],
+        chunk=20,
+    )
     names = _profile_names(admin, {s["started_by"] for s in sessions})
 
     counts: dict[str, dict[str, int]] = {
@@ -302,11 +307,11 @@ def start_session(
 
 
 def _item_rows(admin: Client, query_filter) -> list[InventoryItem]:
-    rows = query_filter(
+    rows = fetch_all_rows(lambda: query_filter(
         admin.table("inventory_items").select(
             "*, book_copies(accession_number, status, book_id, books(title, author, call_number))"
         )
-    ).execute().data
+    ).order("id"))
     items = []
     for r in rows:
         copy = r.get("book_copies") or {}
@@ -331,7 +336,7 @@ def _one_item(admin: Client, item_id: str) -> InventoryItem:
 def get_session_detail(admin: Client, session_id: str) -> InventorySessionDetail:
     summary = get_session_summary(admin, session_id)
     items = _item_rows(admin, lambda q: q.eq("session_id", session_id))
-    items.sort(key=lambda i: (_natural_key(i.call_number), i.accession_number or ""))
+    items.sort(key=lambda i: (call_number_key(i.call_number), i.accession_number or ""))
     return InventorySessionDetail(**summary.model_dump(), items=items)
 
 
@@ -533,7 +538,7 @@ def all_copies(admin: Client) -> list[InventoryCopy]:
             status=r["status"], floor=book.get("floor"), aisle=book.get("aisle"),
             location=book_location_label(book), last_seen_at=last_seen.get(r["id"]),
         ))
-    copies.sort(key=lambda c: (_natural_key(c.floor), _natural_key(c.aisle), _natural_key(c.call_number), c.accession_number or ""))
+    copies.sort(key=lambda c: (_natural_key(c.floor), _natural_key(c.aisle), call_number_key(c.call_number), c.accession_number or ""))
     return copies
 
 
@@ -552,7 +557,7 @@ def flagged_copies(admin: Client) -> list[FlaggedCopy]:
         )
         for r in rows
     ]
-    copies.sort(key=lambda c: (c.status, _natural_key(c.call_number)))
+    copies.sort(key=lambda c: (c.status, call_number_key(c.call_number)))
     return copies
 
 
@@ -577,6 +582,6 @@ def report_items(admin: Client, date_from: str | None = None, date_to: str | Non
             result=i.result, expected_location=i.expected_location, resolution=i.resolution,
         ))
     # Newest check first; within a check, shelf (call-number) order.
-    rows.sort(key=lambda r: _natural_key(r.call_number))
+    rows.sort(key=lambda r: call_number_key(r.call_number))
     rows.sort(key=lambda r: r.started_at, reverse=True)
     return rows
