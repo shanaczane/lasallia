@@ -237,7 +237,7 @@ def build_reservations(admin, filters: ExportFilters) -> ReportData:
     labels += sorted(s for s in by_status if s not in labels)
     patrons = len({r.get("user_id") for r in reservations})
     titles = len({_book(r).get("id") or _book(r).get("title") for r in reservations})
-    buckets = _report_buckets(filters)
+    buckets = _report_buckets(filters, [_manila(r["requested_at"]) for r in reservations])
     made = [0] * len(buckets)
     for r in reservations:
         i = bucket_index(buckets, _manila(r["requested_at"]))

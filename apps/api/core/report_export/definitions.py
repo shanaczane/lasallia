@@ -657,18 +657,20 @@ def build_borrowing_stats(admin, filters: ExportFilters) -> ReportData:
         "share": f"{g['loans'] / total * 100:.1f}%" if total else "—",
     } for (program, year), g in sorted(groups.items(), key=lambda kv: (-kv[1]["loans"], kv[0]))]
 
-    buckets = _report_buckets(filters)
+    borrowed_at = [_manila(l["borrowed_at"]) for l in loans]
+    returned_at = [_manila(l["returned_at"]) for l in filtered_loans(admin, rf, date_column="returned_at")
+                   if l.get("returned_at")]
+    buckets = _report_buckets(filters, borrowed_at + returned_at)
     borrows = [0] * len(buckets)
-    for l in loans:
-        i = bucket_index(buckets, parse_timestamp(l["borrowed_at"]))
+    for when in borrowed_at:
+        i = bucket_index(buckets, when)
         if i is not None:
             borrows[i] += 1
     returns = [0] * len(buckets)
-    for l in filtered_loans(admin, rf, date_column="returned_at"):
-        if l.get("returned_at"):
-            i = bucket_index(buckets, parse_timestamp(l["returned_at"]))
-            if i is not None:
-                returns[i] += 1
+    for when in returned_at:
+        i = bucket_index(buckets, when)
+        if i is not None:
+            returns[i] += 1
 
     avg = stats.average_loan_duration_days
     key_figures = [

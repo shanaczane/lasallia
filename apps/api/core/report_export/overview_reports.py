@@ -117,7 +117,7 @@ def build_overview(admin, filters: ExportFilters) -> ReportData:
         f"{value('Outstanding fines')} in fines is outstanding. The collection has {value('Titles')} titles and "
         f"{value('Copies')} copies, with {value('Weeding candidates')} weeding candidates."
     )
-    headline = ["Borrows", "Returns", "In-house checkouts", "In-house returns", "Reservations made", "Overdue loans",
+    headline = ["Borrows", "Returns", "In-house checkouts", "In-house returns", "Transactions", "Reservations made", "Overdue loans",
                 "Outstanding fines", "Titles", "Copies", "Weeding candidates", "Borrowing station sessions",
                 "Questions answered"]
     # Printed after "Period covered:" and repeated in every page's footer;

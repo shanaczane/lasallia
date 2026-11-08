@@ -199,3 +199,72 @@ def test_the_legend_keeps_every_series_in_one_column_inside_the_chart(report, co
     assert len(legend.colorNamePairs) == count and legend.columnMaximum == count
     assert legend.y - count * legend.deltay >= 0
 
+
+# ─── The other period charts, including "All time" ──────────────────────
+
+def _with_old_records():
+    """Records from two years back, outside any "last 6 months" chart."""
+    db = round2_world()
+    old = "2024-03-05T02:00:00+00:00"
+    db.tables["reservations"][0]["requested_at"] = old
+    db.tables["station_sessions"][0]["started_at"] = old
+    db.tables["assistant_usage"][-1]["occurred_at"] = old
+    return db
+
+
+@pytest.mark.parametrize("filters", PERIODS)
+@pytest.mark.parametrize("db", [round2_world, _with_old_records])
+def test_reservations_chart_adds_up_to_reservations_made(filters, db):
+    data = _build("reservations", filters, db())
+    assert _series_total(data) == _numbers(data)["Reservations made"]
+
+
+@pytest.mark.parametrize("filters", PERIODS)
+def test_borrowing_statistics_chart_covers_every_loan(filters):
+    data = _build("borrowing_stats", filters)
+    assert _by_series(data)["Borrows"] == _numbers(data)["Loans"]
+
+
+def test_borrowing_statistics_chart_counts_every_return():
+    db = round2_world()
+    data = _build("borrowing_stats", ALL_TIME, db)
+    returned = sum(1 for loan in db.tables["loans"] if loan.get("returned_at"))
+    assert returned and _by_series(data)["Returns"] == returned
+
+
+@pytest.mark.parametrize("filters", PERIODS)
+@pytest.mark.parametrize("db", [round2_world, _with_old_records])
+def test_library_usage_chart_and_ai_periods_add_up_to_sessions(filters, db):
+    data = _build("library_usage", filters, db())
+    sessions = _numbers(data)["Borrowing station sessions"]
+    assert _series_total(data) == sessions
+    assert sum(data.ai_payload["sessions_by_period"].values()) == sessions
+
+
+@pytest.mark.parametrize("filters", PERIODS)
+@pytest.mark.parametrize("db", [round2_world, _with_old_records])
+def test_assistant_usage_chart_adds_up_to_questions(filters, db):
+    data = _build("assistant_usage", filters, db())
+    f = _numbers(data)
+    assert _series_total(data) == f["Questions answered"]
+    for name, total in _by_series(data).items():
+        assert total == f[name], name
+
+
+def test_all_time_charts_reach_back_to_the_oldest_record():
+    for report in ("reservations", "assistant_usage"):
+        data = _build(report, ALL_TIME, _with_old_records())
+        assert data.chart.labels[0] == "Mar 2024", report
+    assert "Mar 2024" in _build("library_usage", ALL_TIME, _with_old_records()).ai_payload["sessions_by_period"]
+
+
+# ─── Transactions as an Overview key figure ─────────────────────────────
+
+@pytest.mark.parametrize("filters", PERIODS)
+def test_overview_gives_the_ai_transactions_marked_as_period(filters):
+    data = _build("overview", filters)
+    f = _numbers(data)
+    assert f["Transactions"] == f["Borrows"] + f["Returns"] + f["In-house checkouts"] + f["In-house returns"]
+    assert f["Transactions"] == _series_total(data)
+    figure = next(x for x in ai_input(data)["key_figures"] if x["label"] == "Transactions")
+    assert figure["covers"] == IN_PERIOD and figure["value"] == f"{f['Transactions']:,}"
