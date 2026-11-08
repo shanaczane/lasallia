@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from core.accession import normalize_accession_number
 from core.deps import require_librarian
 from core.notify import notify_librarians
+from core.rows import fetch_all_rows
 from core.email_template import staff_alert
 from core.supabase import get_admin_client
 from schemas.auth import UserProfile
@@ -20,11 +21,13 @@ def list_in_house_loans(
     librarian: UserProfile = Depends(require_librarian),
 ):
     db = get_admin_client()
-    query = db.table("in_house_loans").select("*, book_copies(accession_number, books(*))").order("checked_out_at", desc=True)
-    if status_filter:
-        query = query.eq("status", status_filter)
-    res = query.execute()
-    loans = res.data
+    # Paged, so lists past 1,000 loans are complete.
+    def query():
+        q = (db.table("in_house_loans").select("*, book_copies(accession_number, books(*))")
+             .order("checked_out_at", desc=True).order("id"))
+        return q.eq("status", status_filter) if status_filter else q
+
+    loans = fetch_all_rows(query)
     for loan in loans:
         copy = loan.pop("book_copies", None)
         loan["books"] = copy["books"] if copy else None

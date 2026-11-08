@@ -18,6 +18,7 @@ from core.reports import (
     ReportFilters,
     _fetch_filtered_loans as filtered_loans,
     _year_suffix,
+    fetch_in_house_loans,
     fine_loans,
     library_stats,
     overdue_loans,
@@ -245,10 +246,10 @@ def _join_and(parts: list[str]) -> str:
     return f"{', '.join(parts[:-1])} and {parts[-1]}"
 
 
-def _events_text(n: int) -> str:
-    """'7 borrows and returns', '1 borrow or return': what a busiest-day
-    count counts."""
-    return "1 borrow or return" if n == 1 else f"{n:,} borrows and returns"
+def _transactions_text(n: int) -> str:
+    """'7 transactions', '1 transaction': what a busiest-day count counts.
+    The report says what a transaction is."""
+    return _count_text(n, "transaction", "transactions")
 
 
 def build_overdue(admin, filters: ExportFilters) -> ReportData:
@@ -408,19 +409,34 @@ def _book(loan: dict) -> dict:
 
 # ─── Circulation ────────────────────────────────────────────────────────
 # Borrows by borrow date and returns by return date, like the Circulation
-# tab. Guest (in-house) loans aren't included yet (round 2).
+# tab, plus guest (in-house) checkouts and returns on their own dates.
 
 CIRCULATION_COLUMNS = [
     Column("date", "Date", "date", 11),
     Column("time", "Time", "text", 9),
-    Column("type", "Type", "text", 9),
-    Column("book", "Book title", "text", 32),
-    Column("author", "Author", "text", 18),
-    Column("borrower", "Borrower", "text", 20),
+    Column("type", "Type", "text", 13),
+    Column("book", "Book title", "text", 30),
+    Column("author", "Author", "text", 17),
+    Column("borrower", "Borrower", "text", 19),
     Column("program", "Program", "text", 15),
     Column("year", "Year", "text", 9),
     Column("due_date", "Due date", "date", 11),
 ]
+# In this order on the same minute, and in the key figures.
+CIRCULATION_TYPES = ["Borrow", "Return", "In-house checkout", "In-house return"]
+VISITOR_TYPES = {"nocei": "Guest (NOCEI)", "non_nocei": "Guest (visitor)"}
+TRANSACTION_RULE = "A transaction is a borrow, a return, an in-house checkout or an in-house return."
+IN_HOUSE_LEFT_OUT = "In-house (guest) loans are left out: guests have no college, program or year level."
+
+
+def _circulation_period(filters: ExportFilters) -> str:
+    return _period_line(filters, "Borrows, returns and in-house (guest) loans")
+
+
+def _in_house_note(filters: ExportFilters) -> list[str]:
+    """The filter line saying in-house loans were left out, when a borrower
+    filter (college, program, year level) is set."""
+    return [IN_HOUSE_LEFT_OUT] if filters.college or filters.program or filters.year_level is not None else []
 
 
 def build_circulation(admin, filters: ExportFilters) -> ReportData:
@@ -428,67 +444,88 @@ def build_circulation(admin, filters: ExportFilters) -> ReportData:
     rf = filters.to_report_filters()
     borrowed = filtered_loans(admin, rf)
     returned = [l for l in filtered_loans(admin, rf, date_column="returned_at") if l.get("returned_at")]
+    checked_out = fetch_in_house_loans(admin, rf)
+    in_house_returned = [l for l in fetch_in_house_loans(admin, rf, date_column="returned_at") if l.get("returned_at")]
 
     events = [(_manila(l["borrowed_at"]), "Borrow", l) for l in borrowed]
     events += [(_manila(l["returned_at"]), "Return", l) for l in returned]
-    events.sort(key=lambda e: (e[0], e[1], _book(e[2]).get("title") or ""))
+    events += [(_manila(l["checked_out_at"]), "In-house checkout", l) for l in checked_out]
+    events += [(_manila(l["returned_at"]), "In-house return", l) for l in in_house_returned]
+    events.sort(key=lambda e: (e[0], CIRCULATION_TYPES.index(e[1]), _book(e[2]).get("title") or ""))
 
-    rows = [{
-        "date": when.date().isoformat(),
-        "time": _time_text(when),
-        "type": kind,
-        "book": _book(l).get("title") or "Unknown title",
-        "author": _book(l).get("author") or "—",
-        "borrower": _profile(l).get("full_name") or "Unknown patron",
-        "program": _profile(l).get("program") or "—",
-        "year": _year_text(_profile(l).get("year_level")),
-        "due_date": manila_date_text(l.get("due_date")) if kind == "Borrow" else "",
-    } for when, kind, l in events]
+    def row(when, kind, l):
+        book = _book(l)
+        base = {"date": when.date().isoformat(), "time": _time_text(when), "type": kind,
+                "book": book.get("title") or "Unknown title", "author": book.get("author") or "—"}
+        if kind.startswith("In-house"):
+            # The guest's name only, never their ID number.
+            return {**base, "borrower": l.get("guest_name") or "Guest",
+                    "program": VISITOR_TYPES.get(l.get("visitor_type"), "Guest"), "year": "—", "due_date": ""}
+        return {**base, "borrower": _profile(l).get("full_name") or "Unknown patron",
+                "program": _profile(l).get("program") or "—", "year": _year_text(_profile(l).get("year_level")),
+                "due_date": manila_date_text(l.get("due_date")) if kind == "Borrow" else ""}
+
+    rows = [row(*e) for e in events]
+    counts = Counter(kind for _, kind, _ in events)
 
     buckets = _report_buckets(filters)
-    borrows = [0] * len(buckets)
-    returns = [0] * len(buckets)
+    by_bucket = {kind: [0] * len(buckets) for kind in CIRCULATION_TYPES}
     for when, kind, _ in events:
         i = bucket_index(buckets, when)
         if i is not None:
-            (borrows if kind == "Borrow" else returns)[i] += 1
+            by_bucket[kind][i] += 1
 
     by_day = Counter(when.date() for when, _, _ in events)
     busiest = max(by_day.items(), key=lambda kv: (kv[1], kv[0]), default=None)
-    borrowers = {l["student_id"] for _, _, l in events}
+    busiest_text = f"{_long_date(busiest[0])} ({_transactions_text(busiest[1])})" if busiest else "—"
+    borrowers = {l["student_id"] for _, kind, l in events if not kind.startswith("In-house")}
     titles = {_book(l).get("id") for _, _, l in events if _book(l).get("id")}
+    total = len(events)
+    empty = "No books were borrowed or returned, and no in-house loans were made or returned, in this period."
 
     summary = (
-        f"{_count_text(len(borrowed), 'borrow', 'borrows')} and {_count_text(len(returned), 'return', 'returns')} "
-        f"by {_count_text(len(borrowers), 'borrower', 'borrowers')}, across "
-        f"{_count_text(len(titles), 'title', 'titles')}."
-        + (f" The busiest day was {_long_date(busiest[0])} ({_events_text(busiest[1])})." if busiest else "")
-    ) if events else "No books were borrowed or returned in this period."
+        f"{_count_text(total, 'transaction', 'transactions')}: "
+        f"{_count_text(counts['Borrow'], 'borrow', 'borrows')}, {_count_text(counts['Return'], 'return', 'returns')}, "
+        f"{_count_text(counts['In-house checkout'], 'in-house checkout', 'in-house checkouts')} and "
+        f"{_count_text(counts['In-house return'], 'in-house return', 'in-house returns')}, by "
+        f"{_count_text(len(borrowers), 'student borrower', 'student borrowers')} and across "
+        f"{_count_text(len(titles), 'title', 'titles')}. The busiest day was {busiest_text}."
+    ) if events else empty
+    labels = [b.label for b in buckets]
 
     return ReportData(
         report_id="circulation", title="Circulation",
-        period=_period_line(filters, "Borrows and returns"),
-        filters=filters.filter_lines(), generated_at=now,
+        period=_circulation_period(filters),
+        filters=filters.filter_lines() + _in_house_note(filters) + [TRANSACTION_RULE], generated_at=now,
         key_figures=[
-            _int_figure("Borrows", len(borrowed)),
-            _int_figure("Returns", len(returned)),
-            _int_figure("Borrowers", len(borrowers)),
+            _int_figure("Borrows", counts["Borrow"]),
+            _int_figure("Returns", counts["Return"]),
+            _int_figure("In-house checkouts", counts["In-house checkout"]),
+            _int_figure("In-house returns", counts["In-house return"]),
+            # The four above add up to this.
+            _int_figure("Transactions", total),
+            _int_figure("Student borrowers", len(borrowers)),
             _int_figure("Titles", len(titles)),
-            _text_figure("Busiest day", f"{_long_date(busiest[0])} ({_events_text(busiest[1])})" if busiest else "—"),
+            _text_figure("Busiest day", busiest_text),
         ],
         computed_summary=summary,
         ai_payload={
-            "report": "Circulation", "period": _period_line(filters, "Borrows and returns"),
-            "borrows": len(borrowed), "returns": len(returned), "borrowers": len(borrowers), "titles": len(titles),
-            "busiest_day": {"date": busiest[0].isoformat(), "borrows_and_returns_that_day": busiest[1]} if busiest else None,
-            "borrows_by_period": dict(zip([b.label for b in buckets], borrows)),
-            "returns_by_period": dict(zip([b.label for b in buckets], returns)),
+            "report": "Circulation", "period": _circulation_period(filters),
+            "what_a_transaction_is": TRANSACTION_RULE,
+            "borrows": counts["Borrow"], "returns": counts["Return"],
+            "in_house_checkouts": counts["In-house checkout"], "in_house_returns": counts["In-house return"],
+            "transactions": total, "student_borrowers": len(borrowers), "titles": len(titles),
+            "busiest_day": {"date": busiest[0].isoformat(), "transactions_that_day": busiest[1]} if busiest else None,
+            "borrows_by_period": dict(zip(labels, by_bucket["Borrow"])),
+            "returns_by_period": dict(zip(labels, by_bucket["Return"])),
+            "in_house_checkouts_by_period": dict(zip(labels, by_bucket["In-house checkout"])),
             "borrows_by_program": dict(sorted(Counter(_profile(l).get("program") or "—" for l in borrowed).items())),
         },
-        chart=Chart("Borrows and returns", [b.label for b in buckets], borrows, "Borrows",
-                    extra_series=[("Returns", returns)]) if events else None,
+        chart=Chart("Borrows, returns and in-house checkouts", labels, by_bucket["Borrow"], "Borrows",
+                    extra_series=[("Returns", by_bucket["Return"]),
+                                  ("In-house checkouts", by_bucket["In-house checkout"])]) if events else None,
         columns=CIRCULATION_COLUMNS, rows=rows,
-        empty_message="No books were borrowed or returned in this period.",
+        empty_message=empty,
         filename_stem=_filename_stem("circulation", filters),
     )
 

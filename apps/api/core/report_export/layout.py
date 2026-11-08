@@ -20,6 +20,9 @@ INK_200 = "#DDDFD7"
 INK_500 = "#6B6E63"
 INK_900 = "#14150F"
 GOLD_500 = "#C8A951"
+# One colour per chart series (Borrows, Returns, In-house checkouts, ...),
+# brand colours first. Five, for the Activity Log's five activities.
+SERIES_COLORS = [GREEN_700, GOLD_500, "#4A6FA5", "#8E9189", "#B85C38"]
 
 # Job titles for the signature lines, until the library confirms them.
 # Editable in Settings (library_settings.report_*_title, migration 0060);

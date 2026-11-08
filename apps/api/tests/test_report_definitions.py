@@ -306,17 +306,20 @@ def test_book_requests_name_the_requester_without_email_or_note():
     assert "note" not in row
 
 
-# ─── Charts with two series ─────────────────────────────────────────────
+# ─── Charts with more than one series ───────────────────────────────────
 
-def test_two_series_charts_have_a_legend_in_pdf_and_excel():
-    data = _build("circulation")
+@pytest.mark.parametrize("report,series", [("borrowing_stats", ["Borrows", "Returns"]),
+                                           ("circulation", ["Borrows", "Returns", "In-house checkouts"])])
+def test_multi_series_charts_have_a_legend_in_pdf_and_excel(report, series):
+    data = _build(report)
+    assert [name for name, _ in data.chart.series] == series
     xlsx = build_excel(data, _options(data))
     with zipfile.ZipFile(io.BytesIO(xlsx)) as z:
         xml = z.read([n for n in z.namelist() if n.startswith("xl/charts/chart")][0]).decode()
-    assert xml.count("<c:ser>") + xml.count("<ser>") == 2
+    assert xml.count("<c:ser>") + xml.count("<ser>") == len(series)
     assert re.search(r"<(?:c:)?legend>", xml)
     pdf = "\n".join(p.extract_text() for p in PdfReader(io.BytesIO(build_pdf(data, _options(data)))).pages)
-    assert "Borrows" in pdf and "Returns" in pdf
+    assert all(name in pdf for name in series)
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────────
@@ -373,13 +376,13 @@ def test_every_report_is_librarian_only(report):
 def test_busiest_day_says_what_it_counts_in_figures_summary_pdf_and_excel():
     data = _build("circulation")
     busiest = {f.label: f.value for f in data.key_figures}["Busiest day"]
-    assert re.fullmatch(r"\d{1,2} \w+ 2026 \((1 borrow or return|\d+ borrows and returns)\)", busiest), busiest
+    assert re.fullmatch(r"\d{1,2} \w+ 2026 \((1 transaction|\d+ transactions)\)", busiest), busiest
     assert f"The busiest day was {busiest}." in data.computed_summary
     pdf = " ".join(p.extract_text() for p in PdfReader(io.BytesIO(build_pdf(data, _options(data)))).pages)
     assert busiest in " ".join(pdf.split())
     ws = openpyxl.load_workbook(io.BytesIO(build_excel(data, _options(data)))).worksheets[0]
     assert busiest in [c.value for row in ws.iter_rows() for c in row]
-    assert "borrows_and_returns_that_day" in json.dumps(ai_input(data))
+    assert "transactions_that_day" in json.dumps(ai_input(data))
 
 
 @pytest.mark.parametrize("report", ROUND_1 + ["overdue"])
@@ -438,7 +441,7 @@ def test_export_ai_draft_gets_the_prompt_and_labelled_key_figures(monkeypatch):
     payload = json.loads(user.split("Data: ", 1)[1])
     labels = {f["label"]: f["value"] for f in payload["key_figures"]}
     assert labels["Borrows"] == "2" and labels["Returns"] == "1"
-    assert re.search(r"\((1 borrow or return|\d+ borrows and returns)\)", labels["Busiest day"])
+    assert re.search(r"\((1 transaction|\d+ transactions)\)", labels["Busiest day"])
     for value in EMAILS + ID_NUMBERS + INTERNAL_IDS + NAMES + ACCESSIONS:
         assert value not in user
 

@@ -43,6 +43,7 @@ import { fetchPatrons, updatePatronStatus } from "@/lib/users"
 import { COLLEGES } from "@/lib/colleges"
 import { fetchLoans, settleFine, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
+import { fetchInHouseLoans, type InHouseLoan } from "@/lib/inhouse"
 import { buildFeed, TX_CONFIG, type FeedItem } from "@/lib/activity"
 import { fetchBookRequests, updateBookRequest, type BookRequest, type BookRequestStatus } from "@/lib/bookRequests"
 import { Pagination } from "@/components/ui/catalog"
@@ -736,20 +737,45 @@ function CatalogueTable({ books, onExport }: { books: Book[]; onExport: () => vo
 }
 
 // ─── Circulation — full report tab, one row per borrow/return event ───────────
-type CirculationRow = { id: string; date: string; title: string; patron: string; type: "Borrow" | "Return"; due: string }
+// Guest (in-house) checkouts and returns are rows too, like the export.
+type CirculationType = "Borrow" | "Return" | "In-house checkout" | "In-house return"
+type CirculationRow = { id: string; timestamp: number; date: string; title: string; patron: string; type: CirculationType; due: string }
 
-function buildCirculationRows(feed: FeedItem[], dateFrom?: string, dateTo?: string): CirculationRow[] {
-  return feed
+const CIRCULATION_TYPE_STYLE: Record<CirculationType, string> = {
+  Borrow: "bg-info-bg text-info",
+  Return: "bg-success-bg text-success",
+  "In-house checkout": "bg-gold-100 text-gold-600",
+  "In-house return": "bg-ink-100 text-ink-700",
+}
+
+const shortDate = (timestamp: number) =>
+  new Date(timestamp).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+
+function buildCirculationRows(feed: FeedItem[], inHouse: InHouseLoan[], dateFrom?: string, dateTo?: string): CirculationRow[] {
+  const loanRows: CirculationRow[] = feed
     .filter((f) => f.type !== "reserve")
-    .filter((f) => inManilaDateRange(f.timestamp, dateFrom, dateTo))
     .map((f) => ({
       id: f.id,
-      date: new Date(f.timestamp).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
+      timestamp: f.timestamp,
+      date: shortDate(f.timestamp),
       title: f.item,
       patron: f.user,
       type: f.type === "checkout" ? "Borrow" : "Return",
       due: f.type === "checkout" && f.loan?.due_date ? new Date(f.loan.due_date).toLocaleDateString("en-PH", { month: "short", day: "numeric" }) : "—",
     }))
+  const guestRows: CirculationRow[] = inHouse.flatMap((l) => {
+    const base = { title: l.books?.title ?? "Unknown title", patron: `${l.guest_name} (guest)`, due: "—" }
+    const out = new Date(l.checked_out_at).getTime()
+    const rows: CirculationRow[] = [{ ...base, id: `inhouse-out-${l.id}`, timestamp: out, date: shortDate(out), type: "In-house checkout" }]
+    if (l.returned_at) {
+      const back = new Date(l.returned_at).getTime()
+      rows.push({ ...base, id: `inhouse-return-${l.id}`, timestamp: back, date: shortDate(back), type: "In-house return" })
+    }
+    return rows
+  })
+  return [...loanRows, ...guestRows]
+    .filter((r) => inManilaDateRange(r.timestamp, dateFrom, dateTo))
+    .sort((a, b) => b.timestamp - a.timestamp)
 }
 
 function CirculationTable({ rows, onExport }: { rows: CirculationRow[]; onExport: () => void }) {
@@ -773,8 +799,7 @@ function CirculationTable({ rows, onExport }: { rows: CirculationRow[]; onExport
     setPage(1)
   }
 
-  const borrows = rows.filter((r) => r.type === "Borrow").length
-  const returns = rows.filter((r) => r.type === "Return").length
+  const count = (type: CirculationType) => rows.filter((r) => r.type === type).length
 
   return (
     <ReportTableCard
@@ -785,7 +810,7 @@ function CirculationTable({ rows, onExport }: { rows: CirculationRow[]; onExport
       onExport={onExport}
       exportLabel="Export"
       exportDisabled={rows.length === 0}
-      footerLeft={`${rows.length} transactions in range · ${borrows} borrows, ${returns} returns`}
+      footerLeft={`${rows.length} transactions in range · ${count("Borrow")} borrows, ${count("Return")} returns, ${count("In-house checkout")} in-house checkouts, ${count("In-house return")} in-house returns`}
       page={page}
       totalPages={totalPages}
       onPageChange={setPage}
@@ -812,7 +837,7 @@ function CirculationTable({ rows, onExport }: { rows: CirculationRow[]; onExport
                   <td className="py-2.5 px-4 text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{r.patron}</td>
                   <td className="py-2.5 px-4">
                     <span
-                      className={cn("inline-flex items-center px-2 py-0.5 rounded-pill font-medium", r.type === "Borrow" ? "bg-info-bg text-info" : "bg-success-bg text-success")}
+                      className={cn("inline-flex items-center px-2 py-0.5 rounded-pill font-medium whitespace-nowrap", CIRCULATION_TYPE_STYLE[r.type])}
                       style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
                     >
                       {r.type}
@@ -2226,10 +2251,14 @@ function ReportsPageContent() {
   const [loans, setLoans] = useState<Loan[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
 
+  // Guest (in-house) loans, for the Circulation tab.
+  const [inHouseLoans, setInHouseLoans] = useState<InHouseLoan[]>([])
+
   useEffect(() => {
     Promise.all([fetchLoans(), fetchReservations()])
       .then(([l, r]) => { setLoans(l); setReservations(r) })
       .catch(() => {})
+    fetchInHouseLoans().then(setInHouseLoans).catch(() => {})
   }, [])
 
   // Filters
@@ -2343,7 +2372,12 @@ function ReportsPageContent() {
     (category === "All Categories" || b.category === category) &&
     (college === "All Colleges" || b.subject === college),
   )
-  const circulationRows = buildCirculationRows(activityFeed, activeDateBounds.dateFrom, activeDateBounds.dateTo)
+  // Same rule as the export: guests have no college or year level, so those
+  // filters leave their loans out; Category is the book's.
+  const inHouseShown = college !== "All Colleges" || YEAR_LEVEL_LABELS[yearLevel]
+    ? []
+    : inHouseLoans.filter((l) => category === "All Categories" || l.books?.category === category)
+  const circulationRows = buildCirculationRows(activityFeed, inHouseShown, activeDateBounds.dateFrom, activeDateBounds.dateTo)
 
   // Reports export through the API (PDF, Excel or CSV in the shared report
   // layout), with the current filters as whole Manila days.

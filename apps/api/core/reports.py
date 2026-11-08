@@ -100,6 +100,42 @@ def _fetch_filtered_loans(
     return result
 
 
+# Guest (in-house) loans for reports. Never the guest's ID number or the
+# librarian's id: only what a report shows.
+IN_HOUSE_COLUMNS = (
+    "id, guest_name, visitor_type, purpose, checked_out_at, returned_at, status, "
+    "book_copies(book_id, books(id, title, author, category, subject, call_number))"
+)
+
+
+def fetch_in_house_loans(
+    admin: Client, filters: ReportFilters, *, date_column: str | None = "checked_out_at",
+) -> list[dict]:
+    """In-house loans with their book, the period applied to `date_column`
+    (checked_out_at, returned_at, or None for no date limit). Guests have no
+    college, program or year level, so those filters leave none."""
+    if filters.college or filters.program or filters.year_level is not None:
+        return []
+
+    def query():
+        q = admin.table("in_house_loans").select(IN_HOUSE_COLUMNS)
+        if date_column and filters.date_from:
+            q = q.gte(date_column, filters.date_from)
+        if date_column and filters.date_to:
+            q = q.lte(date_column, filters.date_to)
+        return q.order("id")
+
+    result = []
+    for row in fetch_all_rows(query):
+        copy = row.pop("book_copies", None)
+        book = (copy or {}).get("books")
+        if filters.category and (not book or book.get("category") != filters.category):
+            continue
+        row["books"] = book
+        result.append(row)
+    return result
+
+
 # Kept under this name for the modules that already import it.
 _fetch_all_rows = fetch_all_rows
 

@@ -47,7 +47,7 @@ def wrapped_lines(text: str, width: float) -> int:
 
 
 # Series colours: green, then gold (borrows, then returns).
-_SERIES_COLORS = [layout.GREEN_700.lstrip("#"), layout.GOLD_500.lstrip("#")]
+_SERIES_COLORS = [c.lstrip("#") for c in layout.SERIES_COLORS]
 # More bars than this and the counts on top of them would crowd each other.
 _MAX_LABELLED_BARS = 24
 

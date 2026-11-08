@@ -31,7 +31,7 @@ _SUMMARY_SYSTEM_PROMPT = (
     "(or the data field's name), and don't reword it into something different: a count of loans is "
     "not a count of books or of people.\n"
     "4. Keep units, amounts and dates as written, for example \"₱60.00\" or "
-    "\"21 October 2026 (7 borrows and returns)\".\n"
+    "\"21 October 2026 (7 transactions)\".\n"
     "5. If the data is empty or all zero, say so plainly instead of inventing something to say.\n"
     "6. Write plain sentences only: no headings, lists or formatting."
 )

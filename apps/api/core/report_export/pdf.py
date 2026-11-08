@@ -127,7 +127,7 @@ def _chart(data: ReportData, width: float) -> Drawing | None:
     top = max((max(values, default=0) for _, values in series), default=0)
     bars.valueAxis.valueMax = max(top, 1) * 1.15 if top else 1
     bars.valueAxis.valueStep = max(1, round(max(top, 1) / 4))
-    palette = [colors.HexColor(layout.GREEN_700), colors.HexColor(layout.GOLD_500)]
+    palette = [colors.HexColor(c) for c in layout.SERIES_COLORS]
     for i in range(len(series)):
         bars.bars[i].fillColor = palette[i % len(palette)]
         bars.bars[i].strokeColor = None
