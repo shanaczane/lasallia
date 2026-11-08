@@ -1,5 +1,6 @@
 // The Reports page: an Overview of report cards, and a tab per full report.
-// Every report tab uses ReportTableCard (search, Export CSV, pagination).
+// Every report tab uses ReportTableCard (search, Export, pagination); every
+// export goes through the shared PDF / Excel / CSV dialog.
 "use client"
 
 import { Fragment, Suspense, cloneElement, useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -15,7 +16,6 @@ import {
   Download,
   Sparkles,
   Search,
-  Printer,
   GripVertical,
   ArrowUpDown,
   Paperclip,
@@ -44,7 +44,7 @@ import { COLLEGES } from "@/lib/colleges"
 import { fetchLoans, settleFine, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
 import { fetchInHouseLoans, type InHouseLoan } from "@/lib/inhouse"
-import { buildFeed, TX_CONFIG, type FeedItem } from "@/lib/activity"
+import { buildFeed, inHouseFeed, isInHouse, TX_CONFIG, type FeedItem } from "@/lib/activity"
 import { fetchBookRequests, updateBookRequest, type BookRequest, type BookRequestStatus } from "@/lib/bookRequests"
 import { Pagination } from "@/components/ui/catalog"
 import { PatronProfileModal } from "@/components/ui/patrons/PatronProfileModal"
@@ -65,7 +65,8 @@ import {
   resolveDateRange,
   inManilaDateRange,
   formatManilaDate,
-  downloadCsv,
+  fetchExportPreview,
+  fetchExportRows,
   type Bucket,
   type CatalogueSlice,
   type TopPatron,
@@ -83,6 +84,8 @@ import {
   type ExportableReport,
   type ReportExportFormat,
   type ReportExportRequest,
+  type ReportExportPreview,
+  type ReportExportRows,
 } from "@/lib/reports"
 import { ReportExportDialog } from "@/components/ui/reports/ReportExportDialog"
 import {
@@ -101,9 +104,11 @@ import { formatWhen, type InventorySession } from "@/lib/inventory"
 import { pressable } from "@/lib/a11y"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-// The report the header's Export opens on each tab that has one. Overview
-// and Activity Log keep Print and CSV until round 2.
+// The report the header's Export opens on each tab. The Usage tab has two
+// reports, each with its own Export.
 const TAB_REPORTS: Partial<Record<string, ExportableReport>> = {
+  overview: "overview",
+  activity: "activity_log",
   catalogue: "catalog",
   "shelf-list": "shelf_list",
   circulation: "circulation",
@@ -113,7 +118,7 @@ const TAB_REPORTS: Partial<Record<string, ExportableReport>> = {
   inventory: "inventory",
 }
 
-type ReportTab = "overview" | "catalogue" | "shelf-list" | "circulation" | "overdue" | "requests" | "weeding" | "inventory" | "activity"
+type ReportTab = "overview" | "catalogue" | "shelf-list" | "circulation" | "overdue" | "requests" | "weeding" | "inventory" | "activity" | "usage"
 type SortDir = "asc" | "desc" | null
 type SortKey = "patron" | "book" | "due" | "days" | "program" | null
 type ShelfSortKey = "call_number" | "title" | "accession_number" | null
@@ -139,7 +144,7 @@ function EmptyState({ text }: { text: string }) {
   )
 }
 
-// ─── Shared frame for every report tab: title, search, Export CSV, the
+// ─── Shared frame for every report tab: title, search, Export, the
 // table, then a footer and pagination.
 function ReportTableCard({
   title,
@@ -150,7 +155,7 @@ function ReportTableCard({
   headerExtra,
   onExport,
   exportDisabled,
-  exportLabel = "Export CSV",
+  exportLabel = "Export",
   children,
   footerLeft,
   page,
@@ -166,7 +171,7 @@ function ReportTableCard({
   headerExtra?: React.ReactNode
   onExport: () => void
   exportDisabled: boolean
-  // "Export" opens the PDF / Excel / CSV dialog; "Export CSV" (Activity Log) downloads directly.
+  // Opens the PDF / Excel / CSV dialog.
   exportLabel?: string
   children: React.ReactNode
   footerLeft: string
@@ -323,6 +328,177 @@ function SortableOverviewCard({ id, full, children }: { id: string; full?: boole
     >
       {children(handle)}
     </div>
+  )
+}
+
+// ─── Reports read straight from the export (preview + rows) ───────────────────
+// For the Usage tab and the Top titles / Reservations cards: the same key
+// figures, period and table the export prints, so the screen and the file
+// always agree. Loads only while shown.
+type ExportView = { preview: ReportExportPreview | null; rows: ReportExportRows | null; error: string | null; loading: boolean }
+
+function useExportView(report: ExportableReport, filters: ReportFilters, shown: boolean): ExportView {
+  // The result is kept with the request it answers, so a filter change
+  // shows "Loading…" instead of the old numbers.
+  const request = useMemo(() => exportRequest(report, filters), [report, filters])
+  const [result, setResult] = useState<{ request: ReportExportRequest } & Omit<ExportView, "loading"> | null>(null)
+  useEffect(() => {
+    if (!shown) return
+    let cancelled = false
+    Promise.all([fetchExportPreview(request), fetchExportRows(request)])
+      .then(([preview, rows]) => { if (!cancelled) setResult({ request, preview, rows, error: null }) })
+      .catch((e: unknown) => {
+        if (!cancelled) setResult({ request, preview: null, rows: null, error: e instanceof Error ? e.message : "Couldn't load this report." })
+      })
+    return () => { cancelled = true }
+  }, [request, shown])
+  if (!result || result.request !== request) return { preview: null, rows: null, error: null, loading: true }
+  return { preview: result.preview, rows: result.rows, error: result.error, loading: false }
+}
+
+function ExportViewStatus({ view }: { view: ExportView }) {
+  if (view.error) {
+    return <p className="text-danger" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{view.error}</p>
+  }
+  return <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>Loading…</p>
+}
+
+function KeyFigureGrid({ figures }: { figures: { label: string; value: string }[] }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+      {figures.map((f) => (
+        <div key={f.label} className="rounded border border-ink-200 px-3 py-2">
+          <p className="text-ink-900 font-semibold" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>{f.value}</p>
+          <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>{f.label}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function exportCell(value: string | number | null, kind: string): string {
+  if (value === null || value === "") return "—"
+  if (kind === "date" && typeof value === "string") return formatManilaDate(value)
+  if (kind === "int" && typeof value === "number") return value.toLocaleString()
+  return String(value)
+}
+
+const USAGE_PAGE_SIZE = 10
+
+// One Usage report: period, key figures, summary and the daily table.
+function UsageReportCard({ report, filters, shown, onExport }: {
+  report: ExportableReport
+  filters: ReportFilters
+  shown: boolean
+  onExport: () => void
+}) {
+  const view = useExportView(report, filters, shown)
+  const [page, setPage] = useState(1)
+  const rows = view.rows?.rows ?? []
+  const [prevRows, setPrevRows] = useState(rows)
+  if (rows !== prevRows) {
+    setPrevRows(rows)
+    setPage(1)
+  }
+  const totalPages = Math.max(1, Math.ceil(rows.length / USAGE_PAGE_SIZE))
+  const paged = rows.slice((page - 1) * USAGE_PAGE_SIZE, page * USAGE_PAGE_SIZE)
+  const columns = view.rows?.columns ?? []
+
+  return (
+    <ReportTableCard
+      title={view.preview?.title ?? (report === "library_usage" ? "Library Usage: Borrowing Station Sessions" : "Library Assistant Usage")}
+      subtitle={view.preview?.period ?? "Loading…"}
+      onExport={onExport}
+      exportDisabled={!view.preview}
+      footerLeft={view.preview ? `${rows.length} ${rows.length === 1 ? "day" : "days"} in range` : ""}
+      page={page}
+      totalPages={totalPages}
+      onPageChange={setPage}
+    >
+      {!view.preview || !view.rows ? (
+        <ExportViewStatus view={view} />
+      ) : (
+        <div className="flex flex-col gap-3">
+          <KeyFigureGrid figures={view.preview.key_figures} />
+          <p className="text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+            {view.preview.computed_summary}
+          </p>
+          {view.preview.filters.map((line) => (
+            <p key={line} className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>{line}</p>
+          ))}
+          {rows.length === 0 ? (
+            <EmptyState text={view.rows.empty_message} />
+          ) : (
+            <div className="rounded border border-ink-200 overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-ink-200 bg-ink-50">
+                    {columns.map((c) => (
+                      <th key={c.key} className={cn("py-2.5 px-3 text-ink-500 font-semibold uppercase", c.kind === "int" ? "text-right" : "text-left")}
+                        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-eyebrow)" }}>
+                        {c.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {paged.map((r, i) => (
+                    <tr key={`${r.date ?? i}`} className="border-b border-ink-100">
+                      {columns.map((c) => (
+                        <td key={c.key} className={cn("py-2 px-3 text-ink-700 whitespace-nowrap", c.kind === "int" && "text-right tabular-nums")}
+                          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                          {exportCell(r[c.key], c.kind)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </ReportTableCard>
+  )
+}
+
+// Overview card: the five most borrowed titles (student + in-house loans).
+function TopTitlesCard({ filters, shown, onExport, dragHandle }: {
+  filters: ReportFilters; shown: boolean; onExport: () => void; dragHandle?: React.ReactNode
+}) {
+  const view = useExportView("top_titles", filters, shown)
+  const top = (view.rows?.rows ?? []).slice(0, 5)
+  return (
+    <OverviewCard title="Top titles" subtitle="Most borrowed: student and in-house (guest) loans" onExport={onExport} dragHandle={dragHandle}>
+      {!view.rows ? <ExportViewStatus view={view} /> : top.length === 0 ? (
+        <EmptyState text={view.rows.empty_message} />
+      ) : (
+        <ol className="flex flex-col gap-2">
+          {top.map((r) => (
+            <li key={String(r.rank)} className="flex items-center justify-between gap-3">
+              <p className="text-ink-900 font-medium truncate" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
+                {r.rank}. {r.title}
+              </p>
+              <span className="shrink-0 text-ink-500" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}>
+                {Number(r.total).toLocaleString()} {r.total === 1 ? "loan" : "loans"}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </OverviewCard>
+  )
+}
+
+// Overview card: reservations made in the period, by status now.
+function ReservationsCard({ filters, shown, onExport, dragHandle }: {
+  filters: ReportFilters; shown: boolean; onExport: () => void; dragHandle?: React.ReactNode
+}) {
+  const view = useExportView("reservations", filters, shown)
+  return (
+    <OverviewCard title="Reservations" subtitle="Made in the period, with their status now" onExport={onExport} dragHandle={dragHandle}>
+      {!view.preview ? <ExportViewStatus view={view} /> : <KeyFigureGrid figures={view.preview.key_figures} />}
+    </OverviewCard>
   )
 }
 
@@ -669,7 +845,7 @@ function ShelfListTable({ rows, onExport }: { rows: ShelfListRow[]; onExport: ()
 }
 
 // ─── Catalogue — full report tab, one row per title ────────────────────────────
-function CatalogueTable({ books, onExport }: { books: Book[]; onExport: () => void }) {
+function CatalogueTable({ books, onExport, onExportRegister }: { books: Book[]; onExport: () => void; onExportRegister: () => void }) {
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
 
@@ -696,8 +872,18 @@ function CatalogueTable({ books, onExport }: { books: Book[]; onExport: () => vo
       subtitle={`One row per title: ${books.length} titles, ${books.reduce((s, b) => s + (b.total_copies ?? 0), 0)} copies`}
       query={query}
       onQueryChange={setQuery}
+      // The accession register: one row per copy, in accession order.
+      headerExtra={
+        <button
+          onClick={onExportRegister}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 transition-colors shrink-0"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          <Download size={13} /> Export accession register
+        </button>
+      }
       onExport={onExport}
-      exportLabel="Export"
+      exportLabel="Export catalogue"
       exportDisabled={books.length === 0}
       footerLeft={`Showing ${paged.length} of ${filtered.length} titles`}
       page={page}
@@ -1555,7 +1741,7 @@ function ActivityLogTable({
   return (
     <ReportTableCard
       title="Activity log"
-      subtitle="Every checkout, return and reservation in range"
+      subtitle="Every checkout, return, reservation and in-house (guest) loan in range"
       query={query}
       onQueryChange={setQuery}
       searchPlaceholder="Search patron or title…"
@@ -1610,8 +1796,9 @@ function ActivityLogTable({
                 return (
                   <tr
                     key={tx.id}
-                    {...pressable(() => onSelectItem(tx))}
-                    className="border-b border-ink-100 hover:bg-ink-50 transition-colors cursor-pointer"
+                    // Guest (in-house) rows have no loan or reservation to open.
+                    {...(isInHouse(tx.type) ? {} : pressable(() => onSelectItem(tx)))}
+                    className={cn("border-b border-ink-100 hover:bg-ink-50 transition-colors", !isInHouse(tx.type) && "cursor-pointer")}
                   >
                     <td className="py-3 px-4 whitespace-nowrap text-ink-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>
                       {tx.date}
@@ -2198,7 +2385,7 @@ function ReportsPageContent() {
   const searchParams = useSearchParams()
   const [tab, setTab] = useState<ReportTab>(() => {
     const t = searchParams.get("tab")
-    const valid: ReportTab[] = ["catalogue", "shelf-list", "circulation", "overdue", "requests", "weeding", "inventory", "activity"]
+    const valid: ReportTab[] = ["catalogue", "shelf-list", "circulation", "overdue", "requests", "weeding", "inventory", "activity", "usage"]
     return (valid as string[]).includes(t ?? "") ? (t as ReportTab) : "overview"
   })
 
@@ -2212,7 +2399,7 @@ function ReportsPageContent() {
   const [weedingFailed, setWeedingFailed] = useState(false)
 
   // Order of the Overview cards (draggable).
-  const [cardOrder, setCardOrder] = useState<string[]>(["catalogue", "circulation", "patrons", "trends", "library-stats", "weeding"])
+  const [cardOrder, setCardOrder] = useState<string[]>(["catalogue", "circulation", "patrons", "top-titles", "reservations", "trends", "library-stats", "weeding"])
 
   useEffect(() => {
     Promise.all([fetchBooks(), fetchPatrons()])
@@ -2320,6 +2507,9 @@ function ReportsPageContent() {
       yearLevel: YEAR_LEVEL_LABELS[yearLevel],
     }
   }, [dateRange, fromDate, toDate, category, college, yearLevel])
+  // The same filters as a value that only changes when a filter does, for
+  // the reports read from the export (Usage tab, Top titles, Reservations).
+  const reportFilters = useMemo(() => currentFilters(), [currentFilters])
 
   // The date range on its own, for tabs that filter in the browser.
   const activeDateBounds = resolveDateRange(dateRange, fromDate, toDate)
@@ -2365,8 +2555,6 @@ function ReportsPageContent() {
     }
   }
 
-  const handlePrint = () => window.print()
-
   // Here College means the book's college, not the borrower's.
   const catalogueBooks = books.filter((b) =>
     (category === "All Categories" || b.category === category) &&
@@ -2374,10 +2562,18 @@ function ReportsPageContent() {
   )
   // Same rule as the export: guests have no college or year level, so those
   // filters leave their loans out; Category is the book's.
-  const inHouseShown = college !== "All Colleges" || YEAR_LEVEL_LABELS[yearLevel]
-    ? []
-    : inHouseLoans.filter((l) => category === "All Categories" || l.books?.category === category)
+  const inHouseShown = useMemo(
+    () => college !== "All Colleges" || YEAR_LEVEL_LABELS[yearLevel]
+      ? []
+      : inHouseLoans.filter((l) => category === "All Categories" || l.books?.category === category),
+    [inHouseLoans, category, college, yearLevel],
+  )
   const circulationRows = buildCirculationRows(activityFeed, inHouseShown, activeDateBounds.dateFrom, activeDateBounds.dateTo)
+  // The Activity Log shows guests' in-house loans too, like its export.
+  const activityFeedWithGuests = useMemo(
+    () => [...activityFeed, ...inHouseFeed(inHouseShown)].sort((a, b) => b.timestamp - a.timestamp),
+    [activityFeed, inHouseShown],
+  )
 
   // Reports export through the API (PDF, Excel or CSV in the shared report
   // layout), with the current filters as whole Manila days.
@@ -2407,23 +2603,6 @@ function ReportsPageContent() {
       })
     )
   }
-
-  const exportActivityCsv = () => downloadCsv("activity-log.csv", activityFeed.map((tx) => ({
-    date: tx.date,
-    time: tx.time,
-    type: TX_CONFIG[tx.type].label,
-    user: tx.user,
-    item: tx.item,
-  })))
-
-  // The header's Export CSV exports the open tab (disabled where there's
-  // no single table).
-  const headerExport: { fn: () => void; disabled: boolean } | null = (() => {
-    switch (tab) {
-      case "activity":    return { fn: exportActivityCsv, disabled: activityFeed.length === 0 }
-      default:            return null
-    }
-  })()
 
   // Until the first load finishes, numbers show "…" (or "—" if it failed)
   // instead of 0, and cards show a loading or error note instead of
@@ -2480,6 +2659,12 @@ function ReportsPageContent() {
       <OverviewCard title="Library statistics" subtitle="Usage by program and year level" onExport={() => openExport("borrowing_stats")}>
         {cardBody(<ProgramUsageList data={libraryStats?.by_program ?? []} />)}
       </OverviewCard>
+    ),
+    "top-titles": (
+      <TopTitlesCard filters={reportFilters} shown={tab === "overview"} onExport={() => openExport("top_titles")} />
+    ),
+    reservations: (
+      <ReservationsCard filters={reportFilters} shown={tab === "overview"} onExport={() => openExport("reservations")} />
     ),
     weeding: (
       <OverviewCard
@@ -2567,7 +2752,7 @@ function ReportsPageContent() {
           </h1>
 
           <div className="flex items-center gap-2 print:hidden shrink-0">
-            {tabReport ? (
+            {tabReport && (
               // Built by the API: PDF, Excel or CSV with the shared header,
               // summary, chart, table and signature lines.
               <button
@@ -2577,24 +2762,6 @@ function ReportsPageContent() {
               >
                 <Download size={14} /> Export
               </button>
-            ) : (
-              <>
-                <button
-                  onClick={() => headerExport?.fn()}
-                  disabled={!headerExport || headerExport.disabled}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                >
-                  <Download size={14} /> Export CSV
-                </button>
-                <button
-                  onClick={handlePrint}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 transition-colors"
-                  style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-                >
-                  <Printer size={14} /> Print PDF
-                </button>
-              </>
             )}
             <button
               onClick={handleGenerateInsights}
@@ -2717,6 +2884,7 @@ function ReportsPageContent() {
           { key: "requests",    label: "Requests" },
           { key: "weeding",     label: "Weeding" },
           { key: "inventory",   label: "Inventory" },
+          { key: "usage",       label: "Usage" },
         ] as { key: ReportTab; label: string }[]).map((t) => (
           <button
             key={t.key}
@@ -2813,7 +2981,10 @@ function ReportsPageContent() {
       )}
 
       {/* ── Catalogue tab ──────────────────────────────────── */}
-      {tab === "catalogue" && <CatalogueTable books={catalogueBooks} onExport={() => openExport("catalog")} />}
+      {tab === "catalogue" && (
+        <CatalogueTable books={catalogueBooks} onExport={() => openExport("catalog")}
+          onExportRegister={() => openExport("accession_register")} />
+      )}
 
       {/* ── Shelf List tab ─────────────────────────────────── */}
       {tab === "shelf-list" && <ShelfListTable rows={shelfListData} onExport={() => openExport("shelf_list")} />}
@@ -2854,10 +3025,18 @@ function ReportsPageContent() {
       )}
 
       {/* ── Activity Log tab ───────────────────────────────── */}
+      {/* ── Usage tab ──────────────────────────────────────── */}
+      {tab === "usage" && (
+        <div className="flex flex-col gap-6">
+          <UsageReportCard report="library_usage" filters={reportFilters} shown onExport={() => openExport("library_usage")} />
+          <UsageReportCard report="assistant_usage" filters={reportFilters} shown onExport={() => openExport("assistant_usage")} />
+        </div>
+      )}
+
       {tab === "activity" && (
         <ActivityLogTable
-          feed={activityFeed}
-          onExport={exportActivityCsv}
+          feed={activityFeedWithGuests}
+          onExport={() => openExport("activity_log")}
           patrons={patrons}
           onSelectUser={setViewingPatron}
           onSelectItem={setSelectedActivity}

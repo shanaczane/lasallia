@@ -226,6 +226,8 @@ export async function fetchInventoryReportItems(filters: ReportFilters): Promise
 export type ExportableReport =
   | "overdue" | "circulation" | "borrowing_stats" | "top_patrons" | "fines" | "catalog" | "shelf_list"
   | "weeding_candidates" | "weeding_log" | "inventory" | "book_requests"
+  | "top_titles" | "reservations" | "accession_register" | "library_usage" | "assistant_usage"
+  | "overview" | "activity_log"
 export type ReportExportFormat = "pdf" | "xlsx" | "csv"
 
 // Filters for an export. Dates are Manila days ("YYYY-MM-DD"), both included.
@@ -301,6 +303,21 @@ export async function fetchExportPreview(req: ReportExportRequest): Promise<Repo
   return (await postReport("export/preview", req, "Could not prepare the export")).json()
 }
 
+// A report's table as the export prints it (same columns and rows), for
+// showing on the page.
+export type ReportExportColumn = { key: string; label: string; kind: "text" | "int" | "plain" | "money" | "date" }
+export type ReportExportRows = {
+  title: string
+  period: string
+  columns: ReportExportColumn[]
+  rows: Record<string, string | number | null>[]
+  empty_message: string
+}
+
+export async function fetchExportRows(req: ReportExportRequest): Promise<ReportExportRows> {
+  return (await postReport("export/rows", req, "Could not load the report")).json()
+}
+
 // An AI draft of the summary for the librarian to review; null when AI
 // isn't available. Only the report's totals are sent to the AI.
 export async function fetchExportAiSummary(req: ReportExportRequest): Promise<string | null> {
@@ -312,7 +329,9 @@ const EXPORT_SLUGS: Record<ExportableReport, string> = {
   overdue: "overdue-loans", circulation: "circulation", borrowing_stats: "borrowing-statistics",
   top_patrons: "top-patrons", fines: "fines", catalog: "catalog", shelf_list: "shelf-list",
   weeding_candidates: "weeding-candidates", weeding_log: "weeding-log", inventory: "inventory",
-  book_requests: "book-requests",
+  book_requests: "book-requests", top_titles: "top-titles", reservations: "reservations",
+  accession_register: "accession-register", library_usage: "library-usage", assistant_usage: "assistant-usage",
+  overview: "library-overview", activity_log: "activity-log",
 }
 
 // Same name the API gives the file (core/report_export/definitions.py).
