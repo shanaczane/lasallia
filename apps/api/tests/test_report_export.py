@@ -63,7 +63,7 @@ def test_rows_summary_and_chart_for_known_loans():
     assert figures["Borrowers with overdue loans"] == "2"
     assert figures["Fines so far"] == "₱160.00"  # 10 + 50 + 100 (capped)
     assert figures["Longest overdue"] == "40 days"
-    assert figures["Program with the most overdue loans"] == "BSIT (2)"
+    assert figures["Program with the most overdue loans"] == "BSIT (2 overdue loans)"
     assert data.chart.values == [1, 0, 1, 0, 1]
     assert data.rows[0]["days_overdue"] == 40  # most overdue first
     assert "3 loans by 2 borrowers are overdue" in data.computed_summary
@@ -242,13 +242,13 @@ def test_excel_key_figures_are_numbers_with_formats():
         assert cell.data_type == "n" and cell.value == number and cell.number_format == fmt, (label, cell.value)
     # A text figure stays text.
     program = figures["Program with the most overdue loans"]
-    assert program.data_type == "s" and program.value == "BSA and BSIT (1 each)"
+    assert program.data_type == "s" and program.value == "BSA and BSIT (1 overdue loan each)"
 
 
 def test_excel_text_figures_starting_like_a_formula_stay_protected():
     data = _data([loan(1, program="=CMD()")])
     ws = _sheet(build_excel(data, _options(data)))["Overdue Loans"]
-    [cell] = [c for row in ws.iter_rows() for c in row if c.value == "=CMD() (1)"]
+    [cell] = [c for row in ws.iter_rows() for c in row if c.value == "=CMD() (1 overdue loan)"]
     assert cell.data_type == "s" and cell.quotePrefix
 
 

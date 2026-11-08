@@ -19,7 +19,7 @@ import routers.reports as reports_router
 from core.deps import get_current_user, require_librarian
 from core.report_export import layout
 from core.report_export.csv_file import build_csv
-from core.report_export.definitions import REPORTS, TOP_PATRONS_LIMIT, ExportFilters
+from core.report_export.definitions import REPORTS, TOP_PATRONS_LIMIT, ExportFilters, ai_input
 from core.report_export.excel import build_excel
 from core.report_export.pdf import build_pdf
 from schemas.auth import UserProfile
@@ -151,7 +151,8 @@ def test_no_emails_id_numbers_or_internal_ids_anywhere(report):
 
 @pytest.mark.parametrize("report", ROUND_1)
 def test_ai_data_is_aggregates_only(report):
-    sent = json.dumps(_build(report).ai_payload, default=str)
+    # Exactly what the export dialog's AI draft is made from.
+    sent = json.dumps(ai_input(_build(report)), default=str, ensure_ascii=False)
     for value in EMAILS + ID_NUMBERS + INTERNAL_IDS + NAMES + ACCESSIONS + ["SECRET NOTE"]:
         assert value not in sent, f"{value!r} in the {report} AI data"
 
@@ -270,7 +271,7 @@ def test_shelf_list_is_in_shelf_order_with_accession_numbers():
     data = _build("shelf_list")
     assert [r["call_number"] for r in data.rows] == ["005.1 M379 2008", "005.1 M379 2008", "657 A1 1990"]
     assert [r["accession"] for r in data.rows] == ["T45000", "T45001", "T45002"]
-    assert {f.label: f.number for f in data.key_figures}["Missing, lost, misplaced or damaged"] == 1
+    assert {f.label: f.number for f in data.key_figures}["Missing"] == 1
     floor_only = _build("shelf_list", ExportFilters(aisle="Aisle 1"))
     assert [r["accession"] for r in floor_only.rows] == ["T45002"] and "Aisle: Aisle 1" in floor_only.filters
 
@@ -365,3 +366,136 @@ def test_every_report_is_librarian_only(report):
         id="u1", email="u@dlsl.edu.ph", role="student", full_name="Student")
     res = TestClient(app).post("/reports/export", json={"report": report, "format": "pdf"})
     assert res.status_code == 403
+
+
+# ─── Numbers say what they count ────────────────────────────────────────
+
+def test_busiest_day_says_what_it_counts_in_figures_summary_pdf_and_excel():
+    data = _build("circulation")
+    busiest = {f.label: f.value for f in data.key_figures}["Busiest day"]
+    assert re.fullmatch(r"\d{1,2} \w+ 2026 \((1 borrow or return|\d+ borrows and returns)\)", busiest), busiest
+    assert f"The busiest day was {busiest}." in data.computed_summary
+    pdf = " ".join(p.extract_text() for p in PdfReader(io.BytesIO(build_pdf(data, _options(data)))).pages)
+    assert busiest in " ".join(pdf.split())
+    ws = openpyxl.load_workbook(io.BytesIO(build_excel(data, _options(data)))).worksheets[0]
+    assert busiest in [c.value for row in ws.iter_rows() for c in row]
+    assert "borrows_and_returns_that_day" in json.dumps(ai_input(data))
+
+
+@pytest.mark.parametrize("report", ROUND_1 + ["overdue"])
+def test_no_bare_number_in_brackets(report):
+    # "21 October 2026 (21)" or "BSIT (4)" doesn't say what the number counts.
+    data = _build(report)
+    texts = [f.value for f in data.key_figures] + [data.computed_summary]
+    for text in texts:
+        assert not re.search(r"\(\s*[\d,]+(\.\d+)?\s*(each)?\s*\)", text), (report, text)
+
+
+def test_top_borrower_count_is_labelled():
+    assert re.search(r"The top borrower borrowed \d+ books?,", _build("top_patrons").computed_summary)
+
+
+# ─── What the AI is asked ───────────────────────────────────────────────
+
+def test_summary_prompt_asks_for_each_figure_separately_and_exactly():
+    from core.report_summaries import _SUMMARY_SYSTEM_PROMPT as prompt
+
+    for rule in ("Use only the figures in the data",
+                 "Name every figure you mention separately, with its own label",
+                 "state its number exactly as given",
+                 "Never merge two figures into one phrase, even when their numbers are equal",
+                 '"46 borrows and 46 returns", not "46 borrows and returns"',
+                 '"24 borrowers and 24 titles", not "24 different borrowers and titles"',
+                 "Keep each figure's meaning",
+                 "Keep units, amounts and dates as written",
+                 "If the data is empty or all zero"):
+        assert rule in prompt, rule
+
+
+def test_export_ai_draft_gets_the_prompt_and_labelled_key_figures(monkeypatch):
+    from types import SimpleNamespace
+
+    import core.report_summaries as report_summaries
+
+    sent = []
+
+    def create(model, messages):
+        sent.extend(messages)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Draft."))])
+
+    monkeypatch.setattr(report_summaries, "_get_client",
+                        lambda: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+    db = world()
+    monkeypatch.setattr(reports_router, "get_admin_client", lambda: db)
+    app = FastAPI()
+    app.include_router(reports_router.router)
+    app.dependency_overrides[require_librarian] = lambda: LIBRARIAN
+    res = TestClient(app).post("/reports/export/ai-summary",
+                               json={"report": "circulation", "date_from": "2026-11-01", "date_to": "2026-11-30"})
+    assert res.json() == {"summary": "Draft."}
+    system, user = sent[0]["content"], sent[1]["content"]
+    assert "Never merge two figures into one phrase" in system
+    payload = json.loads(user.split("Data: ", 1)[1])
+    labels = {f["label"]: f["value"] for f in payload["key_figures"]}
+    assert labels["Borrows"] == "2" and labels["Returns"] == "1"
+    assert re.search(r"\((1 borrow or return|\d+ borrows and returns)\)", labels["Busiest day"])
+    for value in EMAILS + ID_NUMBERS + INTERNAL_IDS + NAMES + ACCESSIONS:
+        assert value not in user
+
+
+# ─── Status figures always add up to the total ──────────────────────────
+
+def _figures(data) -> dict:
+    return {f.label: f.number for f in data.key_figures}
+
+
+def test_shelf_list_has_a_figure_for_every_status_and_they_add_up():
+    db = world()
+    statuses = ["available", "available", "for_reshelving", "for_reshelving", "for_reshelving", "reserved",
+                "on_loan", "overdue", "missing", "lost", "damaged", "misplaced", "some_future_status"]
+    db.tables["book_copies"] = [
+        {"id": f"cp{i}", "book_id": "book-1", "accession_number": f"T5{i:04d}", "status": st, "shelf_location": None}
+        for i, st in enumerate(statuses)]
+    data = _build("shelf_list", db=db)
+    figures = _figures(data)
+    status_labels = [f.label for f in data.key_figures if f.label not in ("Copies", "Titles")]
+    assert sum(figures[label] for label in status_labels) == figures["Copies"] == len(statuses)
+    assert figures["For reshelving"] == 3 and figures["Reserved"] == 1 and figures["Overdue"] == 1
+    assert figures["some_future_status"] == 1  # an unknown status still counts
+    assert "3 for reshelving" in data.computed_summary
+
+
+def test_shelf_list_with_only_available_and_reshelving_copies():
+    # The case seen on real data: 252 copies, 249 available, 3 for reshelving.
+    db = world()
+    db.tables["book_copies"] = [
+        {"id": f"cp{i}", "book_id": "book-1", "accession_number": f"T6{i:04d}",
+         "status": "for_reshelving" if i < 3 else "available", "shelf_location": None} for i in range(252)]
+    figures = _figures(_build("shelf_list", db=db))
+    assert figures == {"Copies": 252, "Titles": 1, "Available": 249, "For reshelving": 3}
+
+
+def test_catalog_available_and_not_available_add_up_to_copies():
+    figures = _figures(_build("catalog"))
+    assert figures["Copies available"] + figures["Copies not available"] == figures["Copies"] == 3
+
+
+def test_inventory_results_add_up_to_copies_checked_and_check_statuses_to_checks():
+    db = world()
+    db.tables["inventory_sessions"].append(
+        {"id": "check-2", "floor": "Floor 2", "aisle": "Aisle 1", "status": "in_progress", "started_by": "staff-uuid-1",
+         "started_at": _at("2026-11-04"), "completed_at": None, "skip_seen_since": None})
+    base = db.tables["inventory_items"][0]
+    db.tables["inventory_items"] += [
+        {**base, "id": "item-3", "session_id": "check-2", "result": "pending"},
+        # Scanned where it wasn't expected: counted, but not in "expected".
+        {**base, "id": "item-4", "session_id": "check-2", "expected": False, "result": "misplaced"},
+    ]
+    data = _build("inventory", db=db)
+    figures = _figures(data)
+    assert (figures["Found"] + figures["Misplaced"] + figures["Not found"] + figures["Not yet scanned"]
+            == figures["Copies checked"] == 4)
+    assert figures["Copies expected"] == 3
+    assert figures["Completed checks"] + figures["Checks in progress"] == figures["Checks"] == 2
+    assert "Cancelled checks" not in figures  # only statuses that occur
+    assert "covering 4 copies (3 expected)" in data.computed_summary

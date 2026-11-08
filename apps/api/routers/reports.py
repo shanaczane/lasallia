@@ -7,7 +7,7 @@ from core.dates import report_bound
 from core.deps import require_librarian
 from core.inventory import list_sessions, report_items
 from core.report_export.csv_file import build_csv
-from core.report_export.definitions import REPORTS, ExportFilters, ReportData
+from core.report_export.definitions import REPORTS, ExportFilters, ReportData, ai_input
 from core.report_export.excel import build_excel
 from core.report_export.layout import (
     SIGNATURE_ROLES,
@@ -249,7 +249,7 @@ def ai_summary_for_export(body: ReportExportFilters, librarian: UserProfile = De
     """An AI draft for the librarian to review. Only the report's totals
     and breakdowns are sent to OpenAI. None when AI isn't available."""
     data = _export_data(body)
-    return ReportAiSummary(summary=summarize_aggregate(data.title, data.ai_payload))
+    return ReportAiSummary(summary=summarize_aggregate(data.title, ai_input(data)))
 
 
 @router.post("/export")

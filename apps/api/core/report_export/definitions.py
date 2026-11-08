@@ -148,6 +148,16 @@ class ReportData:
     details: DetailTable | None = None
 
 
+def ai_input(data: "ReportData") -> dict[str, Any]:
+    """What the AI summary is drafted from: the report's labelled key figures
+    (exact wording to copy, totals only) and its aggregated data."""
+    return {
+        "report": data.title,
+        "key_figures": [{"label": f.label, "value": f.value} for f in data.key_figures],
+        **{k: v for k, v in data.ai_payload.items() if k != "report"},
+    }
+
+
 @dataclass(frozen=True)
 class ReportDefinition:
     id: str
@@ -215,15 +225,30 @@ def _count_text(n: int, one: str, many: str) -> str:
 
 
 def _top_programs_text(programs: list[str], count: int) -> str:
-    """'BSIT (4)', 'BSIT and BSA (4 each)', or '5 programs (12 each)' for a
-    wide tie."""
+    """'BSIT (4 overdue loans)', 'BSIT and BSA (4 overdue loans each)', or
+    '5 programs tied (12 overdue loans each)' for a wide tie. The number
+    always says what it counts."""
     if not programs:
         return "—"
+    counted = _count_text(count, "overdue loan", "overdue loans")
     if len(programs) == 1:
-        return f"{programs[0]} ({count:,})"
+        return f"{programs[0]} ({counted})"
     if len(programs) <= 3:
-        return f"{', '.join(programs[:-1])} and {programs[-1]} ({count:,} each)"
-    return f"{len(programs)} programs tied ({count:,} each)"
+        return f"{', '.join(programs[:-1])} and {programs[-1]} ({counted} each)"
+    return f"{len(programs)} programs tied ({counted} each)"
+
+
+def _join_and(parts: list[str]) -> str:
+    """'a', 'a and b', 'a, b and c'."""
+    if len(parts) <= 1:
+        return "".join(parts)
+    return f"{', '.join(parts[:-1])} and {parts[-1]}"
+
+
+def _events_text(n: int) -> str:
+    """'7 borrows and returns', '1 borrow or return': what a busiest-day
+    count counts."""
+    return "1 borrow or return" if n == 1 else f"{n:,} borrows and returns"
 
 
 def build_overdue(admin, filters: ExportFilters) -> ReportData:
@@ -437,7 +462,7 @@ def build_circulation(admin, filters: ExportFilters) -> ReportData:
         f"{_count_text(len(borrowed), 'borrow', 'borrows')} and {_count_text(len(returned), 'return', 'returns')} "
         f"by {_count_text(len(borrowers), 'borrower', 'borrowers')}, across "
         f"{_count_text(len(titles), 'title', 'titles')}."
-        + (f" The busiest day was {_long_date(busiest[0])} ({busiest[1]:,})." if busiest else "")
+        + (f" The busiest day was {_long_date(busiest[0])} ({_events_text(busiest[1])})." if busiest else "")
     ) if events else "No books were borrowed or returned in this period."
 
     return ReportData(
@@ -449,13 +474,13 @@ def build_circulation(admin, filters: ExportFilters) -> ReportData:
             _int_figure("Returns", len(returned)),
             _int_figure("Borrowers", len(borrowers)),
             _int_figure("Titles", len(titles)),
-            _text_figure("Busiest day", f"{_long_date(busiest[0])} ({busiest[1]:,})" if busiest else "—"),
+            _text_figure("Busiest day", f"{_long_date(busiest[0])} ({_events_text(busiest[1])})" if busiest else "—"),
         ],
         computed_summary=summary,
         ai_payload={
             "report": "Circulation", "period": _period_line(filters, "Borrows and returns"),
             "borrows": len(borrowed), "returns": len(returned), "borrowers": len(borrowers), "titles": len(titles),
-            "busiest_day": {"date": busiest[0].isoformat(), "events": busiest[1]} if busiest else None,
+            "busiest_day": {"date": busiest[0].isoformat(), "borrows_and_returns_that_day": busiest[1]} if busiest else None,
             "borrows_by_period": dict(zip([b.label for b in buckets], borrows)),
             "returns_by_period": dict(zip([b.label for b in buckets], returns)),
             "borrows_by_program": dict(sorted(Counter(_profile(l).get("program") or "—" for l in borrowed).items())),
@@ -586,7 +611,7 @@ def build_top_patrons(admin, filters: ExportFilters) -> ReportData:
     share = top10 / total if total else 0.0
     summary = (
         f"{_count_text(len(ranked), 'borrower', 'borrowers')} borrowed {_count_text(total, 'book', 'books')}. "
-        f"The top borrower borrowed {ranked[0]['loans']:,}, and the top 10 account for {share * 100:.1f}% of loans."
+        f"The top borrower borrowed {_count_text(ranked[0]['loans'], 'book', 'books')}, and the top 10 account for {share * 100:.1f}% of loans."
     ) if ranked else "Nobody borrowed a book in this period."
 
     return ReportData(
@@ -766,6 +791,8 @@ def build_catalog(admin, filters: ExportFilters) -> ReportData:
             _int_figure("Titles", len(rows)),
             _int_figure("Copies", total_copies),
             _int_figure("Copies available", sum(available.values())),
+            # With "Copies available", adds up to "Copies".
+            _int_figure("Copies not available", total_copies - sum(available.values())),
             _int_figure("Programs", len(by_program)),
             _int_figure("Titles with no copies", no_copies),
         ],
@@ -807,13 +834,14 @@ def build_shelf_list(admin, filters: ExportFilters) -> ReportData:
         "location": c.shelf_location or "—", "status": COPY_STATUS.get(c.status, c.status),
     } for c in copies]
     by_status = Counter(r["status"] for r in rows)
+    # Every status that has copies, in the usual order, then any status this
+    # list doesn't know yet, so the status figures always add up to Copies.
     labels = [s for s in COPY_STATUS.values() if by_status.get(s)]
+    labels += sorted(s for s in by_status if s not in labels)
     titles = len({c.book_id for c in copies})
-    not_on_shelf = sum(by_status.get(s, 0) for s in ("Missing", "Lost", "Misplaced", "Damaged"))
     summary = (
         f"{_count_text(len(rows), 'copy', 'copies')} of {_count_text(titles, 'title', 'titles')}: "
-        f"{by_status.get('Available', 0):,} available, {by_status.get('On loan', 0) + by_status.get('Overdue', 0):,} on loan"
-        + (f", {not_on_shelf:,} missing, lost, misplaced or damaged." if not_on_shelf else ".")
+        + _join_and([f"{by_status[s]:,} {s.lower()}" for s in labels]) + "."
     ) if rows else "No copies match these filters."
 
     return ReportData(
@@ -822,9 +850,7 @@ def build_shelf_list(admin, filters: ExportFilters) -> ReportData:
         key_figures=[
             _int_figure("Copies", len(rows)),
             _int_figure("Titles", titles),
-            _int_figure("Available", by_status.get("Available", 0)),
-            _int_figure("On loan", by_status.get("On loan", 0) + by_status.get("Overdue", 0)),
-            _int_figure("Missing, lost, misplaced or damaged", not_on_shelf),
+            *(_int_figure(s, by_status[s]) for s in labels),
         ],
         computed_summary=summary,
         ai_payload={"report": "Shelf list", "as_of": manila_time_text(now), "copies": len(rows),
@@ -946,6 +972,8 @@ def build_weeding_log(admin, filters: ExportFilters) -> ReportData:
 # ─── Inventory (period: checks started in it) ───────────────────────────
 
 SESSION_STATUS = {"completed": "Completed", "in_progress": "In progress", "cancelled": "Cancelled"}
+CHECK_FIGURE_LABELS = {"Completed": "Completed checks", "In progress": "Checks in progress",
+                       "Cancelled": "Cancelled checks"}
 ITEM_RESULTS = {"found": "Found", "misplaced": "Misplaced", "not_found": "Not found", "pending": "Pending"}
 ITEM_RESOLUTIONS = {"marked_missing": "Marked missing", "marked_found": "Marked found"}
 INVENTORY_COLUMNS = [
@@ -993,9 +1021,17 @@ def build_inventory(admin, filters: ExportFilters) -> ReportData:
         "resolution": ITEM_RESOLUTIONS.get(i.resolution, "") if i.resolution else "",
     } for i in report_items(admin, date_from=rf.date_from, date_to=rf.date_to)]
 
+    # Copies checked = every copy in the checks: the four results always add
+    # up to it. It can be more than "expected", since a copy scanned where it
+    # wasn't expected is counted too (found or misplaced).
+    checked = totals["found"] + totals["misplaced"] + totals["not_found"] + totals["pending"]
+    check_statuses = [s for s in SESSION_STATUS.values() if by_status.get(s)]
+    check_statuses += sorted(s for s in by_status if s not in check_statuses)
     summary = (
-        f"{_count_text(len(rows), 'check', 'checks')} ({by_status.get('Completed', 0):,} completed) covering "
-        f"{totals['expected']:,} expected copies: {totals['found']:,} found, {totals['misplaced']:,} misplaced, "
+        f"{_count_text(len(rows), 'check', 'checks')} ("
+        + _join_and([f"{by_status[s]:,} {s.lower()}" for s in check_statuses])
+        + f") covering {_count_text(checked, 'copy', 'copies')} ({totals['expected']:,} expected): "
+        f"{totals['found']:,} found, {totals['misplaced']:,} misplaced, "
         f"{totals['not_found']:,} not found and {totals['pending']:,} not yet scanned."
     ) if rows else "No inventory checks were started in this period."
 
@@ -1004,11 +1040,13 @@ def build_inventory(admin, filters: ExportFilters) -> ReportData:
         period=_period_line(filters, "Checks started"), filters=filters.filter_lines(), generated_at=now,
         key_figures=[
             _int_figure("Checks", len(rows)),
-            _int_figure("Completed checks", by_status.get("Completed", 0)),
+            *(_int_figure(CHECK_FIGURE_LABELS.get(s, f"{s} checks"), by_status[s]) for s in check_statuses),
+            _int_figure("Copies checked", checked),
             _int_figure("Copies expected", totals["expected"]),
             _int_figure("Found", totals["found"]),
             _int_figure("Misplaced", totals["misplaced"]),
             _int_figure("Not found", totals["not_found"]),
+            _int_figure("Not yet scanned", totals["pending"]),
         ],
         computed_summary=summary,
         ai_payload={"report": "Inventory", "period": _period_line(filters, "Checks started"),
