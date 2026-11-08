@@ -223,7 +223,9 @@ export async function fetchInventoryReportItems(filters: ReportFilters): Promise
 // ─── Report export (PDF, Excel, CSV built by the API) ─────────────────────
 // Only Overdue Loans so far; the other tabs keep downloadCsv and Print.
 
-export type ExportableReport = "overdue"
+export type ExportableReport =
+  | "overdue" | "circulation" | "borrowing_stats" | "top_patrons" | "fines" | "catalog" | "shelf_list"
+  | "weeding_candidates" | "weeding_log" | "inventory" | "book_requests"
 export type ReportExportFormat = "pdf" | "xlsx" | "csv"
 
 // Filters for an export. Dates are Manila days ("YYYY-MM-DD"), both included.
@@ -235,6 +237,9 @@ export type ReportExportRequest = {
   program?: string
   college?: string
   year_level?: number
+  // Shelf list only.
+  floor?: string
+  aisle?: string
 }
 
 export type ReportSignatureTitle = {
@@ -251,6 +256,11 @@ export type ReportExportPreview = {
   key_figures: { label: string; value: string }[]
   computed_summary: string
   row_count: number
+  // False for snapshot reports ("as of" now): the date filter doesn't apply.
+  uses_dates: boolean
+  // A second table (Inventory's copies): an Excel sheet and a CSV option.
+  details_title: string | null
+  details_row_count: number
   signature_titles: ReportSignatureTitle[]
 }
 
@@ -258,6 +268,8 @@ export type ReportExportOptions = {
   format: ReportExportFormat
   summary_text?: string
   summary_source: "ai" | "computed"
+  // CSV only: the main table or the details table.
+  csv_table?: "main" | "details"
   prepared_by_name?: string
   noted_by_name?: string
   approved_by_name?: string
@@ -296,7 +308,12 @@ export async function fetchExportAiSummary(req: ReportExportRequest): Promise<st
   return body.summary ?? null
 }
 
-const EXPORT_SLUGS: Record<ExportableReport, string> = { overdue: "overdue-loans" }
+const EXPORT_SLUGS: Record<ExportableReport, string> = {
+  overdue: "overdue-loans", circulation: "circulation", borrowing_stats: "borrowing-statistics",
+  top_patrons: "top-patrons", fines: "fines", catalog: "catalog", shelf_list: "shelf-list",
+  weeding_candidates: "weeding-candidates", weeding_log: "weeding-log", inventory: "inventory",
+  book_requests: "book-requests",
+}
 
 // Same name the API gives the file (core/report_export/definitions.py).
 export function exportFileName(req: ReportExportRequest, format: ReportExportFormat): string {
@@ -314,7 +331,10 @@ export async function downloadReportExport(req: ReportExportRequest, options: Re
   const url = URL.createObjectURL(await res.blob())
   const a = document.createElement("a")
   a.href = url
-  a.download = exportFileName(req, options.format)
+  // The API's file name when the browser can read it (it knows the "as of"
+  // date of snapshot reports); otherwise the same pattern built here.
+  const fromHeader = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1]
+  a.download = fromHeader ?? exportFileName(req, options.format)
   a.click()
   URL.revokeObjectURL(url)
 }

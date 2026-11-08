@@ -61,7 +61,6 @@ import {
   fetchShelfList,
   fetchReportSummaries,
   fetchInventoryReport,
-  fetchInventoryReportItems,
   resolveDateRange,
   inManilaDateRange,
   formatManilaDate,
@@ -80,6 +79,7 @@ import {
   type DateRangePreset,
   type ReportFilters,
   exportRequest,
+  type ExportableReport,
   type ReportExportFormat,
   type ReportExportRequest,
 } from "@/lib/reports"
@@ -100,6 +100,18 @@ import { formatWhen, type InventorySession } from "@/lib/inventory"
 import { pressable } from "@/lib/a11y"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+// The report the header's Export opens on each tab that has one. Overview
+// and Activity Log keep Print and CSV until round 2.
+const TAB_REPORTS: Partial<Record<string, ExportableReport>> = {
+  catalogue: "catalog",
+  "shelf-list": "shelf_list",
+  circulation: "circulation",
+  overdue: "overdue",
+  requests: "book_requests",
+  weeding: "weeding_candidates",
+  inventory: "inventory",
+}
+
 type ReportTab = "overview" | "catalogue" | "shelf-list" | "circulation" | "overdue" | "requests" | "weeding" | "inventory" | "activity"
 type SortDir = "asc" | "desc" | null
 type SortKey = "patron" | "book" | "due" | "days" | "program" | null
@@ -137,6 +149,7 @@ function ReportTableCard({
   headerExtra,
   onExport,
   exportDisabled,
+  exportLabel = "Export CSV",
   children,
   footerLeft,
   page,
@@ -152,6 +165,8 @@ function ReportTableCard({
   headerExtra?: React.ReactNode
   onExport: () => void
   exportDisabled: boolean
+  // "Export" opens the PDF / Excel / CSV dialog; "Export CSV" (Activity Log) downloads directly.
+  exportLabel?: string
   children: React.ReactNode
   footerLeft: string
   page?: number
@@ -190,7 +205,7 @@ function ReportTableCard({
             className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
             style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
           >
-            <Download size={13} /> Export CSV
+            <Download size={13} /> {exportLabel}
           </button>
         </div>
       </div>
@@ -231,12 +246,15 @@ function OverviewCard({
   subtitle,
   action,
   corner,
+  onExport,
   dragHandle,
   children,
 }: {
   title: string
   subtitle: string
   action?: { label: string; onClick: () => void }
+  // Opens the export dialog for this card's report.
+  onExport?: () => void
   corner?: string
   dragHandle?: React.ReactNode
   children: React.ReactNode
@@ -266,6 +284,15 @@ function OverviewCard({
               {corner}
             </span>
           ) : null}
+          {onExport && (
+            <button
+              onClick={onExport}
+              className="flex items-center gap-1 text-green-700 hover:text-green-900 font-medium shrink-0 whitespace-nowrap transition-colors print:hidden"
+              style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)" }}
+            >
+              <Download size={11} /> Export
+            </button>
+          )}
           {dragHandle}
         </div>
       </div>
@@ -590,6 +617,7 @@ function ShelfListTable({ rows, onExport }: { rows: ShelfListRow[]; onExport: ()
       query={query}
       onQueryChange={setQuery}
       onExport={onExport}
+      exportLabel="Export"
       exportDisabled={rows.length === 0}
       footerLeft={`${available} available · ${onLoan} on loan · ${needsAttention} needing attention`}
       page={page}
@@ -668,6 +696,7 @@ function CatalogueTable({ books, onExport }: { books: Book[]; onExport: () => vo
       query={query}
       onQueryChange={setQuery}
       onExport={onExport}
+      exportLabel="Export"
       exportDisabled={books.length === 0}
       footerLeft={`Showing ${paged.length} of ${filtered.length} titles`}
       page={page}
@@ -754,6 +783,7 @@ function CirculationTable({ rows, onExport }: { rows: CirculationRow[]; onExport
       query={query}
       onQueryChange={setQuery}
       onExport={onExport}
+      exportLabel="Export"
       exportDisabled={rows.length === 0}
       footerLeft={`${rows.length} transactions in range · ${borrows} borrows, ${returns} returns`}
       page={page}
@@ -823,7 +853,7 @@ const REQUEST_TABS: { key: RequestTabKey; label: string; showCount: boolean }[] 
   { key: "cancelled", label: "Cancelled", showCount: false },
 ]
 
-function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: string }) {
+function RequestsPanel({ dateFrom, dateTo, onExport }: { dateFrom?: string; dateTo?: string; onExport: () => void }) {
   const [requests, setRequests] = useState<BookRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<RequestTabKey>("all")
@@ -934,20 +964,9 @@ function RequestsPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: strin
         query={query}
         onQueryChange={(v) => { setQuery(v); setPage(1) }}
         searchPlaceholder="Search by title, author, or requester…"
-        onExport={() => downloadCsv("book-requests.csv", filtered.map((r) => ({
-          Title: r.title,
-          Author: r.author ?? "",
-          ISBN: r.isbn ?? "",
-          Format: r.format,
-          Copies: r.copies,
-          Course: r.course ?? "",
-          Requester: r.profiles?.full_name ?? "",
-          Email: r.profiles?.email ?? "",
-          Status: r.status,
-          Attachments: r.attachments.map((a) => a.url).join("; "),
-          "Requested At": r.created_at,
-        })))}
-        exportDisabled={filtered.length === 0}
+        onExport={onExport}
+        exportDisabled={false}
+        exportLabel="Export"
         footerLeft={`${openCount} open request${openCount === 1 ? "" : "s"}`}
         page={page}
         totalPages={totalPages}
@@ -1088,14 +1107,8 @@ const INVENTORY_STATUS_LABEL: Record<InventorySession["status"], string> = {
   cancelled: "Cancelled",
 }
 
-const INVENTORY_RESULT_LABEL: Record<string, string> = {
-  pending: "Not scanned yet",
-  found: "Found",
-  misplaced: "Misplaced",
-  not_found: "Not found",
-}
 
-function InventoryPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: string }) {
+function InventoryPanel({ dateFrom, dateTo, onExport }: { dateFrom?: string; dateTo?: string; onExport: () => void }) {
   const router = useRouter()
   const [sessions, setSessions] = useState<InventorySession[]>([])
   // Which date range `sessions` was fetched for — loading until it matches.
@@ -1103,7 +1116,6 @@ function InventoryPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: stri
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
   const loading = loadedKey !== rangeKey
   const [query, setQuery] = useState("")
-  const [exportingDetails, setExportingDetails] = useState(false)
 
   useEffect(() => {
     fetchInventoryReport({ dateFrom, dateTo })
@@ -1122,39 +1134,6 @@ function InventoryPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: stri
     { found: 0, misplaced: 0, notFound: 0 },
   )
 
-  const exportSummary = () => downloadCsv("inventory-summary.csv", filtered.map((s) => ({
-    location: s.label,
-    status: INVENTORY_STATUS_LABEL[s.status],
-    started_at: s.started_at,
-    started_by: s.started_by_name ?? "",
-    completed_at: s.completed_at ?? "",
-    expected: s.expected,
-    found: s.found,
-    misplaced: s.misplaced,
-    not_found: s.not_found,
-    resolved: s.resolved,
-  })))
-
-  async function exportDetails() {
-    setExportingDetails(true)
-    try {
-      const ids = new Set(filtered.map((s) => s.id))
-      const rows = (await fetchInventoryReportItems({ dateFrom, dateTo })).filter((r) => ids.has(r.session_id))
-      downloadCsv("inventory-details.csv", rows.map((r) => ({
-        check_started_at: r.started_at,
-        check_location: r.location,
-        accession_number: r.accession_number ?? "",
-        call_number: r.call_number ?? "",
-        title: r.title ?? "",
-        result: INVENTORY_RESULT_LABEL[r.result] ?? r.result,
-        belongs_in: r.expected_location ?? "",
-        follow_up: r.resolution === "marked_missing" ? "Marked missing" : r.resolution === "marked_found" ? "Marked found" : "",
-      })))
-    } finally {
-      setExportingDetails(false)
-    }
-  }
-
   return (
     <ReportTableCard
       title="Inventory"
@@ -1162,18 +1141,9 @@ function InventoryPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: stri
       query={query}
       onQueryChange={setQuery}
       searchPlaceholder="Search location or librarian…"
-      headerExtra={
-        <button
-          onClick={exportDetails}
-          disabled={filtered.length === 0 || exportingDetails}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
-        >
-          <Download size={13} /> {exportingDetails ? "Preparing…" : "Export details"}
-        </button>
-      }
-      onExport={exportSummary}
-      exportDisabled={filtered.length === 0}
+      onExport={onExport}
+      exportDisabled={false}
+      exportLabel="Export"
       footerLeft={
         loading
           ? "Loading…"
@@ -1231,7 +1201,11 @@ function InventoryPanel({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: stri
 
 // ─── Weeding: old, rarely borrowed books. A fixed rule picks them; AI only
 // words the reason. The librarian decides to archive or keep each one.
-function WeedingPanel() {
+function WeedingPanel({ dateFrom, dateTo, onExport }: {
+  dateFrom?: string
+  dateTo?: string
+  onExport: (report: "weeding_candidates" | "weeding_log") => void
+}) {
   const [candidates, setCandidates] = useState<WeedingCandidate[]>([])
   const [events, setEvents] = useState<WeedingEvent[]>([])
   const [loading, setLoading] = useState(true)
@@ -1332,6 +1306,13 @@ function WeedingPanel() {
             Flagged by a fixed rule — low or zero borrows over 2 years, and at least 10 years old. AI only explains the finding; you decide.
           </p>
         </div>
+        <button
+          onClick={() => onExport("weeding_candidates")}
+          className="self-start flex items-center gap-1.5 px-3 py-1.5 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 transition-colors"
+          style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
+        >
+          <Download size={13} /> Export
+        </button>
 
         {loading ? (
           <p className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}>Loading…</p>
@@ -1381,20 +1362,17 @@ function WeedingPanel() {
 
       {/* Log */}
       {(() => {
+        // The log follows the page's dates (whole Manila days). All events are
+        // still loaded, so Restore shows on each book's latest action.
+        const periodEvents = events.filter((e) => inManilaDateRange(e.occurred_at, dateFrom, dateTo))
         const filteredEvents = logQuery.trim()
-          ? events.filter((e) => {
+          ? periodEvents.filter((e) => {
               const q = logQuery.toLowerCase()
               return (e.book_title ?? "").toLowerCase().includes(q) || (e.performed_by_name ?? "").toLowerCase().includes(q)
             })
-          : events
+          : periodEvents
         const totalPages = Math.max(1, Math.ceil(filteredEvents.length / REPORT_PAGE_SIZE))
         const paged = filteredEvents.slice((logPage - 1) * REPORT_PAGE_SIZE, logPage * REPORT_PAGE_SIZE)
-        const exportLog = () => downloadCsv("weeding-log.csv", events.map((e) => ({
-          book: e.book_title ?? "",
-          action: e.event_type,
-          by: e.performed_by_name ?? "",
-          when: e.occurred_at,
-        })))
 
         return (
           <ReportTableCard
@@ -1403,15 +1381,16 @@ function WeedingPanel() {
             query={logQuery}
             onQueryChange={(v) => { setLogQuery(v); setLogPage(1) }}
             searchPlaceholder="Search book or librarian…"
-            onExport={exportLog}
-            exportDisabled={events.length === 0}
-            footerLeft={`${events.length} ${events.length === 1 ? "action" : "actions"} recorded`}
+            onExport={() => onExport("weeding_log")}
+            exportDisabled={false}
+            exportLabel="Export"
+            footerLeft={`${periodEvents.length} ${periodEvents.length === 1 ? "action" : "actions"} in this period`}
             page={logPage}
             totalPages={totalPages}
             onPageChange={setLogPage}
           >
             {paged.length === 0 ? (
-              <EmptyState text={events.length === 0 ? "No weeding actions recorded yet." : "No actions match your search."} />
+              <EmptyState text={periodEvents.length === 0 ? "No weeding actions in this period." : "No actions match your search."} />
             ) : (
               <div className="rounded border border-ink-200 overflow-x-auto">
                 <table className="w-full">
@@ -1717,6 +1696,7 @@ function OverdueTable({ rows, onExport }: { rows: OverdueRow[]; onExport: () => 
       onQueryChange={setQuery}
       searchPlaceholder="Search patron or book…"
       onExport={onExport}
+      exportLabel="Export"
       exportDisabled={rows.length === 0}
       footerLeft={`${rows.length} overdue · ₱${totalFine.toFixed(2)} total fines · ${patronsAffected} ${patronsAffected === 1 ? "patron" : "patrons"} affected`}
       page={page}
@@ -1894,11 +1874,12 @@ function FinesTable({
   return (
     <ReportTableCard
       title="Patron fines"
-      subtitle="Every patron with a fine in this range — unsettled, still accruing on an open loan, or already paid"
+      subtitle="Fines on books returned in this range (unsettled or paid), plus fines still growing on books not yet returned"
       query={query}
       onQueryChange={setQuery}
       searchPlaceholder="Search patron…"
       onExport={onExport}
+      exportLabel="Export"
       exportDisabled={rows.length === 0}
       footerLeft={`₱${totalOutstanding.toFixed(2)} outstanding · ${patronsOwing} ${patronsOwing === 1 ? "patron" : "patrons"} with fines`}
       page={page}
@@ -2364,48 +2345,13 @@ function ReportsPageContent() {
   )
   const circulationRows = buildCirculationRows(activityFeed, activeDateBounds.dateFrom, activeDateBounds.dateTo)
 
-  const exportShelfListCsv = () => downloadCsv("shelf-list.csv", shelfListData.map((r) => ({
-    accession_number: r.accession_number,
-    call_number: r.call_number,
-    title: r.title,
-    author: r.author,
-    category: programLabel(r.category),
-    shelf_location: r.shelf_location ?? "",
-    status: r.status,
-  })))
-
-  const exportCatalogueCsv = () => downloadCsv("catalogue.csv", catalogueBooks.map((b) => ({
-    title: b.title,
-    author: b.author,
-    category: b.category,
-    copies: b.total_copies ?? 0,
-    year: b.published_year ?? "",
-  })))
-
-  const exportCirculationCsv = () => downloadCsv("circulation.csv", circulationRows.map((r) => ({
-    date: r.date,
-    title: r.title,
-    patron: r.patron,
-    type: r.type,
-    due: r.due,
-  })))
-
-  // Overdue Loans exports through the API (PDF, Excel or CSV in the shared
-  // report layout), with the current filters as whole Manila days.
+  // Reports export through the API (PDF, Excel or CSV in the shared report
+  // layout), with the current filters as whole Manila days.
   const [exportDialog, setExportDialog] = useState<{ request: ReportExportRequest; format: ReportExportFormat } | null>(null)
-  const openOverdueExport = (format: ReportExportFormat) =>
-    setExportDialog({ request: exportRequest("overdue", currentFilters()), format })
-
-  const exportFinesCsv = () => downloadCsv("fines.csv", finesData.map((r) => ({
-    patron: r.patron,
-    email: r.patron_email,
-    program: r.program,
-    year: r.year,
-    unsettled: r.unsettled,
-    accruing: r.accruing,
-    paid: r.paid,
-    outstanding: r.outstanding,
-  })))
+  const openExport = (report: ExportableReport, format: ReportExportFormat = "pdf") =>
+    setExportDialog({ request: exportRequest(report, currentFilters()), format })
+  // The report the header's Export button opens on each converted tab.
+  const tabReport: ExportableReport | null = TAB_REPORTS[tab] ?? null
 
   // Move the fine from unpaid to paid locally, instead of reloading everything.
   function handleFineSettled(loanId: string, receiptNumber: string) {
@@ -2440,10 +2386,6 @@ function ReportsPageContent() {
   // no single table).
   const headerExport: { fn: () => void; disabled: boolean } | null = (() => {
     switch (tab) {
-      case "catalogue":   return { fn: exportCatalogueCsv, disabled: catalogueBooks.length === 0 }
-      case "shelf-list":  return { fn: exportShelfListCsv, disabled: shelfListData.length === 0 }
-      case "circulation": return { fn: exportCirculationCsv, disabled: circulationRows.length === 0 }
-      case "overdue":     return { fn: () => openOverdueExport("csv"), disabled: false }
       case "activity":    return { fn: exportActivityCsv, disabled: activityFeed.length === 0 }
       default:            return null
     }
@@ -2479,7 +2421,7 @@ function ReportsPageContent() {
     circulation: (
       <OverviewCard
         title="Circulation report"
-        subtitle="Monthly borrows, last 6 months"
+        subtitle="Borrows across the selected period"
         corner={reportsReady ? `${circulationData.reduce((s, d) => s + d.value, 0)} total` : undefined}
       >
         {cardBody(<BarChartViz data={circulationData} />)}
@@ -2490,17 +2432,18 @@ function ReportsPageContent() {
         title="Top patrons"
         subtitle="Highest borrowers in range"
         action={{ label: "Manage patrons", onClick: () => router.push("/librarian/patrons") }}
+        onExport={() => openExport("top_patrons")}
       >
         {cardBody(<TopPatronsList patrons={topPatronsData} />)}
       </OverviewCard>
     ),
     trends: (
-      <OverviewCard title="Transaction statistics" subtitle="Weekly activity, last 8 weeks">
+      <OverviewCard title="Transaction statistics" subtitle="Borrows and returns across the selected period" onExport={() => openExport("borrowing_stats")}>
         {cardBody(<TransactionTrendChart data={trendData} />)}
       </OverviewCard>
     ),
     "library-stats": (
-      <OverviewCard title="Library statistics" subtitle="Usage by program and year level">
+      <OverviewCard title="Library statistics" subtitle="Usage by program and year level" onExport={() => openExport("borrowing_stats")}>
         {cardBody(<ProgramUsageList data={libraryStats?.by_program ?? []} />)}
       </OverviewCard>
     ),
@@ -2590,11 +2533,11 @@ function ReportsPageContent() {
           </h1>
 
           <div className="flex items-center gap-2 print:hidden shrink-0">
-            {tab === "overdue" ? (
+            {tabReport ? (
               // Built by the API: PDF, Excel or CSV with the shared header,
               // summary, chart, table and signature lines.
               <button
-                onClick={() => openOverdueExport("pdf")}
+                onClick={() => openExport(tabReport)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded border border-ink-300 text-ink-700 hover:bg-ink-50 transition-colors"
                 style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
               >
@@ -2836,13 +2779,13 @@ function ReportsPageContent() {
       )}
 
       {/* ── Catalogue tab ──────────────────────────────────── */}
-      {tab === "catalogue" && <CatalogueTable books={catalogueBooks} onExport={exportCatalogueCsv} />}
+      {tab === "catalogue" && <CatalogueTable books={catalogueBooks} onExport={() => openExport("catalog")} />}
 
       {/* ── Shelf List tab ─────────────────────────────────── */}
-      {tab === "shelf-list" && <ShelfListTable rows={shelfListData} onExport={exportShelfListCsv} />}
+      {tab === "shelf-list" && <ShelfListTable rows={shelfListData} onExport={() => openExport("shelf_list")} />}
 
       {/* ── Circulation tab ────────────────────────────────── */}
-      {tab === "circulation" && <CirculationTable rows={circulationRows} onExport={exportCirculationCsv} />}
+      {tab === "circulation" && <CirculationTable rows={circulationRows} onExport={() => openExport("circulation")} />}
 
       {/* ── Overdue & Fines tab ────────────────────────────── */}
       {tab === "overdue" && (
@@ -2856,22 +2799,24 @@ function ReportsPageContent() {
               <span>{summaries.overdue}</span>
             </p>
           )}
-          <OverdueTable rows={overdueRowsData} onExport={() => openOverdueExport("csv")} />
-          <FinesTable rows={finesData} onExport={exportFinesCsv} onSettled={handleFineSettled} />
+          <OverdueTable rows={overdueRowsData} onExport={() => openExport("overdue")} />
+          <FinesTable rows={finesData} onExport={() => openExport("fines")} onSettled={handleFineSettled} />
         </div>
       )}
 
       {/* ── Requests tab — see RequestsPanel ── */}
       {tab === "requests" && (
-        <RequestsPanel dateFrom={activeDateBounds.dateFrom} dateTo={activeDateBounds.dateTo} />
+        <RequestsPanel dateFrom={activeDateBounds.dateFrom} dateTo={activeDateBounds.dateTo} onExport={() => openExport("book_requests")} />
       )}
 
       {/* ── Weeding tab ───────────────────────────────────── */}
-      {tab === "weeding" && <WeedingPanel />}
+      {tab === "weeding" && (
+        <WeedingPanel dateFrom={activeDateBounds.dateFrom} dateTo={activeDateBounds.dateTo} onExport={(report) => openExport(report)} />
+      )}
 
       {/* ── Inventory tab — see InventoryPanel ── */}
       {tab === "inventory" && (
-        <InventoryPanel dateFrom={activeDateBounds.dateFrom} dateTo={activeDateBounds.dateTo} />
+        <InventoryPanel dateFrom={activeDateBounds.dateFrom} dateTo={activeDateBounds.dateTo} onExport={() => openExport("inventory")} />
       )}
 
       {/* ── Activity Log tab ───────────────────────────────── */}

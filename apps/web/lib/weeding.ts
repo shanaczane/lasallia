@@ -44,8 +44,9 @@ export async function fetchWeedingCandidates(): Promise<WeedingCandidate[]> {
   return res.json()
 }
 
-export async function fetchWeedingEvents(limit = 50): Promise<WeedingEvent[]> {
-  const res = await fetch(`${API_URL}/weeding/events?limit=${limit}`, { headers: authHeaders() })
+// Every weeding action (the Reports page filters them to its dates).
+export async function fetchWeedingEvents(limit?: number): Promise<WeedingEvent[]> {
+  const res = await fetch(`${API_URL}/weeding/events${limit ? `?limit=${limit}` : ""}`, { headers: authHeaders() })
   if (!res.ok) return parseErrorOrThrow(res, "Failed to load the weeding log")
   return res.json()
 }
