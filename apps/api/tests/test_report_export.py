@@ -377,7 +377,7 @@ def test_ai_summary_is_null_without_ai(fake):
 
 @pytest.mark.parametrize("body, code", [
     ({**BODY, "format": "docx"}, 422),
-    ({**BODY, "report": "fines", "format": "pdf"}, 422),
+    ({**BODY, "report": "accession_register", "format": "pdf"}, 422),  # round 2, not built
     ({**BODY, "format": "pdf", "summary_text": "x" * 2001}, 422),
     ({**BODY, "format": "pdf", "prepared_by_name": "x" * 121}, 422),
     ({**BODY, "date_from": "2026-11-30", "date_to": "2026-11-01", "format": "pdf"}, 400),
@@ -554,3 +554,47 @@ def test_average_days_overdue_shows_one_decimal_in_pdf_and_excel():
     [cell] = [ws.cell(r, 3) for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value == "Average days overdue"]
     assert cell.value == 12 and cell.number_format == "0.0"  # Excel shows 12.0
     assert {f.label: f.value for f in _data([]).key_figures}["Average days overdue"] == "0.0"
+
+
+# ─── Excel chart: legend clear of the labels, room above the tallest bar ─
+
+def _axis_numbers(xml: str) -> tuple[float, float]:
+    value_axis = _axis(xml, "valAx")
+    maximum = float(re.search(r'<(?:c:)?max val="([0-9.]+)"\s*/>', value_axis).group(1))
+    step = float(re.search(r'<(?:c:)?majorUnit val="([0-9.]+)"\s*/>', value_axis).group(1))
+    return maximum, step
+
+
+@pytest.mark.parametrize("highest", [0, 1, 3, 7, 16, 22, 99, 412.5, 3080])
+def test_axis_scale_leaves_a_full_step_above_the_tallest_bar(highest):
+    from core.report_export.excel import axis_scale
+
+    step, maximum = axis_scale(highest)
+    assert maximum >= max(highest, 1) + step
+    assert maximum % step == 0
+    assert str(int(step)).strip("0") in ("1", "2", "5")  # a round step
+    assert maximum / step <= 8  # not too many gridlines
+
+
+def test_single_series_chart_has_headroom_and_no_legend():
+    data = _data([loan(i, days_late=10) for i in range(1, 17)])  # 16 loans in one bar
+    xml = _chart_xml(build_excel(data, _options(data)))
+    maximum, step = _axis_numbers(xml)
+    assert max(data.chart.values) == 16
+    assert maximum >= 16 + step
+    assert not re.search(r"<(?:c:)?legend>", xml)
+
+
+def test_two_series_chart_puts_the_legend_on_the_right_with_headroom():
+    from core.report_export.definitions import REPORTS, ExportFilters
+
+    loans = [loan(i, borrowed_at="2026-11-03T02:00:00+00:00") for i in range(1, 17)]
+    loans += [{**loan(100 + i, borrowed_at="2026-10-01T02:00:00+00:00"), "status": "returned",
+               "returned_at": "2026-11-04T02:00:00+00:00"} for i in range(5)]
+    data = REPORTS["circulation"].build(FakeSupabase(loans=loans), ExportFilters(date_from=date(2026, 11, 1),
+                                                                                 date_to=date(2026, 11, 7)))
+    xml = _chart_xml(build_excel(data, _options(data)))
+    legend = re.search(r"<(?:c:)?legend>.*?</(?:c:)?legend>", xml, re.S).group(0)
+    assert re.search(r'<(?:c:)?legendPos val="r"\s*/>', legend)
+    maximum, step = _axis_numbers(xml)
+    assert maximum >= 16 + step

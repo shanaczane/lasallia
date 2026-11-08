@@ -118,8 +118,14 @@ class ReportSummaries(BaseModel):
 
 # ─── Report export (PDF / Excel / CSV), core/report_export ─────────────
 
+ExportableReport = Literal[
+    "overdue", "circulation", "borrowing_stats", "top_patrons", "fines", "catalog", "shelf_list",
+    "weeding_candidates", "weeding_log", "inventory", "book_requests",
+]
+
+
 class ReportExportFilters(BaseModel):
-    report: Literal["overdue"]
+    report: ExportableReport
     # Whole Manila days, both included. Leave out for all dates.
     date_from: date | None = None
     date_to: date | None = None
@@ -127,10 +133,15 @@ class ReportExportFilters(BaseModel):
     program: str | None = Field(None, max_length=200)
     college: str | None = Field(None, max_length=200)
     year_level: int | None = Field(None, ge=1, le=10)
+    # Shelf list only.
+    floor: str | None = Field(None, max_length=100)
+    aisle: str | None = Field(None, max_length=100)
 
 
 class ReportExportRequest(ReportExportFilters):
     format: Literal["pdf", "xlsx", "csv"]
+    # CSV only: the main table, or the detail table (Inventory's copies).
+    csv_table: Literal["main", "details"] = "main"
     # The summary the librarian reviewed. Left out: the computed summary.
     summary_text: str | None = Field(None, max_length=2000)
     # Where the reviewed text started: the AI draft or the computed summary.
@@ -160,6 +171,12 @@ class ReportExportPreview(BaseModel):
     key_figures: list[ReportKeyFigure]
     computed_summary: str
     row_count: int
+    # False for snapshot reports (catalog, shelf list, weeding candidates):
+    # "as of" now, so the date filter doesn't apply.
+    uses_dates: bool = True
+    # A second table (Inventory's copies): its own Excel sheet, a CSV option.
+    details_title: str | None = None
+    details_row_count: int = 0
     signature_titles: list[ReportSignatureTitle]
 
 

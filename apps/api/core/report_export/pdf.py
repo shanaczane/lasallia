@@ -7,6 +7,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.graphics.charts.legends import Legend
 from reportlab.graphics.shapes import Drawing, String
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT
@@ -104,28 +105,46 @@ def _chart(data: ReportData, width: float) -> Drawing | None:
     chart = data.chart
     if chart is None:
         return None
-    height = 38 * mm
+    series = chart.series
+    crowded = len(chart.labels) > 12  # daily or weekly periods: slanted labels
+    height = (46 if crowded else 38) * mm
     drawing = Drawing(width, height)
     bars = VerticalBarChart()
-    bars.x, bars.y = 40, 28
-    bars.width, bars.height = min(width - 60, 150 * mm), height - 48
-    bars.data = [list(chart.values)]
+    bars.x, bars.y = 40, 40 if crowded else 28
+    bars.width = min(width - 60, (230 if crowded else 150) * mm)
+    bars.height = height - bars.y - 20
+    bars.data = [list(values) for _, values in series]
     bars.categoryAxis.categoryNames = list(chart.labels)
     bars.categoryAxis.labels.fontName = FONT
-    bars.categoryAxis.labels.fontSize = 7.5
+    bars.categoryAxis.labels.fontSize = 7 if crowded else 7.5
+    if crowded:
+        bars.categoryAxis.labels.angle = 45
+        bars.categoryAxis.labels.boxAnchor = "ne"
+        bars.categoryAxis.labels.dy = -2
     bars.valueAxis.labels.fontName = FONT
     bars.valueAxis.labels.fontSize = 7.5
     bars.valueAxis.valueMin = 0
-    top = max(chart.values, default=0)
+    top = max((max(values, default=0) for _, values in series), default=0)
     bars.valueAxis.valueMax = max(top, 1) * 1.15 if top else 1
     bars.valueAxis.valueStep = max(1, round(max(top, 1) / 4))
-    bars.bars[0].fillColor = colors.HexColor(layout.GREEN_700)
-    bars.bars[0].strokeColor = None
-    bars.barLabels.fontName = FONT
-    bars.barLabels.fontSize = 7.5
-    bars.barLabelFormat = "%d"
-    bars.barLabels.nudge = 6
+    palette = [colors.HexColor(layout.GREEN_700), colors.HexColor(layout.GOLD_500)]
+    for i in range(len(series)):
+        bars.bars[i].fillColor = palette[i % len(palette)]
+        bars.bars[i].strokeColor = None
+    # Counts on the bars only while they fit.
+    if len(chart.labels) * len(series) <= 24:
+        bars.barLabels.fontName = FONT
+        bars.barLabels.fontSize = 7.5
+        bars.barLabelFormat = "%d"
+        bars.barLabels.nudge = 6
     drawing.add(bars)
+    if len(series) > 1:
+        legend = Legend()
+        legend.x, legend.y = bars.x + bars.width + 12, bars.y + bars.height
+        legend.fontName, legend.fontSize = FONT, 7.5
+        legend.boxAnchor = "nw"
+        legend.colorNamePairs = [(palette[i % len(palette)], name) for i, (name, _) in enumerate(series)]
+        drawing.add(legend)
     drawing.add(String(0, height - 10, chart.title, fontName=FONT_BOLD, fontSize=9.5,
                        fillColor=colors.HexColor(layout.INK_900)))
     return drawing
@@ -135,7 +154,7 @@ def _table(data: ReportData, styles, width: float) -> tuple[LongTable | Paragrap
     if not data.rows:
         return Paragraph(_text(data.empty_message), styles["body"]), 0
     rows = data.rows[: layout.PDF_MAX_ROWS]
-    numeric = {c.key for c in data.columns if c.kind in ("int", "money")}
+    numeric = {c.key for c in data.columns if c.kind in ("int", "plain", "money")}
     header = [Paragraph(_text(c.label), styles["head_right" if c.key in numeric else "head"]) for c in data.columns]
     body = [
         [Paragraph(_text(_format(row.get(c.key), c.kind)), styles["cell_right" if c.key in numeric else "cell"])

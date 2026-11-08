@@ -77,6 +77,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # So the browser can read a download's file name (report exports).
+    expose_headers=["Content-Disposition"],
 )
 
 app.include_router(auth.router)

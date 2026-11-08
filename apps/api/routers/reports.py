@@ -216,6 +216,7 @@ def _export_data(body: ReportExportFilters) -> ReportData:
     filters = ExportFilters(
         date_from=body.date_from, date_to=body.date_to, category=body.category,
         program=body.program, college=body.college, year_level=body.year_level,
+        floor=body.floor, aisle=body.aisle,
     )
     return REPORTS[body.report].build(get_admin_client(), filters)
 
@@ -233,6 +234,9 @@ def preview_export(body: ReportExportFilters, librarian: UserProfile = Depends(r
         key_figures=[ReportKeyFigure(label=f.label, value=f.value) for f in data.key_figures],
         computed_summary=data.computed_summary,
         row_count=len(data.rows),
+        uses_dates=data.uses_dates,
+        details_title=data.details.title if data.details else None,
+        details_row_count=len(data.details.rows) if data.details else 0,
         signature_titles=[
             ReportSignatureTitle(key=key, label=label, title=titles[key], placeholder=titles[key] == placeholder)
             for key, label, placeholder in SIGNATURE_ROLES
@@ -259,7 +263,9 @@ def export_report(body: ReportExportRequest, librarian: UserProfile = Depends(re
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
 
     if body.format == "csv":
-        return Response(content=build_csv(data), media_type=media_type, headers=headers)
+        if body.csv_table == "details" and data.details is not None:
+            headers = {"Content-Disposition": f'attachment; filename="{data.filename_stem}_details.csv"'}
+        return Response(content=build_csv(data, body.csv_table), media_type=media_type, headers=headers)
 
     settings = get_library_settings(get_admin_client())
     reviewed = (body.summary_text or "").strip()
