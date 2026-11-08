@@ -44,6 +44,7 @@ import { COLLEGES } from "@/lib/colleges"
 import { fetchLoans, settleFine, type Loan } from "@/lib/kiosk"
 import { fetchReservations } from "@/lib/reservations"
 import { fetchInHouseLoans, type InHouseLoan } from "@/lib/inhouse"
+import { usePagedRows } from "@/lib/pagedRows"
 import { buildFeed, inHouseFeed, isInHouse, TX_CONFIG, type FeedItem } from "@/lib/activity"
 import { fetchBookRequests, updateBookRequest, type BookRequest, type BookRequestStatus } from "@/lib/bookRequests"
 import { Pagination } from "@/components/ui/catalog"
@@ -393,15 +394,10 @@ function UsageReportCard({ report, filters, shown, onExport }: {
   onExport: () => void
 }) {
   const view = useExportView(report, filters, shown)
-  const [page, setPage] = useState(1)
+  // Back to page 1 when new rows arrive. view.rows is null while loading, so
+  // the reset never depends on a fresh `?? []` array (that looped).
+  const { page, setPage, totalPages, paged } = usePagedRows(view.rows?.rows, USAGE_PAGE_SIZE)
   const rows = view.rows?.rows ?? []
-  const [prevRows, setPrevRows] = useState(rows)
-  if (rows !== prevRows) {
-    setPrevRows(rows)
-    setPage(1)
-  }
-  const totalPages = Math.max(1, Math.ceil(rows.length / USAGE_PAGE_SIZE))
-  const paged = rows.slice((page - 1) * USAGE_PAGE_SIZE, page * USAGE_PAGE_SIZE)
   const columns = view.rows?.columns ?? []
 
   return (
