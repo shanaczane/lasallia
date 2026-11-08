@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
 
-from core import chat_sessions, chat_sources, rules
+from core import assistant_usage, chat_sessions, chat_sources, rules
 from core.config import OPENAI_API_KEY
 from core.deps import get_current_user, get_optional_user, kiosk_session_user
 from core.supabase import get_admin_client
@@ -164,6 +164,7 @@ def send_message(
             intent, rule_reply, rule_source = matched
             chat_sessions.append_message(admin, session_id, "user", body.message)
             chat_sessions.append_message(admin, session_id, "assistant", rule_reply, [rule_source])
+            assistant_usage.record_question(admin, session_id, body.surface, user, "rule")
             rules.record("rule", started_at, intent)
             yield _sse("done", {
                 "reply": rule_reply,
@@ -305,6 +306,7 @@ def send_message(
         )
         chat_sessions.append_message(admin, session_id, "user", body.message)
         chat_sessions.append_message(admin, session_id, "assistant", reply, sources)
+        assistant_usage.record_question(admin, session_id, body.surface, user, "ai")
 
         rules.record("rag", started_at)
         yield _sse("done", {
