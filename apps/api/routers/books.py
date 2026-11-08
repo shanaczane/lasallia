@@ -16,6 +16,7 @@ from core.importers.marc import LARGE_JUMP, large_jump
 from core.isbn import clean_isbn_input, normalize_isbn
 from core.loans import find_removal_blocker
 from core.reservations import maybe_sweep_expired_reservations
+from core.rows import fetch_all_rows
 from core.supabase import get_admin_client, get_client
 from schemas.auth import UserProfile
 from schemas.book import (
@@ -29,7 +30,7 @@ router = APIRouter(prefix="/books", tags=["books"])
 
 # The whole catalog is sent at once and filtered in the browser. Add
 # pagination if it grows too big.
-DEFAULT_LIMIT = 1000
+DEFAULT_LIMIT: int | None = None  # every book
 
 def _redact_for_patrons(books: list[dict], user: UserProfile | None) -> list[dict]:
     # Removed here on the server for everyone except librarians:
@@ -103,7 +104,7 @@ def _apply_real_availability(books: list[dict], copy_rows: list[dict]) -> list[d
 
 @router.get("", response_model=BookSearchResponse)
 def list_books(
-    limit: int = DEFAULT_LIMIT,
+    limit: int | None = DEFAULT_LIMIT,
     # Descriptions are most of the size and only some pages need them.
     include_abstract: bool = False,
     user: UserProfile | None = Depends(get_optional_user),
@@ -111,26 +112,30 @@ def list_books(
     db = get_client()
     maybe_sweep_expired_reservations(get_admin_client())
     # Archived books are hidden from every catalog view.
+    # Both read page by page: a single read stops at 1,000 rows, which
+    # would undercount copies everywhere the catalog is shown.
     def fetch_books():
-        return db.table("books").select("*").is_("archived_at", "null").order("title").limit(limit).execute()
+        rows = fetch_all_rows(
+            lambda: db.table("books").select("*").is_("archived_at", "null").order("title").order("id"))
+        return rows[:limit] if limit else rows
 
     def fetch_copies():
-        return get_admin_client().table("book_copies").select("book_id, status").execute()
+        return fetch_all_rows(lambda: get_admin_client().table("book_copies").select("book_id, status").order("id"))
 
     # Copies are read with the admin client (they have no public RLS); only
     # counts and statuses are returned. Both reads run in parallel.
     with ThreadPoolExecutor(max_workers=2) as pool:
         books_future = pool.submit(fetch_books)
         copies_future = pool.submit(fetch_copies)
-        books = books_future.result().data
-        copies_data = copies_future.result().data
+        books = books_future.result()
+        copies_data = copies_future.result()
     if not include_abstract:
         for b in books:
             b.pop("abstract", None)
     books = _apply_real_availability(books, copies_data)
     books = _redact_for_patrons(books, user)
 
-    return BookSearchResponse(books=books, total=len(books), page=1, per_page=limit)
+    return BookSearchResponse(books=books, total=len(books), page=1, per_page=limit or len(books))
 
 # ─── Adding and editing books (librarians only) ──────────────────────────
 

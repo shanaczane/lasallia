@@ -14,6 +14,7 @@ from core.reservations import (
     sweep_expired_reservations,
 )
 from core.settings import get_library_settings
+from core.rows import fetch_all_rows
 from core.supabase import get_admin_client
 from routers.books import _redact_for_patrons
 from schemas.auth import UserProfile
@@ -47,11 +48,12 @@ def list_reservations(
 
     # RLS limits students to their own rows; librarians see all. user_id
     # narrows a librarian's view to one patron.
-    query = db.table("reservations").select("*, books(*), profiles(*)").order("requested_at", desc=True)
-    if user_id:
-        query = query.eq("user_id", user_id)
-    res = query.execute()
-    reservations = res.data
+    # Every matching reservation, page by page (a single read stops at 1,000).
+    def query():
+        q = db.table("reservations").select("*, books(*), profiles(*)").order("requested_at", desc=True).order("id")
+        return q.eq("user_id", user_id) if user_id else q
+
+    reservations = fetch_all_rows(query)
 
     # Queue position counts other students' reservations, so it needs the
     # admin client (only a number is returned). Ready dates are only

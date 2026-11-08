@@ -68,6 +68,8 @@ export function ReportExportDialog({
   useDialogKeyboard(dialogRef, { open: true, onClose })
 
   const [format, setFormat] = useState<ReportExportFormat>(initialFormat)
+  // CSV only: the main table, or the details table when the report has one.
+  const [csvTable, setCsvTable] = useState<"main" | "details">("main")
   const [preview, setPreview] = useState<ReportExportPreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   // undefined while the AI draft loads; null when AI isn't available.
@@ -114,6 +116,7 @@ export function ReportExportDialog({
       await downloadReportExport(request, {
         format,
         summary_source: source,
+        csv_table: format === "csv" && preview?.details_title ? csvTable : undefined,
         summary_text: withLayout ? summary.trim() || undefined : undefined,
         prepared_by_name: names.prepared_by.trim() || undefined,
         noted_by_name: names.noted_by.trim() || undefined,
@@ -212,6 +215,11 @@ export function ReportExportDialog({
             {preview.filters.length > 0 && (
               <p className="text-ink-500" style={small}>{preview.filters.join(" · ")}</p>
             )}
+            {!preview.uses_dates && (
+              <p className="text-ink-500" style={small}>
+                This report is a snapshot as of now, so the page&apos;s date range doesn&apos;t apply to it.
+              </p>
+            )}
           </div>
         )}
 
@@ -300,10 +308,33 @@ export function ReportExportDialog({
             </div>
           </>
         ) : (
-          <p className="text-ink-500" style={small}>
-            The CSV has the table only (row 1 is the column names), so it opens cleanly in other systems. The period is
-            in the file name.
-          </p>
+          <div className="flex flex-col gap-2">
+            {preview?.details_title && (
+              <fieldset className="flex flex-col gap-1.5">
+                <legend className="text-ink-400 font-semibold uppercase mb-1" style={label}>Table</legend>
+                {([
+                  ["main", `${preview.title} (${preview.row_count.toLocaleString()} rows)`],
+                  ["details", `${preview.details_title} (${preview.details_row_count.toLocaleString()} rows)`],
+                ] as const).map(([value, text]) => (
+                  <label key={value} className="flex items-center gap-2 text-ink-700 cursor-pointer" style={body}>
+                    <input
+                      type="radio"
+                      name="csv-table"
+                      checked={csvTable === value}
+                      onChange={() => setCsvTable(value)}
+                      className="accent-green-700"
+                    />
+                    {text}
+                  </label>
+                ))}
+              </fieldset>
+            )}
+            <p className="text-ink-500" style={small}>
+              The CSV has the table only (row 1 is the column names), so it opens cleanly in other systems. The period is
+              in the file name.
+              {preview?.details_title ? ` The Excel file has both tables, on separate sheets.` : ""}
+            </p>
+          </div>
         )}
 
         {error && (

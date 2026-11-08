@@ -8,7 +8,7 @@ from core.dates import report_bound
 from core.deps import require_librarian, require_librarian_profile
 from core.inventory import list_sessions, report_items
 from core.report_export.csv_file import build_csv
-from core.report_export.definitions import REPORTS, ExportFilters, ReportData
+from core.report_export.definitions import REPORTS, ExportFilters, ReportData, ReportUnavailable, ai_input
 from core.report_export.excel import build_excel
 from core.report_export.layout import (
     SIGNATURE_ROLES,
@@ -48,6 +48,7 @@ from schemas.reports import (
     ReportExportFilters,
     ReportExportPreview,
     ReportExportRequest,
+    ReportExportRows,
     ReportKeyFigure,
     ReportSignatureTitle,
     ReportSummaries,
@@ -225,8 +226,12 @@ def _export_data(body: ReportExportFilters) -> ReportData:
         program=body.program, college=body.college, year_level=body.year_level,
         user_type=_one_user_type(body.user_type),
         librarian_profile_id=body.librarian_profile_id, action=body.action,
+        floor=body.floor, aisle=body.aisle,
     )
-    return REPORTS[body.report].build(get_admin_client(), filters)
+    try:
+        return REPORTS[body.report].build(get_admin_client(), filters)
+    except ReportUnavailable as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from e
 
 
 @router.post("/export/preview", response_model=ReportExportPreview)
@@ -242,10 +247,27 @@ def preview_export(body: ReportExportFilters, librarian: UserProfile = Depends(r
         key_figures=[ReportKeyFigure(label=f.label, value=f.value) for f in data.key_figures],
         computed_summary=data.computed_summary,
         row_count=len(data.rows),
+        uses_dates=data.uses_dates,
+        details_title=data.details.title if data.details else None,
+        details_row_count=len(data.details.rows) if data.details else 0,
         signature_titles=[
             ReportSignatureTitle(key=key, label=label, title=titles[key], placeholder=titles[key] == placeholder)
             for key, label, placeholder in SIGNATURE_ROLES
         ],
+    )
+
+
+@router.post("/export/rows", response_model=ReportExportRows)
+def export_rows(body: ReportExportFilters, librarian: UserProfile = Depends(require_librarian)):
+    """The report's table, as the export would print it, for showing on the
+    page (the Usage tab). Same rows as the PDF, Excel and CSV."""
+    data = _export_data(body)
+    return ReportExportRows(
+        title=data.title,
+        period=data.period,
+        columns=[{"key": c.key, "label": c.label, "kind": c.kind} for c in data.columns],
+        rows=data.rows,
+        empty_message=data.empty_message,
     )
 
 
@@ -254,7 +276,7 @@ def ai_summary_for_export(body: ReportExportFilters, librarian: UserProfile = De
     """An AI draft for the librarian to review. Only the report's totals
     and breakdowns are sent to OpenAI. None when AI isn't available."""
     data = _export_data(body)
-    return ReportAiSummary(summary=summarize_aggregate(data.title, data.ai_payload))
+    return ReportAiSummary(summary=summarize_aggregate(data.title, ai_input(data)))
 
 
 @router.post("/export")
@@ -274,7 +296,9 @@ def export_report(body: ReportExportRequest, librarian: UserProfile = Depends(re
     })
 
     if body.format == "csv":
-        return Response(content=build_csv(data), media_type=media_type, headers=headers)
+        if body.csv_table == "details" and data.details is not None:
+            headers = {"Content-Disposition": f'attachment; filename="{data.filename_stem}_details.csv"'}
+        return Response(content=build_csv(data, body.csv_table), media_type=media_type, headers=headers)
 
     settings = get_library_settings(get_admin_client())
     reviewed = (body.summary_text or "").strip()

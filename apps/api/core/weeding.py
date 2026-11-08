@@ -9,6 +9,7 @@ from openai import OpenAI
 from supabase import Client
 
 from core.config import OPENAI_API_KEY
+from core.rows import fetch_all_rows, fetch_rows_by_ids
 
 # Library policy choices, not technical ones.
 WEEDING_LOOKBACK_MONTHS = 24
@@ -67,30 +68,33 @@ def find_weeding_candidates(admin: Client) -> list[WeedingCandidateData]:
     now = datetime.now(timezone.utc)
     lookback_start = now - timedelta(days=WEEDING_LOOKBACK_MONTHS * 30)
 
-    books = (
-        admin.table("books")
+    # Every book, copy and loan, page by page (a single read stops at 1,000).
+    books = fetch_all_rows(
+        lambda: admin.table("books")
         .select("id, title, author, category, published_year, created_at")
         .is_("archived_at", "null")
         .is_("weeding_dismissed_at", "null")
-        .execute()
-    ).data
+        .order("id")
+    )
     if not books:
         return []
 
-    book_ids = [b["id"] for b in books]
-    copies = admin.table("book_copies").select("id, book_id").in_("book_id", book_ids).execute().data
+    book_ids = {b["id"] for b in books}
+    copies = [c for c in fetch_all_rows(lambda: admin.table("book_copies").select("id, book_id").order("id"))
+              if c["book_id"] in book_ids]
     copy_to_book = {c["id"]: c["book_id"] for c in copies}
     copy_ids = list(copy_to_book.keys())
 
     borrow_counts: dict[str, int] = {}
     if copy_ids:
-        loans = (
-            admin.table("loans")
-            .select("book_copy_id")
-            .in_("book_copy_id", copy_ids)
+        loans = fetch_rows_by_ids(
+            lambda ids: admin.table("loans")
+            .select("id, book_copy_id")
+            .in_("book_copy_id", ids)
             .gte("borrowed_at", lookback_start.isoformat())
-            .execute()
-        ).data
+            .order("id"),
+            copy_ids,
+        )
         for loan in loans:
             book_id = copy_to_book.get(loan["book_copy_id"])
             if book_id:
@@ -171,14 +175,23 @@ def dismiss_candidate(admin: Client, book_id: str, performed_by: str, reason: st
     _log_event(admin, book_id, "dismissed", reason, performed_by)
 
 
-def get_weeding_events(admin: Client, limit: int = 50) -> list[dict]:
-    rows = (
-        admin.table("weeding_events")
-        .select("*, books(title), profiles(full_name)")
-        .order("occurred_at", desc=True)
-        .limit(limit)
-        .execute()
-    ).data
+def get_weeding_events(
+    admin: Client, limit: int | None = None, date_from: str | None = None, date_to: str | None = None,
+) -> list[dict]:
+    """Weeding actions, newest first: all of them, or those in a period
+    (date_from/date_to as report_bound makes them), up to `limit`."""
+    def query():
+        q = (admin.table("weeding_events").select("*, books(title), profiles(full_name)")
+             .order("occurred_at", desc=True).order("id"))
+        if date_from:
+            q = q.gte("occurred_at", date_from)
+        if date_to:
+            q = q.lte("occurred_at", date_to)
+        return q
+
+    rows = fetch_all_rows(query)
+    if limit:
+        rows = rows[:limit]
     events = []
     for r in rows:
         book = r.pop("books", None)

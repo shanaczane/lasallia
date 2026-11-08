@@ -18,7 +18,7 @@ from core.report_export.cells import put_cell
 from core.report_export.definitions import ReportData, manila_time_text
 
 _PAPER_CODES = {"A4": 9, "Letter": 1}  # openpyxl / Excel paperSize values
-_NUMBER_FORMATS = {"int": "#,##0", "money": '"₱"#,##0.00'}
+_NUMBER_FORMATS = {"int": "#,##0", "plain": "0", "money": '"₱"#,##0.00'}
 _GREEN = layout.GREEN_700.lstrip("#")
 _GREEN_LIGHT = layout.GREEN_50.lstrip("#")
 _MUTED = layout.INK_500.lstrip("#")
@@ -46,10 +46,29 @@ def wrapped_lines(text: str, width: float) -> int:
     return sum(max(1, len(textwrap.wrap(part, usable, break_long_words=True))) for part in str(text).splitlines() or [""])
 
 
-def style_chart_axes(chart: BarChart) -> None:
+# Series colours: green, then gold (borrows, then returns).
+_SERIES_COLORS = [c.lstrip("#") for c in layout.SERIES_COLORS]
+# More bars than this and the counts on top of them would crowd each other.
+_MAX_LABELLED_BARS = 24
+
+
+def axis_scale(highest: float) -> tuple[float, float]:
+    """(step, maximum) for a value axis starting at 0: a round step (1, 2 or
+    5 times a power of ten) giving about five gridlines, and a maximum at
+    least one full step above the highest bar, so the count on top of it
+    can't reach the chart title."""
+    highest = max(float(highest), 1.0)
+    rough = highest / 5
+    magnitude = 10 ** math.floor(math.log10(rough)) if rough >= 1 else 1
+    step = max(1, next(m * magnitude for m in (1, 2, 5, 10) if m * magnitude >= rough))
+    return step, math.ceil((highest + step) / step) * step
+
+
+def style_chart_axes(chart: BarChart, show_values: bool = True, highest: float = 0) -> None:
     """Shows the category labels and the value axis numbers. openpyxl leaves
     the axes' "delete" and label settings out, and Excel and LibreOffice
-    then hide both axes."""
+    then hide both axes. The value axis gets a fixed step and a maximum a
+    step above `highest`, the tallest bar."""
     chart.x_axis.delete = False
     chart.y_axis.delete = False
     chart.x_axis.axPos = "b"
@@ -58,8 +77,12 @@ def style_chart_axes(chart: BarChart) -> None:
     chart.x_axis.majorTickMark = "out"
     chart.y_axis.majorTickMark = "out"
     chart.y_axis.numFmt = "0"           # whole counts
-    chart.y_axis.majorUnit = None       # let the app pick the steps
+    step, maximum = axis_scale(highest)
+    chart.y_axis.majorUnit = step
     chart.y_axis.scaling.min = 0
+    chart.y_axis.scaling.max = maximum
+    if not show_values:
+        return
     # The count on top of each bar, as in the PDF.
     chart.dataLabels = DataLabelList()
     chart.dataLabels.showVal = True
@@ -128,28 +151,43 @@ def build_excel(data: ReportData, options: layout.ExportOptions) -> bytes:
     row = line(row, options.summary_text, wrap=True, height=15 * lines_needed)
 
     if data.chart is not None:
+        series = data.chart.series
         data_ws = wb.create_sheet("Chart data")
         put_cell(data_ws, 1, 1, data.chart.title)
         put_cell(data_ws, 2, 1, "Group")
-        put_cell(data_ws, 2, 2, data.chart.value_label)
-        for i, (label, value) in enumerate(zip(data.chart.labels, data.chart.values), start=3):
+        for j, (name, values) in enumerate(series, start=2):
+            put_cell(data_ws, 2, j, name)
+            for i, value in enumerate(values, start=3):
+                put_cell(data_ws, i, j, value)
+            data_ws.column_dimensions[get_column_letter(j)].width = max(14, len(name) + 2)
+        for i, label in enumerate(data.chart.labels, start=3):
             put_cell(data_ws, i, 1, label)
-            put_cell(data_ws, i, 2, value)
         end = 2 + len(data.chart.labels)
         data_ws.column_dimensions["A"].width = max(14, *(len(label) + 2 for label in data.chart.labels))
-        data_ws.column_dimensions["B"].width = max(14, len(data.chart.value_label) + 2)
         chart = BarChart()
         chart.type = "col"
         chart.title = data.chart.title
-        chart.legend = None
+        # A legend only when there's more than one series to tell apart.
+        if len(series) == 1:
+            chart.legend = None
+        else:
+            # On the right, where it can't cover the category labels.
+            chart.legend.position = "r"
         # No value-axis title: the chart title already says what is counted,
         # and the rotated title overlapped the tick labels.
         chart.y_axis.majorGridlines = None
-        chart.add_data(Reference(data_ws, min_col=2, min_row=2, max_row=end), titles_from_data=True)
+        chart.add_data(Reference(data_ws, min_col=2, max_col=1 + len(series), min_row=2, max_row=end),
+                       titles_from_data=True)
         chart.set_categories(Reference(data_ws, min_col=1, min_row=3, max_row=end))
-        chart.series[0].graphicalProperties.solidFill = _GREEN
-        style_chart_axes(chart)
-        chart.height, chart.width = 7.5, 16
+        for s, color in zip(chart.series, _SERIES_COLORS):
+            s.graphicalProperties.solidFill = color
+        style_chart_axes(
+            chart,
+            show_values=len(data.chart.labels) * len(series) <= _MAX_LABELLED_BARS,
+            highest=max((max(values, default=0) for _, values in series), default=0),
+        )
+        # Wider for many bars (daily or weekly periods).
+        chart.height, chart.width = 7.5, min(28, max(16, len(data.chart.labels) * len(series) * 0.7))
         row += 1
         ws.add_chart(chart, f"A{row}")
         row += _CHART_ROWS
@@ -157,35 +195,12 @@ def build_excel(data: ReportData, options: layout.ExportOptions) -> bytes:
     row += 1
     row = line(row, f"Details ({len(data.rows):,} {'row' if len(data.rows) == 1 else 'rows'})", Font(bold=True, color=_GREEN))
     header_row = row
-    thin = Side(style="thin", color=layout.INK_200.lstrip("#"))
-    for col, column in enumerate(columns, start=1):
-        cell = put_cell(ws, row, col, column.label)
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor=_GREEN)
-        # Left-aligned and wrapped, so the filter button at the right edge
-        # never sits on the text.
-        cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-        cell.border = Border(bottom=thin)
-    ws.row_dimensions[row].height = 30
-    row += 1
     if not data.rows:
-        row = line(row, data.empty_message, Font(color=_MUTED))
+        _write_table(ws, row, columns, [])
+        row = line(row + 1, data.empty_message, Font(color=_MUTED))
+    else:
+        row = _write_table(ws, row, columns, data.rows)
     widths = [column_width(c.label, c.width) for c in columns]
-    for i, record in enumerate(data.rows):
-        lines = 1
-        for col, column in enumerate(columns, start=1):
-            value = record.get(column.key)
-            cell = put_cell(ws, row, col, value, _NUMBER_FORMATS.get(column.kind))
-            cell.alignment = Alignment(vertical="top", wrap_text=column.kind == "text")
-            if i % 2:
-                cell.fill = PatternFill("solid", fgColor=_GREEN_LIGHT)
-            if column.kind == "text" and value:
-                lines = max(lines, wrapped_lines(value, widths[col - 1]))
-        # Tall enough for the most-wrapped cell in the row, in every column.
-        ws.row_dimensions[row].height = _LINE_HEIGHT * lines + 2
-        row += 1
-    if data.rows:
-        ws.auto_filter.ref = f"A{header_row}:{last_letter}{row - 1}"
 
     # Signature lines, one block per signatory across the columns.
     row += 2
@@ -220,6 +235,54 @@ def build_excel(data: ReportData, options: layout.ExportOptions) -> bytes:
     ws.oddFooter.left.text = data.title
     ws.oddFooter.right.text = "Page &P of &N"
 
+    # A second, more detailed table (Inventory's copies) on its own sheet.
+    if data.details is not None:
+        detail_ws = wb.create_sheet(_sheet_title(data.details.title))
+        _write_table(detail_ws, 1, data.details.columns, data.details.rows)
+        detail_ws.freeze_panes = "A2"  # nothing above the table here
+        for col, column in enumerate(data.details.columns, start=1):
+            detail_ws.column_dimensions[get_column_letter(col)].width = column_width(column.label, column.width)
+        detail_ws.print_title_rows = "1:1"
+        detail_ws.page_setup.orientation = layout.ORIENTATION
+        detail_ws.page_setup.paperSize = _PAPER_CODES[layout.PAPER_SIZE]
+        # Every column on one page width, like the main sheet.
+        detail_ws.page_setup.fitToWidth = 1
+        detail_ws.page_setup.fitToHeight = 0
+        detail_ws.sheet_properties.pageSetUpPr.fitToPage = True
+
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def _write_table(ws, header_row: int, columns, rows) -> int:
+    """Writes a header row and the rows below it, with filter buttons and
+    row heights for wrapped text. Returns the row after the table."""
+    thin = Side(style="thin", color=layout.INK_200.lstrip("#"))
+    for col, column in enumerate(columns, start=1):
+        cell = put_cell(ws, header_row, col, column.label)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor=_GREEN)
+        # Left-aligned and wrapped, so the filter button at the right edge
+        # never sits on the text.
+        cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        cell.border = Border(bottom=thin)
+    ws.row_dimensions[header_row].height = 30
+    widths = [column_width(c.label, c.width) for c in columns]
+    row = header_row + 1
+    for i, record in enumerate(rows):
+        lines = 1
+        for col, column in enumerate(columns, start=1):
+            value = record.get(column.key)
+            cell = put_cell(ws, row, col, value, _NUMBER_FORMATS.get(column.kind))
+            cell.alignment = Alignment(vertical="top", wrap_text=column.kind == "text")
+            if i % 2:
+                cell.fill = PatternFill("solid", fgColor=_GREEN_LIGHT)
+            if column.kind == "text" and value:
+                lines = max(lines, wrapped_lines(value, widths[col - 1]))
+        # Tall enough for the most-wrapped cell in the row, in every column.
+        ws.row_dimensions[row].height = _LINE_HEIGHT * lines + 2
+        row += 1
+    if rows:
+        ws.auto_filter.ref = f"A{header_row}:{get_column_letter(len(columns))}{row - 1}"
+    return row

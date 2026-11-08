@@ -15,15 +15,20 @@ def _value(value, kind: str):
         return ""
     if kind == "money":
         return f"{float(value):.2f}"
-    if kind == "int":
+    if kind in ("int", "plain"):
         return str(int(value))
     return csv_text(str(value))  # text and dates
 
 
-def build_csv(data: ReportData) -> bytes:
+def build_csv(data: ReportData, table: str = "main") -> bytes:
+    """The report's table, or with table="details" its detail table
+    (Inventory's copies) when it has one."""
+    columns, rows = data.columns, data.rows
+    if table == "details" and data.details is not None:
+        columns, rows = data.details.columns, data.details.rows
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\r\n")
-    writer.writerow([csv_text(c.label) for c in data.columns])
-    for row in data.rows:
-        writer.writerow([_value(row.get(c.key), c.kind) for c in data.columns])
+    writer.writerow([csv_text(c.label) for c in columns])
+    for row in rows:
+        writer.writerow([_value(row.get(c.key), c.kind) for c in columns])
     return buf.getvalue().encode("utf-8-sig")

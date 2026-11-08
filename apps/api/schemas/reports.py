@@ -136,8 +136,16 @@ class ReportSummaries(BaseModel):
 ReportUserType = Literal["student", "faculty", "all"]
 
 
+ExportableReport = Literal[
+    "overdue", "circulation", "borrowing_stats", "top_patrons", "fines", "catalog", "shelf_list",
+    "weeding_candidates", "weeding_log", "inventory", "book_requests",
+    "top_titles", "reservations", "accession_register", "library_usage", "assistant_usage",
+    "overview", "activity_log", "audit_log",
+]
+
+
 class ReportExportFilters(BaseModel):
-    report: Literal["overdue", "audit_log"]
+    report: ExportableReport
     # Whole Manila days, both included. Leave out for all dates.
     date_from: date | None = None
     date_to: date | None = None
@@ -149,10 +157,15 @@ class ReportExportFilters(BaseModel):
     # Audit log only.
     librarian_profile_id: str | None = Field(None, max_length=64)
     action: str | None = Field(None, max_length=64)
+    # Shelf list only.
+    floor: str | None = Field(None, max_length=100)
+    aisle: str | None = Field(None, max_length=100)
 
 
 class ReportExportRequest(ReportExportFilters):
     format: Literal["pdf", "xlsx", "csv"]
+    # CSV only: the main table, or the detail table (Inventory's copies).
+    csv_table: Literal["main", "details"] = "main"
     # The summary the librarian reviewed. Left out: the computed summary.
     summary_text: str | None = Field(None, max_length=2000)
     # Where the reviewed text started: the AI draft or the computed summary.
@@ -182,7 +195,28 @@ class ReportExportPreview(BaseModel):
     key_figures: list[ReportKeyFigure]
     computed_summary: str
     row_count: int
+    # False for snapshot reports (catalog, shelf list, weeding candidates):
+    # "as of" now, so the date filter doesn't apply.
+    uses_dates: bool = True
+    # A second table (Inventory's copies): its own Excel sheet, a CSV option.
+    details_title: str | None = None
+    details_row_count: int = 0
     signature_titles: list[ReportSignatureTitle]
+
+
+class ReportExportColumn(BaseModel):
+    key: str
+    label: str
+    kind: Literal["text", "int", "plain", "money", "date"]
+
+
+class ReportExportRows(BaseModel):
+    """A report's table for the page: the export's own columns and rows."""
+    title: str
+    period: str
+    columns: list[ReportExportColumn]
+    rows: list[dict[str, str | int | float | None]]
+    empty_message: str
 
 
 class ReportAiSummary(BaseModel):

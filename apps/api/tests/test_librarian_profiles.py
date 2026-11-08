@@ -290,6 +290,7 @@ READ_ONLY_POSTS = {
     ("POST", "/desk/identify"),                        # POST keeps the card id out of URLs
     ("POST", "/reports/export/preview"),
     ("POST", "/reports/export/ai-summary"),
+    ("POST", "/reports/export/rows"),                  # the rows shown on the Usage tab
     ("POST", "/librarian-profiles/{profile_id}/sign-in"),
 }
 # Reads that count as writes: exports leave the system.
