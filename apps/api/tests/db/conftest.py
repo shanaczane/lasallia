@@ -1,5 +1,7 @@
 # Database tests for migrations/0058_accession_numbers.sql and
-# 0059_copy_origin.sql. They run the real SQL against a throwaway Postgres and are skipped unless
+# 0059_copy_origin.sql (applied here for every test), plus
+# 0060_report_signatures.sql and 0070_assistant_usage.sql, which their own
+# test files apply. They run the real SQL against a throwaway Postgres and are skipped unless
 # TEST_DATABASE_URL is set. Never point it at the Supabase project: every
 # test drops and recreates the public schema.
 #

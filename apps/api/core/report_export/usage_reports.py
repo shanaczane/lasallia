@@ -190,7 +190,7 @@ def build_library_usage(admin, filters: ExportFilters) -> ReportData:
 
 
 # ─── Library assistant usage (period) ───────────────────────────────────
-# From assistant_usage (migrations/0061): one row per answered question,
+# From assistant_usage (migrations/0070): one row per answered question,
 # with no text and no user id.
 
 SURFACES = {"kiosk": "Kiosk", "web": "Web"}
@@ -268,7 +268,7 @@ def build_assistant_usage(admin, filters: ExportFilters) -> ReportData:
         # PGRST205 / 42P01: the table isn't there yet.
         if e.code in ("PGRST205", "42P01"):
             raise ReportUnavailable(
-                "Library assistant usage isn't available yet: migration 0061_assistant_usage.sql "
+                "Library assistant usage isn't available yet: migration 0070_assistant_usage.sql "
                 "hasn't been applied.") from e
         raise
 

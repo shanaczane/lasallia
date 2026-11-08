@@ -1,4 +1,4 @@
-"""Counting library assistant use (migrations/0061_assistant_usage.sql).
+"""Counting library assistant use (migrations/0070_assistant_usage.sql).
 
 One row per answered question: when, where (kiosk or web), what kind of
 user (guest, student, faculty or staff) and whether the rule-based path or

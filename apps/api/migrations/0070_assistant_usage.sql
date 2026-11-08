@@ -1,4 +1,4 @@
--- 0061_assistant_usage.sql
+-- 0070_assistant_usage.sql
 -- A count of library assistant use that survives deleted chats, for the
 -- Library Assistant Usage report. One row per answered question.
 --

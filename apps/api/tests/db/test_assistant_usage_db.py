@@ -1,4 +1,4 @@
-# migrations/0061_assistant_usage.sql against a real Postgres: the
+# migrations/0070_assistant_usage.sql against a real Postgres: the
 # backfill, re-running it, and that anon and signed-in users can't reach
 # the table.
 
@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from psycopg import errors
 
-MIGRATION = Path(__file__).resolve().parents[2] / "migrations" / "0061_assistant_usage.sql"
+MIGRATION = Path(__file__).resolve().parents[2] / "migrations" / "0070_assistant_usage.sql"
 
 # chat_sessions / chat_messages / station_sessions as in 0004 and 0016,
 # plus profiles.role.

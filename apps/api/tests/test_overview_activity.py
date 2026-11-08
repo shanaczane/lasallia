@@ -1,6 +1,6 @@
 # The Library Overview and Activity Log exports: figures that match their
 # own reports and add up, every format, privacy, and what happens before
-# migration 0061. The database is faked.
+# migration 0070. The database is faked.
 
 import json
 import re
@@ -118,13 +118,13 @@ def _client(monkeypatch, db):
     return TestClient(app)
 
 
-def test_overview_works_before_migration_0061(monkeypatch):
+def test_overview_works_before_migration_0070(monkeypatch):
     db = MissingUsageTable(**round2_world().tables)
     res = _client(monkeypatch, db).post("/reports/export/preview", json={"report": "overview"})
     assert res.status_code == 200, res.text
     data = REPORTS["overview"].build(db, NOVEMBER)
     row = {r["figure"]: r for r in data.rows}["Questions answered"]
-    assert row["value"] == "Not available yet" and "0061" in row["counted"]
+    assert row["value"] == "Not available yet" and "0070" in row["counted"]
 
 
 # ─── Activity Log ───────────────────────────────────────────────────────

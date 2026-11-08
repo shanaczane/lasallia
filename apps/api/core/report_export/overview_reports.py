@@ -100,7 +100,7 @@ def build_overview(admin, filters: ExportFilters) -> ReportData:
         ("Library usage", _figure(usage, "Borrowing station sessions"), IN_PERIOD),
         ("Library assistant",
          _figure(assistant, "Questions answered") if assistant else KeyFigure("Questions answered", NOT_AVAILABLE),
-         IN_PERIOD if assistant else "Needs migration 0061_assistant_usage.sql"),
+         IN_PERIOD if assistant else "Needs migration 0070_assistant_usage.sql"),
     ]
     rows = [{"area": area, "figure": f.label, "value": f.value, "counted": counted} for area, f, counted in picked]
     by_label = {f.label: f for _, f, _ in picked}

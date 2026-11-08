@@ -370,7 +370,7 @@ def test_assistant_usage_before_the_migration_says_so(monkeypatch):
     db = MissingUsageTable(**round2_world().tables)
     res = _client(monkeypatch, db).post("/reports/export/preview", json={"report": "assistant_usage"})
     assert res.status_code == 503
-    assert "0061_assistant_usage.sql" in res.json()["detail"]
+    assert "0070_assistant_usage.sql" in res.json()["detail"]
 
 
 # ─── On-screen rows ─────────────────────────────────────────────────────
