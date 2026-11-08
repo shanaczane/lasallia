@@ -14,12 +14,20 @@ const CFG: Record<UserRole, string> = {
   guest:     "bg-ink-100 text-ink-500",
 }
 
+const TEXT: Record<UserRole, string> = {
+  student:   "text-info",
+  faculty:   "text-gold-600",
+  librarian: "text-green-700",
+  guest:     "text-ink-500",
+}
+
 export function RoleBadge({
   role,
   college,
   program,
   yearLevel,
   profileName,
+  variant = "pill",
   className,
 }: {
   role: UserRole
@@ -28,8 +36,23 @@ export function RoleBadge({
   program?: string | null
   yearLevel?: number | null
   profileName?: string | null
+  // "text": a plain line under a name (the top bar), so it leaves out the
+  // librarian's name, which is already shown above it.
+  variant?: "pill" | "text"
   className?: string
 }) {
+  if (variant === "text") {
+    const line = roleLine(role, { college: college ?? collegeForProgram(program), yearLevel })
+    return (
+      <span
+        title={line}
+        className={cn("block max-w-full truncate font-semibold leading-tight", TEXT[role], className)}
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-micro)" }}
+      >
+        {line}
+      </span>
+    )
+  }
   const line = roleLine(role, { college: college ?? collegeForProgram(program), yearLevel, profileName })
   return (
     <span

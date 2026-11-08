@@ -1,11 +1,22 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { cloneElement, isValidElement, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { LogOut, Menu, Settings, User } from "lucide-react"
+import { ChevronDown, LogOut, Menu, Settings, User } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { clearSession, verifySessionActive } from "@/lib/auth"
+import { displayName, shortName } from "@/lib/names"
 import { NotificationBellMenu } from "@/components/ui/notifications/NotificationBellMenu"
+import { RoleBadge } from "@/components/ui/patrons/RoleBadge"
+
+// The role line under the name in the bar: the layout's RoleBadge as plain
+// text. Anything else is left out of the bar (it still shows in the menu).
+function inlineRole(userType: React.ReactNode): React.ReactNode {
+  if (isValidElement<React.ComponentProps<typeof RoleBadge>>(userType) && userType.type === RoleBadge) {
+    return cloneElement(userType, { variant: "text" })
+  }
+  return null
+}
 
 // How often an already-open tab re-checks whether its account is still
 // active. Short enough that a librarian deactivating someone mid-session
@@ -55,6 +66,9 @@ export function TopNav({
 }: TopNavProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const fullName = displayName(userName) || "User"
+  const barName = shortName(userName) || "User"
+  const roleText = inlineRole(userType)
 
   // TopNav renders on every authenticated page in all three role layouts,
   // so this one effect is enough to cover librarian, student, and guest
@@ -156,9 +170,6 @@ export function TopNav({
       {/* Right side */}
       <div className="flex items-center gap-1 shrink-0">
 
-        {/* Narrow on phones; the menu below has room for the whole line. */}
-        {userType && <div className="flex min-w-0 max-w-24 sm:max-w-xs mr-1">{userType}</div>}
-
         {/* Bell — dropdown preview with a "View all" link to the full page */}
         {showNotifications && (
           <NotificationBellMenu count={notificationCount} href={notificationsHref} />
@@ -174,23 +185,36 @@ export function TopNav({
             onClick={() => showSignOut && setMenuOpen((v) => !v)}
             aria-haspopup={showSignOut ? "menu" : undefined}
             aria-expanded={showSignOut ? menuOpen : undefined}
+            aria-label={showSignOut ? `Account menu for ${fullName}` : undefined}
+            title={fullName}
             className={cn(
-              "flex items-center gap-2.5 py-1 pl-1 pr-1 sm:pr-2.5 rounded-(--radius-sm) transition-colors",
+              "flex items-center gap-2.5 py-1 pl-1 pr-1 sm:pr-2 rounded-(--radius-sm) text-left transition-colors",
               showSignOut && "hover:bg-ink-100 active:bg-ink-200 cursor-pointer"
             )}
           >
             <div
               className="flex items-center justify-center rounded-full bg-green-100 text-green-800 font-semibold ring-1 ring-green-200 shrink-0"
-              style={{ width: 32, height: 32, fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
+              style={{ width: 36, height: 36, fontSize: "var(--text-xs)", fontFamily: "var(--font-body)" }}
             >
               {userInitials}
             </div>
-            <span
-              className="text-ink-800 font-medium capitalize hidden sm:block truncate max-w-32"
-              style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
-            >
-              {userName}
-            </span>
+            {/* Name over the role line; on phones the menu shows both. */}
+            <div className="hidden sm:flex flex-col min-w-0 max-w-48 gap-0.5">
+              <span
+                className="text-ink-900 font-semibold truncate leading-tight"
+                style={{ fontSize: "var(--text-sm-body)", fontFamily: "var(--font-body)" }}
+              >
+                {barName}
+              </span>
+              {roleText}
+            </div>
+            {showSignOut && (
+              <ChevronDown
+                size={14}
+                aria-hidden="true"
+                className={cn("hidden sm:block text-ink-400 shrink-0 transition-transform", menuOpen && "rotate-180")}
+              />
+            )}
           </button>
 
           {showSignOut && menuOpen && (
@@ -200,10 +224,10 @@ export function TopNav({
             >
               <div className="px-4 py-3 border-b border-ink-100">
                 <p
-                  className="text-ink-900 font-semibold capitalize truncate"
+                  className="text-ink-900 font-semibold"
                   style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
                 >
-                  {userName}
+                  {fullName}
                 </p>
                 {userEmail && (
                   <p
