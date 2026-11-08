@@ -186,8 +186,9 @@ def _reservations_period(filters: ExportFilters, now) -> str:
             + f", with each reservation's status as of {manila_time_text(now)}")
 
 
-def build_reservations(admin, filters: ExportFilters) -> ReportData:
-    now = manila_now()
+def fetch_reservations(admin, filters: ExportFilters) -> list[dict]:
+    """Reservations made in the period, with their book and patron, the
+    book (category) and patron (college, program, year) filters applied."""
     rf = filters.to_report_filters()
 
     def query():
@@ -212,6 +213,12 @@ def build_reservations(admin, filters: ExportFilters) -> ReportData:
         if filters.year_level is not None and profile.get("year_level") != filters.year_level:
             continue
         reservations.append(r)
+    return reservations
+
+
+def build_reservations(admin, filters: ExportFilters) -> ReportData:
+    now = manila_now()
+    reservations = fetch_reservations(admin, filters)
     reservations.sort(key=lambda r: (r["requested_at"], (_book(r).get("title") or "").lower()))
 
     rows = [{

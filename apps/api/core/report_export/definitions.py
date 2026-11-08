@@ -5,7 +5,8 @@
 #
 # Top titles, Reservations and the Accession register are in
 # collection_reports.py; Library usage and Assistant usage in
-# usage_reports.py. They add themselves to REPORTS (imported at the end).
+# usage_reports.py; the Overview and Activity Log in overview_reports.py.
+# They add themselves to REPORTS (imported at the end).
 
 from collections import Counter
 from dataclasses import dataclass, field
@@ -1200,4 +1201,4 @@ REPORTS: dict[str, ReportDefinition] = {
 
 # The reports defined in their own modules add themselves to REPORTS. At the
 # end, so everything they import from here already exists.
-from core.report_export import collection_reports, usage_reports  # noqa: E402, F401
+from core.report_export import collection_reports, overview_reports, usage_reports  # noqa: E402, F401

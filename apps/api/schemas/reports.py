@@ -122,6 +122,7 @@ ExportableReport = Literal[
     "overdue", "circulation", "borrowing_stats", "top_patrons", "fines", "catalog", "shelf_list",
     "weeding_candidates", "weeding_log", "inventory", "book_requests",
     "top_titles", "reservations", "accession_register", "library_usage", "assistant_usage",
+    "overview", "activity_log",
 ]
 
 
