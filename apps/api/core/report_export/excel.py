@@ -15,6 +15,7 @@ from openpyxl.utils import get_column_letter
 
 from core.report_export import layout
 from core.report_export.cells import put_cell
+from core.report_export.layout import axis_scale
 from core.report_export.definitions import ReportData, manila_time_text
 
 _PAPER_CODES = {"A4": 9, "Letter": 1}  # openpyxl / Excel paperSize values
@@ -23,6 +24,7 @@ _GREEN = layout.GREEN_700.lstrip("#")
 _GREEN_LIGHT = layout.GREEN_50.lstrip("#")
 _MUTED = layout.INK_500.lstrip("#")
 _CHART_ROWS = 16  # rows left free for the chart
+_CM_PER_ROW = 0.53  # a default-height row, for taller charts
 # Extra characters on each table column for the filter button, so it never
 # covers the header text.
 _FILTER_BUTTON_ROOM = 5
@@ -52,26 +54,20 @@ _SERIES_COLORS = [c.lstrip("#") for c in layout.SERIES_COLORS]
 _MAX_LABELLED_BARS = 24
 
 
-def axis_scale(highest: float) -> tuple[float, float]:
-    """(step, maximum) for a value axis starting at 0: a round step (1, 2 or
-    5 times a power of ten) giving about five gridlines, and a maximum at
-    least one full step above the highest bar, so the count on top of it
-    can't reach the chart title."""
-    highest = max(float(highest), 1.0)
-    rough = highest / 5
-    magnitude = 10 ** math.floor(math.log10(rough)) if rough >= 1 else 1
-    step = max(1, next(m * magnitude for m in (1, 2, 5, 10) if m * magnitude >= rough))
-    return step, math.ceil((highest + step) / step) * step
-
-
-def style_chart_axes(chart: BarChart, show_values: bool = True, highest: float = 0) -> None:
+def style_chart_axes(chart: BarChart, show_values: bool = True, highest: float = 0, horizontal: bool = False) -> None:
     """Shows the category labels and the value axis numbers. openpyxl leaves
     the axes' "delete" and label settings out, and Excel and LibreOffice
     then hide both axes. The value axis gets a fixed step and a maximum a
     step above `highest`, the tallest bar."""
     chart.x_axis.delete = False
     chart.y_axis.delete = False
-    chart.x_axis.axPos = "b"
+    chart.x_axis.axPos = "l" if horizontal else "b"
+    if horizontal:
+        # The first (largest) group at the top, with the numbers still at
+        # the bottom.
+        chart.y_axis.axPos = "b"
+        chart.x_axis.scaling.orientation = "maxMin"
+        chart.y_axis.crosses = "max"
     chart.x_axis.tickLblPos = "nextTo"
     chart.y_axis.tickLblPos = "nextTo"
     chart.x_axis.majorTickMark = "out"
@@ -121,7 +117,7 @@ def build_excel(data: ReportData, options: layout.ExportOptions) -> bytes:
         row = line(row, header.address, Font(size=9, color=_MUTED))
     row += 1
     row = line(row, data.title, Font(bold=True, size=14))
-    row = line(row, f"Period covered: {data.period}", Font(size=9, color=_MUTED))
+    row = line(row, data.period_heading, Font(size=9, color=_MUTED))
     for text in data.filters:
         row = line(row, text, Font(size=9, color=_MUTED))
     row = line(row, f"Generated {manila_time_text(data.generated_at)} (Manila time)", Font(size=9, color=_MUTED))
@@ -165,7 +161,8 @@ def build_excel(data: ReportData, options: layout.ExportOptions) -> bytes:
         end = 2 + len(data.chart.labels)
         data_ws.column_dimensions["A"].width = max(14, *(len(label) + 2 for label in data.chart.labels))
         chart = BarChart()
-        chart.type = "col"
+        # Long category names go beside the bars, one per line.
+        chart.type = "bar" if data.chart.horizontal else "col"
         chart.title = data.chart.title
         # A legend only when there's more than one series to tell apart.
         if len(series) == 1:
@@ -185,12 +182,19 @@ def build_excel(data: ReportData, options: layout.ExportOptions) -> bytes:
             chart,
             show_values=len(data.chart.labels) * len(series) <= _MAX_LABELLED_BARS,
             highest=max((max(values, default=0) for _, values in series), default=0),
+            horizontal=data.chart.horizontal,
         )
-        # Wider for many bars (daily or weekly periods).
-        chart.height, chart.width = 7.5, min(28, max(16, len(data.chart.labels) * len(series) * 0.7))
+        if data.chart.horizontal:
+            # Tall enough for a line per group, wide enough for the names.
+            chart.height, chart.width = max(7.5, len(data.chart.labels) * len(series) * 0.9 + 2.5), 26
+        else:
+            # Wider for many bars (daily or weekly periods).
+            chart.height, chart.width = 7.5, min(28, max(16, len(data.chart.labels) * len(series) * 0.7))
         row += 1
         ws.add_chart(chart, f"A{row}")
-        row += _CHART_ROWS
+        row += max(_CHART_ROWS, math.ceil(chart.height / _CM_PER_ROW) + 1)
+        if data.chart.note:
+            row = line(row, data.chart.note, Font(size=9, color=_MUTED))
 
     row += 1
     row = line(row, f"Details ({len(data.rows):,} {'row' if len(data.rows) == 1 else 'rows'})", Font(bold=True, color=_GREEN))

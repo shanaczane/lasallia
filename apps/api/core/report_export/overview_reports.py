@@ -9,6 +9,10 @@ from core.dates import bucket_index, manila_now
 from core.reports import fetch_in_house_loans
 from core.report_export.collection_reports import build_reservations, fetch_reservations
 from core.report_export.definitions import (
+    AS_OF_NOW,
+    FINES_RULE,
+    IN_PERIOD,
+    OVERDUE_RULE,
     REPORTS,
     VISITOR_TYPES,
     Chart,
@@ -20,6 +24,7 @@ from core.report_export.definitions import (
     ReportUnavailable,
     _book,
     _count_text,
+    _covers,
     _filename_stem,
     _in_house_note,
     _int_figure,
@@ -50,12 +55,7 @@ OVERVIEW_COLUMNS = [
     Column("value", "Value", "text", 20, wrap=False),
     Column("counted", "Counted", "text", 40),
 ]
-IN_PERIOD = "In the period"
-NOW = "As of now"
-OVERDUE_RULE = "Borrowed in the period, overdue now"
-FINES_RULE = "On books returned in the period, plus fines still growing now"
-COLLECTION_NOTE = ("Collection figures (titles, copies, weeding candidates) are as of now and use only the "
-                   "Category filter.")
+COLLECTION_NOTE = "Collection figures (titles, copies, weeding candidates) use only the Category filter."
 NOT_AVAILABLE = "Not available yet"
 
 
@@ -92,35 +92,37 @@ def build_overview(admin, filters: ExportFilters) -> ReportData:
         ("Overdue", _figure(overdue, "Overdue loans"), OVERDUE_RULE),
         ("Fines", _relabel("Outstanding fines", _figure(fines, "Outstanding")), FINES_RULE),
         ("Fines", _relabel("Fines paid", _figure(fines, "Paid")), FINES_RULE),
-        ("Collection", _figure(catalog, "Titles"), NOW),
-        ("Collection", _figure(catalog, "Copies"), NOW),
-        ("Collection", _figure(catalog, "Copies available"), NOW),
-        ("Collection", _figure(catalog, "Copies not available"), NOW),
-        ("Collection", _relabel("Weeding candidates", _figure(weeding, "Candidates")), NOW),
+        ("Collection", _figure(catalog, "Titles"), AS_OF_NOW),
+        ("Collection", _figure(catalog, "Copies"), AS_OF_NOW),
+        ("Collection", _figure(catalog, "Copies available"), AS_OF_NOW),
+        ("Collection", _figure(catalog, "Copies not available"), AS_OF_NOW),
+        ("Collection", _relabel("Weeding candidates", _figure(weeding, "Candidates")), AS_OF_NOW),
         ("Library usage", _figure(usage, "Borrowing station sessions"), IN_PERIOD),
         ("Library assistant",
          _figure(assistant, "Questions answered") if assistant else KeyFigure("Questions answered", NOT_AVAILABLE),
          IN_PERIOD if assistant else "Needs migration 0070_assistant_usage.sql"),
     ]
     rows = [{"area": area, "figure": f.label, "value": f.value, "counted": counted} for area, f, counted in picked]
-    by_label = {f.label: f for _, f, _ in picked}
+    # Each figure says what it covers, so the AI keeps them apart.
+    by_label = {f.label: _covers(counted, f) for _, f, counted in picked}
 
     def value(label: str) -> str:
         return by_label[label].value
 
     summary = (
         f"In the period: {value('Borrows')} borrows, {value('Returns')} returns, "
-        f"{value('In-house checkouts')} in-house checkouts and {value('Reservations made')} reservations made. "
+        f"{value('In-house checkouts')} in-house checkouts, {value('In-house returns')} in-house returns and "
+        f"{value('Reservations made')} reservations made. "
         f"Of the loans borrowed in the period, {value('Overdue loans')} are overdue now, and "
         f"{value('Outstanding fines')} in fines is outstanding. The collection has {value('Titles')} titles and "
         f"{value('Copies')} copies, with {value('Weeding candidates')} weeding candidates."
     )
-    headline = ["Borrows", "Returns", "In-house checkouts", "Reservations made", "Overdue loans",
+    headline = ["Borrows", "Returns", "In-house checkouts", "In-house returns", "Transactions", "Reservations made", "Overdue loans",
                 "Outstanding fines", "Titles", "Copies", "Weeding candidates", "Borrowing station sessions",
                 "Questions answered"]
-    # Short, since it's repeated in every page's footer; the Counted column
-    # says which kind each figure is.
-    period = _period_line(filters, "Period figures") + f"; other figures as of {manila_time_text(now)}"
+    # Printed after "Period covered:" and repeated in every page's footer;
+    # the Counted column says which kind each figure is.
+    period = f"{filters.period_text()} (Manila time). Collection figures are as of {manila_time_text(now)}."
 
     return ReportData(
         report_id="overview", title="Library Overview",
@@ -189,7 +191,7 @@ def build_activity_log(admin, filters: ExportFilters) -> ReportData:
     rows = [row(*e) for e in events]
     counts = Counter(activity for _, activity, _ in events)
     present = [a for a in ACTIVITIES if counts.get(a)]
-    buckets = _report_buckets(filters)
+    buckets = _report_buckets(filters, [when for when, _, _ in events])
     series = {a: [0] * len(buckets) for a in ACTIVITIES}
     for when, activity, _ in events:
         i = bucket_index(buckets, when)

@@ -310,7 +310,7 @@ def test_book_requests_name_the_requester_without_email_or_note():
 # ─── Charts with more than one series ───────────────────────────────────
 
 @pytest.mark.parametrize("report,series", [("borrowing_stats", ["Borrows", "Returns"]),
-                                           ("circulation", ["Borrows", "Returns", "In-house checkouts"])])
+                                           ("circulation", ["Borrows", "Returns", "In-house checkouts", "In-house returns"])])
 def test_multi_series_charts_have_a_legend_in_pdf_and_excel(report, series):
     data = _build(report)
     assert [name for name, _ in data.chart.series] == series

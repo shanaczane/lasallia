@@ -33,7 +33,11 @@ _SUMMARY_SYSTEM_PROMPT = (
     "4. Keep units, amounts and dates as written, for example \"₱60.00\" or "
     "\"21 October 2026 (7 transactions)\".\n"
     "5. If the data is empty or all zero, say so plainly instead of inventing something to say.\n"
-    "6. Write plain sentences only: no headings, lists or formatting."
+    "6. Some key figures have a \"covers\" field saying what they count, such as \"In the period\" or "
+    "\"As of now\". Keep them apart: never describe a figure that covers the period as being \"as of\" a "
+    "date, and never present an as-of-now figure as a count for the period. Put period figures and as-of-now "
+    "figures in separate sentences.\n"
+    "7. Write plain sentences only: no headings, lists or formatting."
 )
 
 _client: OpenAI | None = None

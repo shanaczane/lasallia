@@ -8,6 +8,7 @@ from core.dates import bucket_index, manila_date_text, manila_now
 from core.reports import fetch_in_house_loans
 from core.rows import fetch_all_rows
 from core.report_export.definitions import (
+    IN_PERIOD,
     REPORTS,
     Chart,
     Column,
@@ -17,6 +18,7 @@ from core.report_export.definitions import (
     _as_of_line,
     _book,
     _count_text,
+    _covers,
     _filename_stem,
     _in_house_note,
     _int_figure,
@@ -235,7 +237,7 @@ def build_reservations(admin, filters: ExportFilters) -> ReportData:
     labels += sorted(s for s in by_status if s not in labels)
     patrons = len({r.get("user_id") for r in reservations})
     titles = len({_book(r).get("id") or _book(r).get("title") for r in reservations})
-    buckets = _report_buckets(filters)
+    buckets = _report_buckets(filters, [_manila(r["requested_at"]) for r in reservations])
     made = [0] * len(buckets)
     for r in reservations:
         i = bucket_index(buckets, _manila(r["requested_at"]))
@@ -253,11 +255,11 @@ def build_reservations(admin, filters: ExportFilters) -> ReportData:
         report_id="reservations", title="Reservations",
         period=period, filters=filters.filter_lines(), generated_at=now,
         key_figures=[
-            _int_figure("Reservations made", len(rows)),
+            _covers(IN_PERIOD, _int_figure("Reservations made", len(rows))),
             # One per status that occurs; they add up to Reservations made.
-            *(_int_figure(s, by_status[s]) for s in labels),
-            _int_figure("Patrons", patrons),
-            _int_figure("Titles reserved", titles),
+            *(_covers("Made in the period, status as of now", _int_figure(s, by_status[s])) for s in labels),
+            _covers(IN_PERIOD, _int_figure("Patrons", patrons)),
+            _covers(IN_PERIOD, _int_figure("Titles reserved", titles)),
         ],
         computed_summary=summary,
         ai_payload={

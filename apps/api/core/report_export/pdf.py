@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.graphics.charts.barcharts import HorizontalBarChart, VerticalBarChart
 from reportlab.graphics.charts.legends import Legend
 from reportlab.graphics.shapes import Drawing, String
 from reportlab.lib import colors
@@ -102,12 +102,93 @@ def _key_figures(data: ReportData, styles, width: float) -> Table:
     return table
 
 
+CHART_FONT_SIZE = 7.5
+# Horizontal charts: the widest the names beside the bars can be, the most
+# lines one name can take, and the height of a bar's row per line.
+LABEL_COLUMN = 240
+LABEL_LINES = 2
+ROW_PER_LINE = 11
+
+
+def wrap_chart_label(label: str, max_width: float = LABEL_COLUMN, lines: int = LABEL_LINES) -> str:
+    """A category name on at most `lines` lines of `max_width` points,
+    broken between words. Only a name too long even for that is shortened,
+    with "…"; the report's table has it in full."""
+    def fits(text: str) -> bool:
+        return pdfmetrics.stringWidth(text, FONT, CHART_FONT_SIZE) <= max_width
+
+    _register_fonts()
+    out: list[str] = []
+    words = label.split()
+    while words and len(out) < lines:
+        line = words.pop(0)
+        while words and fits(f"{line} {words[0]}"):
+            line = f"{line} {words.pop(0)}"
+        out.append(line)
+    if words or not fits(out[-1]):
+        last = out[-1] if not words else f"{out[-1]} {' '.join(words)}"
+        while last and not fits(f"{last}…"):
+            last = last[:-1]
+        out[-1] = f"{last.rstrip()}…"
+    return "\n".join(out)
+
+
+def _horizontal_chart(chart, width: float, palette) -> Drawing:
+    series = chart.series
+    names = [wrap_chart_label(label) for label in chart.labels]
+    row = max(name.count("\n") + 1 for name in names) * ROW_PER_LINE * len(series) + 6
+    label_width = max(pdfmetrics.stringWidth(line, FONT, CHART_FONT_SIZE)
+                      for name in names for line in name.split("\n"))
+    plot_height = row * len(names)
+    height = plot_height + 42
+    drawing = Drawing(width, height)
+    bars = HorizontalBarChart()
+    bars.x, bars.y = label_width + 12, 20
+    bars.width = min(width - bars.x - (130 if len(series) > 1 else 30), 150 * mm)
+    bars.height = plot_height
+    bars.data = [list(values) for _, values in series]
+    bars.categoryAxis.categoryNames = names
+    # The first (largest) group at the top.
+    bars.categoryAxis.reverseDirection = 1
+    bars.categoryAxis.labels.fontName = FONT
+    bars.categoryAxis.labels.fontSize = CHART_FONT_SIZE
+    bars.categoryAxis.labels.leading = CHART_FONT_SIZE + 1.5
+    bars.valueAxis.labels.fontName = FONT
+    bars.valueAxis.labels.fontSize = CHART_FONT_SIZE
+    bars.valueAxis.valueMin = 0
+    top = max((max(values, default=0) for _, values in series), default=0)
+    # A round step (1, 2 or 5 times a power of ten), as in the Excel charts.
+    bars.valueAxis.valueStep, bars.valueAxis.valueMax = layout.axis_scale(top)
+    for i in range(len(series)):
+        bars.bars[i].fillColor = palette[i % len(palette)]
+        bars.bars[i].strokeColor = None
+    bars.barLabels.fontName = FONT
+    bars.barLabels.fontSize = CHART_FONT_SIZE
+    bars.barLabelFormat = "%d"
+    bars.barLabels.nudge = 8
+    drawing.add(bars)
+    if len(series) > 1:
+        legend = Legend()
+        legend.x, legend.y = bars.x + bars.width + 12, bars.y + bars.height
+        legend.fontName, legend.fontSize = FONT, CHART_FONT_SIZE
+        legend.boxAnchor = "nw"
+        # One column, close enough for five series to fit beside the plot.
+        legend.columnMaximum, legend.deltay, legend.dy, legend.dx = len(series), 13, 7, 7
+        legend.colorNamePairs = [(palette[i % len(palette)], name) for i, (name, _) in enumerate(series)]
+        drawing.add(legend)
+    drawing.add(String(0, height - 10, chart.title, fontName=FONT_BOLD, fontSize=9.5,
+                       fillColor=colors.HexColor(layout.INK_900)))
+    return drawing
+
+
 def _chart(data: ReportData, width: float) -> Drawing | None:
     chart = data.chart
     if chart is None:
         return None
+    if chart.horizontal:
+        return _horizontal_chart(chart, width, [colors.HexColor(c) for c in layout.SERIES_COLORS])
     series = chart.series
-    crowded = len(chart.labels) > 12  # daily or weekly periods: slanted labels
+    crowded = chart.crowded  # many or wide labels: slanted
     height = (46 if crowded else 38) * mm
     drawing = Drawing(width, height)
     bars = VerticalBarChart()
@@ -144,6 +225,8 @@ def _chart(data: ReportData, width: float) -> Drawing | None:
         legend.x, legend.y = bars.x + bars.width + 12, bars.y + bars.height
         legend.fontName, legend.fontSize = FONT, 7.5
         legend.boxAnchor = "nw"
+        # One column, close enough for five series to fit beside the plot.
+        legend.columnMaximum, legend.deltay, legend.dy, legend.dx = len(series), 13, 7, 7
         legend.colorNamePairs = [(palette[i % len(palette)], name) for i, (name, _) in enumerate(series)]
         drawing.add(legend)
     drawing.add(String(0, height - 10, chart.title, fontName=FONT_BOLD, fontSize=9.5,
@@ -359,7 +442,7 @@ def build_pdf(data: ReportData, options: layout.ExportOptions) -> bytes:
         story.append(Paragraph(_text(header.address), styles["address"]))
     story.append(Spacer(1, 3 * mm))
     story.append(Paragraph(_text(data.title), styles["title"]))
-    story.append(Paragraph(_text(f"Period covered: {data.period}"), styles["meta"]))
+    story.append(Paragraph(_text(data.period_heading), styles["meta"]))
     for line in data.filters:
         story.append(Paragraph(_text(line), styles["meta"]))
     story.append(Paragraph(_text(f"Generated {manila_time_text(data.generated_at)} (Manila time)"), styles["meta"]))
@@ -374,6 +457,8 @@ def build_pdf(data: ReportData, options: layout.ExportOptions) -> bytes:
     if drawing is not None:
         story.append(Spacer(1, 4 * mm))
         story.append(drawing)
+        if data.chart.note:
+            story.append(Paragraph(_text(data.chart.note), styles["meta"]))
 
     story.append(Paragraph(_text(f"Details ({len(data.rows):,} {'row' if len(data.rows) == 1 else 'rows'})"), styles["heading"]))
     table, left_out = _table(data, styles, width)

@@ -148,7 +148,7 @@ def build_library_usage(admin, filters: ExportFilters) -> ReportData:
     peak_text = f"{_hour_range(peak[0])} ({_count_text(peak[1], 'session', 'sessions')})" if peak else "—"
     students = len({student for _, student in sessions})
     period = _library_usage_period(filters)
-    buckets = _report_buckets(filters)
+    buckets = _report_buckets(filters, [when for when, _ in sessions])
     per_bucket = [0] * len(buckets)
     for when, _ in sessions:
         i = bucket_index(buckets, when)
@@ -296,7 +296,7 @@ def build_assistant_usage(admin, filters: ExportFilters) -> ReportData:
 
     busiest = _busiest(Counter({day: d["questions"] for day, d in per_day.items()}))
     busiest_text = f"{_long_date(busiest[0])} ({_count_text(busiest[1], 'question', 'questions')})" if busiest else "—"
-    buckets = _report_buckets(filters)
+    buckets = _report_buckets(filters, [when for when, _ in events])
     series = {key: [0] * len(buckets) for key in ("rule", "ai", None)}
     for when, u in events:
         i = bucket_index(buckets, when)

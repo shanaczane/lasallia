@@ -81,7 +81,7 @@ def test_figures_add_up_to_transactions():
     # Juan borrowed and Maria returned; guests aren't counted as borrowers,
     # but their titles are.
     assert f["Student borrowers"] == 2 and f["Titles"] == 3
-    assert [name for name, _ in data.chart.series] == ["Borrows", "Returns", "In-house checkouts"]
+    assert [name for name, _ in data.chart.series] == ["Borrows", "Returns", "In-house checkouts", "In-house returns"]
     assert sum(data.chart.series[2][1]) == 2
     assert TRANSACTION_RULE in data.filters
 
