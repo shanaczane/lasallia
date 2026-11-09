@@ -12,7 +12,7 @@ import core.loan_reminders as reminders
 import routers.internal as internal_router
 import routers.settings as settings_router
 from core import config
-from core.calendar import count_library_hours, count_school_days, overdue_status
+from core.calendar import count_library_hours, count_school_days, late_fee_breakdown, overdue_status
 from core.dates import MANILA
 from core.settings import _DEFAULTS
 from schemas.auth import UserProfile
@@ -431,3 +431,28 @@ def test_removing_a_date_that_isnt_closed(calendar_client):
 def test_a_bad_date_is_refused(calendar_client):
     client, _ = calendar_client
     assert client.put("/settings/calendar/not-a-date", json={}).status_code == 422
+
+
+# ── "Why this amount?" on a book returned late ──
+
+def test_late_fee_breakdown_names_the_library_days_charged():
+    db = db_with()
+    # Due Friday 13 Nov, returned Tuesday 17 Nov. Saturday is open, Sunday closed.
+    breakdown = late_fee_breakdown(
+        db, manila(2026, 11, 13, 17).isoformat(), manila(2026, 11, 17, 9).isoformat(), "General", CFG,
+    )
+    assert breakdown == {
+        "late_days_charged": ["2026-11-14", "2026-11-16", "2026-11-17"],
+        "late_hours_charged": None,
+        "late_fee_rate": CFG["fine_per_day"],
+        "late_fee_cap": CFG["max_fine_per_book"],
+    }
+
+
+def test_late_fee_breakdown_uses_hours_for_reserve_books():
+    db = db_with()
+    breakdown = late_fee_breakdown(
+        db, manila(2026, 11, 9, 9).isoformat(), manila(2026, 11, 9, 11, 30).isoformat(), "Reserve", CFG,
+    )
+    assert breakdown["late_hours_charged"] == 2.5
+    assert breakdown["late_fee_rate"] == 2.0

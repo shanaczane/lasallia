@@ -62,6 +62,13 @@ class Loan(BaseModel):
     preview_fine_amount: float | None = None
     # "Overdue by 3 school days", or library hours for the hourly collections.
     overdue_label: str | None = None
+    # Only on returned loans with a late fee: the library days it was
+    # counted on (Manila dates), the open hours for the hourly collections,
+    # the rate per day (or hour) and the per-book cap, from today's Settings.
+    late_days_charged: list[str] | None = None
+    late_hours_charged: float | None = None
+    late_fee_rate: float | None = None
+    late_fee_cap: float | None = None
     # Only on the return response: whether the copy goes to reshelving (true)
     # or is held for a reservation (false).
     needs_reshelving: bool | None = None

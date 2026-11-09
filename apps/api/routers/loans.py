@@ -5,7 +5,7 @@ from supabase import Client
 
 from core.accession import normalize_accession_number
 from core.audit import log_action
-from core.calendar import compute_fine, overdue_fields
+from core.calendar import compute_fine, late_fee_breakdown, overdue_fields
 from core.deps import get_current_user, get_user_supabase, require_librarian, require_librarian_profile
 from core.desk import LOAN_BORROWER, how_identified, tap_required
 from core.loans import check_borrow_eligibility, create_loan_and_notify, reshelve_copy_now
@@ -118,6 +118,17 @@ def list_loans(
         if loan["status"] == "overdue":
             collection_type = (loan["books"] or {}).get("collection_type") or "General"
             loan.update(overdue_fields(admin, loan["due_date"], collection_type))
+
+    # Returned late with a fine: which library days it was counted on.
+    cfg = None
+    for loan in loans:
+        if (
+            loan["status"] == "returned" and loan.get("returned_at") and (loan.get("fine_amount") or 0) > 0
+            and datetime.fromisoformat(loan["returned_at"]) > datetime.fromisoformat(loan["due_date"])
+        ):
+            cfg = cfg or get_library_settings(admin)
+            collection_type = (loan["books"] or {}).get("collection_type") or "General"
+            loan.update(late_fee_breakdown(admin, loan["due_date"], loan["returned_at"], collection_type, cfg))
 
     return loans
 

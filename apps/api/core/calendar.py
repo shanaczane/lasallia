@@ -101,18 +101,17 @@ def loan_due_date(db: Client, borrowed_at: datetime, cfg: dict, collection_type:
     return datetime.combine(day, close_time, tzinfo=MANILA)
 
 
-def count_school_days(db: Client, start: datetime, end: datetime, cfg: dict) -> int:
-    """Days between start and end when the library was open. The daily
-    fine only counts these."""
+def school_days_between(db: Client, start: datetime, end: datetime, cfg: dict) -> list[date]:
+    """The days after start, up to end, when the library was open. The
+    daily fine only counts these."""
     if end <= start:
-        return 0
+        return []
     calendar = _calendar_rows(db, start, end)
-    count = 0
-    for d in _dates_after_start(start, end):
-        open_time, close_time = _day_hours(cfg, calendar, d)
-        if open_time is not None:
-            count += 1
-    return count
+    return [d for d in _dates_after_start(start, end) if _day_hours(cfg, calendar, d)[0] is not None]
+
+
+def count_school_days(db: Client, start: datetime, end: datetime, cfg: dict) -> int:
+    return len(school_days_between(db, start, end, cfg))
 
 
 def count_library_hours(db: Client, start: datetime, end: datetime, cfg: dict) -> float:
@@ -171,6 +170,22 @@ def overdue_fields(db: Client, due_date_iso: str, collection_type: str) -> dict:
         "overdue_label": overdue_text(
             status.school_days, status.library_hours, collection_type in HOURLY_FINE_COLLECTION_TYPES,
         ) if past_due else None,
+    }
+
+
+def late_fee_breakdown(db: Client, due_date_iso: str, returned_at_iso: str, collection_type: str, cfg: dict) -> dict:
+    """What a returned loan's late fee was counted from, for "Why this
+    amount?": the library days (or hours) charged, the rate and the cap.
+    Uses today's Settings, so the screen checks it against the stored fine
+    before showing the sum."""
+    due = datetime.fromisoformat(due_date_iso)
+    returned = datetime.fromisoformat(returned_at_iso)
+    hourly = collection_type in HOURLY_FINE_COLLECTION_TYPES
+    return {
+        "late_days_charged": [d.isoformat() for d in school_days_between(db, due, returned, cfg)],
+        "late_hours_charged": round(count_library_hours(db, due, returned, cfg), 2) if hourly else None,
+        "late_fee_rate": HOURLY_FINE_RATE if hourly else cfg["fine_per_day"],
+        "late_fee_cap": cfg["max_fine_per_book"],
     }
 
 

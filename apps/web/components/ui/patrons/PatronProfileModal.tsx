@@ -4,6 +4,7 @@
 "use client"
 
 import { formatDate } from "@/lib/dueDates"
+import { lateFeeRows } from "@/lib/lateFee"
 import { useRef, useEffect, useMemo, useState } from "react"
 import { X, BookOpen, Bookmark, History, Mail, UserX, UserCheck, ChevronDown, ChevronUp, Info } from "lucide-react"
 import { cn, ordinal } from "@/lib/utils"
@@ -129,12 +130,6 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
         const isNewDamage =
           l.condition_at_borrow === "good" && (l.condition_at_return === "damaged" || l.condition_at_return === "incomplete")
 
-        // Calendar days, for context only — the fine itself is counted on
-        // library days, so the two can differ around weekends/holidays.
-        const daysAfterDue = Math.max(
-          0,
-          Math.round((new Date(l.returned_at!).getTime() - new Date(l.due_date).getTime()) / 86_400_000)
-        )
         const borrowCondition = BORROW_CONDITION_LABEL[l.condition_at_borrow] ?? l.condition_at_borrow
         const returnCondition = l.condition_at_return
           ? RETURN_CONDITION_LABEL[l.condition_at_return] ?? l.condition_at_return
@@ -158,22 +153,18 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
         const reasons: FineReason[] = [
           { label: "Borrowed", value: formatDate(l.borrowed_at) },
           { label: "Due", value: formatDate(l.due_date) },
-          {
-            label: "Returned",
-            value: wasLateReturn && daysAfterDue > 0
-              ? `${formatDate(l.returned_at!)} - ${dayCount(daysAfterDue)} after the due date`
-              : formatDate(l.returned_at!),
-          },
+          // Late: the days charged and the sum, since the fine skips days
+          // the library was closed.
+          ...(wasLateReturn
+            ? lateFeeRows({ ...l, returned_at: l.returned_at!, fine_amount: l.fine_amount! })
+            : [{ label: "Returned", value: formatDate(l.returned_at!) }]),
           {
             label: "Condition",
             value: returnCondition
               ? `${borrowCondition} when borrowed, ${returnCondition} when returned`
               : `${borrowCondition} when borrowed`,
           },
-          {
-            label: "Charged for",
-            value: wasLateReturn && overdueAmt == null ? `${chargedFor} (counted on library days)` : chargedFor,
-          },
+          { label: "Charged for", value: chargedFor },
           paid
             ? { label: "Payment", value: l.receipt_number ? `Paid - receipt ${l.receipt_number}` : "Paid", tone: "success" }
             : { label: "Payment", value: "Not paid yet - pay in person at the circulation desk", tone: "danger" },
