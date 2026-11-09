@@ -278,10 +278,19 @@ def test_a_paid_fine_gets_no_reminder(monkeypatch, sent):
 def test_school_days_use_the_manila_date():
     db = db_with()
     # 23:30 UTC on Sunday is 7:30 AM Monday in Manila: the due date is Monday,
-    # so Tuesday 7:00 AM Manila (Monday 23:00 UTC) is 1 school day later.
+    # so Tuesday 8:00 AM Manila (Monday 00:00 UTC) is 1 school day later.
     due = manila(2026, 11, 9, 7, 30)
-    assert count_school_days(db, due, manila(2026, 11, 10, 7), CFG) == 1
+    assert count_school_days(db, due, manila(2026, 11, 10, 8), CFG) == 1
     assert count_school_days(db, due, manila(2026, 11, 9, 23), CFG) == 0
+
+
+def test_a_day_counts_once_the_library_has_opened():
+    db = db_with()
+    due = manila(2026, 11, 9, 17)
+    # Tuesday opens at 7:30 AM.
+    assert count_school_days(db, due, manila(2026, 11, 10, 0, 49), CFG) == 0
+    assert count_school_days(db, due, manila(2026, 11, 10, 7, 29), CFG) == 0
+    assert count_school_days(db, due, manila(2026, 11, 10, 7, 30), CFG) == 1
 
 
 # ── minute-exact hourly fines: 7:30-18:00 weekdays, 8:00-12:00 Saturdays ──
@@ -435,14 +444,20 @@ def test_a_bad_date_is_refused(calendar_client):
 
 # ── "Why this amount?" on a book returned late ──
 
-def test_late_fee_breakdown_names_the_library_days_charged():
+def test_late_fee_breakdown_says_why_each_day_was_or_wasnt_charged():
     db = db_with()
-    # Due Friday 13 Nov, returned Tuesday 17 Nov. Saturday is open, Sunday closed.
+    # Due Friday 13 Nov, returned Tuesday 17 Nov at 12:49 AM, before opening.
+    # Saturday is open, Sunday closed.
     breakdown = late_fee_breakdown(
-        db, manila(2026, 11, 13, 17).isoformat(), manila(2026, 11, 17, 9).isoformat(), "General", CFG,
+        db, manila(2026, 11, 13, 17).isoformat(), manila(2026, 11, 17, 0, 49).isoformat(), "General", CFG,
     )
     assert breakdown == {
-        "late_days_charged": ["2026-11-14", "2026-11-16", "2026-11-17"],
+        "late_days": [
+            {"date": "2026-11-14", "status": "charged"},
+            {"date": "2026-11-15", "status": "closed"},
+            {"date": "2026-11-16", "status": "charged"},
+            {"date": "2026-11-17", "status": "before_opening"},
+        ],
         "late_hours_charged": None,
         "late_fee_rate": CFG["fine_per_day"],
         "late_fee_cap": CFG["max_fine_per_book"],

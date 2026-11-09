@@ -101,17 +101,35 @@ def loan_due_date(db: Client, borrowed_at: datetime, cfg: dict, collection_type:
     return datetime.combine(day, close_time, tzinfo=MANILA)
 
 
-def school_days_between(db: Client, start: datetime, end: datetime, cfg: dict) -> list[date]:
-    """The days after start, up to end, when the library was open. The
-    daily fine only counts these."""
+# Why each day after the due date was or wasn't charged.
+DAY_CHARGED = "charged"
+DAY_CLOSED = "closed"
+# The book came back that day before the library opened.
+DAY_BEFORE_OPENING = "before_opening"
+
+
+def late_days(db: Client, start: datetime, end: datetime, cfg: dict) -> list[tuple[date, str]]:
+    """Each day after start, up to end, and whether the daily fine counts
+    it. A day counts once the library has opened that day: closed days
+    don't, and neither does a day the book came back before opening."""
     if end <= start:
         return []
     calendar = _calendar_rows(db, start, end)
-    return [d for d in _dates_after_start(start, end) if _day_hours(cfg, calendar, d)[0] is not None]
+    days = []
+    for d in _dates_after_start(start, end):
+        open_time = _day_hours(cfg, calendar, d)[0]
+        if open_time is None:
+            days.append((d, DAY_CLOSED))
+        elif end < datetime.combine(d, open_time, tzinfo=MANILA):
+            days.append((d, DAY_BEFORE_OPENING))
+        else:
+            days.append((d, DAY_CHARGED))
+    return days
 
 
 def count_school_days(db: Client, start: datetime, end: datetime, cfg: dict) -> int:
-    return len(school_days_between(db, start, end, cfg))
+    """School days the daily fine counts between start and end."""
+    return sum(1 for _, why in late_days(db, start, end, cfg) if why == DAY_CHARGED)
 
 
 def count_library_hours(db: Client, start: datetime, end: datetime, cfg: dict) -> float:
@@ -175,14 +193,16 @@ def overdue_fields(db: Client, due_date_iso: str, collection_type: str) -> dict:
 
 def late_fee_breakdown(db: Client, due_date_iso: str, returned_at_iso: str, collection_type: str, cfg: dict) -> dict:
     """What a returned loan's late fee was counted from, for "Why this
-    amount?": the library days (or hours) charged, the rate and the cap.
-    Uses today's Settings, so the screen checks it against the stored fine
-    before showing the sum."""
+    amount?": every day after the due date and whether it was charged, the
+    library hours for the hourly collections, the rate and the cap. Uses
+    today's Settings, so the screen checks it against the stored fine."""
     due = datetime.fromisoformat(due_date_iso)
     returned = datetime.fromisoformat(returned_at_iso)
     hourly = collection_type in HOURLY_FINE_COLLECTION_TYPES
     return {
-        "late_days_charged": [d.isoformat() for d in school_days_between(db, due, returned, cfg)],
+        "late_days": None if hourly else [
+            {"date": d.isoformat(), "status": why} for d, why in late_days(db, due, returned, cfg)
+        ],
         "late_hours_charged": round(count_library_hours(db, due, returned, cfg), 2) if hourly else None,
         "late_fee_rate": HOURLY_FINE_RATE if hourly else cfg["fine_per_day"],
         "late_fee_cap": cfg["max_fine_per_book"],
