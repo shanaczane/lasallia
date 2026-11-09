@@ -47,6 +47,28 @@ def accession_counters(admin) -> dict[str, int]:
     return {r["prefix"]: int(r["next_value"]) for r in rows}
 
 
+def preview_accession_numbers(admin, prefix: str, count: int) -> list[str]:
+    """The numbers next_accession_numbers would hand out right now, without
+    taking them: the counter's value onward, skipping numbers already used.
+    Only a preview; whoever saves first gets them. Raises KeyError for an
+    unknown prefix."""
+    next_value = accession_counters(admin)[prefix]
+    found: list[str] = []
+    while len(found) < count:
+        candidates = [f"{prefix}{n}" for n in range(next_value, next_value + count - len(found) + 10)]
+        copies = admin.table("book_copies").select("accession_number").in_("accession_number", candidates).execute().data
+        books = admin.table("books").select("accession_no").in_("accession_no", candidates).execute().data
+        used = {normalize_accession_number(r["accession_number"]).upper() for r in copies}
+        used |= {normalize_accession_number(r["accession_no"]).upper() for r in books if r.get("accession_no")}
+        for candidate in candidates:
+            if candidate not in used:
+                found.append(candidate)
+                if len(found) == count:
+                    break
+        next_value += len(candidates)
+    return found
+
+
 def accession_in_use(admin, accession: str) -> dict | None:
     """Who already has this number: {"book_id": ...} for a copy or a legacy
     books.accession_no, or None. Case-insensitive; `accession` must already

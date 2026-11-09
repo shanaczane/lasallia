@@ -305,3 +305,23 @@ def test_copy_endpoints_are_librarian_only(db, method, path, body):
     app.include_router(books_router.router)
     res = getattr(TestClient(app), method)(path, **({"json": body} if body is not None else {}))
     assert res.status_code in (401, 403)
+
+
+# ─── Previewing accession numbers on the Add Book form ──────────────────
+
+def test_preview_lists_the_next_free_numbers_without_taking_them(client, db):
+    db.tables["book_copies"].append({"id": "copy-2", "book_id": "book-1", "accession_number": "T46647",
+                                     "status": "available"})
+
+    res = client.get("/books/accession-preview", params={"prefix": "T", "count": 3})
+
+    assert res.status_code == 200, res.text
+    assert res.json() == ["T46646", "T46648", "T46649"]
+    assert db.rpc_calls == []
+    assert db.tables["accession_counters"][0]["next_value"] == 46646
+
+
+def test_preview_refuses_an_unknown_prefix_and_bad_counts(client):
+    assert client.get("/books/accession-preview", params={"prefix": "ZZ"}).status_code == 422
+    assert client.get("/books/accession-preview", params={"count": 0}).status_code == 422
+    assert client.get("/books/accession-preview", params={"count": 51}).status_code == 422

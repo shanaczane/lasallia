@@ -118,6 +118,15 @@ export async function addCopiesToBook(id: string, count: number, prefix: Accessi
   return res.json()
 }
 
+// The accession numbers new copies would get if saved now. Nothing is
+// reserved, so the saved numbers can differ if someone else saves first.
+export async function previewAccessionNumbers(prefix: AccessionPrefix, count: number): Promise<string[]> {
+  const params = new URLSearchParams({ prefix, count: String(count) })
+  const res = await fetch(`${API_URL}/books/accession-preview?${params}`, { headers: authHeaders() })
+  if (!res.ok) return parseErrorOrThrow(res, 'Could not look up the next accession numbers')
+  return res.json()
+}
+
 // ── Librarians only: individual copies.
 
 export type BookCopy = {

@@ -3,11 +3,12 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, NoReturn, TypeVar
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from postgrest.exceptions import APIError
 
 from core.accession import (
     accession_counters, accession_in_use, accession_sort_key, clean_accession_input, normalize_accession_number,
+    preview_accession_numbers,
 )
 from core.audit import changed_fields, log_action
 from core.deps import get_optional_user, require_librarian, require_librarian_profile
@@ -289,6 +290,21 @@ def create_book(body: BookCreate, librarian: UserProfile = Depends(require_libra
     # undoes the book, and reembed_books catches anything it missed.
     embed_single_book(admin, book)
     return {**_book_with_counts(admin, book), "assigned_accession_numbers": result["accession_numbers"]}
+
+
+# Shown on the Add Book form before saving. Nothing is reserved: if someone
+# else saves copies first, the save assigns the next free numbers instead.
+# Declared before GET /{book_id} so the path isn't read as a book id.
+@router.get("/accession-preview", response_model=list[str])
+def accession_preview(
+    prefix: str = Query("T"),
+    count: int = Query(1, ge=1, le=50),
+    librarian: UserProfile = Depends(require_librarian),
+):
+    try:
+        return preview_accession_numbers(get_admin_client(), prefix.strip().upper(), count)
+    except KeyError:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f'Unknown accession prefix "{prefix}"')
 
 
 @router.patch("/{book_id}", response_model=LibrarianBook)

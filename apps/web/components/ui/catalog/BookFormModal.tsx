@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
 import { COLLEGES } from '@/lib/colleges'
 import type { Book, BookFormat, FundingSource } from '@lasallia/types'
 import { useDialogKeyboard } from '@/lib/hooks/useDialogKeyboard'
-import { BookApiError, type AccessionPrefix, type MatchedBook } from '@/lib/books'
+import { BookApiError, previewAccessionNumbers, type AccessionPrefix, type MatchedBook } from '@/lib/books'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -555,6 +555,22 @@ export function BookFormModal({
     setDuplicate(null)
   }, [mode, book, isOpen])
 
+  // Add only: the numbers the copies would get, refreshed as the count or
+  // prefix changes. Read-only; the save assigns the real ones.
+  const [accessionPreview, setAccessionPreview] = useState<{ numbers: string[] | null; error: boolean }>({ numbers: null, error: false })
+  const previewCount = Number(form.copy_count)
+  const previewable = isOpen && mode === 'add' && Number.isInteger(previewCount) && previewCount >= 1 && previewCount <= 50
+  useEffect(() => {
+    if (!previewable) return
+    let cancelled = false
+    const timer = setTimeout(() => {
+      previewAccessionNumbers(form.prefix, previewCount)
+        .then((numbers) => { if (!cancelled) setAccessionPreview({ numbers, error: false }) })
+        .catch(() => { if (!cancelled) setAccessionPreview({ numbers: null, error: true }) })
+    }, 300)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [previewable, form.prefix, previewCount])
+
   // Esc to close, Tab kept inside, focus returned on close.
   const dialogRef = useRef<HTMLDivElement>(null)
   useDialogKeyboard(dialogRef, { open: isOpen, onClose })
@@ -903,15 +919,53 @@ export function BookFormModal({
                   />
                 </Field>
               </div>
-              <p
-                className="flex items-start gap-2 rounded-sm bg-ink-50 border border-ink-100 px-3 py-2.5 text-ink-600 leading-snug"
-                style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
-              >
-                <Hash size={14} className="mt-0.5 shrink-0 text-ink-400" />
-                {isEdit
-                  ? 'Accession numbers belong to each copy and can\'t be edited here. Use the copies list on the book\'s page to add, register or correct them.'
-                  : 'Accession numbers are assigned automatically when you save, one per copy, and shown so you can write them on the books.'}
-              </p>
+              {isEdit ? (
+                <p
+                  className="flex items-start gap-2 rounded-sm bg-ink-50 border border-ink-100 px-3 py-2.5 text-ink-600 leading-snug"
+                  style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)' }}
+                >
+                  <Hash size={14} className="mt-0.5 shrink-0 text-ink-400" />
+                  Accession numbers belong to each copy and can&apos;t be edited here. Use the copies list on the book&apos;s page to add, register or correct them.
+                </p>
+              ) : (
+                <>
+                  <Field label="Accession prefix" className="sm:max-w-64">
+                    <select
+                      value={form.prefix}
+                      onChange={(e) => set('prefix', e.target.value as AccessionPrefix)}
+                      className={cn(inputClass, 'appearance-none cursor-pointer')}
+                      style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)', ...selectArrowStyle }}
+                    >
+                      {PREFIX_OPTIONS.map((p) => (
+                        <option key={p.value} value={p.value}>{p.label}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field
+                    label="Accession numbers"
+                    hint="One per copy (set the number of copies on the Physical & Location tab). Assigned automatically and can't be changed. If another librarian saves copies first, the next free numbers are used."
+                  >
+                    <div
+                      aria-readonly="true"
+                      aria-live="polite"
+                      className="flex flex-wrap gap-1.5 min-h-[42px] px-3 py-2 rounded-sm border border-ink-200 bg-ink-50 text-ink-700 cursor-not-allowed"
+                      style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-mono)' }}
+                    >
+                      {!previewable ? (
+                        <span className="text-ink-400" style={{ fontFamily: 'var(--font-body)' }}>Enter 1 to 50 copies on the Physical &amp; Location tab to see the numbers</span>
+                      ) : accessionPreview.error ? (
+                        <span className="text-ink-400" style={{ fontFamily: 'var(--font-body)' }}>Couldn&apos;t look up the numbers; they&apos;ll be shown after you save</span>
+                      ) : !accessionPreview.numbers ? (
+                        <span className="text-ink-400" style={{ fontFamily: 'var(--font-body)' }}>Loading…</span>
+                      ) : (
+                        accessionPreview.numbers.map((n) => (
+                          <span key={n} className="px-2 py-0.5 rounded-sm bg-white border border-ink-200 text-ink-900">{n}</span>
+                        ))
+                      )}
+                    </div>
+                  </Field>
+                </>
+              )}
             </FormSection>
           )}
 
@@ -1040,20 +1094,6 @@ export function BookFormModal({
                     </Field>
                   )}
                 </div>
-                {!isEdit && (
-                  <Field label="Accession prefix" className="sm:max-w-64">
-                    <select
-                      value={form.prefix}
-                      onChange={(e) => set('prefix', e.target.value as AccessionPrefix)}
-                      className={cn(inputClass, 'appearance-none cursor-pointer')}
-                      style={{ fontSize: 'var(--text-sm-body)', fontFamily: 'var(--font-body)', ...selectArrowStyle }}
-                    >
-                      {PREFIX_OPTIONS.map((p) => (
-                        <option key={p.value} value={p.value}>{p.label}</option>
-                      ))}
-                    </select>
-                  </Field>
-                )}
               </FormSection>
             </>
           )}
