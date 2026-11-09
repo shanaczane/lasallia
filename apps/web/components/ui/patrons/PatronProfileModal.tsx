@@ -3,8 +3,8 @@
 
 "use client"
 
-import { formatDate } from "@/lib/dueDates"
-import { lateFeeRows } from "@/lib/lateFee"
+import { formatDate, formatDateTime } from "@/lib/dueDates"
+import { lateFeeBreakdown, peso, type LateFeeBreakdown } from "@/lib/lateFee"
 import { useRef, useEffect, useMemo, useState } from "react"
 import { X, BookOpen, Bookmark, History, Mail, UserX, UserCheck, ChevronDown, ChevronUp, Info } from "lucide-react"
 import { cn, ordinal } from "@/lib/utils"
@@ -81,6 +81,10 @@ type FineEntry = {
   detail: string
   /** "Why this amount?" rows, using only what's recorded on the loan. */
   reasons: FineReason[]
+  /** Returned late: the fee day by day, with the damage part and the total. */
+  lateFee?: { breakdown: LateFeeBreakdown; damage: number; total: number } | null
+  /** Shown under the breakdown: paid with the receipt, or how to pay. */
+  payment?: FineReason
 }
 
 type FineReason = { label: string; value: string; tone?: "danger" | "success" }
@@ -150,24 +154,24 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
           ? charges.join(" + ").replace(/^./, (c) => c.toUpperCase())
           : "Fine recorded at return"
 
+        const lateLoan = { ...l, returned_at: l.returned_at!, fine_amount: l.fine_amount! }
+        const breakdown = wasLateReturn ? lateFeeBreakdown(lateLoan) : null
+        const payment: FineReason = paid
+          ? { label: "Payment", value: l.receipt_number ? `Paid - receipt ${l.receipt_number}` : "Paid", tone: "success" }
+          : { label: "Payment", value: "Not paid yet - pay in person at the circulation desk", tone: "danger" }
+
         const reasons: FineReason[] = [
           { label: "Borrowed", value: formatDate(l.borrowed_at) },
-          { label: "Due", value: formatDate(l.due_date) },
-          // Late: the days charged and the sum, since the fine skips days
-          // the library was closed.
-          ...(wasLateReturn
-            ? lateFeeRows({ ...l, returned_at: l.returned_at!, fine_amount: l.fine_amount! })
-            : [{ label: "Returned", value: formatDate(l.returned_at!) }]),
+          { label: "Due", value: formatDateTime(l.due_date) },
+          { label: "Returned", value: formatDateTime(l.returned_at!) },
           {
             label: "Condition",
             value: returnCondition
               ? `${borrowCondition} when borrowed, ${returnCondition} when returned`
               : `${borrowCondition} when borrowed`,
           },
-          { label: "Charged for", value: chargedFor },
-          paid
-            ? { label: "Payment", value: l.receipt_number ? `Paid - receipt ${l.receipt_number}` : "Paid", tone: "success" }
-            : { label: "Payment", value: "Not paid yet - pay in person at the circulation desk", tone: "danger" },
+          // The day-by-day table below covers the charges when there is one.
+          ...(breakdown ? [] : [{ label: "Charged for", value: chargedFor }, payment]),
         ]
 
         entries.push({
@@ -180,6 +184,8 @@ export function PatronProfileModal({ patron, onClose, onToggleStatus, isSelf = f
               ? `Returned ${formatDate(l.returned_at!)} · Receipt ${l.receipt_number}`
               : `Returned ${formatDate(l.returned_at!)}`,
           reasons,
+          lateFee: breakdown ? { breakdown, damage: damageAmt ?? 0, total: l.fine_amount! } : null,
+          payment,
         })
       } else if ((l.status === "active" || l.status === "overdue") && (l.preview_fine_amount ?? 0) > 0) {
         const days = l.days_overdue ?? 0
@@ -558,6 +564,90 @@ function FinesList({
 
 // A fine row. Unpaid fines can be marked paid at the desk (records the
 // receipt, takes no payment).
+const XS = { fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" } as const
+
+function ReasonList({ rows }: { rows: FineReason[] }) {
+  return (
+    <dl className="grid grid-cols-[96px_minmax(0,1fr)] gap-x-4 gap-y-1.5">
+      {rows.map((r) => (
+        <div key={r.label} className="contents">
+          <dt className="text-ink-400" style={XS}>{r.label}</dt>
+          <dd
+            className={cn(
+              "min-w-0",
+              r.tone === "danger" ? "text-danger font-medium" : r.tone === "success" ? "text-success font-medium" : "text-ink-700"
+            )}
+            style={XS}
+          >
+            {r.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+// The late fee day by day: what each day cost (or why it was free), then
+// the sum, any damage charge and the total.
+function LateFeeTable({ breakdown, damage, total }: { breakdown: LateFeeBreakdown; damage: number; total: number }) {
+  return (
+    <div className="border-t border-ink-200 pt-3">
+      <p
+        className="text-ink-400 uppercase font-semibold mb-2"
+        style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-2xs)", letterSpacing: "var(--tracking-section)" }}
+      >
+        How the fine adds up
+      </p>
+      <ul className="rounded-sm bg-white border border-ink-100 divide-y divide-ink-100">
+        {breakdown.lines.map((line) => (
+          <li key={line.label} className="flex items-start justify-between gap-3 px-3 py-1.5">
+            <div className="min-w-0">
+              <p className={line.amount == null ? "text-ink-500" : "text-ink-800"} style={XS}>{line.label}</p>
+              {line.note && <p className="text-ink-400" style={XS}>{line.note}</p>}
+            </div>
+            <span
+              className={cn("shrink-0 tabular-nums", line.amount == null ? "text-ink-400" : "text-ink-800 font-medium")}
+              style={XS}
+            >
+              {line.amount == null ? "₱0.00" : peso(line.amount)}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <dl className="mt-2 flex flex-col gap-1 px-3">
+        <div className="flex justify-between gap-3">
+          <dt className="text-ink-600" style={XS}>Late fee: {breakdown.sumLabel}</dt>
+          <dd className={cn("tabular-nums", breakdown.cap != null ? "text-ink-400 line-through" : "text-ink-800")} style={XS}>
+            {peso(breakdown.matches ? breakdown.subtotal : breakdown.recorded)}
+          </dd>
+        </div>
+        {breakdown.matches && breakdown.cap != null && (
+          <div className="flex justify-between gap-3">
+            <dt className="text-ink-600" style={XS}>Capped at the per-book maximum</dt>
+            <dd className="text-ink-800 tabular-nums" style={XS}>{peso(breakdown.cap)}</dd>
+          </div>
+        )}
+        {damage > 0 && (
+          <div className="flex justify-between gap-3">
+            <dt className="text-ink-600" style={XS}>Damage</dt>
+            <dd className="text-ink-800 tabular-nums" style={XS}>{peso(damage)}</dd>
+          </div>
+        )}
+        <div className="flex justify-between gap-3 border-t border-ink-200 pt-1.5 mt-0.5">
+          <dt className="text-ink-900 font-semibold" style={XS}>Total</dt>
+          <dd className="text-ink-900 font-semibold tabular-nums" style={XS}>{peso(total)}</dd>
+        </div>
+      </dl>
+      {!breakdown.matches && (
+        <p className="mt-2 px-3 text-ink-400" style={XS}>
+          {peso(breakdown.recorded)} was recorded when the book came back. The fine rules in Settings have changed since, so the days above may not add up to it.
+        </p>
+      )}
+    </div>
+  )
+}
+
 function FineRow({
   entry,
   onSettled,
@@ -635,24 +725,15 @@ function FineRow({
       </div>
 
       {showReason && (
-        <dl className="mt-1 rounded-sm bg-ink-50 px-3.5 py-2.5 grid grid-cols-[96px_minmax(0,1fr)] gap-x-4 gap-y-1.5">
-          {entry.reasons.map((r) => (
-            <div key={r.label} className="contents">
-              <dt className="text-ink-400" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}>
-                {r.label}
-              </dt>
-              <dd
-                className={cn(
-                  "min-w-0",
-                  r.tone === "danger" ? "text-danger font-medium" : r.tone === "success" ? "text-success font-medium" : "text-ink-700"
-                )}
-                style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-xs)" }}
-              >
-                {r.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <div className="mt-1 rounded-sm bg-ink-50 px-3.5 py-3 flex flex-col gap-3">
+          <ReasonList rows={entry.reasons} />
+          {entry.lateFee && (
+            <>
+              <LateFeeTable {...entry.lateFee} />
+              {entry.payment && <ReasonList rows={[entry.payment]} />}
+            </>
+          )}
+        </div>
       )}
 
       {settling && (

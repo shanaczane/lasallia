@@ -3,58 +3,69 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 
-import { lateFeeRows, type LateFeeLoan } from "./lateFee.ts"
+import { lateFeeBreakdown, type LateFeeLoan } from "./lateFee.ts"
 
-// Due Friday October 9 at 5:00 PM, returned Tuesday October 13 in the
-// morning: 4 calendar days, but the weekend isn't charged.
+// Due Friday October 9 at 2:05 PM, returned Tuesday October 13 at 12:49 AM,
+// before the library opened: Saturday and Monday are charged.
 const LOAN: LateFeeLoan = {
-  due_date: "2026-10-09T09:00:00+00:00",
-  returned_at: "2026-10-13T01:30:00+00:00",
+  due_date: "2026-10-09T06:05:00+00:00",
+  returned_at: "2026-10-12T16:49:00+00:00",
   fine_amount: 10,
-  overdue_fine_amount: 10,
-  damage_fine_amount: 0,
-  late_days_charged: ["2026-10-12", "2026-10-13"],
+  overdue_fine_amount: null,
+  damage_fine_amount: null,
+  late_days: [
+    { date: "2026-10-10", status: "charged" },
+    { date: "2026-10-11", status: "closed" },
+    { date: "2026-10-12", status: "charged" },
+    { date: "2026-10-13", status: "before_opening" },
+  ],
   late_hours_charged: null,
   late_fee_rate: 5,
   late_fee_cap: 100,
 }
 
-const value = (rows: { label: string; value: string }[], label: string) => rows.find((r) => r.label === label)?.value
-
-test("counts calendar days on Manila dates, not hours", () => {
-  assert.equal(value(lateFeeRows(LOAN), "Returned"), "October 13, 2026 - 4 days after the due date")
+test("lists every day with what it cost and why the free ones were free", () => {
+  assert.deepEqual(lateFeeBreakdown(LOAN)!.lines, [
+    { label: "Saturday, October 10", amount: 5, note: undefined },
+    { label: "Sunday, October 11", amount: null, note: "Library closed - not charged" },
+    { label: "Monday, October 12", amount: 5, note: undefined },
+    { label: "Tuesday, October 13", amount: null, note: "Returned at 12:49 AM, before the library opened - not charged" },
+  ])
 })
 
-test("names the days charged and says why the others weren't", () => {
-  assert.equal(
-    value(lateFeeRows(LOAN), "Days charged"),
-    "2 library days (Monday, October 12 and Tuesday, October 13). "
-      + "The other 2 days the library was closed (weekends and holidays), so they aren't charged.",
-  )
+test("the sum gives the recorded fine", () => {
+  const b = lateFeeBreakdown(LOAN)!
+  assert.equal(b.sumLabel, "2 days × ₱5.00 a day")
+  assert.equal(b.subtotal, 10)
+  assert.equal(b.matches, true)
+  assert.equal(b.cap, null)
 })
 
-test("shows the sum that gives the fine", () => {
-  assert.equal(value(lateFeeRows(LOAN), "Late fee"), "2 days × ₱5.00 a day = ₱10.00")
+test("flags a fine that today's rate doesn't give", () => {
+  const b = lateFeeBreakdown({ ...LOAN, late_fee_rate: 7 })!
+  assert.equal(b.matches, false)
+  assert.equal(b.recorded, 10)
 })
 
-test("no closed days: no note about them", () => {
-  const rows = lateFeeRows({ ...LOAN, due_date: "2026-10-12T09:00:00+00:00", late_days_charged: ["2026-10-13"], overdue_fine_amount: 5, fine_amount: 5 })
-  assert.equal(value(rows, "Days charged"), "1 library day (Tuesday, October 13)")
+test("long overdue periods are summed up, with the cap", () => {
+  const days = Array.from({ length: 30 }, (_, i) => ({
+    date: `2026-10-${String(i + 1).padStart(2, "0")}`,
+    status: (i % 7 === 3 ? "closed" : "charged") as "closed" | "charged",
+  }))
+  const b = lateFeeBreakdown({ ...LOAN, late_days: days, fine_amount: 100 })!
+  assert.equal(b.lines[0].label, "26 library days")
+  assert.equal(b.lines[1].label, "4 closed days")
+  assert.equal(b.subtotal, 130)
+  assert.equal(b.cap, 100)
+  assert.equal(b.matches, true)
 })
 
-test("leaves the sum out when today's rate doesn't give the recorded fine", () => {
-  const rows = lateFeeRows({ ...LOAN, late_fee_rate: 7 })
-  assert.equal(value(rows, "Late fee"), undefined)
-  assert.ok(value(rows, "Days charged"))
+test("hourly collections count library hours", () => {
+  const b = lateFeeBreakdown({ ...LOAN, late_days: null, late_hours_charged: 3.5, late_fee_rate: 2, fine_amount: 7 })!
+  assert.equal(b.sumLabel, "3.5 hours × ₱2.00 an hour")
+  assert.equal(b.matches, true)
 })
 
-test("says when the per-book cap applied", () => {
-  const days = Array.from({ length: 25 }, (_, i) => `2026-10-${String(i + 1).padStart(2, "0")}`)
-  const rows = lateFeeRows({ ...LOAN, late_days_charged: days, overdue_fine_amount: 100, fine_amount: 100 })
-  assert.equal(value(rows, "Late fee"), "25 days × ₱5.00 a day = ₱125.00, capped at ₱100.00 per book")
-})
-
-test("hourly collections show library hours", () => {
-  const rows = lateFeeRows({ ...LOAN, late_days_charged: [], late_hours_charged: 3.5, late_fee_rate: 2, overdue_fine_amount: 7, fine_amount: 7 })
-  assert.equal(value(rows, "Late fee"), "3.5 × ₱2.00 an hour = ₱7.00")
+test("an older loan with a damage charge but no split has no breakdown", () => {
+  assert.equal(lateFeeBreakdown({ ...LOAN, damage_fine_amount: 50 }), null)
 })

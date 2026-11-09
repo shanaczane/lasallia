@@ -311,10 +311,10 @@ export type Loan = {
   // "Overdue by 3 school days", or library hours for reserve materials.
   overdue_label?: string | null
   preview_fine_amount: number | null
-  // Returned late with a fine: the library days (Manila dates) it was
-  // counted on, open hours for the hourly collections, the rate per day
-  // (or hour) and the per-book cap, from today's Settings.
-  late_days_charged?: string[] | null
+  // Returned late with a fine: each day after the due date (Manila date)
+  // and whether it was charged, open hours for the hourly collections, the
+  // rate per day (or hour) and the per-book cap, from today's Settings.
+  late_days?: { date: string; status: 'charged' | 'closed' | 'before_opening' }[] | null
   late_hours_charged?: number | null
   late_fee_rate?: number | null
   late_fee_cap?: number | null

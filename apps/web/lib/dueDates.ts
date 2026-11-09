@@ -26,12 +26,6 @@ function manilaDayNumber(value: string | Date): number {
   return Date.parse(toDate(value).toLocaleDateString("en-CA", { timeZone: TIME_ZONE })) / DAY_MS
 }
 
-// Calendar days from one moment to another, counted on Manila dates
-// (October 9 to October 13 is 4, whatever the times).
-export function calendarDaysBetween(from: string | Date, to: string | Date): number {
-  return manilaDayNumber(to) - manilaDayNumber(from)
-}
-
 // For a loan still out: "Due tomorrow", "Due today, 5:00 PM", "Due in 3 days".
 // Past its due date it falls back to the date; overdue loans show overdue_label.
 export function dueLabel(due: string | Date, now: Date = new Date()): string {
