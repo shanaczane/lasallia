@@ -1,10 +1,11 @@
 # Rules for a borrow hold (the copy set aside while a student borrows it).
 #
 # Only the borrower can use a hold: the phone that opens the QR link must be
-# signed in to the same account as the ID that was tapped. Opening it from
-# another account, typing the wrong accession number, or tapping a different
-# ID at the kiosk each count as a wrong attempt. After MAX_ATTEMPTS the hold
-# is cancelled and the librarians are told.
+# signed in to the same account as the ID that was tapped. Anyone else who
+# scans it is turned away without touching the hold, so a stray scan can't
+# cancel someone's borrow. Typing the wrong accession number or tapping a
+# different ID at the kiosk each count as a wrong attempt. After MAX_ATTEMPTS
+# the hold is cancelled and the librarians are told.
 
 from datetime import datetime, timezone
 
@@ -17,12 +18,10 @@ from core.reservations import promote_next_reservation
 
 MAX_ATTEMPTS = 3
 
-WRONG_ACCOUNT = "wrong_account"
 WRONG_ACCESSION = "wrong_accession"
 WRONG_ID_TAP = "wrong_id_tap"
 
 _REASON_LABELS = {
-    WRONG_ACCOUNT: "the QR link was opened from another account",
     WRONG_ACCESSION: "the wrong accession number was typed",
     WRONG_ID_TAP: "a different ID was tapped at the kiosk",
 }
@@ -65,10 +64,12 @@ def get_live_hold(db, token: str) -> dict:
 
 
 def require_borrower(db, hold: dict, user_id: str) -> None:
-    """Stops anyone but the borrower from using the hold."""
+    """Stops anyone but the borrower from using the hold. Not counted as a
+    wrong attempt: the token is unguessable, and counting would let anyone
+    who glimpses the QR code cancel the borrow just by scanning it."""
     if user_id != hold["student_id"]:
-        record_failed_attempt(
-            db, hold, WRONG_ACCOUNT, status.HTTP_403_FORBIDDEN,
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
             "This borrow belongs to another account. Sign in with the account of the ID that was tapped.",
         )
 
