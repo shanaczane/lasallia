@@ -26,7 +26,7 @@ const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : us
 
 // Used until Library Settings load (and if they can't).
 const DEFAULT_IDLE_TIMEOUT_SECONDS = 90
-const DEFAULT_WARNING_SECONDS = 15
+const DEFAULT_WARNING_SECONDS = 20
 // How long a tap error stays up.
 const OPEN_ERROR_MS = 8000
 

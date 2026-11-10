@@ -23,7 +23,7 @@ _DEFAULTS: dict[str, object] = {
     "max_copies_per_request": 10,
     # Kiosk and borrowing timers, in seconds.
     "kiosk_idle_timeout_seconds": 90,
-    "kiosk_idle_warning_seconds": 15,
+    "kiosk_idle_warning_seconds": 20,
     "hold_duration_seconds": 180,
     "hold_extend_window_seconds": 45,
     "hold_max_seconds": 540,

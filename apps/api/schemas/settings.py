@@ -23,7 +23,7 @@ class LibrarySettings(BaseModel):
 
     # Kiosk and borrowing timers, in seconds.
     kiosk_idle_timeout_seconds: int = 90
-    kiosk_idle_warning_seconds: int = 15
+    kiosk_idle_warning_seconds: int = 20
     hold_duration_seconds: int = 180
     hold_extend_window_seconds: int = 45
     hold_max_seconds: int = 540
@@ -74,7 +74,7 @@ class PublicLibrarySettings(BaseModel):
 
     # The kiosk reads its idle timer before anyone taps in.
     kiosk_idle_timeout_seconds: int = 90
-    kiosk_idle_warning_seconds: int = 15
+    kiosk_idle_warning_seconds: int = 20
 
 
 # Only the fields sent are saved.
