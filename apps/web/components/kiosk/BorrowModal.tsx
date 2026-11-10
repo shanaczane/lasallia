@@ -340,6 +340,31 @@ export function BorrowModal({
           </div>
         )}
 
+        {/* At the kiosk, a finished borrow asks what's next. With no answer,
+            the kiosk's idle timeout ends the session as usual. */}
+        {done && atKiosk && kiosk ? (
+          <div className="w-full flex flex-col gap-2">
+            <p className="text-ink-600 text-center" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm)' }}>
+              Would you like to look for more books, or log out?
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full py-2.5 rounded-[10px] bg-green-700 text-white font-semibold hover:bg-green-800 transition-colors"
+              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+            >
+              Find more books
+            </button>
+            <button
+              type="button"
+              onClick={() => { onClose(); kiosk.end() }}
+              className="w-full py-2.5 rounded-[10px] border border-ink-200 text-ink-600 font-semibold hover:bg-ink-50 transition-colors"
+              style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-sm-body)' }}
+            >
+              Log out
+            </button>
+          </div>
+        ) : (
         <button
           onClick={done ? onClose : handleClose}
           className={
@@ -351,6 +376,7 @@ export function BorrowModal({
         >
           {done ? 'Done' : 'Cancel'}
         </button>
+        )}
       </div>
     </div>
   )

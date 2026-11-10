@@ -1,5 +1,5 @@
 // Shown to anyone browsing as a guest. The kiosk has no login page, so it
-// passes no loginHref and "Log in" stays plain text.
+// passes no loginHref and only asks for an ID tap.
 
 import Link from "next/link"
 
@@ -11,8 +11,13 @@ export function GuestBanner({ loginHref }: { loginHref?: string }) {
       style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm-body)" }}
     >
       You are browsing as a Guest.{" "}
-      {loginHref ? <Link href={loginHref} className="font-semibold underline">Log in</Link> : "Log in"}
-      {" "}or tap your ID to borrow and reserve.
+      {loginHref ? (
+        <>
+          <Link href={loginHref} className="font-semibold underline">Log in</Link> or tap your ID to borrow and reserve.
+        </>
+      ) : (
+        "Tap your school ID to borrow."
+      )}
     </p>
   )
 }

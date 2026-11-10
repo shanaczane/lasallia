@@ -1,19 +1,20 @@
 // The kiosk shell: session, ID card listener, idle timeout with a countdown
-// warning before it ends, and the same nav as the web. Nothing personal is
-// shown once a session ends. The timeout and warning come from Library
-// Settings.
+// warning before it ends, and the same nav as the web. The kiosk opens in
+// guest browsing; tapping an ID signs that person in to borrow. Nothing
+// personal is shown once a session ends. The timeout and warning come from
+// Library Settings.
 
 'use client'
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Search, Sparkles, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, Sparkles, MessageSquare, ChevronLeft, ChevronRight, AlertCircle, IdCard, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { TopNav } from '@/components/layout/TopNav'
 import { GuestBanner } from '@/components/layout/GuestBanner'
 import { RoleBadge } from '@/components/ui/patrons/RoleBadge'
-import { KioskSessionProvider, useKioskSession, readInitialActiveKey } from '@/components/kiosk/KioskSessionProvider'
+import { KioskSessionProvider, useKioskSession, readInitialActiveKey, activeKey } from '@/components/kiosk/KioskSessionProvider'
 import { RfidListener } from '@/components/kiosk/RfidListener'
 import { KioskAccountNotices } from '@/components/kiosk/KioskAccountNotices'
 import { useIdleTimeout } from '@/components/kiosk/useIdleTimeout'
@@ -26,6 +27,8 @@ const useLayoutEffectSafe = typeof window !== 'undefined' ? useLayoutEffect : us
 // Used until Library Settings load (and if they can't).
 const DEFAULT_IDLE_TIMEOUT_SECONDS = 90
 const DEFAULT_WARNING_SECONDS = 15
+// How long a tap error stays up.
+const OPEN_ERROR_MS = 8000
 
 function getInitials(name: string): string {
   return name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
@@ -41,7 +44,10 @@ const kioskNav = [
 function KioskShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { session, open, end, guestBrowsing, endGuest, tapCatcher, borrowing } = useKioskSession()
+  const {
+    session, open, end, opening, openError, clearOpenError,
+    guestBrowsing, guestSessionId, resetGuest, tapCatcher, borrowing,
+  } = useKioskSession()
   // Read right away, so a refresh isn't mistaken for a new tap.
   const previousActiveKey = useRef<string | null>(readInitialActiveKey())
   const [collapsed, setCollapsed] = useState(false)
@@ -61,14 +67,38 @@ function KioskShell({ children }: { children: React.ReactNode }) {
       .catch(() => { /* keep the defaults */ })
   }, [])
 
+  // A guest visit only times out once someone has used it, so an unattended
+  // kiosk sitting on the catalog doesn't keep asking "Still here?".
+  const [usedGuestId, setUsedGuestId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!guestSessionId) return
+    const mark = () => setUsedGuestId(guestSessionId)
+    const events = ['mousedown', 'keydown', 'touchstart'] as const
+    events.forEach((e) => document.addEventListener(e, mark, { once: true }))
+    return () => events.forEach((e) => document.removeEventListener(e, mark))
+  }, [guestSessionId])
+  const guestUsed = !!guestSessionId && usedGuestId === guestSessionId
+
   // Paused while a borrow is in progress: the student is at the shelf or
   // on their phone, and still has to come back to tap their ID.
+  const idleEnabled = (!!session || (guestBrowsing && guestUsed)) && !borrowing
+  const endVisit = () => {
+    if (session) end()
+    else resetGuest()
+  }
   const { secondsLeft, reset } = useIdleTimeout({
-    enabled: active && !borrowing,
+    enabled: idleEnabled,
     timeoutSeconds: timers.timeout,
-    onExpire: () => { session ? end() : endGuest() },
+    onExpire: endVisit,
   })
-  const warningOpen = active && !borrowing && secondsLeft <= timers.warning
+  const warningOpen = idleEnabled && secondsLeft <= timers.warning
+
+  // A tap that didn't open a session says why, then clears.
+  useEffect(() => {
+    if (!openError) return
+    const id = setTimeout(clearOpenError, OPEN_ERROR_MS)
+    return () => clearTimeout(id)
+  }, [openError, clearOpenError])
   // Focus lands on "Yes, I'm here" so Enter answers it, and Esc counts as
   // still being here too.
   const idleDialogRef = useRef<HTMLDivElement>(null)
@@ -82,23 +112,21 @@ function KioskShell({ children }: { children: React.ReactNode }) {
     localStorage.setItem('kiosk-sidebar-collapsed', String(collapsed))
   }, [collapsed])
 
-  // Move to the right screen: a new session goes to the catalog; no session
-  // goes back to the start screen (from any page); a different student
-  // tapping in starts again at the catalog.
+  // Move to the right screen: a new visit (a fresh guest, or a different
+  // student tapping in) starts at the catalog.
   //
   // A guest who taps their ID while on a book or the catalog stays there,
   // since it's the same person signing in to borrow.
   useEffect(() => {
     const prev = previousActiveKey.current
-    const current = session?.id ?? (guestBrowsing ? 'guest' : null)
-    const guestSigningIn = prev === 'guest' && !!session
-    if (current && current !== prev) {
+    const current = activeKey(session?.id, guestSessionId)
+    if (!current) return
+    const guestSigningIn = !!prev?.startsWith('guest:') && !!session
+    if (current !== prev) {
       if (!(guestSigningIn && pathname.startsWith('/kiosk/catalog'))) router.push('/kiosk/catalog')
-    } else if (!current && pathname !== '/kiosk') {
-      router.replace('/kiosk')
     }
     previousActiveKey.current = current
-  }, [session?.id, guestBrowsing, pathname, router])
+  }, [session, guestSessionId, pathname, router])
 
   async function handleTap(uid: string) {
     // A borrow waiting for its confirming tap takes it.
@@ -131,9 +159,10 @@ function KioskShell({ children }: { children: React.ReactNode }) {
               <RoleBadge role="guest" />
             )}
             showNotifications={false}
-            showSignOut={true}
+            // A guest has nothing to sign out of.
+            showSignOut={!!session}
             homeHref="/kiosk/catalog"
-            onSignOut={() => (session ? end() : endGuest())}
+            onSignOut={() => end()}
             onMenuClick={() => {}}
           />
 
@@ -181,7 +210,7 @@ function KioskShell({ children }: { children: React.ReactNode }) {
               secondsLeft={secondsLeft}
               warningSeconds={timers.warning}
               onStay={reset}
-              onEnd={() => (session ? end() : endGuest())}
+              onEnd={endVisit}
             />
           )}
         </>
@@ -203,9 +232,12 @@ function KioskShell({ children }: { children: React.ReactNode }) {
           </p>
         )}
         {!session && guestBrowsing && <GuestBanner />}
+        {!session && (opening || openError) && (
+          <TapStatus opening={opening} error={openError} onDismiss={clearOpenError} />
+        )}
         {session && <KioskAccountNotices session={session} />}
-        {/* Without a session, show nothing until the redirect to /kiosk. */}
-        {(active || pathname === '/kiosk') && children}
+        {/* Nothing until the saved visit is restored. */}
+        {active && children}
       </main>
     </div>
   )
@@ -216,6 +248,42 @@ export default function KioskLayout({ children }: { children: React.ReactNode })
     <KioskSessionProvider>
       <KioskShell>{children}</KioskShell>
     </KioskSessionProvider>
+  )
+}
+
+// An ID tap being read, or why it didn't open a session.
+function TapStatus({ opening, error, onDismiss }: { opening: boolean; error: string; onDismiss: () => void }) {
+  const message = opening
+    ? 'Reading your ID…'
+    : error === 'Unknown RFID tag'
+      ? "We don't recognize this ID. Please see the librarian at the desk."
+      : error
+  return (
+    <div
+      role={opening ? 'status' : 'alert'}
+      className={cn(
+        'px-4 md:px-6 py-2 flex items-center gap-2 border-b',
+        opening ? 'bg-green-50 text-green-800 border-green-200' : 'bg-danger-bg border-red-200'
+      )}
+      style={{
+        fontFamily: 'var(--font-body)',
+        fontSize: 'var(--text-sm-body)',
+        color: opening ? undefined : 'var(--color-danger-dark)',
+      }}
+    >
+      {opening ? <IdCard size={15} className="shrink-0" /> : <AlertCircle size={15} className="shrink-0" />}
+      <span className="flex-1">{message}</span>
+      {!opening && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="flex items-center justify-center w-6 h-6 rounded-full hover:bg-white/60 transition-colors"
+        >
+          <X size={14} />
+        </button>
+      )}
+    </div>
   )
 }
 

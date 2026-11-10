@@ -1,6 +1,9 @@
 // Keeps the kiosk session in sessionStorage (not localStorage), so a refresh
 // doesn't end the visit but closing the browser does. The idle timeout (set
 // in Library Settings) still ends sessions.
+//
+// There's no start screen: with no ID tapped, the kiosk is in guest
+// browsing. Ending a session (or a guest visit) starts a fresh guest visit.
 
 'use client'
 
@@ -25,12 +28,19 @@ function readStoredSession(): StoredSession | null {
   }
 }
 
-// The saved session, read right away, so app/kiosk/layout.tsx doesn't treat
-// a refresh as a new tap and jump back to the catalog.
+// Names the current visit, so app/kiosk/layout.tsx can tell a new tap or a
+// fresh guest visit from a refresh.
+export function activeKey(sessionId: string | null | undefined, guestSessionId: string | null): string | null {
+  if (sessionId) return `session:${sessionId}`
+  if (guestSessionId) return `guest:${guestSessionId}`
+  return null
+}
+
+// The saved visit, read right away, so a refresh isn't treated as a new tap.
 export function readInitialActiveKey(): string | null {
   const stored = readStoredSession()
-  if (stored?.kind === 'session') return stored.session.id
-  if (stored?.kind === 'guest') return stored.guestSessionId
+  if (stored?.kind === 'session') return activeKey(stored.session.id, null)
+  if (stored?.kind === 'guest') return activeKey(null, stored.guestSessionId)
   return null
 }
 
@@ -43,11 +53,12 @@ type KioskSessionContextValue = {
   open: (auth: OpenAuth) => Promise<void>
   end: () => Promise<void>
   // Guest browsing: kept on this device only. guestSessionId just links the
-  // visit's chat messages together.
+  // visit's chat messages together. resetGuest starts a fresh guest visit.
   guestBrowsing: boolean
   guestSessionId: string | null
-  startGuest: () => void
-  endGuest: () => void
+  resetGuest: () => void
+  // Clears the message from a tap that didn't open a session.
+  clearOpenError: () => void
   // While a borrow waits for its second ID tap, the borrow window takes
   // the next tap instead of it starting a new session. Returns a function
   // that stops catching taps.
@@ -81,14 +92,15 @@ export function KioskSessionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Before paint, so a refresh doesn't flash the idle screen.
+  // Before paint, so a refresh keeps the same visit. With nothing saved, a
+  // guest visit starts.
   useLayoutEffectSafe(() => {
     const stored = readStoredSession()
     if (stored?.kind === 'session') {
       setSession(stored.session)
-    } else if (stored?.kind === 'guest') {
+    } else {
       setGuestBrowsing(true)
-      setGuestSessionId(stored.guestSessionId)
+      setGuestSessionId(stored?.kind === 'guest' ? stored.guestSessionId : crypto.randomUUID())
     }
     setRestored(true)
   }, [])
@@ -122,29 +134,28 @@ export function KioskSessionProvider({ children }: { children: ReactNode }) {
     }
   }, [session])
 
+  const resetGuest = useCallback(() => {
+    setGuestBrowsing(true)
+    setGuestSessionId(crypto.randomUUID())
+  }, [])
+
+  // Back to a fresh guest visit.
   const end = useCallback(async () => {
     const current = session
     setSession(null)
     setBorrowing(false)
     tapCatcher.current = null
     setOpenError('')
+    resetGuest()
     if (current) await endSession(current.id).catch(() => {})
-  }, [session])
+  }, [session, resetGuest])
 
-  const startGuest = useCallback(() => {
-    setGuestBrowsing(true)
-    setGuestSessionId(crypto.randomUUID())
-  }, [])
-
-  const endGuest = useCallback(() => {
-    setGuestBrowsing(false)
-    setGuestSessionId(null)
-  }, [])
+  const clearOpenError = useCallback(() => setOpenError(''), [])
 
   return (
     <KioskSessionContext.Provider
       value={{
-        session, opening, openError, open, end, guestBrowsing, guestSessionId, startGuest, endGuest,
+        session, opening, openError, open, end, guestBrowsing, guestSessionId, resetGuest, clearOpenError,
         catchNextTaps, tapCatcher, borrowing, setBorrowing,
       }}
     >
