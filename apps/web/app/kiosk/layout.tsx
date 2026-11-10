@@ -68,7 +68,7 @@ function KioskShell({ children }: { children: React.ReactNode }) {
   }, [])
 
   // A guest visit only times out once someone has used it, so an unattended
-  // kiosk sitting on the catalog doesn't keep asking "Still here?".
+  // kiosk sitting on the catalog doesn't keep resetting itself.
   const [usedGuestId, setUsedGuestId] = useState<string | null>(null)
   useEffect(() => {
     if (!guestSessionId) return
@@ -91,7 +91,10 @@ function KioskShell({ children }: { children: React.ReactNode }) {
     timeoutSeconds: timers.timeout,
     onExpire: endVisit,
   })
-  const warningOpen = idleEnabled && secondsLeft <= timers.warning
+  // "Still here?" is only asked when someone is signed in. An idle guest
+  // visit goes straight back to a fresh guest catalog, since there's nothing
+  // personal to lose.
+  const warningOpen = idleEnabled && !!session && secondsLeft <= timers.warning
 
   // A tap that didn't open a session says why, then clears.
   useEffect(() => {
