@@ -33,6 +33,9 @@ export type BookRequest = {
   updated_at: string
   profiles: { full_name: string | null; email: string; college: string | null } | null
   attachments: BookRequestAttachment[]
+  // Librarian list only: copies of this title already in the catalog, or
+  // null when it isn't there.
+  catalog_copies?: number | null
 }
 
 function authHeaders(): HeadersInit {

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from core.audit import log_action
 from core.book_requests import (
     MAX_FILES_PER_REQUEST,
+    catalog_copy_counts,
     check_transition,
     clean_fields,
     clean_rejection_reason,
@@ -288,11 +289,18 @@ def list_book_requests(
     librarian: UserProfile = Depends(require_librarian),
 ):
     # Every request, page by page (a single read stops at 1,000).
+    admin = get_admin_client()
+
     def query():
-        q = get_admin_client().table("book_requests").select(_SELECT).order("created_at", desc=True).order("id")
+        q = admin.table("book_requests").select(_SELECT).order("created_at", desc=True).order("id")
         return q.eq("status", request_status) if request_status else q
 
-    return fetch_all_rows(query)
+    rows = fetch_all_rows(query)
+    # The copies the library has right now, so the librarian can judge a
+    # request for a title that's already in the catalog.
+    for r, count in zip(rows, catalog_copy_counts(admin, rows)):
+        r["catalog_copies"] = count
+    return rows
 
 
 @router.patch("/{request_id}", response_model=BookRequest)

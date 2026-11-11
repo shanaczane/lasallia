@@ -76,25 +76,43 @@ def reject_duplicate(admin, requester_id: str, fields: dict, ignore_id: str | No
         raise HTTPException(status.HTTP_409_CONFLICT, "You already have an open request for this book")
 
 
-def catalog_copy_count(admin, fields: dict) -> int | None:
-    """Copies the library has of this title, or None when it isn't in the
-    catalog. Matches by ISBN, or by title when the catalog's has no ISBN."""
+def catalog_copy_counts(admin, requests: list[dict]) -> list[int | None]:
+    """For each request, the copies the library has of that title, or None
+    when it isn't in the catalog. Matches by ISBN or by title. Reads the
+    catalog once, however many requests there are."""
+    if not requests:
+        return []
     books = fetch_all_rows(lambda: (
         admin.table("books").select("id, title, isbn").is_("archived_at", "null").order("id")
     ))
-    wanted_isbn = fields.get("isbn")
-    wanted_title = normalized_text(fields.get("title"))
-    ids = [
-        b["id"] for b in books
-        if (wanted_isbn and normalize_isbn(b.get("isbn")) == wanted_isbn)
-        or normalized_text(b.get("title")) == wanted_title
-    ]
-    if not ids:
-        return None
+    by_isbn: dict[str, list[str]] = {}
+    by_title: dict[str, list[str]] = {}
+    for b in books:
+        isbn = normalize_isbn(b.get("isbn"))
+        if isbn:
+            by_isbn.setdefault(isbn, []).append(b["id"])
+        by_title.setdefault(normalized_text(b.get("title")), []).append(b["id"])
+
+    matches = []
+    for r in requests:
+        isbn = normalize_isbn(r.get("isbn"))
+        ids = set(by_isbn.get(isbn, [])) if isbn else set()
+        ids |= set(by_title.get(normalized_text(r.get("title")), []))
+        matches.append(ids)
+
+    wanted = sorted(set().union(*matches))
     copies = fetch_rows_for_ids(
-        lambda part: admin.table("book_copies").select("id, status").in_("book_id", part).order("id"), ids,
-    )
-    return sum(1 for c in copies if c.get("status") not in _UNAVAILABLE_COPY)
+        lambda part: admin.table("book_copies").select("id, book_id, status").in_("book_id", part).order("id"), wanted,
+    ) if wanted else []
+    per_book: dict[str, int] = {}
+    for c in copies:
+        if c.get("status") not in _UNAVAILABLE_COPY:
+            per_book[c["book_id"]] = per_book.get(c["book_id"], 0) + 1
+    return [sum(per_book.get(i, 0) for i in ids) if ids else None for ids in matches]
+
+
+def catalog_copy_count(admin, fields: dict) -> int | None:
+    return catalog_copy_counts(admin, [fields])[0]
 
 
 def warn_if_in_catalog(admin, fields: dict) -> None:

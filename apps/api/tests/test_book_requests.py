@@ -207,6 +207,17 @@ def test_an_archived_book_isnt_in_the_catalog(client, db):
     assert create(client, title="Refactoring").status_code == 201
 
 
+def test_librarians_see_the_catalog_copies_for_each_request(client, db):
+    db.tables["book_requests"] += [
+        row("r1", title="Refactoring"),
+        row("r2", title="Another Name", isbn="9780134757599"),
+        row("r3", title="Clean Code"),
+    ]
+    res = client.get("/book-requests")
+    counts = {r["id"]: r["catalog_copies"] for r in res.json()}
+    assert counts == {"r1": 2, "r2": 2, "r3": None}
+
+
 # ── editing ──
 
 def edit(client, request_id="r1", **fields):

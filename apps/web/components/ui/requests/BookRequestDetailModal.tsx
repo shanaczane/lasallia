@@ -126,6 +126,17 @@ export function BookRequestDetailModal({ request: r, onClose, onDecision, busy }
             </div>
           </div>
 
+          {/* Only while a decision is still open: afterwards the count moves on
+              (a fulfilled request adds copies) and no longer explains anything. */}
+          {r.catalog_copies != null && (r.status === "pending" || r.status === "under_review") && (
+            <div className="rounded-sm border border-gold-500 bg-gold-100 px-3 py-2" role="note">
+              <p className="text-ink-800" style={{ fontFamily: "var(--font-body)", fontSize: "var(--text-sm)" }}>
+                This title is already in the catalog ({r.catalog_copies} {r.catalog_copies === 1 ? "copy" : "copies"}).
+                {" "}The requester is asking for {r.copies} more {r.copies === 1 ? "copy" : "copies"}.
+              </p>
+            </div>
+          )}
+
           {/* Title details */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Author" value={r.author ?? "—"} />

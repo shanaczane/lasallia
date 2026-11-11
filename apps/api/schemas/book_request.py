@@ -37,6 +37,9 @@ class BookRequest(BaseModel):
     profiles: RequesterInfo | None = None
     # Embedded from book_request_attachments.
     attachments: list[Attachment] = []
+    # Librarian list only: copies of this title already in the catalog, or
+    # None when it isn't there.
+    catalog_copies: int | None = None
 
 
 class CreateBookRequestRequest(BaseModel):
